@@ -54,6 +54,7 @@ Then, inside the project you want to work on:
 | `/galaxy-brain:setup` | Bootstraps the current project: detects and installs companions via their **official installers** — never vendored code — and maps the project's real gate commands. |
 | `loop-finder` / `loop-tester` / `loop-fixer` / `loop-evaluator` | The loop's roles, each in its own context window: adversarial explorer, test/repro writer, single-fix generator, independent evaluator (different model — no inherited blind spots). |
 | `hooks/` | Verification invariants enforced *mechanically*, not by prompt: agents cannot merge PRs or update snapshot baselines — the block holds even if every skill prompt is deleted. |
+| `scripts/evidence.js` | Red→green evidence bundle: proof the failing test existed *before* the fix and was never weakened (SHA-256-pinned), plus full-suite result and evaluator verdict — attached to every PR. |
 
 **Companions** (auto-setup, by reference, gracefully optional): [GitNexus](https://github.com/abhigyanpatwari/GitNexus)
 for code-graph discovery and impact analysis · [GitHub Spec Kit](https://github.com/github/spec-kit)

@@ -105,7 +105,9 @@ Rules:
    updates by agents, even if every skill prompt is deleted.
 10. **Evidence bundle per delivery** — every PR/diff ships machine-checkable proof: the failing→passing
     test log, full-suite output, and the evaluator's verdict. "Verified" is an artifact, not a claim
-    (pattern credited to Claude Code Harness, see ecosystem-ideas.md).
+    (pattern credited to Claude Code Harness, see ecosystem-ideas.md). Shipped as `scripts/evidence.js`:
+    red→green chain with SHA-256-pinned test files — a test edited between red and green breaks the
+    chain (the anti-gaming primitive), and `bundle` refuses incomplete or non-PASS chains.
 
 ## Repo layout
 
@@ -122,6 +124,8 @@ galaxy-brain/
 ├── hooks/
 │   ├── hooks.json           # PreToolUse wiring (Bash|PowerShell)
 │   └── verify-invariants.js # mechanical: no auto-merge, no agent snapshot updates (rule 9)
+├── scripts/
+│   └── evidence.js          # red→green evidence bundle, hash-pinned tests (rule 10)
 ├── docs/
 │   ├── research-report.md   # evidence base (H1–H11) — the "why" behind every rule
 │   ├── ecosystem-ideas.md   # competitor scan: ideas adopted / rejected
