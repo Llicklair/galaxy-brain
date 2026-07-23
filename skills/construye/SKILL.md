@@ -83,6 +83,10 @@ Por cada tarea/historia de `tasks.md`:
   verdad? (no un verde tautológico), (e) ¿respeta la **constitución**? REJECT → vuelve al
   implementer (máx 3 rondas). Tras 3 fallos → revierte e item a inbox con `infra-fail`/`needs-human`.
 - **Marca `[X]` en `tasks.md` SOLO tras PASS del evaluador** (lo escribe el orquestador, no el worker).
+- **Registro rojo→verde por tarea (regla 10)**: el orquestador ancla el test de aceptación EN ROJO con
+  `node "${CLAUDE_PLUGIN_ROOT}/scripts/evidence.js" red --id <tarea> --test <fichero> -- <comando>`;
+  tras construir, `green` (test hash-idéntico o no cierra) + `suite` + `verdict` + `bundle` → el
+  markdown va al PR. Prueba mecánica de que el DoD existía ANTES del código y nadie lo debilitó.
 - **Independencia de modelo** (no opcional): el evaluador corre en modelo DISTINTO al implementer; el
   orquestador lo FUERZA al lanzar (`model`). Si solo hay 1 modelo: degrada con rol adversarial y **anótalo**.
 - **Barrido por-clase**: si la tarea introduce un patrón repetido, antes de cerrar el lote demuestra

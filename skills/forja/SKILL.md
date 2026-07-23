@@ -218,6 +218,12 @@ Antes (o en vez) de arreglar, **escribe un test** del caso (sub-agente `loop-tes
 - Si **PASA** → ganaste cobertura sobre un camino antes sin testear.
 Es aditivo (no cambia comportamiento), auto-verificable (se corre), e imparable de noche. El evaluador
 confirma que el test es significativo (no tautológico) y que de verdad ejercita el camino.
+- **Registro rojo→verde (regla 10 — "verificado" es un artefacto, no un claim)**: cuando el test FALLA,
+  el ORQUESTADOR lo ancla: `node "${CLAUDE_PLUGIN_ROOT}/scripts/evidence.js" red --id <item> --test
+  <fichero(s)> -- <comando>`. Tras el fix: `green` (mismo comando; exige el test HASH-IDÉNTICO al del
+  rojo — un test debilitado por el camino rompe la cadena y no cierra), `suite`, `verdict
+  --by <modelo-evaluador> --result PASS` y `bundle`. El estado vive fuera del repo objetivo
+  (`~/.claude/galaxy-brain/evidence/`).
 
 ## 3. HANDOFF — worktree acumulador persistente (paralelizable)
 - Worktree persistente `.claude/worktrees/forja-auto` en rama `loop/forja/auto`; reutilízalo (no
@@ -305,6 +311,8 @@ confirma que el test es significativo (no tautológico) y que de verdad ejercita
 - **Changelog por lote (combate la deuda de comprensión)**: antes de empujar al PR, el orquestador redacta
   en lenguaje humano "qué CAMBIA de comportamiento y qué RIESGO" (≤5 líneas por fix) en la descripción del
   PR. Nadie revisa 18 diffs; sí un resumen que los hace revisables → la puerta humana pasa a ser ejercible.
+  Adjunta además el bloque `### Evidence` que emite `evidence.js bundle` por cada fix con test (§2):
+  el PR lleva la PRUEBA rojo→verde, no la promesa.
 - **Drenar lo difícil como ARTEFACTO**: los hallazgos arriesgados (no auto-fixeables) → el loop
   redacta el fix en una rama aparte + un **test que demuestra el bug**, para que revises un diff+repro,
   no una nota. El inbox pasa de "deberes" a "PRs que apruebas/rechazas".
