@@ -53,11 +53,16 @@ Then, inside the project you want to work on:
 | `/construye` | Spec-driven build: GitHub Spec Kit runs the front half (constitution→spec→clarify→plan→tasks); the forge engine is grafted into implement — acceptance test-first, generator ≠ evaluator, full-suite gate. |
 | `/galaxy-brain:setup` | Bootstraps the current project: detects and installs companions via their **official installers** — never vendored code — and maps the project's real gate commands. |
 | `loop-finder` / `loop-tester` / `loop-fixer` / `loop-evaluator` | The loop's roles, each in its own context window: adversarial explorer, test/repro writer, single-fix generator, independent evaluator (different model — no inherited blind spots). |
+| `hooks/` | Verification invariants enforced *mechanically*, not by prompt: agents cannot merge PRs or update snapshot baselines — the block holds even if every skill prompt is deleted. |
 
 **Companions** (auto-setup, by reference, gracefully optional): [GitNexus](https://github.com/abhigyanpatwari/GitNexus)
 for code-graph discovery and impact analysis · [GitHub Spec Kit](https://github.com/github/spec-kit)
-for the spec pipeline · context-mode for context-window protection. Every loop degrades gracefully
-when one is missing — reduced power, never a crash.
+for the spec pipeline · context-mode for context-window protection · plus the best oracles on the
+market, detected per stack: [Playwright](https://playwright.dev) (durable E2E + visual regression),
+`gh` CLI (CI verdict as oracle), mutation testing (Stryker/mutmut/cargo-mutants/pitest — test-quality
+gate), [schemathesis](https://schemathesis.io) (property-tests from your OpenAPI spec). Every loop
+degrades gracefully when one is missing — reduced power, never a crash. Evidence and verdicts:
+[docs/deep-scan-2026-07.md](docs/deep-scan-2026-07.md).
 
 ## Docs
 
@@ -67,6 +72,7 @@ when one is missing — reduced power, never a crash.
 | [SCOPE.md](SCOPE.md) | Vision, anti-goals (what this will *never* be), roadmap with objective release gates |
 | [docs/research-report.md](docs/research-report.md) | The deep-research evidence base (H1–H11) every rule traces to |
 | [docs/ecosystem-ideas.md](docs/ecosystem-ideas.md) | Ecosystem scan — ideas adopted with attribution, patterns deliberately rejected |
+| [docs/deep-scan-2026-07.md](docs/deep-scan-2026-07.md) | Second-round deep scan — oracles, MCPs, spec kits; what we adopt, watch, reject, and build |
 | [CLAUDE.md](CLAUDE.md) | Rules for developing galaxy-brain itself |
 
 ## Roadmap

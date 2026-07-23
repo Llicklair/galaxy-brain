@@ -66,6 +66,13 @@ Each companion ships as three things: a **detection**, an **official install com
 | GitHub Spec Kit | `.specify/` exists | `uvx --from git+https://github.com/github/spec-kit.git specify init . --integration claude --script sh` | spec pipeline for `/construye` |
 | GitNexus | `npx gitnexus status` | `npx gitnexus analyze` (+ MCP registration) | discovery by execution flows, impact analysis |
 | context-mode | plugin installed | `/plugin` marketplace | context-window protection |
+| Playwright (web repos) | `playwright.config.*` / `@playwright/test` | `npm init playwright@latest` | durable E2E oracle (`npx playwright test`) + local visual regression (`toHaveScreenshot`) |
+| gh CLI | `gh auth status` | https://cli.github.com | CI verdict as oracle (`gh run watch` / `gh run view --log-failed`) |
+| Mutation testing | Stryker / mutmut / cargo-mutants / pitest configs | each tool's official installer | diff-scoped test-QUALITY gate at batch close (kills "always-green" agent tests) |
+| schemathesis | `openapi.{yaml,json}` / GraphQL schema | `pip install schemathesis` | auto property-tests FROM the API spec — the spec as executable oracle |
+
+Verdicts and evidence for the July 2026 oracle additions: [docs/deep-scan-2026-07.md](docs/deep-scan-2026-07.md)
+and [docs/oracles-report-2026-07.md](docs/oracles-report-2026-07.md).
 
 Rules:
 - **Degrade gracefully**: every loop works without its companions (forja falls back to file-tree
@@ -93,7 +100,9 @@ Rules:
 9. **Hooks over prompts for invariants** (v1.0 direction) — per-step prompt reliability compounds badly
    over multi-step pipelines; critical invariants belong in deterministic hooks (H11). And hooks are
    themselves bypassable: the *final* gate lives outside the agent — branch protection and CI make
-   never-auto-merge a repository setting, not a promise (see ecosystem-ideas.md).
+   never-auto-merge a repository setting, not a promise (see ecosystem-ideas.md). First increment
+   shipped: `hooks/verify-invariants.js` (PreToolUse) mechanically blocks PR merges and snapshot-baseline
+   updates by agents, even if every skill prompt is deleted.
 10. **Evidence bundle per delivery** — every PR/diff ships machine-checkable proof: the failing→passing
     test log, full-suite output, and the evaluator's verdict. "Verified" is an artifact, not a claim
     (pattern credited to Claude Code Harness, see ecosystem-ideas.md).
@@ -110,9 +119,14 @@ galaxy-brain/
 │   ├── construye/           # spec-driven build driver
 │   └── setup/               # companion bootstrap (by-reference installs)
 ├── agents/                  # loop-finder / loop-tester / loop-fixer / loop-evaluator
+├── hooks/
+│   ├── hooks.json           # PreToolUse wiring (Bash|PowerShell)
+│   └── verify-invariants.js # mechanical: no auto-merge, no agent snapshot updates (rule 9)
 ├── docs/
 │   ├── research-report.md   # evidence base (H1–H11) — the "why" behind every rule
-│   └── ecosystem-ideas.md   # competitor scan: ideas adopted / rejected
+│   ├── ecosystem-ideas.md   # competitor scan: ideas adopted / rejected
+│   ├── deep-scan-2026-07.md # second-round scan: oracles, MCPs, spec kits, build gaps
+│   └── oracles-report-2026-07.md # per-tool oracle detail (integration, cost, sources)
 ├── ARCHITECTURE.md          # this file — the "how"
 ├── SCOPE.md                 # vision, roadmap, anti-goals — the "what"
 └── CLAUDE.md                # rules for developing galaxy-brain itself
