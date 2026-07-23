@@ -30,7 +30,7 @@ So galaxy-brain bets everything on that one lever:
 ## Install
 
 ```
-/plugin marketplace add <path-or-github-url-to-this-repo>
+/plugin marketplace add Llicklair/galaxy-brain
 /plugin install galaxy-brain
 ```
 
@@ -54,7 +54,7 @@ Then, inside the project you want to work on:
 | `/galaxy-brain:setup` | Bootstraps the current project: detects and installs companions via their **official installers** — never vendored code — and maps the project's real gate commands. |
 | `loop-finder` / `loop-tester` / `loop-fixer` / `loop-evaluator` | The loop's roles, each in its own context window: adversarial explorer, test/repro writer, single-fix generator, independent evaluator (different model — no inherited blind spots). |
 
-**Companions** (auto-setup, by reference, gracefully optional): [GitNexus](https://github.com/gitnexus)
+**Companions** (auto-setup, by reference, gracefully optional): [GitNexus](https://github.com/abhigyanpatwari/GitNexus)
 for code-graph discovery and impact analysis · [GitHub Spec Kit](https://github.com/github/spec-kit)
 for the spec pipeline · context-mode for context-window protection. Every loop degrades gracefully
 when one is missing — reduced power, never a crash.
