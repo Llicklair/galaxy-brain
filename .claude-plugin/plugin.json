@@ -1,0 +1,10 @@
+{
+  "name": "galaxy-brain",
+  "description": "Verification-first harness for Claude Code: autonomous review loop (forja) and spec-driven build (construye) with adversarial evaluator (generator != evaluator), test-first, full-suite gates, never auto-merge.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Marcos Recio"
+  },
+  "homepage": "https://github.com/marcosrecio/galaxy-brain",
+  "keywords": ["review-loop", "spec-driven", "adversarial-evaluator", "test-first", "verification"]
+}
