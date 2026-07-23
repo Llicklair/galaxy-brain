@@ -37,6 +37,9 @@ nada. `/speckit-converge` es el bucle brownfield (mapea intención→código, **
   principios MUST. La constitución es la LEY que el evaluador hace cumplir (REJECT si se viola).
 - **Gates reales**: lee `.github/workflows/*`, `package.json` scripts, `pyproject.toml [tool.*]`, `Makefile`
   y anota los comandos exactos de lint/type/test/build por subproyecto.
+- **API con esquema** (`openapi.{yaml,json}` / GraphQL): añade `schemathesis` como gate extra si está
+  o se instala (`pip install schemathesis`) — el spec del API ya ES un oráculo ejecutable
+  (property-tests automáticos desde el esquema). Detectado, nunca impuesto.
 - **Modo de entrega** (igual que la forja): `pr` (worktree + PR acumulado) o `no-pr` (working tree local,
   sin commitear). "construye con PR" / "construye sin PR" / por defecto, el último.
 - **Seguridad al ejecutar gates** (la allowlist NO es sandbox): repo de confianza → auto-ejecuta; repo
@@ -56,14 +59,21 @@ nada. `/speckit-converge` es el bucle brownfield (mapea intención→código, **
 2. `/speckit-clarify` — **PUERTA HUMANA**: el loop NO inventa requisitos. Resuelve las ambigüedades
    contigo (o las deja marcadas); **apruebas la spec** antes de planificar. (Paralelo al anti-falso-
    positivo de la forja: ante duda, pregunta, no rellenes a ciegas.)
-3. `/speckit-plan` → arquitectura, stack, touch-points, `Constitution Check`.
-4. `/speckit-tasks` → `tasks.md` ordenado, atómico, con `[P]` (paralelo) y estructura **TDD-first**.
+3. **Criterios de aceptación en EARS** (notación pública, origen Rolls-Royce — adoptada con atribución,
+   ver deep-scan del plugin): al cerrar clarify, reescribe cada criterio como
+   `WHEN <disparador> THE SYSTEM SHALL <respuesta observable>` (los 5 patrones EARS: ubicuo, por evento,
+   por estado, comportamiento-no-deseado, opcional). La regla del injerto: **1 cláusula EARS = 1 test de
+   aceptación**. Si un criterio no se deja escribir en EARS, no es testeable → vuelve a clarify, no pasa
+   a plan. Esto convierte la spec en la lista exacta de oráculos que vendrán.
+4. `/speckit-plan` → arquitectura, stack, touch-points, `Constitution Check`.
+5. `/speckit-tasks` → `tasks.md` ordenado, atómico, con `[P]` (paralelo) y estructura **TDD-first**.
 
 ## 3. El loop autónomo de construcción (aquí injerta la forja)
 Por cada tarea/historia de `tasks.md`:
 - **MARCO** (orquestador): `gitnexus_impact` de dónde toca la tarea + grep de hermanas del patrón a imitar.
 - **ÁTOMO test-first** (`loop-tester`): escribe el **test de ACEPTACIÓN** derivado de los
-  FR-###/SC-###/acceptance-scenarios **EN ROJO** (aún no construido). Es el *Definition of Done* ejecutable.
+  FR-###/SC-###/acceptance-scenarios **EN ROJO** (aún no construido) — **una cláusula EARS = un test**,
+  ciego a la implementación (§2.3). Es el *Definition of Done* ejecutable.
   El evaluador confirma que el test es significativo (no tautológico) y que ejercita el camino de la spec.
 - **ÁTOMO build** (`loop-fixer` como *implementer*): construye la tarea hasta poner el test **verde**, en
   el worktree, respetando capas + constitución (lo que ésta declare intocable → inbox).
@@ -83,7 +93,9 @@ Por cada tarea/historia de `tasks.md`:
 ## 4. Brownfield — el bucle `converge` (la clave para proyectos grandes)
 Tras un lote de implement: `/speckit-converge` evalúa el código vs spec/plan/constitución **atado al
 file-scope del plan** (NO barre todo el repo) → añade los gaps como `## Phase N: Convergence`
-(missing / partial / contradicts / unrequested), **append-only**, CRITICAL primero. Loop:
+(missing / partial / contradicts / unrequested), **append-only**, CRITICAL primero. Estilo
+**delta-spec** (idea de OpenSpec, con atribución): cada fase de convergencia especifica el CAMBIO
+(qué falta / qué contradice), nunca re-describe el sistema entero. Loop:
 **implement (con las gates de la forja) → converge → implement … hasta "✅ Converged"**. Por eso ES viable
 en repos enormes: se trabaja **feature a feature**, no el repo entero de golpe.
 

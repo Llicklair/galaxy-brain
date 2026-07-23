@@ -1,6 +1,6 @@
 ---
 name: setup
-description: "Bootstrap de galaxy-brain en el proyecto actual: detecta e instala los companions por REFERENCIA (instalador oficial de cada uno, nunca código replicado) — GitNexus (grafo de código), Spec Kit (pipeline spec-driven, solo si se usará /construye) y context-mode (protección de contexto). Verifica cada instalación y reporta qué quedó activo y qué degradado. Úsalo al aterrizar galaxy-brain en un repo nuevo: /galaxy-brain:setup"
+description: "Bootstrap de galaxy-brain en el proyecto actual: detecta e instala los companions por REFERENCIA (instalador oficial de cada uno, nunca código replicado) — GitNexus (grafo de código), Spec Kit (pipeline spec-driven, solo si se usará /construye), context-mode (protección de contexto) y los oráculos del stack (Playwright, gh CLI, mutation testing, gates estáticas, schemathesis). Verifica cada instalación y reporta qué quedó activo y qué degradado. Úsalo al aterrizar galaxy-brain en un repo nuevo: /galaxy-brain:setup"
 ---
 
 # /galaxy-brain:setup — bootstrap de companions por referencia
@@ -37,11 +37,34 @@ una sola vez con la lista de lo que falta; instala solo lo aceptado.
   (`/plugin`); no intentes instalarlo por él.
 - **Sin él**: los loops funcionan; las sesiones muy largas consumen más contexto.
 
-### 4. Gates del proyecto (siempre, sin instalación)
+### 4. Oráculos del stack — las mejores herramientas del mercado, por referencia
+
+Detecta el stack y propone SOLO lo que aplica. Cada uno es opcional: sin él = una gate menos, nunca
+un fallo. Evidencia y veredictos completos: `docs/deep-scan-2026-07.md` del repo del plugin.
+
+| Oráculo | Detectar | Instalar (oficial) | Da al loop |
+|---|---|---|---|
+| **Playwright** (repos web) | `playwright.config.*` o `@playwright/test` en package.json | `npm init playwright@latest` (+ opcional `npx playwright init-agents --loop=claude`) | oráculo E2E durable (`npx playwright test`) + regresión visual local (`toHaveScreenshot`) |
+| **gh CLI** | `gh auth status` | https://cli.github.com | veredicto de CI como oráculo (`gh run watch`, `gh run view --log-failed`) |
+| **Mutation testing** | `stryker.config.*` · `[tool.mutmut]` · `cargo mutants --version` · pitest en pom/gradle | `npm i -D @stryker-mutator/core` · `pip install mutmut` · `cargo install cargo-mutants` | score de mutación diff-scoped = oráculo de CALIDAD de tests (caza tests "siempre verdes") |
+| **Gates estáticas rápidas** | configs de ruff / biome / pyright / semgrep / ast-grep (`sgconfig.yml`) | instalador oficial de cada una, SOLO si el repo ya la configura | gates de segundos antes de la suite |
+| **schemathesis** (API con esquema) | `openapi.{yaml,json}` / esquema GraphQL | `pip install schemathesis` | property-tests automáticos DESDE el spec del API — el spec ya ES un oráculo ejecutable |
+
+Reglas de uso (no negociables; las skills de los loops las aplican):
+- **Playwright MCP solo dentro del evaluador** (grounding de selectores + ojos de aceptación), nunca
+  residente en el loop principal: un run vía MCP ≈114k tokens vs ~27k por CLI. El oráculo durable son
+  los specs commiteados; toda sesión MCP termina emitiendo/actualizando un spec commiteado.
+- **`--update-snapshots` / `-u` prohibidos para los agentes**: actualizar un baseline es un evento de
+  aprobación del evaluador/humano, no un fix (refuerzo mecánico en `hooks/` del plugin).
+- **Mutation diff-scoped SOLO al cerrar lote/PR** (minutos), nunca en el bucle interno.
+- **CodeQL NO es gate de loop** (builds de 15–45 min); si el repo lo usa, se queda en su CI nocturna.
+
+### 5. Gates del proyecto (siempre, sin instalación)
 
 Detecta y anota los comandos REALES de lint/typecheck/build/test leyendo `.github/workflows/*`,
 `package.json` scripts, `pyproject.toml`, `Makefile`, etc. No los inventes ni los hardcodees:
-son los oráculos deterministas que usarán los loops (ARCHITECTURE, regla 2).
+son los oráculos deterministas que usarán los loops (ARCHITECTURE, regla 2). Los oráculos del §4
+que estén activos entran en esta cadena de gates (p.ej. `npx playwright test` tras la suite unitaria).
 
 ## Reporte final
 

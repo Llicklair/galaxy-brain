@@ -54,6 +54,11 @@ PUERTA GLOBAL**, y el marco y la puerta los sostiene el **ORQUESTADOR** (la sesi
 - **Gates reales** (lo que el proyecto considera "verde"): lee `.github/workflows/*`, `package.json`
   scripts, `pyproject.toml` [tool.*], `Makefile`. Anota los comandos exactos de lint/type/test/build
   por subproyecto en `tasks/forja/state.md` (sección "Gates detectadas").
+- **Oráculos extra si están** (los instala `/galaxy-brain:setup` §4; detectados, nunca impuestos):
+  Playwright (`playwright.config.*` → `npx playwright test` entra en la cadena de gates, incl.
+  `toHaveScreenshot` si hay baselines) · `gh` CLI (`gh auth status` → veredicto de CI, §5) · mutation
+  testing (config de Stryker/mutmut/cargo-mutants/pitest → gate de calidad de tests al cerrar lote, §4)
+  · ast-grep/semgrep si el repo los configura (gates de segundos, antes de la suite).
 - **SEGURIDAD al ejecutar gates — la allowlist NO es un sandbox.** Ejecutar las gates corre **código del
   repo objetivo** con TUS privilegios: `pytest` ejecuta `conftest.py`, `npm test` el script de
   `package.json`, `make`/`cargo` (+`build.rs`) su cuerpo arbitrario. Filtrar el NOMBRE del comando NO
@@ -273,6 +278,16 @@ confirma que el test es significativo (no tautológico) y que de verdad ejercita
   periódico**: cada ~5–8 fixes acumulados en la rama, una pasada completa para cazar interacciones
   acumuladas. **Verde por turno ≠ verde de la rama** (lección real: una fixture dejó 11 tests rojos que
   ningún `-k` veía).
+- **Gate de CALIDAD de tests (mutation, al cerrar LOTE — nunca por fix)**: si hay herramienta de
+  mutación detectada (Stryker `--incremental`, `cargo mutants --in-diff`, mutmut, pitest con history),
+  córrela DIFF-SCOPED sobre el código tocado por el lote antes del push (minutos). Mutantes
+  supervivientes en código del lote → el lote NO cierra: la lista de supervivientes (compacta) vuelve a
+  `loop-tester` como instrucciones concretas. Es el contra-oráculo de los tests "siempre verdes" que
+  escriben los agentes: cobertura alta ≠ asserts reales.
+- **Baselines de snapshot = puerta humana**: PROHIBIDO para todo agente `--update-snapshots` /
+  `--updateSnapshot` / `-u` (jest/vitest/playwright). Un baseline que cambia es un cambio de
+  comportamiento observable: exige evidencia y aprobación del evaluador/humano, no un update silencioso
+  que pone el rojo en verde. (Refuerzo mecánico: `hooks/` del plugin lo bloquea aunque este prompt se borre.)
 - **Honestidad sobre lo no probado**: concurrencia que pide BD real (conftest SQLite), RLS, locks → el
   fix es "**correcto por construcción, sin prueba empírica**", NO "verificado". Dilo así en bitácora/PR.
 - **NO SOBRE-AFIRMAR EN COMENTARIOS/DOCSTRINGS (gate del evaluador).** Un guard `SELECT ... then check`
@@ -293,6 +308,10 @@ confirma que el test es significativo (no tautológico) y que de verdad ejercita
 - **Drenar lo difícil como ARTEFACTO**: los hallazgos arriesgados (no auto-fixeables) → el loop
   redacta el fix en una rama aparte + un **test que demuestra el bug**, para que revises un diff+repro,
   no una nota. El inbox pasa de "deberes" a "PRs que apruebas/rechazas".
+- **Veredicto de CI como oráculo (si hay `gh`)**: tras el push, `gh run watch` (NUNCA bucles de polling
+  con `gh run view` — agotan el rate limit) y, si el CI falla, `gh run view --log-failed` alimenta al
+  fixer como feedback determinista. El CI del repo es la gate final que no depende de nuestro entorno:
+  **el PASS local no cierra el turno si el CI del PR está rojo.**
 - Bitácora viva en `tasks/forja/state.md` (1 línea por turno con resultado). Lo no auto-fixeable →
   `tasks/forja/inbox/` con severidad.
 - **Medición de coste (para decidir con datos, no a ojo)**: en esa misma línea de bitácora anota lo
