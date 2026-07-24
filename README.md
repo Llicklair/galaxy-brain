@@ -69,6 +69,7 @@ degrades gracefully when one is missing — reduced power, never a crash. Eviden
 
 | Doc | What's in it |
 |-----|--------------|
+| [docs/PLAYBOOK.md](docs/PLAYBOOK.md) | How to work with galaxy-brain on any repo: the phase-by-phase pipeline and cadence |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | The pipeline, the layers, the 9 design rules and the evidence behind each |
 | [SCOPE.md](SCOPE.md) | Vision, anti-goals (what this will *never* be), roadmap with objective release gates |
 | [docs/research-report.md](docs/research-report.md) | The deep-research evidence base (H1–H11) every rule traces to |
