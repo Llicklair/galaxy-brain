@@ -1,0 +1,3 @@
+tasks/*/environment/repo/
+tasks/*/instruction.md
+tasks/*/tests/verify_*_test.py
