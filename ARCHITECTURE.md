@@ -134,7 +134,8 @@ galaxy-brain/
 │   ├── evidence.js          # red→green evidence bundle, hash-pinned tests (rule 10)
 │   ├── ears.js              # EARS→acceptance-test compiler: extract/scaffold/check 1:1 gate (rules 2, 3)
 │   ├── test-guard.js        # test-gaming detector over test diffs — feeds the evaluator (rules 1, 4)
-│   └── constitution.js      # constitution compiler: MUST principles → mechanical rules + honest iron/paper coverage (rules 2, 9)
+│   ├── constitution.js      # constitution compiler: MUST principles → mechanical rules + honest iron/paper coverage (rules 2, 9)
+│   └── memory-global.js     # cross-repo permanent memory: wikilinked vault + SessionStart injection, lean recall (H5, H6)
 ├── docs/
 │   ├── research-report.md   # evidence base (H1–H11) — the "why" behind every rule
 │   ├── ecosystem-ideas.md   # competitor scan: ideas adopted / rejected
