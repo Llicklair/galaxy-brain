@@ -142,6 +142,14 @@ segundos por ~0 tokens y el LLM solo **remedia los hits**. Barato y FINITO (conv
   `detail=str(e)` en un 500…). Mucho recall, poca precisión → la MAYORÍA serán **falsos positivos**.
 - **Ledger** FUERA del repo (`~/.claude/forja-state/<repo>/detector-inbox.md`): registra
   `fixed + FP-descartados + pendientes`. Cada vuelta **resta el ledger** y tría **solo lo NUEVO** (no re-tría).
+- **Memoria tipada consultable** (v1.0, idea claude-mem con atribución; NO vectorial — research H5):
+  además de la prosa, el orquestador persiste cada observación como registro tipado en
+  `~/.claude/forja-state/<repo>/memory.jsonl` vía `scripts/loop-memory.js` — `finding`/`decision`/
+  `verdict`, con `key` estable (`fichero:línea:familia`). Antes de triar un candidato:
+  `loop-memory.js seen --key <k>` (exit 0 = ya visto → sáltalo, NO re-tríes; exit 1 = nuevo). Al abrir
+  una lente: `loop-memory.js query --tags <lente> --limit N` recupera por relevancia lo que pasadas
+  anteriores aprendieron **sin releer todo el estado** — así el ledger compone de verdad y la sesión
+  sobrevive 100+ turnos sin agotar contexto. El `ts` lo estampa el orquestador (`--ts`), el script es puro.
 - **La vuelta**: (1) `scan()` (~segundos); (2) triar lo nuevo en un **SUBAGENTE** (no inflar contexto);
   (3) arreglar **solo los REALES** con guards mínimos contract-preserving, **inbox** lo arriesgado
   (migraciones, cambios de alto blast-radius) — sin sobre-afirmar concurrencia (son guards de re-entrada
