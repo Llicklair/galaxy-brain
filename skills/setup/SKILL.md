@@ -57,6 +57,9 @@ Reglas de uso (no negociables; las skills de los loops las aplican):
 - **`--update-snapshots` / `-u` prohibidos para los agentes**: actualizar un baseline es un evento de
   aprobación del evaluador/humano, no un fix (refuerzo mecánico en `hooks/` del plugin).
 - **Mutation diff-scoped SOLO al cerrar lote/PR** (minutos), nunca en el bucle interno.
+- **mutmut NO corre en Windows nativo** (el paquete instala pero rehúsa ejecutarse): en hosts Windows
+  la gate de mutación Python se ejecuta vía WSL o dentro de contenedor — verifica SIEMPRE con una
+  ejecución real antes de dar el oráculo por activo; instalado ≠ funcional.
 - **CodeQL NO es gate de loop** (builds de 15–45 min); si el repo lo usa, se queda en su CI nocturna.
 
 ### 5. Gates del proyecto (siempre, sin instalación)
