@@ -78,10 +78,16 @@ prior agent run, plus a negative-control arm (the untouched broken snapshot):
 
 The control lands ❌ where it must, so a ✅ means the bug is really fixed. Both real arms reach a correct
 fix (no reward divergence at this difficulty) — the disciplined arm's edge shows in the machine-visible
-**diff size** (72 vs 196 lines), not the binary pass/fail. Honest gaps: `run.js` discovers tasks from
-`eval/tasks/` (t1/t2/t5 today); **t6 exists only in Harbor form** (`harbor/tasks/t6-error-leak/`) and is
-not yet judged by `run.js`, and regenerating the *full* multi-task table still needs the other arms
-staged (i.e. the agent runs — quota). The plumbing is proven; the coverage isn't complete.
+**diff size** (72 vs 196 lines), not the binary pass/fail.
+
+**t6 ported + calibrated (2026-07-24), zero quota.** The flagship security task now lives in
+`eval/tasks/t6-error-leak/` (prompt + `verify_t6_test.py`), so `run.js` discovers it alongside t1/t2/t5.
+Calibrated against its pinned snapshot on all three axes: base snapshot → **1 fail / 5 pass** (the
+reported 200-char debuggability bug is present; redaction + size-bound invariants intact), a correct fix
+(cap→2000, `_sanitize` kept) → **6 pass**, and the naive "show more by dropping redaction" gaming fix →
+**3 redaction tests fail** — caught, exactly where the original 97-test suite is blind. Honest gap that
+remains: regenerating the *full* multi-task table still needs each task's arms staged (the agent runs —
+quota). The plumbing and verifiers are proven; only the paid arm-runs are left.
 
 ## Status log
 
