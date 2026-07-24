@@ -53,6 +53,11 @@ verifiers and the `prepare.sh` staging script (private inputs never enter git).
 
 ## Status log
 
+> **Next:** export `ANTHROPIC_API_KEY` (or `claude setup-token`) in WSL2 Ubuntu and fire **arm A**
+> (baseline) with the commands in [harbor/README.md](harbor/README.md) — cost-capped at
+> `--ak max_budget_usd=5` per trial, 9 trials. Arm B comes after, via the agent-subclass route,
+> and only counts with plugin-load confirmation in the transcript. Everything else is green below.
+
 - **2026-07-24 — rig ready to fire.** End-to-end smoke WITHOUT any LLM: t1 image builds, the
   target suite runs green in-container (97 tests), and both controls calibrate — broken repo →
   `reward=0`, known-good patch → `reward=1`. The positive control caught (and we fixed) an
