@@ -1,6 +1,6 @@
 ---
 name: construye
-description: "Construcción autónoma dirigida por especificación (Spec-Driven Build) — la hermana de /forja que EDIFICA en vez de revisar. Se apoya en GitHub Spec Kit para la mitad delantera (constitution→spec→clarify→plan→tasks) y le injerta el motor verificado de la forja en /speckit-implement: test-first de ACEPTACIÓN, generador≠evaluador (otro modelo), gate de suite COMPLETA (sin regresión), barrido por-clase y entrega en PR o local — NUNCA auto-merge. Usa /speckit-converge para brownfield (proyectos grandes, feature a feature). Úsalo con /construye (una feature/lote) o /loop construye (continuo)."
+description: "Construcción autónoma dirigida por especificación (Spec-Driven Build) — la hermana de /forja que EDIFICA en vez de revisar. Se apoya en GitHub Spec Kit para la mitad delantera (constitution→spec→clarify→plan→tasks) y le injerta el motor verificado de la forja en /speckit-implement: test-first de ACEPTACIÓN, generador≠evaluador (otro modelo), gate de suite COMPLETA (sin regresión), barrido por-clase y entrega en PR o local — NUNCA auto-merge. Fast-path para cambios atómicos (/construye --fast): salta los artefactos de ceremonia pero conserva las 5 gates; auto-escala a ceremonia completa si el cambio crece. Usa /speckit-converge para brownfield (proyectos grandes, feature a feature). Úsalo con /construye (una feature/lote), /construye --fast|--full, o /loop construye (continuo)."
 ---
 
 # /construye — Spec-Driven Build verificado (la forja que edifica)
@@ -80,6 +80,30 @@ nada. `/speckit-converge` es el bucle brownfield (mapea intención→código, **
 4. `/speckit-plan` → arquitectura, stack, touch-points, `Constitution Check`.
 5. `/speckit-tasks` → `tasks.md` ordenado, atómico, con `[P]` (paralelo) y estructura **TDD-first**.
 
+## 2·bis — Fast-path: mismas gates, sin ceremonia de artefactos
+La crítica nº1 de adopción de Spec Kit es la **ceremonia completa sobre un cambio de una línea**
+(destruye el uso; medido en el rig A/B: la disciplina costó +58% tokens sobre un `>`→`>=`). El
+fast-path la corta **saltando artefactos, NUNCA gates** — porque un documento que ninguna gate lee es
+decoración, pero una gate que no corre es código sin verificar.
+
+- **Disparador (automático por defecto, honesto — no un flag que se olvida)**: el orquestador propone
+  fast-path cuando el cambio (a) mapea a **una sola** cláusula EARS *y* (b) el `gitnexus_impact` /
+  scope estimado toca **≤2 ficheros de producción**. Override explícito: `/construye --fast` lo fuerza,
+  `/construye --full` exige ceremonia. Ante duda → ceremonia (el sesgo seguro).
+- **Qué SALTA** (solo papeleo): `spec.md`/`plan.md`/`tasks.md` como ficheros → se colapsan en **una**
+  cláusula EARS inline (`WHEN … THE SYSTEM SHALL …`); la ronda formal de `clarify` (solo pregunta si
+  hay ambigüedad real, §2.2 sigue siendo puerta si la hay); `converge` (no aplica a un átomo).
+- **Qué CONSERVA — idéntico, innegociable**: (1) test-first de aceptación con esa cláusula EARS
+  (`ears.js` sigue exigiendo 1 cláusula = 1 test), (2) rojo anclado por `evidence.js` antes del fix,
+  (3) **generador≠evaluador en OTRO modelo**, (4) gate de **suite COMPLETA** + `test-guard.js` +
+  `constitution.js check` (LAWs), (5) PR con evidencia, **nunca auto-merge**.
+- **Auto-escala (apuesta reversible)**: si al ejecutar el cambio resulta mayor de lo previsto —el
+  evaluador ve scope creep, aparece un 2º invariante, o toca >2 ficheros— **sube a ceremonia completa
+  automáticamente** y lo anota. El fast-path nunca es un compromiso, solo un atajo revocable.
+- **Red de seguridad**: como las 5 gates son las mismas, un fast-path mal juzgado **no puede colar
+  código sin verificar** — a lo sumo pierde rastro documental, y el evaluador puede exigir la ceremonia.
+  El riesgo es de *cobertura de spec*, no de *correctitud*.
+
 ## 3. El loop autónomo de construcción (aquí injerta la forja)
 Por cada tarea/historia de `tasks.md`:
 - **MARCO** (orquestador): `gitnexus_impact` de dónde toca la tarea + grep de hermanas del patrón a imitar.
@@ -151,6 +175,8 @@ requisito.
 "buscar lo que falta" lo hace `/speckit-converge`.
 
 ## Continuación / parada
-`/construye` = una feature o un lote. `/loop construye` = continuo (feature a feature vía converge;
-cadencia corta ≈ casi continuo). Para SOLO con "para" explícito; entonces presenta el resumen de la
-bitácora. Si la cuota se agota, detente y resume.
+`/construye` = una feature o un lote (ceremonia o fast-path según §2·bis). `/construye --fast` fuerza
+el atajo (una cláusula EARS, sin artefactos, mismas gates); `/construye --full` fuerza la ceremonia
+completa. `/loop construye` = continuo (feature a feature vía converge; cadencia corta ≈ casi continuo).
+Para SOLO con "para" explícito; entonces presenta el resumen de la bitácora. Si la cuota se agota,
+detente y resume.
