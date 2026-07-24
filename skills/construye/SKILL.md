@@ -175,6 +175,12 @@ requisito.
 "buscar lo que falta" lo hace `/speckit-converge`.
 
 ## Continuación / parada
+**Marcador de loop (arma el hook de invariantes — obligatorio).** Al ARRANCAR una construcción autónoma:
+`mkdir -p ~/.claude/galaxy-brain && touch ~/.claude/galaxy-brain/loop-active`; al PARAR (para/aborto/cuota):
+`rm -f ~/.claude/galaxy-brain/loop-active`. Con el marcador, el hook bloquea todo `gh pr merge` del loop
+—entrega PR y para, el merge lo decide el humano—; sin marcador (interactivo), un merge pedido por el
+humano sí pasa. No es auto-merge.
+
 `/construye` = una feature o un lote (ceremonia o fast-path según §2·bis). `/construye --fast` fuerza
 el atajo (una cláusula EARS, sin artefactos, mismas gates); `/construye --full` fuerza la ceremonia
 completa. `/loop construye` = continuo (feature a feature vía converge; cadencia corta ≈ casi continuo).

@@ -356,5 +356,13 @@ bitácora MIDE tokens/turno (§5) → pon caps **con datos**, no a ojo, si la cu
 evaluador, no lo celebres.
 
 ## Continuación / parada
+**Marcador de loop (arma el hook de invariantes — obligatorio).** Al ARRANCAR una pasada autónoma, el
+orquestador crea el marcador que le dice al hook "hay un loop activo":
+`mkdir -p ~/.claude/galaxy-brain && touch ~/.claude/galaxy-brain/loop-active`. Al PARAR —para explícito,
+aborto por N fallos, o cuota agotada— lo borra SIEMPRE: `rm -f ~/.claude/galaxy-brain/loop-active`. Con
+el marcador puesto, `hooks/verify-invariants.js` bloquea mecánicamente cualquier `gh pr merge` o
+`--update-snapshots` del loop: **la pasada entrega PR y para; el merge lo decide el humano.** Sin
+marcador (sesión interactiva), un merge que el humano pida sí se ejecuta — eso no es auto-merge.
+
 Continuo con `/loop forja` (cadencia corta = casi continuo). Para SOLO con "para" explícito del
 usuario; entonces presenta el resumen consolidado de la bitácora. Si la cuota se agota, detente y resume.
