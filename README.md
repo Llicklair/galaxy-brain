@@ -56,6 +56,7 @@ Then, inside the project you want to work on:
 | `hooks/` | Verification invariants enforced *mechanically*, not by prompt: agents cannot merge PRs or update snapshot baselines — the block holds even if every skill prompt is deleted. |
 | `scripts/evidence.js` | Red→green evidence bundle: proof the failing test existed *before* the fix and was never weakened (SHA-256-pinned), plus full-suite result and evaluator verdict — attached to every PR. |
 | `scripts/ears.js` | EARS→test compiler: every spec clause becomes a failing acceptance stub with a stable ID; a mechanical 1:1 clause↔test gate blocks the batch until every criterion has its test — and flags untestable SHALL lines back to clarify. |
+| `scripts/test-guard.js` | Test-gaming detector: scans the batch diff for deleted tests, net assertion loss, added skips and weakened asserts — every signal must be justified to the evaluator or the batch is rejected. |
 
 **Companions** (auto-setup, by reference, gracefully optional): [GitNexus](https://github.com/abhigyanpatwari/GitNexus)
 for code-graph discovery and impact analysis · [GitHub Spec Kit](https://github.com/github/spec-kit)
