@@ -152,4 +152,8 @@ function main() {
   process.exit(allEnforced ? 0 : 1);
 }
 
-main();
+// Guard so the module can be imported by the regression suite without running the CLI;
+// behavior when invoked directly (node external-gate.js …) is unchanged.
+if (require.main === module) main();
+
+module.exports = { INVARIANTS, printConfigCommand };
