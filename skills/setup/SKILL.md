@@ -63,7 +63,27 @@ Reglas de uso (no negociables; las skills de los loops las aplican):
   ejecución real antes de dar el oráculo por activo; instalado ≠ funcional.
 - **CodeQL NO es gate de loop** (builds de 15–45 min); si el repo lo usa, se queda en su CI nocturna.
 
-### 5. Gates del proyecto (siempre, sin instalación)
+### 5. Enforcement FUERA del agente — branch protection (gate de v1.0)
+
+El hook local (`hooks/verify-invariants.js`) bloquea el auto-merge *dentro* del perímetro del agente,
+pero un hook puede ser saltado por un subagente y los settings los puede editar el modelo
+(ecosystem-ideas.md #37). El invariante **solo se sostiene de verdad cuando la gate final vive FUERA
+del agente**: en la branch protection de GitHub. Esto es lo que cierra la gate objetiva de v1.0.
+
+- **Detectar/Verificar**: `node "${CLAUDE_PLUGIN_ROOT}/scripts/external-gate.js" check` audita la rama
+  por defecto y mapea la protección a los dos invariantes externamente exigibles: (a) *never-auto-merge*
+  = required PR review ≥1 (el loop no puede aprobar su propio PR), (b) *full-suite gate* = required
+  status check (la suite corre en CI, fuera del agente). Exit 0 = ambos cubiertos · 1 = hay hueco ·
+  2 = no se puede determinar (sin `gh`, remoto no-GitHub, sin auth) — honestidad, nunca falso verde.
+- **Configurar**: `... external-gate.js print-config` emite el comando `gh api` exacto para cerrar el
+  hueco. **NO lo aplica el loop**: cambiar settings de un repo remoto es una acción hacia afuera →
+  la ejecuta el humano en su terminal (sustituyendo `<your-ci-check>` por el job de CI que corre su
+  suite). El plugin propone; el humano confirma.
+- **Sin `gh`/branch protection**: el hook local sigue actuando (refuerzo dentro del agente); el reporte
+  lo marca como enforcement DEGRADADO — la promesa "aguanta aunque borres los prompts" solo es
+  mecánica de verdad con la branch protection puesta.
+
+### 6. Gates del proyecto (siempre, sin instalación)
 
 Detecta y anota los comandos REALES de lint/typecheck/build/test leyendo `.github/workflows/*`,
 `package.json` scripts, `pyproject.toml`, `Makefile`, etc. No los inventes ni los hardcodees:

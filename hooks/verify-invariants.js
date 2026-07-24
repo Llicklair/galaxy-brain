@@ -4,8 +4,9 @@
 //   1. NEVER AUTO-MERGE — the human merges, the loop never does (design rule 5).
 //   2. Snapshot baselines are human/evaluator-approval events, never a silent agent update.
 // Exit 2 + stderr = deny (PreToolUse contract). Anything unparseable exits 0: this hook must
-// never break unrelated commands, and the final gate lives outside the agent anyway
-// (branch protection / CI — see ARCHITECTURE rule 9).
+// never break unrelated commands. This hook is defense INSIDE the agent's perimeter; the final,
+// non-bypassable gate lives OUTSIDE it — GitHub branch protection, audited and configured via
+// scripts/external-gate.js during /galaxy-brain:setup (ARCHITECTURE rule 9, v1.0 gate).
 
 const AUTO_MERGE = [
   /\bgh\s+pr\s+merge\b/,
