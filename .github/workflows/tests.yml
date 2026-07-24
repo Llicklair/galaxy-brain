@@ -1,0 +1,19 @@
+name: tests
+
+# v2.0 gate: the self-verifying toolchain runs on every push/PR, not just on someone's laptop.
+on:
+  push:
+  pull_request:
+
+jobs:
+  scripts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install ast-grep (constitution.js rules need it; tests skip it if absent)
+        run: npm install -g @ast-grep/cli
+      - name: Run the scripts regression suite
+        run: node --test scripts/tests/*.test.js
