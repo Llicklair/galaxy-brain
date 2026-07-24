@@ -7,7 +7,10 @@ An opinionated harness that makes Claude Code *verifiably* better at real engine
 an adversarial evaluator on a different model second, a human merging at the end. **Nothing ships
 unverified. Nothing auto-merges. Ever.**
 
-**Status: v0.1 — _smooth brain_ (packaging).** Battle-tested on a production ERP; docs and polish in progress.
+**Status: v0.1 — _smooth brain_, verification toolchain shipped.** Battle-tested on a production ERP.
+The four market gaps identified in the [July 2026 deep scan](docs/deep-scan-2026-07.md) are built and
+exercised — invariant hooks, red→green evidence bundles, the EARS→test compiler, the test-gaming
+detector — and the [A/B measurement rig](eval/README.md) is calibrated and ready to fire.
 
 ## Why this exists
 
@@ -57,6 +60,7 @@ Then, inside the project you want to work on:
 | `scripts/evidence.js` | Red→green evidence bundle: proof the failing test existed *before* the fix and was never weakened (SHA-256-pinned), plus full-suite result and evaluator verdict — attached to every PR. |
 | `scripts/ears.js` | EARS→test compiler: every spec clause becomes a failing acceptance stub with a stable ID; a mechanical 1:1 clause↔test gate blocks the batch until every criterion has its test — and flags untestable SHALL lines back to clarify. |
 | `scripts/test-guard.js` | Test-gaming detector: scans the batch diff for deleted tests, net assertion loss, added skips and weakened asserts — every signal must be justified to the evaluator or the batch is rejected. |
+| `eval/` | The credibility gate: a Harbor-based A/B rig (stock Claude Code vs +galaxy-brain) with tasks from real cross-model-confirmed defects and verifiers calibrated in both directions — because "it multiplies capability" is a measurement, not a vibe. |
 
 **Companions** (auto-setup, by reference, gracefully optional): [GitNexus](https://github.com/abhigyanpatwari/GitNexus)
 for code-graph discovery and impact analysis · [GitHub Spec Kit](https://github.com/github/spec-kit)
@@ -77,6 +81,7 @@ degrades gracefully when one is missing — reduced power, never a crash. Eviden
 | [docs/research-report.md](docs/research-report.md) | The deep-research evidence base (H1–H11) every rule traces to |
 | [docs/ecosystem-ideas.md](docs/ecosystem-ideas.md) | Ecosystem scan — ideas adopted with attribution, patterns deliberately rejected |
 | [docs/deep-scan-2026-07.md](docs/deep-scan-2026-07.md) | Second-round deep scan — oracles, MCPs, spec kits; what we adopt, watch, reject, and build |
+| [eval/README.md](eval/README.md) | The A/B benchmark: task set, protocol, calibration log; Harbor runbook in [eval/harbor/](eval/harbor/README.md) |
 | [CLAUDE.md](CLAUDE.md) | Rules for developing galaxy-brain itself |
 
 ## Roadmap

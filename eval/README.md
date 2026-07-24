@@ -47,6 +47,17 @@ T3 no-op-amend-blocks-convergence, T4 stale-signature backport. They join v2.
   exactly where they must — 7 failed (broken contract) / 4 passed (good-behavior anchors) — so a
   green verifier after an agent run means the bug is actually fixed, not that the test never bit.
 
-Harbor wiring (task.yaml schemas, agent/credentials config, results parsing) lands in
-`eval/harbor/` once verified against current Harbor docs — see `docs/deep-scan-2026-07.md` for why
-Harbor. **The paid run is launched only on explicit human approval.**
+Harbor wiring lives in [harbor/](harbor/README.md) — task configs, Dockerfiles, reward-contract
+verifiers and the `prepare.sh` staging script (private inputs never enter git).
+**The paid run is launched only on explicit human approval.**
+
+## Status log
+
+- **2026-07-24 — rig ready to fire.** End-to-end smoke WITHOUT any LLM: t1 image builds, the
+  target suite runs green in-container (97 tests), and both controls calibrate — broken repo →
+  `reward=0`, known-good patch → `reward=1`. The positive control caught (and we fixed) an
+  over-strict t1 verifier that would have failed legitimate fixes. Dev-machine prereqs verified:
+  Harbor 0.20.0 under WSL2 Ubuntu, Docker Desktop WSL integration enabled, daemon reachable from
+  the distro. **Remaining before the run**: credentials (`ANTHROPIC_API_KEY` or
+  `claude setup-token`) + explicit go. Arm A commands in [harbor/README.md](harbor/README.md);
+  arm B requires the agent-subclass route with plugin-load confirmation in the transcript.
