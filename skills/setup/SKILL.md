@@ -49,6 +49,7 @@ un fallo. Evidencia y veredictos completos: `docs/deep-scan-2026-07.md` del repo
 | **Mutation testing** | `stryker.config.*` · `[tool.mutmut]` · `cargo mutants --version` · pitest en pom/gradle | `npm i -D @stryker-mutator/core` · `pip install mutmut` · `cargo install cargo-mutants` | score de mutación diff-scoped = oráculo de CALIDAD de tests (caza tests "siempre verdes") |
 | **Gates estáticas rápidas** | configs de ruff / biome / pyright / semgrep / ast-grep (`sgconfig.yml`) | instalador oficial de cada una, SOLO si el repo ya la configura | gates de segundos antes de la suite |
 | **schemathesis** (API con esquema) | `openapi.{yaml,json}` / esquema GraphQL | `pip install schemathesis` | property-tests automáticos DESDE el spec del API — el spec ya ES un oráculo ejecutable |
+| **Arch-linters** (ley de capas) | `.importlinter`/`[tool.importlinter]` · `.dependency-cruiser.js` · ArchUnit en tests JVM | instalador oficial de cada uno — al compilar la constitución o si el repo ya los usa | contratos de arquitectura como chequeos de segundos: capas/imports imposibles de violar en silencio |
 
 Reglas de uso (no negociables; las skills de los loops las aplican):
 - **Playwright MCP solo dentro del evaluador** (grounding de selectores + ojos de aceptación), nunca

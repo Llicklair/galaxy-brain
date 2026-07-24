@@ -35,6 +35,14 @@ nada. `/speckit-converge` es el bucle brownfield (mapea intención→código, **
 - **Sembrar la constitución** (`/speckit-constitution`): puéblala desde `ARCHITECTURE.md` + `CLAUDE.md` +
   las reglas rojas del repo. Si el proyecto quiere blindar áreas sensibles, que las declare aquí como
   principios MUST. La constitución es la LEY que el evaluador hace cumplir (REJECT si se viola).
+- **COMPILAR la constitución** (sube la ley de "prompt" a "mecánica"): convención RFC — los principios
+  llevan MUST/MUST NOT/NEVER en MAYÚSCULAS. El orquestador corre
+  `node "${CLAUDE_PLUGIN_ROOT}/scripts/constitution.js" extract <constitution.md>` + `scaffold law/` y
+  después RELLENA cada stub con su gemelo mecánico: regla ast-grep inline, o `command` (import-linter /
+  dependency-cruiser / ArchUnit — instálalos por referencia si el principio es de capas). Lo que no se
+  deja compilar se marca `judged-only` HONESTAMENTE — el informe de `check` dice cuántas leyes son de
+  hierro (mecánicas) y cuántas de papel (solo juicio del evaluador). Una ley que no se puede ejecutar
+  no es ley: los ERROR bloquean.
 - **Gates reales**: lee `.github/workflows/*`, `package.json` scripts, `pyproject.toml [tool.*]`, `Makefile`
   y anota los comandos exactos de lint/type/test/build por subproyecto.
 - **API con esquema** (`openapi.{yaml,json}` / GraphQL): añade `schemathesis` como gate extra si está
@@ -84,6 +92,9 @@ Por cada tarea/historia de `tasks.md`:
 - **Detector de test-gaming al cerrar lote**: `test-guard.js <base>..<head>` sobre el rango — si el
   implementer tocó tests EXISTENTES (borró, debilitó, saltó), cada señal se justifica ante el
   evaluador o REJECT.
+- **Ley de arquitectura al cerrar lote**: `node "${CLAUDE_PLUGIN_ROOT}/scripts/constitution.js" check
+  law/ --repo .` — cualquier LAW violada y el lote NO cierra, sin apelación al LLM. Las leyes
+  judged-only van al prompt del evaluador junto al diff.
   El evaluador confirma que el test es significativo (no tautológico) y que ejercita el camino de la spec.
 - **ÁTOMO build** (`loop-fixer` como *implementer*): construye la tarea hasta poner el test **verde**, en
   el worktree, respetando capas + constitución (lo que ésta declare intocable → inbox).
