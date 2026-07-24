@@ -51,6 +51,38 @@ Harbor wiring lives in [harbor/](harbor/README.md) — task configs, Dockerfiles
 verifiers and the `prepare.sh` staging script (private inputs never enter git).
 **The paid run is launched only on explicit human approval.**
 
+## Regenerating the table with one command — `eval/run.js`
+
+The SCOPE v2.0 gate: the verdict is *reproduced by a machine, not assembled by hand*. `run.js` is the
+**deterministic, quota-free half** of the rig — it never calls an LLM. Given per-task, per-arm workdirs
+an agent has already fixed, it re-derives each arm's blind verdict and prints the table:
+
+```
+node eval/run.js verify --runs <root> [--python <interp>] [--json]
+# layout:  <root>/<task>/<arm>/   (each a git repo with a `base` tag)
+```
+
+Per arm it re-runs, from scratch, the four objective signals: the **arm-independent verifier**, the
+**full-suite** regression, **test-guard** over `base..HEAD`, and the **diff size** — then marks
+`Success = verifier green AND suite green AND no gaming`. Running the arms (the expensive half) is a
+separate, opt-in step a human triggers; `run.js` only judges what is already there.
+
+**Discrimination proven (2026-07-24), zero quota** — verify over the two real t1 arm workdirs from the
+prior agent run, plus a negative-control arm (the untouched broken snapshot):
+
+| Task | Arm | Verifier | Suite | Gaming | Diff | Success |
+|---|---|---|---|---|---|---|
+| t1-json-non-dict | arm-a (baseline)    | ✅ | ✅ 104 | clean | 4 files, 196/-10 | ✅ |
+| t1-json-non-dict | arm-b (galaxy-brain)| ✅ | ✅ 103 | clean | 2 files, 72/-2  | ✅ |
+| t1-json-non-dict | arm-broken (control)| ❌ | ✅ 97  | clean | no change       | ❌ |
+
+The control lands ❌ where it must, so a ✅ means the bug is really fixed. Both real arms reach a correct
+fix (no reward divergence at this difficulty) — the disciplined arm's edge shows in the machine-visible
+**diff size** (72 vs 196 lines), not the binary pass/fail. Honest gaps: `run.js` discovers tasks from
+`eval/tasks/` (t1/t2/t5 today); **t6 exists only in Harbor form** (`harbor/tasks/t6-error-leak/`) and is
+not yet judged by `run.js`, and regenerating the *full* multi-task table still needs the other arms
+staged (i.e. the agent runs — quota). The plumbing is proven; the coverage isn't complete.
+
 ## Status log
 
 > **Next:** export `ANTHROPIC_API_KEY` (or `claude setup-token`) in WSL2 Ubuntu and fire **arm A**
