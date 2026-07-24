@@ -290,6 +290,12 @@ confirma que el test es significativo (no tautológico) y que de verdad ejercita
   supervivientes en código del lote → el lote NO cierra: la lista de supervivientes (compacta) vuelve a
   `loop-tester` como instrucciones concretas. Es el contra-oráculo de los tests "siempre verdes" que
   escriben los agentes: cobertura alta ≠ asserts reales.
+- **Detector de test-gaming (al cerrar LOTE)**: el orquestador corre
+  `node "${CLAUDE_PLUGIN_ROOT}/scripts/test-guard.js" <base>..<head> --repo <worktree>` sobre el rango
+  del lote. Señales (tests borrados, pérdida neta de asserts, skips/xfail añadidos, asserts
+  debilitados) van al prompt del evaluador: **cada señal se justifica explícitamente o REJECT**. Mucho
+  recall a propósito — un refactor legítimo puede saltar y se justifica; lo que no puede pasar es un
+  verde comprado tocando los tests.
 - **Baselines de snapshot = puerta humana**: PROHIBIDO para todo agente `--update-snapshots` /
   `--updateSnapshot` / `-u` (jest/vitest/playwright). Un baseline que cambia es un cambio de
   comportamiento observable: exige evidencia y aprobación del evaluador/humano, no un update silencioso

@@ -81,6 +81,9 @@ Por cada tarea/historia de `tasks.md`:
 - **Gate 1:1 cláusula↔test** (mecánica, la corre el orquestador y la exige el evaluador):
   `node "${CLAUDE_PLUGIN_ROOT}/scripts/ears.js" check <manifest> --tests <dir>` — cada cláusula con su
   test, ningún ID huérfano/inventado. ROJA → el lote no cierra.
+- **Detector de test-gaming al cerrar lote**: `test-guard.js <base>..<head>` sobre el rango — si el
+  implementer tocó tests EXISTENTES (borró, debilitó, saltó), cada señal se justifica ante el
+  evaluador o REJECT.
   El evaluador confirma que el test es significativo (no tautológico) y que ejercita el camino de la spec.
 - **ÁTOMO build** (`loop-fixer` como *implementer*): construye la tarea hasta poner el test **verde**, en
   el worktree, respetando capas + constitución (lo que ésta declare intocable → inbox).
