@@ -11,10 +11,13 @@ unverified. Nothing auto-merges. Ever.**
 The four market gaps identified in the [July 2026 deep scan](docs/deep-scan-2026-07.md) are built and
 exercised — invariant hooks, red→green evidence bundles, the EARS→test compiler, the test-gaming
 detector — and the [A/B measurement rig](eval/README.md) has **fired its first four tasks** (stock
-Claude Code vs +galaxy-brain, same model both arms). Honest first read: on defects of this difficulty
-both arms reach a correct fix — the rig confirms *no reward regression* and **zero test-gaming across
-8/8 runs**, while the disciplined arm wins on cost (complex bugs), invariant coverage, and shipped
-evidence rather than on the binary pass/fail. See [the pipeline in action](#the-pipeline-in-action).
+Claude Code vs +galaxy-brain, same model both arms), with the verdict table reproducible
+deterministically via `node eval/run.js verify`. Honest read from that regenerated table: on defects
+of this difficulty **both arms reach a correct fix** — *no reward regression*, and **zero test-gaming
+across 8/8 runs**. The disciplined arm's edge is not the binary pass/fail but **invariant coverage and
+shipped evidence** — and it often gets there by writing *more*, not less (on t6 it pinned the security
+invariants with 10 adversarial tests the 6-line baseline fix left uncovered). Diff size is mixed across
+tasks, so we make no cost claim. See [the pipeline in action](#the-pipeline-in-action).
 
 ## Why this exists
 
@@ -129,7 +132,7 @@ Then, inside the project you want to work on:
 | `loop-finder` / `loop-tester` / `loop-fixer` / `loop-evaluator` | The loop's roles, each in its own context window: adversarial explorer, test/repro writer, single-fix generator, independent evaluator (different model — no inherited blind spots). |
 | `hooks/` | Verification invariants enforced *mechanically*, not by prompt: while an autonomous loop is running it cannot merge PRs or update snapshot baselines — the block holds even if every skill prompt is deleted. A merge you explicitly direct in an interactive session still runs; the ban is on *autonomy*, not on the agent acting as your hands. |
 | `scripts/external-gate.js` | Enforcement *outside* the agent (v1.0 gate): audits GitHub branch protection for the two externally-enforceable invariants — required PR review (never-auto-merge) and required status check (full-suite gate) — and prints the exact `gh` command to close any gap. Audits and proposes; the human applies it. A local hook can be bypassed; branch protection cannot. |
-| `scripts/loop-memory.js` | Typed, file-based loop memory (v1.0 gate; no vectors — research H5): the loop appends `finding`/`decision`/`verdict` observations to a per-repo JSONL and queries them by relevance, so pass N+1 recalls what pass N learned without re-reading all state and never re-triages a settled finding — the ledger compounds and a 100+ turn session survives without context exhaustion. |
+| `scripts/loop-memory.js` | Typed, file-based loop memory (v1.0 gate; no vectors — research H5): the loop appends `finding`/`decision`/`verdict` observations to a per-repo JSONL and queries them by relevance, so pass N+1 recalls what pass N learned without re-reading all state and never re-triages a settled finding — the ledger compounds so a 100+ turn session *can* survive without context exhaustion (the endurance run itself is the open v1.0 gate). |
 | `scripts/evidence.js` | Red→green evidence bundle: proof the failing test existed *before* the fix and was never weakened (SHA-256-pinned), plus full-suite result and evaluator verdict — attached to every PR. |
 | `scripts/ears.js` | EARS→test compiler: every spec clause becomes a failing acceptance stub with a stable ID; a mechanical 1:1 clause↔test gate blocks the batch until every criterion has its test — and flags untestable SHALL lines back to clarify. |
 | `scripts/test-guard.js` | Test-gaming detector: scans the batch diff for deleted tests, net assertion loss, added skips and weakened asserts — every signal must be justified to the evaluator or the batch is rejected. |
@@ -165,7 +168,7 @@ degrades gracefully when one is missing — reduced power, never a crash. Eviden
 | v0.1 | smooth brain | Forge loop as installable plugin + setup + docs | 2 commands on a fresh machine → `/forja` completes a verified pass on an unseen repo, zero config |
 | v0.5 | big brain | Spec-driven build pipeline wired into Spec Kit's extension points | constitution→implement with acceptance test written before the code, evaluator sign-off |
 | v1.0 | galaxy brain | Full harness: invariants as hooks, file-based loop memory, context protection | never-auto-merge holds even with skill prompts deleted |
-| v2.0 | universe brain | TBD — decided from v1.0 field experience | TBD |
+| v2.0 | universe brain | Credibility, mechanical: automated A/B rig + self-verifying toolchain | 4-task table regenerates from one command · `scripts/` tests green in CI (✅ done) |
 
 Full scope per version, with objective gates, in [SCOPE.md](SCOPE.md).
 
