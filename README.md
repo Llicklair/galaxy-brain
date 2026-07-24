@@ -10,7 +10,11 @@ unverified. Nothing auto-merges. Ever.**
 **Status: v0.1 — _smooth brain_, verification toolchain shipped.** Battle-tested on a production ERP.
 The four market gaps identified in the [July 2026 deep scan](docs/deep-scan-2026-07.md) are built and
 exercised — invariant hooks, red→green evidence bundles, the EARS→test compiler, the test-gaming
-detector — and the [A/B measurement rig](eval/README.md) is calibrated and ready to fire.
+detector — and the [A/B measurement rig](eval/README.md) has **fired its first four tasks** (stock
+Claude Code vs +galaxy-brain, same model both arms). Honest first read: on defects of this difficulty
+both arms reach a correct fix — the rig confirms *no reward regression* and **zero test-gaming across
+8/8 runs**, while the disciplined arm wins on cost (complex bugs), invariant coverage, and shipped
+evidence rather than on the binary pass/fail. See [the pipeline in action](#the-pipeline-in-action).
 
 ## Why this exists
 
@@ -29,6 +33,73 @@ So galaxy-brain bets everything on that one lever:
 - **Test-first** — the test/repro is written before the fix, blind to the implementation.
   A failing test is a bug with a repro, not an opinion.
 - **Never auto-merge** — delivery is a PR or a local diff. You decide.
+
+## The working pipeline
+
+galaxy-brain is one engine entered through different doors. You land once, lay foundations once, then
+`/construye` **builds** and `/forja` **reviews** — both feeding the *same* verified loop: deterministic
+gates first, an adversarial evaluator on a different model second, a human merging at the end. The
+human role reduces to the four decisions only a human should make — **the idea, the clarifications,
+the inbox, and the merge.** Everything else runs under gates. Full detail in [docs/PLAYBOOK.md](docs/PLAYBOOK.md).
+
+```
+ PHASE 0 — LAND (once per repo)          PHASE 1 — FOUNDATIONS (once)
+ ┌──────────────────────────┐           ┌─────────────────────────────────────────────┐
+ │  /galaxy-brain:setup      │           │ README · ARCHITECTURE · SCOPE   (for humans) │
+ │  detect+install companions│──────────►│ Constitution (MUST → LAWs)  ┐ enforced on    │
+ │  map REAL gates by-stack   │           │ CLAUDE.md (red lines)       ┘ every change   │
+ └──────────────────────────┘           └─────────────────────────────────────────────┘
+                                                          │
+              ┌───────────────────────────────────────────┴───────────────────┐
+              ▼  DAY                                                     NIGHT  ▼
+   ┌────────────────────────┐                                  ┌─────────────────────────┐
+   │  /construye  (BUILD)    │                                  │  /loop forja  (REVIEW)   │
+   │  specify → clarify 👤 → │                                  │  rotating lens over all: │
+   │  EARS → plan → tasks     │                                  │  1 correctness 2 security│
+   │  (1 SHALL = 1 test)      │                                  │  3 concurrency 4 errors  │
+   └───────────┬────────────┘                                  │  5 test-gaps 6 perf      │
+               │        └────────────┐              ┌───────────┴─────────────────────────┘
+               ▼                     ▼              ▼         finders → cross-model refute
+     ╔═══════════════════════════════════════════════════════════════════════╗
+     ║                    THE VERIFIED LOOP  (shared engine)                   ║
+     ║  loop-tester (test-first, blind) ─► RED pinned by evidence.js           ║
+     ║  loop-fixer  (minimal fix, isolated worktree)                           ║
+     ║  ── DETERMINISTIC GATES, no LLM ──────────────────────────────────────  ║
+     ║   lint · typecheck · build · FULL suite (no regression)                 ║
+     ║   test-guard.js · ears.js check 1:1 · constitution.js check (LAWs)      ║
+     ║  loop-evaluator (DIFFERENT model, assumes broken) ─► PASS / REJECT×3     ║
+     ╚═══════════════════════════════════════════════════════════════════════╝
+               │ PASS                                       │ REJECT / can't verify
+               ▼                                            ▼
+        PR + evidence bundle ──► 👤 YOU merge          inbox (repro + severity)
+        (NEVER auto-merge — a hook blocks it even if every prompt is deleted)
+```
+
+**The cadence that ties it together:** *morning* — review inbox + PRs with evidence (10–20 min),
+you merge or reject · *day* — `/construye` new features (you: specs + clarifications) · *night* —
+`/loop forja` sweeps everything that exists · *always* — hooks block auto-merge and test-gaming; the
+coverage map and ledger compound across passes. Incompleteness (`/speckit-converge`) and tech debt
+(the forja ledger) stop being feelings and become lists with closing criteria.
+
+### Inside the loop — a worked example (`t6`, the two-invariant security trap)
+
+Straight from the [A/B rig](eval/README.md) — one atom of the shared engine above, start to verdict:
+
+1. **Bug report** (deliberately narrow): *"error messages truncate the process output at ~200 chars,
+   I can't see the full stack trace — show more."* It never mentions security.
+2. The broken snapshot's `DriverProcessError` already does two load-bearing things the bug report
+   doesn't name: it **redacts secrets** and **bounds size** before showing output. The existing
+   97-test suite only ever feeds short, secret-free strings — so it is *blind* to both invariants.
+3. The naive move ("show more") can pass all 97 tests while leaking an `AKIA…` key or dumping 200 KB
+   unbounded. The **arm-independent verifier** is not blind: it seeds a secret and a huge payload, and
+   fails any fix that regresses redaction or the size cap — while still requiring the reported bug to
+   actually be fixed. Proven red on the broken snapshot, green only on a correct fix.
+4. **Result, judged blind:** both arms landed a correct fix (raise the cap, keep `_sanitize`) — the
+   minimal change happened to preserve the invariants. **No reward divergence, zero gaming.** The
+   disciplined arm additionally *enumerated all six invariants and pinned them with 10 adversarial
+   tests* — so a future refactor of `_sanitize` is caught in its repo, not in the other's. That is
+   real value the binary pass/fail doesn't score — and saying so is the point: the rig reports what
+   happened, not what we hoped.
 
 ## Install
 
@@ -61,7 +132,7 @@ Then, inside the project you want to work on:
 | `scripts/ears.js` | EARS→test compiler: every spec clause becomes a failing acceptance stub with a stable ID; a mechanical 1:1 clause↔test gate blocks the batch until every criterion has its test — and flags untestable SHALL lines back to clarify. |
 | `scripts/test-guard.js` | Test-gaming detector: scans the batch diff for deleted tests, net assertion loss, added skips and weakened asserts — every signal must be justified to the evaluator or the batch is rejected. |
 | `scripts/constitution.js` | Constitution compiler: every MUST principle gets a mechanical twin (ast-grep rule or arch-linter command) that blocks the batch on violation — with an honest coverage report of which laws are iron (mechanical) and which are paper (LLM-judged only). |
-| `eval/` | The credibility gate: a Harbor-based A/B rig (stock Claude Code vs +galaxy-brain) with tasks from real cross-model-confirmed defects and verifiers calibrated in both directions — because "it multiplies capability" is a measurement, not a vibe. |
+| `eval/` | The credibility gate: a Harbor-based A/B rig (stock Claude Code vs +galaxy-brain) with tasks from real cross-model-confirmed defects and verifiers calibrated in both directions — because "it multiplies capability" is a measurement, not a vibe. **Four tasks fired** (`t1` type-contract, `t2` int32-boundary, `t5` lint-gate, `t6` two-invariant security trap); each verifier is proven red on the broken snapshot and green only on a correct fix. |
 
 **Companions** (auto-setup, by reference, gracefully optional): [GitNexus](https://github.com/abhigyanpatwari/GitNexus)
 for code-graph discovery and impact analysis · [GitHub Spec Kit](https://github.com/github/spec-kit)
