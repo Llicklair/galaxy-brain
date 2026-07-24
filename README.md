@@ -60,6 +60,7 @@ Then, inside the project you want to work on:
 | `scripts/evidence.js` | Red→green evidence bundle: proof the failing test existed *before* the fix and was never weakened (SHA-256-pinned), plus full-suite result and evaluator verdict — attached to every PR. |
 | `scripts/ears.js` | EARS→test compiler: every spec clause becomes a failing acceptance stub with a stable ID; a mechanical 1:1 clause↔test gate blocks the batch until every criterion has its test — and flags untestable SHALL lines back to clarify. |
 | `scripts/test-guard.js` | Test-gaming detector: scans the batch diff for deleted tests, net assertion loss, added skips and weakened asserts — every signal must be justified to the evaluator or the batch is rejected. |
+| `scripts/constitution.js` | Constitution compiler: every MUST principle gets a mechanical twin (ast-grep rule or arch-linter command) that blocks the batch on violation — with an honest coverage report of which laws are iron (mechanical) and which are paper (LLM-judged only). |
 | `eval/` | The credibility gate: a Harbor-based A/B rig (stock Claude Code vs +galaxy-brain) with tasks from real cross-model-confirmed defects and verifiers calibrated in both directions — because "it multiplies capability" is a measurement, not a vibe. |
 
 **Companions** (auto-setup, by reference, gracefully optional): [GitNexus](https://github.com/abhigyanpatwari/GitNexus)
