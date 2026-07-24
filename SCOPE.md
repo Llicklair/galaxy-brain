@@ -30,7 +30,9 @@ These are permanent, not "later":
   pay its context cost (research H9). Framework bloat is the #1 failure mode of this product category.
 - **Not a swarm.** Subagents isolate context; they do not parallel-code. Multi-agent coding is a poor
   fit today (research H4) — we don't sell what doesn't work.
-- **No auto-merge. Ever.** Not behind a flag, not with "high confidence". The human merges.
+- **The autonomous loops never merge. Ever.** Not behind a flag, not with "high confidence" — a
+  forja/construye pass proposes, the human decides. (A merge a human explicitly directs in an
+  interactive session is a human decision, not auto-merge, and is allowed — the ban is on *autonomy*.)
 - **No vendoring.** Companions (GitNexus, context-mode, Spec Kit) are install links + detection,
   never copied code.
 - **No vector memory.** File-based memory only (research H5).

@@ -91,7 +91,12 @@ Rules:
    A failing test is a bug with a repro; a passing test is coverage gained (H3).
 4. **Full-suite gate, fix-iteration cap** — the complete suite must pass (no regression); capped
    fix iterations (default 2) so the loop can't grind a bad change into passing.
-5. **Never auto-merge** — deliver as PR or local diff. The human decides. No exceptions, no flags.
+5. **The autonomous loops never merge** — deliver as PR or local diff; the human decides. The
+   invariant is about *autonomy*: a forja/construye pass proposes, it never merges its own output.
+   Mechanically the loops set a loop-active marker and `hooks/verify-invariants.js` blocks any
+   merge/snapshot-update while it is present. An interactive merge a human explicitly directs is not
+   auto-merge and is allowed — the agent acting as a human's hands ≠ the agent deciding (owner
+   decision, 2026-07-24).
 6. **Subagents as context firewalls** — isolation is for *context*, not parallel coding
    ("most coding tasks are a poor fit for multi-agent", H4).
 7. **Minimal, well-described tools** — no LSP/AST/vector stores unless they pay their context cost.
@@ -102,7 +107,8 @@ Rules:
    themselves bypassable: the *final* gate lives outside the agent — branch protection and CI make
    never-auto-merge a repository setting, not a promise (see ecosystem-ideas.md). First increment
    shipped: `hooks/verify-invariants.js` (PreToolUse) mechanically blocks PR merges and snapshot-baseline
-   updates by agents, even if every skill prompt is deleted.
+   updates **while a loop-active marker is present** (an autonomous pass), even if every skill prompt is
+   deleted; interactive human-directed merges pass (rule 5). The hook has its own regression test.
 10. **Evidence bundle per delivery** — every PR/diff ships machine-checkable proof: the failing→passing
     test log, full-suite output, and the evaluator's verdict. "Verified" is an artifact, not a claim
     (pattern credited to Claude Code Harness, see ecosystem-ideas.md). Shipped as `scripts/evidence.js`:

@@ -16,7 +16,10 @@ vision and anti-goals in [SCOPE.md](SCOPE.md); evidence in [docs/research-report
 
 ## Hard rules (REJECT in review if violated)
 
-1. **Never auto-merge** — in any skill, agent, or future hook. No flags, no exceptions.
+1. **The autonomous loops never merge** — forja/construye deliver a PR and stop; while a pass runs
+   they set a loop-active marker and `hooks/verify-invariants.js` blocks any merge. What is absolute,
+   no exceptions: no loop, skill, or agent merges *on its own*. A merge a human explicitly directs in
+   an interactive session is a human decision, not auto-merge — that is allowed (owner decision, 2026-07).
 2. **Generator ≠ evaluator** — verification always runs on a different model than generation.
 3. **No vendoring** — external tools (GitNexus, context-mode, Spec Kit) integrate by reference:
    detection + official installer + verification. Copying their code here is forbidden.
