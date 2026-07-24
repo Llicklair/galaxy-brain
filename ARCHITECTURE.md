@@ -125,7 +125,8 @@ galaxy-brain/
 │   ├── hooks.json           # PreToolUse wiring (Bash|PowerShell)
 │   └── verify-invariants.js # mechanical: no auto-merge, no agent snapshot updates (rule 9)
 ├── scripts/
-│   └── evidence.js          # red→green evidence bundle, hash-pinned tests (rule 10)
+│   ├── evidence.js          # red→green evidence bundle, hash-pinned tests (rule 10)
+│   └── ears.js              # EARS→acceptance-test compiler: extract/scaffold/check 1:1 gate (rules 2, 3)
 ├── docs/
 │   ├── research-report.md   # evidence base (H1–H11) — the "why" behind every rule
 │   ├── ecosystem-ideas.md   # competitor scan: ideas adopted / rejected
