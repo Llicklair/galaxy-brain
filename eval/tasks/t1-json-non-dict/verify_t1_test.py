@@ -11,8 +11,9 @@ import pytest
 from consejo.json_utils import _extract_json_object
 
 
-@pytest.mark.parametrize("payload", ["[1,2,3]", '[{"plan": 1}]', '"texto"', "null", "42"])
-def test_non_object_json_raises(payload):
+@pytest.mark.parametrize("payload", ["[1,2,3]", '"texto"', "null", "42"])
+def test_pure_non_object_raises(payload):
+    # No object anywhere in the payload: the only correct outcome is JSONDecodeError.
     with pytest.raises(json.JSONDecodeError):
         _extract_json_object(payload)
 
@@ -20,6 +21,17 @@ def test_non_object_json_raises(payload):
 def test_fenced_array_raises():
     with pytest.raises(json.JSONDecodeError):
         _extract_json_object("```json\n[1, 2, 3]\n```")
+
+
+def test_array_wrapping_object_never_returns_non_dict():
+    # The TRUE contract: never return a non-dict. An agent may legitimately fix this
+    # either by raising OR by unwrapping the embedded object (the brace-scan fallback) —
+    # both prevent the judge crash. Only returning the raw list is a failure.
+    try:
+        result = _extract_json_object('[{"plan": 1}]')
+    except json.JSONDecodeError:
+        return
+    assert isinstance(result, dict)
 
 
 def test_object_still_parses():
