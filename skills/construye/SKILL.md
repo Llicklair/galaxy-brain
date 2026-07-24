@@ -65,15 +65,22 @@ nada. `/speckit-converge` es el bucle brownfield (mapea intención→código, **
    por estado, comportamiento-no-deseado, opcional). La regla del injerto: **1 cláusula EARS = 1 test de
    aceptación**. Si un criterio no se deja escribir en EARS, no es testeable → vuelve a clarify, no pasa
    a plan. Esto convierte la spec en la lista exacta de oráculos que vendrán.
+   **Compilación mecánica** (`scripts/ears.js` del plugin): el orquestador corre
+   `node "${CLAUDE_PLUGIN_ROOT}/scripts/ears.js" extract <spec.md>` — asigna IDs estables (EARS-###) y
+   señala como NEEDS-CLARIFY toda línea con SHALL que no encaje en un patrón (esas vuelven a clarify) —
+   y luego `scaffold --lang <python|vitest>` → un stub EN ROJO por cláusula, etiquetado con su ID.
 4. `/speckit-plan` → arquitectura, stack, touch-points, `Constitution Check`.
 5. `/speckit-tasks` → `tasks.md` ordenado, atómico, con `[P]` (paralelo) y estructura **TDD-first**.
 
 ## 3. El loop autónomo de construcción (aquí injerta la forja)
 Por cada tarea/historia de `tasks.md`:
 - **MARCO** (orquestador): `gitnexus_impact` de dónde toca la tarea + grep de hermanas del patrón a imitar.
-- **ÁTOMO test-first** (`loop-tester`): escribe el **test de ACEPTACIÓN** derivado de los
-  FR-###/SC-###/acceptance-scenarios **EN ROJO** (aún no construido) — **una cláusula EARS = un test**,
-  ciego a la implementación (§2.3). Es el *Definition of Done* ejecutable.
+- **ÁTOMO test-first** (`loop-tester`): rellena el cuerpo de los stubs que `ears.js scaffold` dejó en
+  rojo (§2.3) — arrange/act/assert reales contra el criterio, **conservando la etiqueta EARS-###** —
+  ciego a la implementación. Es el *Definition of Done* ejecutable.
+- **Gate 1:1 cláusula↔test** (mecánica, la corre el orquestador y la exige el evaluador):
+  `node "${CLAUDE_PLUGIN_ROOT}/scripts/ears.js" check <manifest> --tests <dir>` — cada cláusula con su
+  test, ningún ID huérfano/inventado. ROJA → el lote no cierra.
   El evaluador confirma que el test es significativo (no tautológico) y que ejercita el camino de la spec.
 - **ÁTOMO build** (`loop-fixer` como *implementer*): construye la tarea hasta poner el test **verde**, en
   el worktree, respetando capas + constitución (lo que ésta declare intocable → inbox).
