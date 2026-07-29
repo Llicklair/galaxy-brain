@@ -92,6 +92,35 @@ def test_valor_no_sensible_anidado_si_se_ve():
     assert "5432" in text
 
 
+def test_redact_text_redacta_por_nombre_en_texto_libre():
+    r = saferepr.redact_text
+    assert "hunter2" not in r('password = "hunter2"')
+    assert "sk-x" not in r("api_key='sk-x'")
+    assert "abc123" not in r("config error: token=abc123")
+    assert "vvv" not in r('{"session": "vvv"}')
+    assert saferepr.REDACTED in r('password = "hunter2"')
+
+
+def test_redact_text_no_toca_lo_no_sensible():
+    assert saferepr.redact_text('host = "localhost"') == 'host = "localhost"'
+    assert saferepr.redact_text("texto normal sin nada") == "texto normal sin nada"
+
+
+def test_atributos_de_objeto_sensibles_se_redactan():
+    """S5: un dataclass/objeto con un campo sensible no vuelca su valor vía repr."""
+    from dataclasses import dataclass
+
+    @dataclass
+    class Creds:
+        user: str
+        api_key: str
+
+    text = saferepr.repr_local("c", Creds(user="ana", api_key="sk-secreto"))
+    assert "sk-secreto" not in text
+    assert saferepr.REDACTED in text
+    assert "ana" in text  # lo no sensible se conserva
+
+
 def test_objeto_a_medio_construir():
     class Incompleto:
         def __repr__(self):

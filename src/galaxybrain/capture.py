@@ -13,7 +13,7 @@ import sysconfig
 import traceback
 
 from . import config
-from .saferepr import repr_local
+from .saferepr import redact_text, repr_local
 
 _LIBRARY_MARKERS = None
 
@@ -53,7 +53,10 @@ def _source_context(filename, lineno):
         text = linecache.getline(filename, number)
         if not text:
             continue
-        lines.append({"n": number, "text": text.rstrip("\n"), "is_fail": number == lineno})
+        # S1: una línea fuente puede llevar un secreto literal (`api_key = "..."`).
+        # Redacción por nombre sobre el texto de la línea.
+        clean = redact_text(text.rstrip("\n"))
+        lines.append({"n": number, "text": clean, "is_fail": number == lineno})
     return lines
 
 
@@ -148,8 +151,11 @@ def describe_chain(exc, max_depth=3):
 
 
 def _message(exc):
+    # S2: el mensaje puede llevar un secreto con forma clave=valor
+    # (`ValueError(f"bad token={t}")`). Redacción por nombre. Cubre también la
+    # cadena, que pasa por aquí vía describe_chain.
     try:
-        return str(exc)
+        return redact_text(str(exc))
     except BaseException as error:  # noqa: BLE001
         return "<str() fallo con %s>" % type(error).__name__
 
@@ -208,7 +214,8 @@ def build_record(exc_type, exc, tb, source="excepthook", thread=None):
     """El registro completo. Funcion pura salvo por leer el proceso vivo."""
     frames, trimmed = describe_frames(tb)
     try:
-        text = "".join(traceback.format_exception(exc_type, exc, tb))
+        # S1+S2: el blob del traceback contiene mensajes y líneas fuente.
+        text = redact_text("".join(traceback.format_exception(exc_type, exc, tb)))
     except BaseException:  # noqa: BLE001
         text = ""
 

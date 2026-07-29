@@ -10,6 +10,8 @@ aqui NADA propaga una excepcion hacia arriba. Un valor que no se puede
 representar se describe; no se pierde el frame entero por su culpa.
 """
 
+import re
+
 from . import config
 
 _SAFE_ATOMS = (bool, int, float, complex, bytes, str, type(None))
@@ -68,7 +70,10 @@ def safe_repr(obj, limit=None, max_items=None, _depth=0):
     except BaseException as error:  # noqa: BLE001
         return _describe_unrepresentable(obj, error)
 
-    return _repr_atom(obj, limit)
+    # Objeto arbitrario: su repr puede exponer atributos sensibles por nombre
+    # (un dataclass/pydantic/namedtuple con un campo `password`). Redacción por
+    # nombre aplicada al texto del repr (S5).
+    return redact_text(_repr_atom(obj, limit))
 
 
 def _repr_value(value, limit, max_items, depth):
@@ -146,3 +151,29 @@ def repr_local(name, value):
     if is_sensitive(name):
         return REDACTED
     return safe_repr(value)
+
+
+#: Un identificador que CONTIENE un patrón sensible, seguido de `=` o `:` (con
+#: comilla opcional en medio, para dicts JSON), y un valor: cadena entrecomillada
+#: o palabra suelta hasta un delimitador. El disparador es el NOMBRE, no el
+#: contenido — por eso no es olfateo de secretos, es la misma redacción por
+#: nombre de is_sensitive aplicada a texto.
+_ASSIGN_RE = re.compile(
+    r"(?i)(\b\w*(?:%s)\w*\b)(['\"]?\s*[:=]\s*)(\"[^\"]*\"|'[^']*'|[^\s,)\]}]+)"
+    % "|".join(re.escape(p) for p in config.REDACT_PATTERNS)
+)
+
+
+def redact_text(text):
+    """Redacción por nombre aplicada a TEXTO LIBRE (líneas fuente, mensajes de
+    excepción, reprs de objeto).
+
+    Cubre `password = "x"`, `token=abc`, `"session": "v"`, `Creds(api_key='x')`.
+    NO cubre secretos posicionales, `password hunter2` sin separador, ni
+    contraseñas embebidas en URLs — eso queda como límite honesto documentado.
+    Nunca lanza: corre sobre texto de un proceso que se está muriendo.
+    """
+    try:
+        return _ASSIGN_RE.sub(lambda m: m.group(1) + m.group(2) + REDACTED, text)
+    except BaseException:  # noqa: BLE001
+        return text

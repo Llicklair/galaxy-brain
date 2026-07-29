@@ -262,6 +262,35 @@ def test_no_escribe_secretos_en_disco(gb_home, child_env):
     assert "ana" in crudo  # lo que no es secreto si se guarda
 
 
+def _dump_home(gb_home):
+    crudo = (gb_home / store.INDEX_NAME).read_text(encoding="utf-8")
+    for path in (gb_home / "errors").rglob("*.json"):
+        crudo += path.read_text(encoding="utf-8")
+    return crudo
+
+
+def test_no_guarda_secretos_en_lineas_fuente(gb_home, child_env, tmp_path):
+    """S1: una asignación sensible en el código fuente cerca del fallo se redacta."""
+    run_script(
+        tmp_path,
+        """
+        def cobrar():
+            api_key = "AKIA-en-fuente"
+            raise RuntimeError("boom")
+
+        cobrar()
+        """,
+        child_env,
+    )
+    assert "AKIA-en-fuente" not in _dump_home(gb_home)
+
+
+def test_no_guarda_secretos_en_el_mensaje(gb_home, child_env):
+    """S2: un secreto con forma clave=valor en el mensaje de la excepción se redacta."""
+    run_child("raise RuntimeError('auth failed: token=ghp_enmensaje')\n", child_env)
+    assert "ghp_enmensaje" not in _dump_home(gb_home)
+
+
 def test_un_repr_roto_no_tumba_la_captura(gb_home, child_env):
     run_child(
         """
