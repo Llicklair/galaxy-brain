@@ -187,6 +187,18 @@ def render_graph(report, style):
         lines.append(style("Sin ciclos de imports.", DIM))
     lines.append("")
 
+    if report.get("since") is not None:
+        ref = report["since"]
+        if report.get("baseline_ok") is False:
+            lines.append(style("No pude comparar con '%s' (repo git? ref valida?)." % ref, DIM))
+        elif report.get("new_cycles"):
+            lines.append(style("NUEVO acoplamiento ciclico vs %s:" % ref, BOLD))
+            for cyc in report["new_cycles"]:
+                lines.append("  %s %s" % (style("+", YELLOW), "  <->  ".join(cyc)))
+        else:
+            lines.append(style("Sin acoplamiento ciclico nuevo vs %s." % ref, DIM))
+        lines.append("")
+
     def _top(counts):
         return [(m, n) for m, n in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))[:5] if n]
 

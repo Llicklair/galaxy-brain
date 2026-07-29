@@ -109,16 +109,28 @@ def cmd_graph(args):
     from . import graph
 
     root = os.path.abspath(args.path or ".")
-    report = graph.analyze(root)
+    report = graph.analyze(root, since=args.since)
     if args.json:
         emit(json.dumps(report, ensure_ascii=False, indent=2))
     else:
         emit(render.render_graph(report, _style(args)))
-    # Por defecto DEVUELVE el mapa (código 0). --gate le da el sabor de gate:
-    # falla si hay ciclos, para engancharlo a un pre-commit cuando quieras.
-    if args.gate and report["cycles"]:
-        return 1
+    if args.gate:
+        return _graph_gate(report)
     return 0
+
+
+def _graph_gate(report):
+    """Código de salida del --gate. Con --since, falla solo con ciclos NUEVOS;
+    sin --since, estricto (cualquier ciclo). Si no se puede comparar la baseline,
+    NO se bloquea (un falso positivo acaba en --no-verify) — se avisa por stderr."""
+    if report["since"] is not None:
+        if report["baseline_ok"] is False:
+            sys.stderr.write(
+                "[gb graph] no pude comparar con '%s'; no bloqueo.\n" % report["since"]
+            )
+            return 0
+        return 1 if report["new_pairs"] else 0
+    return 1 if report["cycles"] else 0
 
 
 def cmd_status(args):
@@ -177,6 +189,7 @@ def build_parser():
     graph_p.add_argument("--json", action="store_true", help="salida cruda")
     graph_p.add_argument("--color", choices=["auto", "always", "never"], default="auto")
     graph_p.add_argument("--gate", action="store_true", help="codigo != 0 si hay ciclos (para pre-commit)")
+    graph_p.add_argument("--since", metavar="REF", help="comparar con esta ref git; --gate falla solo con ciclos NUEVOS")
     graph_p.set_defaults(func=cmd_graph)
 
     return parser
