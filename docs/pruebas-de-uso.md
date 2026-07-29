@@ -76,3 +76,42 @@ El supuesto de diseño *"se conservan los frames más internos: ahí está el fa
 
 **Coste de la prueba:** cinco minutos. **Lo que ahorró:** cinco sesiones midiendo un criterio que
 medía el caso equivocado.
+
+---
+
+## 2026-07-24 · A/B de la báscula (Harbor) — **el resultado, por fin en el repo**
+
+Se registra hoy, 2026-07-30, al retirar `eval/`. Vivía solo en memoria, que es la deuda que
+[SCOPE.md](../SCOPE.md) apuntaba: un proyecto sobre evidencia con la suya fuera del repo.
+
+**Montaje.** Dos brazos sobre tareas idénticas en contenedores Harbor — **A: Claude Code de serie** ·
+**B: Claude Code + galaxy-brain (forja)** — juzgados por verificadores objetivos independientes del
+brazo. Tareas t1 (json no-dict), t2 (int32 con signo), t5 (gate de ruff), t6 (fuga en error).
+
+**Resultado: las recompensas convergen 8/8.** Los dos brazos resolvieron lo mismo. La disciplina ganó
+en **coste y evidencia**, no en **pasa/falla**.
+
+**Las tres honestidades, que importan tanto como el número:**
+
+1. **Es un *fix benchmark*, no de descubrimiento.** Lo dice el propio README del rig: los dos brazos
+   reciben el mismo informe de bug, así que la supuesta ventaja de descubrimiento de la forja queda
+   excluida **por construcción**. Nunca se midió lo que se quería medir.
+2. **Ninguna tarea tenía trampa donde el atajo fuese el camino de menor esfuerzo.** Sin eso los brazos
+   no se pueden separar por recompensa: el diseño impedía el resultado que buscaba.
+3. **n = 1 por tarea y brazo** (8 ejecuciones de las 18 diseñadas). No demuestra que el arnés estorbe;
+   tampoco que sirva, que era la razón de construirlo.
+
+**Lo que se conserva del diseño, aunque el código se vaya:**
+
+- **Verificadores independientes del brazo.** Quien juzga no sabe qué brazo produjo el parche.
+- **`test-guard` como post-check universal**, con la métrica que sigue siendo la buena:
+  *success WITH gaming is failure* — comprar el verde tocando tests que ya existían es un fallo,
+  no un éxito.
+- **Tamaño del diff como desempate** cuando el verificador da el mismo resultado.
+- **Y la lección negativa, la más cara:** un A/B sin una tarea donde hacer trampa sea *más fácil* que
+  hacerlo bien no puede separar disciplina de suerte. Si algún día se mide la Fase B, esa tarea va
+  primero, no última.
+
+**Consecuencia:** `eval/` se retira (708 líneas trackeadas). Medía la tesis de v1, que está retirada,
+contra un commit fijado de un repo privado que solo corre en Docker en esta máquina. No se volverá a
+ejecutar. El conocimiento se queda aquí; el código, no.

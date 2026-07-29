@@ -48,7 +48,9 @@ Explícito, con nombre y fichero. Nada de esto se borra — se aparta del camino
 - **El andamio de Spec Kit** ([scripts/constitution.js](scripts/constitution.js),
   [scripts/ears.js](scripts/ears.js), [scripts/evidence.js](scripts/evidence.js),
   [scripts/test-guard.js](scripts/test-guard.js)).
-- **El rig de eval** ([eval/](eval/), 5.480 líneas, 271 ficheros) — no lo tira nadie, pero no es v2.
+- **El rig de eval** — ~~no lo tira nadie, pero no es v2~~. **Retirado el 2026-07-30**; el resultado y
+  las lecciones de diseño están en [docs/pruebas-de-uso.md](docs/pruebas-de-uso.md). Las cifras que
+  llevaba esta línea (5.480 líneas, 271 ficheros) contaban fixtures gitignorados: eran 708 líneas.
 - **Las gates deterministas de acoplamiento y sobreingeniería** — son v3, ver abajo. Es la parte
   más difícil de dejar fuera y por eso está escrita aquí.
 - **Multi-lenguaje, multi-runtime, integración con CI, UI.** No en v2. No "más adelante" tampoco:
@@ -72,13 +74,45 @@ Inventario del repo, 29-jul-2026 (datos, no impresiones):
    forja (*entrega un PR y para*) no se ha ejecutado ni una vez, ni sobre este repo.
    Las hard rules que lo protegen defienden un camino sin pisadas.
 3. **El peso está invertido.** [CLAUDE.md](CLAUDE.md) dice *"the skills ARE the product"*:
-   skills+agents+hooks = 930 líneas, el 5% de la masa. `scripts/` pesa el doble; `eval/`, seis veces
-   más. El monstruo no es la forja, es el andamio.
-4. **El único dato empírico no está en el repo.** El A/B de la báscula (t1/t2/t5/t6, rewards 8/8)
-   vive en memoria; `eval/tasks/*` guarda prompt y verificador, ningún resultado.
+   skills+agents+hooks = 930 líneas, el 5% de la masa. `scripts/` pesa el doble. El monstruo no es la
+   forja, es el andamio.
+
+   **Corrección del 2026-07-30.** Este punto decía además *"`eval/`, seis veces más"*, y era **falso**:
+   contaba las 56.904 líneas **en disco**, que son copias gitignoradas del repo `consejo` usadas como
+   fixture. Trackeado, `eval/` eran **708 líneas** — menos que skills+agents+hooks. El número estuvo
+   un día justificando decisiones ("el monstruo es eval") que no sostenía. Medir disco cuando querías
+   medir repo es exactamente el folklore que este documento dice evitar; queda escrito para que el
+   error se vea, no para taparlo. Masa trackeada real: `src` 2402 · raíz 2217 · `tests` 2105 ·
+   `scripts` 1884 · `docs` 1069 · `eval` 708 · `skills` 653 · `agents` 163 · `hooks` 114.
+4. **El único dato empírico no está en el repo.** ~~El A/B de la báscula (t1/t2/t5/t6, rewards 8/8)
+   vive en memoria.~~ **Saldado el 2026-07-30:** el resultado y sus tres caveats están en
+   [docs/pruebas-de-uso.md](docs/pruebas-de-uso.md), que es desde hoy la libreta de evidencia del
+   proyecto — negativos incluidos, con el mismo detalle.
 
 Conclusión que se cae sola: por el criterio *¿me devolvió algo el mismo día?*, ninguna pieza de hoy
 sobrevive. Cero PRs es cero entregas.
+
+### Qué se retira y qué se queda (decidido 2026-07-30)
+
+- **`eval/` — fuera.** No por masa (708 líneas, de las más pequeñas) sino por **relevancia**: medía la
+  tesis de v1, retirada, contra un commit fijado de un repo privado que solo corre en Docker en esta
+  máquina. No se va a volver a ejecutar nunca. El resultado y las lecciones de diseño quedan en
+  [docs/pruebas-de-uso.md](docs/pruebas-de-uso.md); el código, no.
+- **v1 (`skills/`, `agents/`, `hooks/`, `.claude-plugin/`) — se queda, por ahora.** Tres razones
+  concretas, ninguna sentimental:
+  1. **Hay una dependencia viva y comprobada.** `extraKnownMarketplaces` apunta a este repo como
+     directorio, el plugin está habilitado, y su `hooks/hooks.json` es lo que cablea el `SessionStart`
+     que carga la memoria cross-repo. Borrar `.claude-plugin/` o `hooks/` **rompe algo que se usa
+     todos los días**.
+  2. **`skills/` + `agents/` son 816 líneas, el 5% de la masa.** Quitarlas ahorra poco y obliga a
+     tocar la regla 9 de [CLAUDE.md](CLAUDE.md), que ata una regla de seguridad a que existan.
+  3. **`scripts/` es el directorio pesado de verdad (1884 líneas), y es sobre todo futuro, no
+     pasado:** `memory-global.js` está en uso; `evidence.js` y `test-guard.js` son las piezas de la
+     Fase B; `external-gate.js` es la Fase C ([PLANTEAMIENTO.md](PLANTEAMIENTO.md)).
+
+  Lo que sí queda pendiente y no se decide hoy: `constitution.js`, `ears.js` y `loop-memory.js`
+  sirven al flujo de loops/spec-driven que se retira. Salen cuando la Fase B esté escrita y se vea
+  qué necesita de verdad — no antes, para no borrar algo y tener que reescribirlo en dos semanas.
 
 ---
 

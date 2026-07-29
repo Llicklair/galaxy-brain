@@ -33,7 +33,9 @@ exige un criterio de terminado comprobable escrito antes de empezar, porque *la 
 sobreingeniería es no saber cuándo parar*. **"Infalible" no tiene criterio de terminado.** Es
 infinito por construcción: cada fallo que sobrevive justifica una capa más. Eso explica el resultado
 medido en [SCOPE.md](SCOPE.md) — `skills+agents+hooks` son 930 líneas, el 5% de la masa; `scripts/`
-pesa el doble y `eval/` seis veces más. **El monstruo no fue la forja, fue el andamio.**
+pesa el doble. **El monstruo no fue la forja, fue el andamio.** (La frase original añadía *"`eval/`,
+seis veces más"*; era falso — contaba fixtures gitignorados. Corregido en [SCOPE.md](SCOPE.md) el
+2026-07-30, y el error queda escrito porque estuvo un día decidiendo cosas.)
 
 ### Lo que dice la medición, con sus dos honestidades
 
@@ -41,7 +43,7 @@ pesa el doble y `eval/` seis veces más. **El monstruo no fue la forja, fue el a
 estamos contando un cuento*. Resultado de las ejecuciones disparadas (t1/t2/t5/t6): **las recompensas
 convergen 8/8**. La disciplina ganó en coste y en evidencia, no en pasa/falla.
 
-- **A favor:** el propio [eval/README.md](eval/README.md) avisa de que es un *fix benchmark*, no de
+- **A favor:** el propio README del rig avisaba de que es un *fix benchmark*, no de
   descubrimiento — los dos brazos reciben el mismo informe de bug, así que la ventaja de
   descubrimiento queda excluida por construcción. Y faltaba una tarea con trampa donde el atajo fuese
   el camino de menor esfuerzo. Sin eso, los brazos no se pueden separar.
@@ -196,12 +198,14 @@ Escrito ahora, para no poder discutirlo después:
    falsa y hay que decirlo, no ajustar el criterio.
 2. **Si la Fase B no llega a escribirse** en un mes, la trampa de §5 ganó: la materia aburrida sigue
    siendo el punto ciego, y el problema nunca fue de diseño.
-3. **Si vuelve a crecer el andamio** — si `scripts/` o `eval/` vuelven a pesar más que lo que
-   entregan — es la misma enfermedad con otro nombre.
+3. **Si vuelve a crecer el andamio** — si `scripts/` vuelve a pesar más que lo que entrega, o si
+   aparece un rig nuevo que nadie corre — es la misma enfermedad con otro nombre.
 4. **Si nadie que no sea el owner lo usa nunca.** Sigue pendiente desde §11: ponerlo delante de una
    persona que no seas tú. Es lo único que ningún test puede sustituir, y el silencio, si llega,
    también es información.
 
-Y una deuda que se salda o se cierra: **el resultado del A/B no está en el repo.** O se registra, o
-se admite que `eval/` es andamio y se retira. Un proyecto sobre evidencia no puede tener la suya en
-otro sitio.
+**Deuda saldada el 2026-07-30, el mismo día:** el resultado del A/B no estaba en el repo. Se hizo
+*las dos cosas* — se registró en [docs/pruebas-de-uso.md](docs/pruebas-de-uso.md) (con sus tres
+caveats y las lecciones de diseño) **y** se retiró el rig, que medía una tesis ya retirada contra un
+repo privado fijado que solo corría en esta máquina. El conocimiento se queda; el código, no. Un
+proyecto sobre evidencia no puede tener la suya en otro sitio.

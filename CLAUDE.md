@@ -7,7 +7,7 @@ el alcance y lo que queda fuera, en [SCOPE.md](SCOPE.md); la evidencia, en
 **Estado, 29 julio 2026.** El proyecto cambió de eje. La ley de **v1** está congelada en
 [docs/v1/](docs/v1/) ([SCOPE](docs/v1/SCOPE.md), [ARCHITECTURE](docs/v1/ARCHITECTURE.md),
 [README](docs/v1/README.md)): se lee, no se edita, y no gobierna lo que se construya a partir de ahora.
-El código de v1 (`skills/`, `agents/`, `hooks/`, `scripts/`, `eval/`) sigue en el repo y sigue
+El código de v1 (`skills/`, `agents/`, `hooks/`, `scripts/`) sigue en el repo y sigue
 funcionando — está apartado del camino, no borrado.
 
 En una frase, lo que se construye ahora:
