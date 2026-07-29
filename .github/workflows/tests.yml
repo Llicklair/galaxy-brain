@@ -7,6 +7,7 @@ on:
 
 jobs:
   scripts:
+    # v1 (congelado): red de regresión de la toolchain Node.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -17,3 +18,22 @@ jobs:
         run: npm install -g @ast-grep/cli
       - name: Run the scripts regression suite
         run: node --test scripts/tests/*.test.js
+
+  console:
+    # v2: la consola de errores. Su propia tesis es "gates deterministas siempre
+    # puestas" — aplicarla a sí misma es lo mínimo. Instala (valida el build de
+    # hatchling) y corre los tests en el suelo (3.9) y en versiones recientes.
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.9", "3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install (editable, con dev) — ejercita el empaquetado también
+        run: pip install -e ".[dev]"
+      - name: Run the v2 console test suite
+        run: python -m pytest tests/ -q
