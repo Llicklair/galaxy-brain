@@ -124,11 +124,29 @@ programa con `print` añadidos.
 - **Por qué primero:** devuelve el mismo día; es casi todo código ya construido y probado (`store`,
   `capture`, `render`); es medible sin juez; y no pide escribir aserciones aburridas, que es donde
   §5 dice que la idea se cae.
-- **Criterio de terminado, comprobable:** en **5 sesiones reales** de trabajo, Claude resuelve **al
-  menos 3 fallos** consultando el estado ya capturado, **sin volver a ejecutar el programa con
-  prints añadidos**.
-- **Qué la mata:** si a las 5 sesiones no ha ocurrido, el cable no sirve y **se quita**. No se
-  mejora, no se le añade una capa. Se quita.
+
+**Corrección del 2026-07-30, por la primera prueba de uso** ([docs/pruebas-de-uso.md](docs/pruebas-de-uso.md)).
+El alcance escrito arriba era más ancho que el real, y se descubrió a los cinco minutos de probarlo:
+
+- **Los tests que fallan NO están cubiertos.** pytest atrapa la excepción, así que nunca llega a
+  `sys.excepthook` y no hay captura. Era el caso más común del bucle, y era el que justificaba la fase.
+- **Para tests se adopta `pytest -l` por referencia**, no se construye nada: ya muestra los locales de
+  todos los frames, que es más de lo que daría la captura. Reimplementarlo sería la sobreingeniería
+  exacta que este documento dice combatir.
+- **Lo que la Fase A cubre de verdad:** excepciones no capturadas — scripts, CLIs, servidores,
+  procesos largos. Real, y hoy sin alternativa, pero una porción del bucle más pequeña de lo que se
+  afirmó.
+
+- **Criterio de terminado, corregido.** Por sesión se apunta: (a) cuántos fallos hubo, (b) cuántos
+  eran excepciones no capturadas — el territorio real de `gb` —, y (c) de esos, cuántos se resolvieron
+  leyendo el estado capturado **sin volver a ejecutar con prints**. Terminado: **(c) ≥ 3 en 5
+  sesiones**. Contar (a) y (b) es lo que impide engañarse: mide cobertura × utilidad, no solo utilidad.
+- **Qué la mata, en dos formas distintas:**
+  - Si (c) se queda corto habiendo (b), el cable no sirve: **se quita**. No se mejora ni se le añade
+    una capa.
+  - Si (b) es ~0 en 5 sesiones, la Fase A es **correcta pero irrelevante** para este bucle. Eso
+    también es un resultado, y la respuesta NO es extender la cobertura a pytest: eso ya lo cubre
+    `pytest -l`.
 
 ### Fase B — No esconder
 
