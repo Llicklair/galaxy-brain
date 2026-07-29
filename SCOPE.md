@@ -93,7 +93,8 @@ No se construyen ahora. Se construyen **si y solo si** v2 pasa su prueba.
 3. La libreta de la Fase 0 existe y está escrita — es la que decide *qué* gate se construye primero.
 
 **Fecha de revisión:** el día 14 contado desde el primer uso real de v2, no desde hoy. Se estampa
-aquí cuando ocurra: `primer uso: ____-__-__` → `revisión: ____-__-__`.
+aquí cuando ocurra: `primer uso: 2026-07-29` → `revisión: 2026-08-12`.
+(Instalada en el Python real de Marcos y primer fallo capturado el 2026-07-29.)
 
 Si el criterio no se cumple, no hay v3. No se renegocia el criterio: se acepta el resultado.
 
