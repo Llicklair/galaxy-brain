@@ -161,6 +161,36 @@ def test_enable_revierte_si_el_entorno_queda_roto(monkeypatch, tmp_path):
     assert not (tmp_path / bootstrap.PTH_NAME).exists()
 
 
+def test_verify_ignora_stderr_ajeno_si_el_hook_esta_puesto(entorno):
+    """B1: si el hook quedó instalado (stdout '1'), un stderr ajeno en el arranque
+    (p.ej. el DeprecationWarning de pkg_resources) NO debe hacer fallar verify()."""
+    site = entorno["site"]
+    (site / bootstrap.PTH_NAME).write_text(bootstrap.PTH_LINE + "\n", encoding="utf-8")
+    # Un .pth que se procesa ANTES (orden alfabético) y escupe a stderr — ruido ajeno.
+    noise = site / "_aaa_noise.pth"
+    noise.write_text('import sys; sys.stderr.write("DeprecationWarning: algo ajeno\\n")\n',
+                     encoding="utf-8")
+    try:
+        ok, detail = bootstrap.verify(executable=entorno["python"])
+        assert ok is True, detail  # el hook está puesto: pasa pese al ruido
+    finally:
+        noise.unlink()
+        (site / bootstrap.PTH_NAME).unlink()
+
+
+def test_enable_no_borra_un_pth_preexistente_si_verify_falla(monkeypatch, tmp_path):
+    """B1: el revert de enable() solo debe borrar lo que ESCRIBIÓ esta llamada.
+    Un .pth que ya existía no se borra por un fallo de verify (ruido ajeno)."""
+    pth = tmp_path / bootstrap.PTH_NAME
+    pth.write_text(bootstrap.PTH_LINE + "\n", encoding="utf-8")  # ya existe, correcto
+    monkeypatch.setattr(bootstrap, "pth_path", lambda: pth)
+    monkeypatch.setattr(bootstrap, "verify", lambda executable=None: (False, "ruido ajeno"))
+
+    ok, _msg = bootstrap.enable()
+    assert ok is False
+    assert pth.exists()  # NO lo borra: no lo escribimos nosotros
+
+
 def test_verify_detecta_que_el_paquete_no_esta_instalado(monkeypatch, tmp_path):
     monkeypatch.setattr(bootstrap, "pth_path", lambda: tmp_path / bootstrap.PTH_NAME)
     # Sin escribir el .pth, el interprete actual de pytest tampoco tiene el hook

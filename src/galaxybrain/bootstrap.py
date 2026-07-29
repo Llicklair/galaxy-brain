@@ -59,15 +59,21 @@ def verify(executable=None):
     except (OSError, subprocess.SubprocessError) as error:
         return False, "no se pudo comprobar (%s)" % error
 
+    installed = (result.stdout or "").strip() == "1"
+    if installed:
+        # El hook esta puesto: la señal autoritativa es stdout, no stderr. Un
+        # stderr ajeno en el arranque (otro .pth, un DeprecationWarning de otra
+        # libreria) no es asunto nuestro y NO debe hacer fallar la verificacion —
+        # eso era B1: un ruido ajeno acababa borrando un .pth que funcionaba.
+        return True, ""
+
     noise = (result.stderr or "").strip()
-    if noise:
-        return False, "el arranque de Python imprime errores: %s" % noise.splitlines()[0]
-    if (result.stdout or "").strip() != "1":
-        return False, (
-            "el hook no quedo instalado — ¿esta el paquete instalado en este "
-            "interprete? (pip install -e .)"
-        )
-    return True, ""
+    if noise and (PTH_NAME in noise or ".pth" in noise or "galaxybrain" in noise):
+        return False, "el .pth rompe el arranque de Python: %s" % noise.splitlines()[0]
+    return False, (
+        "el hook no quedo instalado — ¿esta el paquete instalado en este "
+        "interprete? (pip install -e .)"
+    )
 
 
 def enable():
@@ -85,9 +91,14 @@ def enable():
 
     ok, detail = verify()
     if not ok:
-        # Se deja el entorno como estaba. Preferimos no activarnos a dejar un
-        # Python que escupe errores en cada arranque (propiedad 5: los falsos
-        # positivos tienen que ser inofensivos).
+        if ya_estaba:
+            # No lo escribimos nosotros esta vez: NO lo borramos por un fallo de
+            # verify (era B1). Un .pth preexistente es del usuario; se informa,
+            # no se destruye.
+            return False, "el .pth ya existia pero la verificacion falla: %s" % detail
+        # Lo escribimos nosotros y algo va mal: revertimos nuestro propio cambio.
+        # Preferimos no activarnos a dejar un Python que escupe errores en cada
+        # arranque (propiedad 5: los falsos positivos tienen que ser inofensivos).
         try:
             path.unlink()
         except OSError:
