@@ -7,6 +7,7 @@ captura, para que listar sea barato y no haya que abrir mil ficheros.
 Regla 7 de ARCHITECTURE-v2: nada de esto toca el repo observado.
 """
 
+import datetime
 import hashlib
 import json
 import os
@@ -95,8 +96,29 @@ def _headline_frame(record):
     return None
 
 
-def read_index(limit=None, project=None):
-    """Entradas del indice, de la mas reciente a la mas antigua."""
+def parse_ts(value):
+    """El `ts` de una entrada a datetime consciente de zona, o None.
+
+    Se guarda con `isoformat()` y offset local, asi que `fromisoformat` lo lee
+    tal cual. None si falta o no parsea: no se adivina una fecha.
+    """
+    if not value:
+        return None
+    try:
+        return datetime.datetime.fromisoformat(value)
+    except (ValueError, TypeError):
+        return None
+
+
+def read_index(limit=None, project=None, since=None):
+    """Entradas del indice, de la mas reciente a la mas antigua.
+
+    `since` (datetime con zona) descarta lo anterior a ese instante. Una entrada
+    con `ts` ilegible se descarta tambien: no se puede demostrar que sea
+    reciente, y entregar una captura vieja como si fuera la de ahora es peor que
+    no entregar nada — quien la lee arreglaria el fallo equivocado con total
+    confianza.
+    """
     index = root() / INDEX_NAME
     if not index.exists():
         return []
@@ -118,6 +140,13 @@ def read_index(limit=None, project=None):
             for item in entries
             if item.get("project") and os.path.normcase(os.path.abspath(item["project"])) == target
         ]
+    if since is not None:
+        fresh = []
+        for item in entries:
+            stamp = parse_ts(item.get("ts"))
+            if stamp is not None and stamp >= since:
+                fresh.append(item)
+        entries = fresh
     if limit is not None:
         entries = entries[:limit]
     return entries
@@ -158,9 +187,13 @@ def summarize(entries):
     return result
 
 
-def load(record_id=None, project=None):
-    """Carga un registro por id, o el mas reciente si no se da id."""
-    entries = read_index(project=project)
+def load(record_id=None, project=None, since=None):
+    """Carga un registro por id, o el mas reciente si no se da id.
+
+    Con `since`, solo mira capturas posteriores a ese instante: es la diferencia
+    entre "el ultimo fallo" y "el fallo de lo que acabo de ejecutar".
+    """
+    entries = read_index(project=project, since=since)
     if not entries:
         return None
     if record_id is None:

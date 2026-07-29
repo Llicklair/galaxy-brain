@@ -132,10 +132,16 @@ def _capture(exc_type, exc, tb, source, thread):
 
 
 def _notice(record):
-    """Una linea. Si esto crece, deja de ser una nota y pasa a ser ruido."""
+    """Una linea. Si esto crece, deja de ser una nota y pasa a ser ruido.
+
+    Lleva el comando EXACTO, con el id dentro, en vez de un `gb last` generico y
+    el id aparte. Cuesta lo mismo y quita el unico paso que quedaba: el id es la
+    correlacion perfecta — no hay ventana de tiempo ni riesgo de leer el fallo de
+    antes. Quien lee esta linea (humano o agente) puede copiarla y ya.
+    """
     try:
         sys.stderr.write(
-            "\n[galaxy-brain] estado capturado -> gb last   (id %s)\n" % record.get("id", "?")
+            "\n[galaxy-brain] estado capturado -> gb show %s\n" % record.get("id", "?")
         )
         sys.stderr.flush()
     except BaseException:  # noqa: BLE001

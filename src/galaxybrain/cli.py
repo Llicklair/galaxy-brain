@@ -6,6 +6,7 @@ no entra.
 """
 
 import argparse
+import datetime
 import json
 import os
 import sys
@@ -48,10 +49,51 @@ def _project_filter(args):
     return _project_root(os.getcwd())
 
 
+_UNITS = {"s": 1, "m": 60, "h": 3600, "d": 86400}
+
+
+def _duration(text):
+    """`30s`, `5m`, `2h`, `1d` o un numero pelado (segundos) -> segundos.
+
+    Lanza ValueError con un mensaje util: un --since mal escrito no puede
+    interpretarse "por lo mejor", porque el modo de fallo seria devolver una
+    captura vieja como si fuera reciente.
+    """
+    raw = (text or "").strip().lower()
+    if not raw:
+        raise ValueError("--since vacio; usa por ejemplo 90s, 5m, 2h")
+    unit = 1
+    if raw[-1] in _UNITS:
+        unit = _UNITS[raw[-1]]
+        raw = raw[:-1]
+    try:
+        value = float(raw)
+    except ValueError:
+        raise ValueError("no entiendo --since %r; usa por ejemplo 90s, 5m, 2h" % text)
+    if value <= 0:
+        raise ValueError("--since tiene que ser positivo (recibido %r)" % text)
+    return value * unit
+
+
 def cmd_last(args):
-    record = store.load(project=_project_filter(args))
+    since = None
+    if getattr(args, "since", None):
+        try:
+            seconds = _duration(args.since)
+        except ValueError as error:
+            sys.stderr.write("[gb] %s\n" % error)
+            return 2
+        since = datetime.datetime.now().astimezone() - datetime.timedelta(seconds=seconds)
+
+    record = store.load(project=_project_filter(args), since=since)
     if record is None:
-        emit("(sin capturas para este proyecto - prueba: gb list --all)")
+        if since is not None:
+            # Salir != 0 sin captura reciente es lo que hace util este flag desde
+            # un script: distingue "peto y aqui esta el estado" de "peto por otra
+            # cosa, no hay nada que leer".
+            emit("(sin capturas en los ultimos %s para este proyecto)" % args.since)
+        else:
+            emit("(sin capturas para este proyecto - prueba: gb list --all)")
         return 1
     if args.json:
         emit(json.dumps(record, ensure_ascii=False, indent=2))
@@ -203,6 +245,11 @@ def build_parser():
 
     last = subparsers.add_parser("last", help="el ultimo fallo de este proyecto")
     common(last)
+    last.add_argument(
+        "--since",
+        metavar="DURACION",
+        help="solo si hay captura mas nueva que esto (90s, 5m, 2h); si no, salida != 0",
+    )
     last.set_defaults(func=cmd_last)
 
     listing = subparsers.add_parser("list", help="que se rompe y cuantas veces")

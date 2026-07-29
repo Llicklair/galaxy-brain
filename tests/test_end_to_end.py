@@ -89,7 +89,23 @@ def test_deja_una_sola_linea_de_aviso(gb_home, child_env):
     result = run_child("raise ValueError('roto')\n", child_env)
     avisos = [line for line in result.stderr.splitlines() if "galaxy-brain" in line]
     assert len(avisos) == 1
-    assert "gb last" in avisos[0]
+
+
+def test_el_aviso_lleva_el_comando_exacto_con_el_id(gb_home, child_env):
+    """El aviso es la unica pista que ve quien acaba de lanzar el programa — y
+    con captura de stdout de por medio, a veces la unica que vera nunca. Por eso
+    lleva el comando ENTERO, con el id dentro: copiar y pegar, sin ventana de
+    tiempo ni riesgo de leer el fallo de antes."""
+    result = run_child("raise ValueError('roto')\n", child_env)
+    aviso = next(line for line in result.stderr.splitlines() if "galaxy-brain" in line)
+
+    assert "gb show " in aviso
+    record_id = aviso.split("gb show ")[1].strip()
+    assert record_id and record_id != "?"
+
+    from galaxybrain import store
+
+    assert store.load(record_id) is not None, "el id del aviso tiene que cargar de verdad"
 
 
 def test_gb_quiet_calla_el_aviso_pero_sigue_capturando(gb_home, child_env):

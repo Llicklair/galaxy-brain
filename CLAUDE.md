@@ -59,6 +59,9 @@ Inglés para cualquier cosa que llegue a publicarse. Hoy no se publica nada.
 - Antes de tocar `skills/`, `agents/` o `hooks/` (código v1 congelado): decir por qué el cambio no
   puede esperar a que ese código salga del repo. Mantener lo apartado es gasto.
 - Antes de commitear, mientras el plugin exista: `claude plugin validate .` limpio.
+- Cuando un comando de Python falle en sesión: leer el estado ya capturado — `gb show <id>` (el aviso
+  lo trae entero) o `gb last --since 5m --json` si stderr se lo tragó pytest — **antes** de volver a
+  ejecutar nada con `print`. Es la Fase A de [PLANTEAMIENTO.md](PLANTEAMIENTO.md), y lo que se mide.
 - El paso a v3 (las gates deterministas de acoplamiento y sobreingeniería) tiene tres condiciones
   escritas en [SCOPE.md](SCOPE.md). No se renegocian: se cumplen o no hay v3.
 
