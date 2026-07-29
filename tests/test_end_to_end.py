@@ -323,6 +323,38 @@ def test_gb_list_agrupa_por_firma_con_cuenta(gb_home, child_env, tmp_path):
     assert groups[0]["type"] == "KeyError"  # el más frecuente arriba
 
 
+def test_cli_status_no_revienta_en_consola_cp1252(gb_home, monkeypatch, tmp_path):
+    """B2: gb status escribe rutas (GB_HOME, ejecutable) con print() crudo; en una
+    consola cp1252 un carácter fuera de ese codepage reventaba el comando."""
+    import io
+    import sys as _sys
+
+    from galaxybrain import cli
+
+    monkeypatch.setenv("GB_HOME", str(tmp_path / "日本"))  # fuera de cp1252
+    buf = io.TextIOWrapper(io.BytesIO(), encoding="cp1252", newline="")
+    monkeypatch.setattr(_sys, "stdout", buf)
+
+    rc = cli.main(["status"])
+    buf.flush()
+    assert rc == 0  # sin UnicodeEncodeError
+
+
+def test_cli_show_id_no_encodable_no_revienta(gb_home, monkeypatch):
+    """B2: el id lo controla el usuario; `gb show <no-cp1252>` no debe reventar."""
+    import io
+    import sys as _sys
+
+    from galaxybrain import cli
+
+    buf = io.TextIOWrapper(io.BytesIO(), encoding="cp1252", newline="")
+    monkeypatch.setattr(_sys, "stdout", buf)
+
+    rc = cli.main(["show", "日本", "--all"])
+    buf.flush()
+    assert rc == 1  # id no encontrado, pero sin crash
+
+
 def test_gb_list_chrono_devuelve_el_timeline_crudo(gb_home, child_env):
     for mensaje in ("uno", "dos"):
         run_child("raise ValueError(%r)\n" % mensaje, child_env)

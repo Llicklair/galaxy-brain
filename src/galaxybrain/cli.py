@@ -80,7 +80,7 @@ def cmd_list(args):
 def cmd_show(args):
     record = store.load(args.id, project=_project_filter(args))
     if record is None:
-        print("no encuentro ninguna captura con id '%s'" % args.id)
+        emit("no encuentro ninguna captura con id '%s'" % args.id)
         return 1
     if args.json:
         emit(json.dumps(record, ensure_ascii=False, indent=2))
@@ -91,29 +91,29 @@ def cmd_show(args):
 
 def cmd_on(args):
     ok, message = bootstrap.enable()
-    print(message)
+    emit(message)
     return 0 if ok else 1
 
 
 def cmd_off(args):
     ok, message = bootstrap.disable()
-    print(message)
+    emit(message)
     if ok:
         # Regla 10 de ARCHITECTURE-v2: el abandono es dato. Si esto se apaga,
         # que quede dicho por que importa saberlo, no un hook que lo impida.
-        print("apuntalo: por que la has apagado. Ese dato vale mas que la herramienta.")
+        emit("apuntalo: por que la has apagado. Ese dato vale mas que la herramienta.")
     return 0 if ok else 1
 
 
 def cmd_status(args):
     entries = store.read_index(limit=1)
-    print("galaxy-brain %s" % __version__)
-    print("  captura automatica : %s" % ("activa" if bootstrap.is_enabled() else "APAGADA"))
-    print("  fichero .pth       : %s" % bootstrap.pth_path())
-    print("  interprete         : %s" % sys.executable)
-    print("  historico          : %s" % config.home())
-    print("  desactivada por env: %s" % ("si (GB_DISABLE)" if config.disabled() else "no"))
-    print("  ultima captura     : %s" % (entries[0]["ts"] if entries else "ninguna"))
+    emit("galaxy-brain %s" % __version__)
+    emit("  captura automatica : %s" % ("activa" if bootstrap.is_enabled() else "APAGADA"))
+    emit("  fichero .pth       : %s" % bootstrap.pth_path())
+    emit("  interprete         : %s" % sys.executable)
+    emit("  historico          : %s" % config.home())
+    emit("  desactivada por env: %s" % ("si (GB_DISABLE)" if config.disabled() else "no"))
+    emit("  ultima captura     : %s" % (entries[0]["ts"] if entries else "ninguna"))
     return 0
 
 
