@@ -148,17 +148,31 @@ def test_un_pth_huerfano_no_ensucia_el_arranque(entorno, child_env):
         (entorno["site"] / "_gbsrc.pth").write_text(SRC + "\n", encoding="utf-8")
 
 
-def test_enable_revierte_si_el_entorno_queda_roto(monkeypatch, tmp_path):
-    """La comprobacion no es decorativa: ante un .pth invalido, `gb on` tiene
-    que dejar el entorno intacto en vez de activarse a medias."""
-    monkeypatch.setattr(bootstrap, "PTH_LINE", 'import sys; exec("esto no cierra')
-    monkeypatch.setattr(bootstrap, "pth_path", lambda: tmp_path / bootstrap.PTH_NAME)
+def test_enable_revierte_lo_que_escribio_si_verify_falla(monkeypatch, tmp_path):
+    """La lógica de revert de enable(), hermética: si escribimos el .pth y verify
+    falla, se borra lo nuestro. Se mockea verify para no depender del intérprete
+    que corre los tests (que puede tener gb activo)."""
+    pth = tmp_path / bootstrap.PTH_NAME
+    monkeypatch.setattr(bootstrap, "pth_path", lambda: pth)
+    monkeypatch.setattr(bootstrap, "verify", lambda executable=None: (False, "arranque roto"))
 
     ok, mensaje = bootstrap.enable()
 
     assert ok is False
     assert "revertida" in mensaje
-    assert not (tmp_path / bootstrap.PTH_NAME).exists()
+    assert not pth.exists()  # escribimos y revertimos: se borra
+
+
+def test_verify_detecta_un_pth_que_rompe_el_arranque(entorno):
+    """Integración real: un .pth con sintaxis rota hace que site escupa un
+    traceback en cada arranque (el peor fallo). verify() debe cazarlo."""
+    pth = entorno["site"] / bootstrap.PTH_NAME
+    pth.write_text('import sys; exec("esto no cierra\n', encoding="utf-8")
+    try:
+        ok, _detail = bootstrap.verify(executable=entorno["python"])
+        assert ok is False
+    finally:
+        pth.unlink()
 
 
 def test_verify_ignora_stderr_ajeno_si_el_hook_esta_puesto(entorno):
@@ -191,11 +205,16 @@ def test_enable_no_borra_un_pth_preexistente_si_verify_falla(monkeypatch, tmp_pa
     assert pth.exists()  # NO lo borra: no lo escribimos nosotros
 
 
-def test_verify_detecta_que_el_paquete_no_esta_instalado(monkeypatch, tmp_path):
-    monkeypatch.setattr(bootstrap, "pth_path", lambda: tmp_path / bootstrap.PTH_NAME)
-    # Sin escribir el .pth, el interprete actual de pytest tampoco tiene el hook
-    # puesto por site: verify debe decir que no, no adivinar que si.
-    ok, detail = bootstrap.verify()
+def test_verify_detecta_que_el_paquete_no_esta_instalado(entorno):
+    # Hermético: un venv fresco importa galaxybrain (via _gbsrc.pth) pero NO tiene
+    # el hook (no hay galaxybrain.pth), así que verify() debe decir "no instalado".
+    # Se usa el venv y no sys.executable a propósito: si gb está activado en el
+    # intérprete que corre los tests (p.ej. tras `gb on`), sys.executable SÍ tiene
+    # el hook y el test daría un falso fallo.
+    pth = entorno["site"] / bootstrap.PTH_NAME
+    if pth.exists():
+        pth.unlink()
+    ok, detail = bootstrap.verify(executable=entorno["python"])
     assert ok is False
     assert "hook no quedo instalado" in detail
 
