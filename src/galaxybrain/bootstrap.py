@@ -52,7 +52,8 @@ def verify(executable=None):
         result = subprocess.run(
             [executable or sys.executable, "-c", probe],
             capture_output=True,
-            text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=30,
             env=environment,
         )
