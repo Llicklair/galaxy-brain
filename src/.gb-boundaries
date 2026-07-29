@@ -15,3 +15,5 @@ galaxybrain.config    -/->  galaxybrain.cli
 galaxybrain.config    -/->  galaxybrain.render
 galaxybrain.hooks     -/->  galaxybrain.cli
 galaxybrain.hooks     -/->  galaxybrain.render
+galaxybrain.changes   -/->  galaxybrain.cli
+galaxybrain.changes   -/->  galaxybrain.render

@@ -165,6 +165,71 @@ def _render_frame(frame, style, project):
     return lines
 
 
+def render_changes(report, style):
+    """Qué le hizo el cambio a la evidencia. Informe, no veredicto.
+
+    Lo que NO se ha mirado va SIEMPRE al final y con el mismo peso visual: un
+    informe que solo enumera lo que revisó se lee como si lo hubiera revisado todo.
+    """
+    lines = []
+    if report.get("range_error"):
+        lines.append(style("ERROR: %s" % report["range_error"], RED))
+        return "\n".join(lines)
+
+    flags = report.get("flags") or []
+    lines.append(
+        style(
+            "%s — %d fichero(s) de test tocado(s), %d senal(es)"
+            % (report["range"], report["test_files_changed"], len(flags)),
+            BOLD,
+        )
+    )
+    lines.append("")
+
+    if flags:
+        lines.append(style("SENALES sobre los tests (proxies: justifica cada una, no bloquean):", BOLD))
+        for flag in flags:
+            lines.append(
+                "  %s [%s] %s" % (style("!", YELLOW), flag["signal"], flag["file"])
+            )
+            lines.append("      %s" % style(flag["detail"], DIM))
+            for sample in flag["evidence"][:1]:
+                if sample:
+                    lines.append("      %s" % style("p.ej. `%s`" % sample[:100], DIM))
+    else:
+        lines.append(style("Sin senales de ablandamiento en los tests.", DIM))
+    lines.append("")
+
+    coupling = report.get("coupling")
+    if coupling:
+        if coupling["new_pairs"] or coupling["new_violations"]:
+            lines.append(style("ACOPLAMIENTO nuevo vs %s:" % coupling["base"], BOLD))
+            for pair in coupling["new_pairs"]:
+                lines.append("  %s %s" % (style("+", YELLOW), "  <->  ".join(pair)))
+            for violation in coupling["new_violations"]:
+                lines.append(
+                    "  %s %s  ->  %s   [%s]"
+                    % (
+                        style("!", YELLOW),
+                        violation["importer"],
+                        violation["imported"],
+                        violation["rule"],
+                    )
+                )
+        else:
+            lines.append(
+                style("Sin acoplamiento nuevo vs %s (%d modulos)." % (coupling["base"], coupling["modules"]), DIM)
+            )
+        lines.append("")
+
+    if report.get("not_covered"):
+        lines.append(style("Lo que esto NO ha mirado:", BOLD))
+        for item in report["not_covered"]:
+            lines.append("  %s %s" % (style("-", DIM), style(item, DIM)))
+
+    return "\n".join(lines)
+
+
 def render_graph(report, style):
     """El mapa de acoplamiento: resumen, ciclos (el hecho que importa) y hotspots."""
     lines = []

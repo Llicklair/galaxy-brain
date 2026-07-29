@@ -1,8 +1,16 @@
 """`gb` — la superficie de lectura.
 
-Cinco comandos y ninguno mas. Cada comando nuevo aqui hay que justificarlo
-contra la frase de SCOPE-v2: si no ayuda a saber donde peto y con que estado,
-no entra.
+Empezo con cinco comandos y la regla de que cada uno nuevo se justificaba contra
+la frase de SCOPE-v2 (*donde peto y con que estado*). Esa regla se quedo corta
+cuando el proyecto se dio un PLANTEAMIENTO por encima del SCOPE, y conviene
+decirlo en vez de ir colando comandos: hoy la superficie cubre las tres
+propiedades de ese documento, una familia por propiedad.
+
+  last · list · show · on · off · status   ->  baratos de encontrar   (v2)
+  graph                                    ->  estructuralmente acotados (v3)
+  check                                    ->  imposibles de esconder (Fase B)
+
+Un comando nuevo tiene que caer en una de las tres. Si no cae, no entra.
 """
 
 import argparse
@@ -169,6 +177,21 @@ def cmd_graph(args):
     return 1 if report.get("root_error") else 0
 
 
+def cmd_check(args):
+    from . import changes
+
+    root = os.path.abspath(args.path or ".")
+    report = changes.analyze(root, args.range)
+    if args.json:
+        emit(json.dumps(report, ensure_ascii=False, indent=2))
+    else:
+        emit(render.render_changes(report, _style(args)))
+    # Un rango ilegible es error de USO (no hay nada revisado). Las senales, en
+    # cambio, NO son motivo de salida != 0: son proxies, y gatear proxies fue el
+    # error de v1. Informar delante de quien decide es lo que las hace inevitables.
+    return 1 if report["range_error"] else 0
+
+
 def _graph_gate(report):
     """Código de salida del --gate. Con --since, falla solo con ciclos NUEVOS;
     sin --since, estricto (cualquier ciclo). Si no se puede comparar la baseline,
@@ -286,6 +309,17 @@ def build_parser():
         help="analizar tambien los subproyectos anidados (por defecto se omiten y se dicen)",
     )
     graph_p.set_defaults(func=cmd_graph)
+
+    check = subparsers.add_parser(
+        "check", help="que le hizo un cambio a los tests y al acoplamiento"
+    )
+    check.add_argument(
+        "range", nargs="?", default="HEAD~1..HEAD", help="rango git (por defecto HEAD~1..HEAD)"
+    )
+    check.add_argument("path", nargs="?", default=".", help="raiz del proyecto (por defecto .)")
+    check.add_argument("--json", action="store_true", help="salida cruda")
+    check.add_argument("--color", choices=["auto", "always", "never"], default="auto")
+    check.set_defaults(func=cmd_check)
 
     return parser
 
