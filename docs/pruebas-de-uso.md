@@ -79,6 +79,58 @@ medía el caso equivocado.
 
 ---
 
+## 2026-07-30 · Fase A, segunda prueba — **POSITIVO, y encuentra el caso donde no hay rival**
+
+Tras estrechar el alcance a "excepciones no capturadas", tocaba comprobar si ese alcance nuevo
+aguantaba o también era más pequeño de lo dicho. Dos formas de morir que no son un script simple:
+
+**A) Excepción en un hilo, con el proceso principal sobreviviendo.**
+
+```
+$ python hilo.py
+[galaxy-brain] estado capturado -> gb show 20260730T014616-30ee65
+el proceso principal sobrevive, exit 0
+```
+
+Capturado, con el nombre del hilo (`· hilo ingesta`). Un fallo que **no mata el proceso** y sale con
+código 0 es de los que se pierden enteros: nadie mira, el exit code miente. Queda registrado.
+
+**B) Subproceso que muere y cuyo stderr se traga el padre** — `subprocess.run(..., capture_output=True)`.
+
+```
+$ python padre.py
+lanzo el hijo...
+el hijo murio con exit 1 - y su stderr me lo he tragado
+```
+
+El traceback **no existe en ningún sitio**: el padre lo consumió y no lo imprimió. La línea de aviso
+tampoco se vio nunca, así que no hay id que copiar. Y aun así:
+
+```
+$ gb last --since 120s
+KeyError: 'cantidad'
+hace 18s · facturas.py:4 · prueba-uso
+      linea = {'precio': 40.0}
+exit=0
+```
+
+**Este es el caso donde galaxy-brain no tiene rival.** No hay pytest que valga (`-l` no aplica), no
+hay traceback que leer (se lo tragaron), no hay id que copiar (el aviso murió con el stderr). La
+única copia del estado es la que se escribió a disco, y `--since` es la única forma de llegar a ella.
+
+### Lo que corrige de la propuesta de valor
+
+La primera prueba parecía decir *"gb rinde menos que `pytest -l`"*. Con esta segunda, la frase
+correcta es otra: **el territorio de gb es exactamente donde la evidencia se destruye sola.** Donde
+hay traceback visible, las herramientas de siempre compiten y a veces ganan. Donde el fallo se
+traga —subprocesos, hilos, demonios, procesos largos, cron— no compite nadie, porque no queda nada
+que leer.
+
+Eso también dice dónde NO invertir: mejorar la vista por defecto para competir con `pytest -l` es
+pelear en el terreno del otro. La ventaja está en el terreno donde el otro no aparece.
+
+---
+
 ## 2026-07-24 · A/B de la báscula (Harbor) — **el resultado, por fin en el repo**
 
 Se registra hoy, 2026-07-30, al retirar `eval/`. Vivía solo en memoria, que es la deuda que
