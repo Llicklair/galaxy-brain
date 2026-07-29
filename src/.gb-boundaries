@@ -1,0 +1,17 @@
+# galaxy-brain — invariantes de capas (v3), comprobadas con `gb graph src --gate`.
+# El nucleo (captura, almacen, analisis, hooks, config) no debe importar la
+# presentacion (cli, render). Al reves si: la presentacion se apoya en el nucleo.
+# Los nombres llevan el prefijo galaxybrain.* porque la raiz del analisis es src/
+# (no src/galaxybrain/): asi module_name conserva el paquete.
+galaxybrain.capture   -/->  galaxybrain.cli
+galaxybrain.capture   -/->  galaxybrain.render
+galaxybrain.store     -/->  galaxybrain.cli
+galaxybrain.store     -/->  galaxybrain.render
+galaxybrain.saferepr  -/->  galaxybrain.cli
+galaxybrain.saferepr  -/->  galaxybrain.render
+galaxybrain.graph     -/->  galaxybrain.cli
+galaxybrain.graph     -/->  galaxybrain.render
+galaxybrain.config    -/->  galaxybrain.cli
+galaxybrain.config    -/->  galaxybrain.render
+galaxybrain.hooks     -/->  galaxybrain.cli
+galaxybrain.hooks     -/->  galaxybrain.render

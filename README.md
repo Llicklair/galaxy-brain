@@ -144,3 +144,17 @@ de líneas fuente si prefieres no arriesgar ahí. Detalle: [docs/review-2026-07-
 ```bash
 python -m pytest tests/ -q
 ```
+
+### Gate de acoplamiento (v3) — sobre la propia consola
+
+Un segundo determinista, cero modelos, cero dependencias (solo `ast`):
+
+```bash
+gb graph src --smells        # el mapa: modulos, ciclos, fan-in/out, sobreingenieria (advisory)
+gb graph src --gate          # falla si hay un ciclo de imports NUEVO o un cruce de frontera prohibido
+git config core.hooksPath .githooks   # engancha el pre-commit (tests + gate) — una vez
+```
+
+Las reglas de capas de la consola viven en [src/.gb-boundaries](src/.gb-boundaries) (el nucleo no
+importa la presentacion). El pre-commit corre en < 10 s; `git commit --no-verify` lo salta — y ese
+salto es un dato, no una norma (ARCHITECTURE regla 10: el abandono se investiga, no se blinda).

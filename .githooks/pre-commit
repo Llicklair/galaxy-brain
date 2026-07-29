@@ -1,0 +1,22 @@
+#!/bin/sh
+# galaxy-brain — pre-commit: el cuello de botella local (v3, Fase 4).
+# Corre la red de tests y la gate de acoplamiento sobre la propia consola, de modo
+# que un ciclo de imports nuevo o un cruce de frontera prohibido no llega a commit.
+# Presupuesto de latencia (ARCHITECTURE-v2 regla 3): < 10s.
+#
+# Activar (una vez):   git config core.hooksPath .githooks
+# Bypass consciente:   git commit --no-verify   (queda como dato, no como norma:
+#                      si te descubres usandolo, investiga por que — regla 10).
+
+# Necesita el paquete instalado. Sin el, no bloquea (un contribuidor sin gb no
+# deberia quedarse sin poder commitear).
+if ! python -c "import galaxybrain" 2>/dev/null; then
+    echo "[galaxy-brain] paquete no instalado (pip install -e .); salto el pre-commit." >&2
+    exit 0
+fi
+
+echo "[galaxy-brain] pre-commit: tests..."
+python -m pytest tests/ -q || exit 1
+
+echo "[galaxy-brain] pre-commit: gate de acoplamiento (gb graph src --gate)..."
+python -m galaxybrain.cli graph src --gate --color never || exit 1
