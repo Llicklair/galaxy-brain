@@ -14,6 +14,11 @@ Límites honestos, dichos de frente: es análisis ESTÁTICO. No ve imports
 dinámicos (`__import__`, `importlib.import_module`), y cuenta los imports dentro
 de `if TYPE_CHECKING:` o de funciones como aristas aunque no sean dependencias
 de runtime. Es un grafo de acoplamiento a nivel de módulo, no un call graph.
+
+El delta (`--since`) compara pares co-cíclicos por NOMBRE de módulo: renombrar o
+mover un módulo que está dentro de un ciclo cambia su nombre y puede marcar ese
+ciclo como "nuevo" (un falso positivo). Cerrarlo requiere seguir renombrados con
+git (`--find-renames`) y mapear nombres viejos->nuevos — trabajo futuro.
 """
 
 import ast
@@ -67,12 +72,12 @@ def module_name(path, root):
     return ".".join(parts)
 
 
-def _import_targets(tree, this_module):
+def _import_targets(tree, this_module, is_package):
     """Módulos que este AST importa (nombres punteados), resolviendo relativos.
 
-    Para `from pkg import x` añade tanto `pkg` como `pkg.x`, porque `x` puede ser
-    un submódulo o un nombre; el filtrado posterior contra el conjunto de módulos
-    reales del proyecto se queda solo con los que son módulos de verdad.
+    `is_package` importa para los imports relativos: en un __init__.py el paquete
+    actual es el propio módulo, no su padre — sin esto, `from .x import y` dentro
+    de un __init__ resolvía un nivel demasiado arriba.
     """
     targets = set()
     for node in ast.walk(tree):
@@ -80,7 +85,7 @@ def _import_targets(tree, this_module):
             for alias in node.names:
                 targets.add(alias.name)
         elif isinstance(node, ast.ImportFrom):
-            base = _resolve_base(node, this_module)
+            base = _resolve_base(node, this_module, is_package)
             if base is None:
                 continue
             for alias in node.names:
@@ -94,13 +99,15 @@ def _import_targets(tree, this_module):
     return {t for t in targets if t}
 
 
-def _resolve_base(node, this_module):
+def _resolve_base(node, this_module, is_package):
     """El módulo base de un `from ... import` (absoluto o relativo)."""
     if node.level == 0:
         return node.module or ""
-    # Relativo: subir `level` desde el PAQUETE que contiene este módulo.
+    # Relativo: subir `level` desde el PAQUETE que contiene los imports. Para un
+    # __init__ ese paquete es el propio módulo (__package__ == __name__); para un
+    # módulo normal, su padre.
     parts = this_module.split(".")
-    container = parts[:-1]  # paquete contenedor de this_module
+    container = parts if is_package else parts[:-1]
     up = node.level - 1  # nivel 1 = mismo paquete; cada nivel extra sube uno más
     if up > len(container):
         return None
@@ -126,11 +133,14 @@ def build_graph(root, skip=DEFAULT_SKIP):
         if not mod:
             continue
         try:
-            with open(path, "r", encoding="utf-8") as handle:
+            # errors="replace" como en _git: un .py guardado en cp1252 (comunísimo
+            # en Windows) no debe tumbar el análisis, y ambas rutas (working tree y
+            # git) deben leer el mismo fichero igual o el delta diverge.
+            with open(path, "r", encoding="utf-8", errors="replace") as handle:
                 text = handle.read()
         except OSError:
             text = None
-        items.append((mod, path, text))
+        items.append((mod, path, text, os.path.basename(path) == "__init__.py"))
     return _graph_from_sources(items)
 
 
@@ -141,21 +151,23 @@ def _graph_from_sources(items):
     ruta (de fichero o de git) que se usa como clave de error, para que el aviso
     apunte a algo que un humano reconozca.
     """
-    nodes = {mod for mod, _loc, _text in items}
+    nodes = {mod for mod, _loc, _text, _pkg in items}
     edges = {}
     errors = {}
-    for mod, loc, text in items:
+    for mod, loc, text, is_pkg in items:
         if text is None:
             errors[loc] = "no se pudo leer"
             edges[mod] = set()
             continue
         try:
             tree = ast.parse(text, filename=loc)
-        except (SyntaxError, ValueError) as error:
+        # RecursionError/MemoryError no son SyntaxError ni ValueError: un .py
+        # patológico (anidamiento enorme) no puede tumbar el análisis entero.
+        except (SyntaxError, ValueError, RecursionError, MemoryError) as error:
             errors[loc] = "%s: %s" % (type(error).__name__, error)
             edges[mod] = set()
             continue
-        internal = {_to_internal(t, nodes) for t in _import_targets(tree, mod)}
+        internal = {_to_internal(t, nodes) for t in _import_targets(tree, mod, is_pkg)}
         internal.discard(None)
         internal.discard(mod)  # sin auto-aristas
         edges[mod] = internal
@@ -175,8 +187,11 @@ def _git(cwd, *args):
     import subprocess
 
     try:
+        # core.quotePath=false: sin esto, git C-escapa las rutas con bytes no-ASCII
+        # (`"caf\303\251.py"`), el .endswith(".py") falla y el módulo acentuado se
+        # cae de la baseline -> falso positivo en el delta. Reproducido.
         result = subprocess.run(
-            ["git", "-C", cwd, *args],
+            ["git", "-C", cwd, "-c", "core.quotePath=false", *args],
             capture_output=True,
             encoding="utf-8",
             errors="replace",
@@ -201,7 +216,10 @@ def build_graph_from_git(root, ref, skip=DEFAULT_SKIP):
     if repo is None:
         return None
     repo = repo.strip()
-    rel = os.path.relpath(root, repo).replace("\\", "/")
+    try:
+        rel = os.path.relpath(root, repo).replace("\\", "/")
+    except ValueError:
+        return None  # cross-drive en Windows (SUBST/unidad mapeada): no comparamos
     args = ["ls-tree", "-r", "--name-only", ref]
     if rel not in (".", ""):
         args += ["--", rel]
@@ -227,7 +245,7 @@ def build_graph_from_git(root, ref, skip=DEFAULT_SKIP):
         if not mod:
             continue
         text = _git(repo, "show", "%s:%s" % (ref, gitpath))
-        items.append((mod, gitpath, text))
+        items.append((mod, gitpath, text, parts[-1] == "__init__.py"))
     return _graph_from_sources(items)
 
 
@@ -363,7 +381,9 @@ def analyze(root, skip=DEFAULT_SKIP, since=None):
             base_pairs = cyclic_pairs(find_cycles(base_edges))
             new_pairs = cyclic_pairs(cycles) - base_pairs
             report["baseline_ok"] = True
-            report["new_pairs"] = [sorted(p) for p in new_pairs]
+            # Ordenado también por fuera: un set de frozensets itera en orden que
+            # depende de PYTHONHASHSEED; sin esto la salida no es reproducible.
+            report["new_pairs"] = sorted(sorted(p) for p in new_pairs)
             report["new_cycles"] = [
                 c
                 for c in cycles

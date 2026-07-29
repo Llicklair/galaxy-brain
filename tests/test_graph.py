@@ -100,6 +100,64 @@ def test_ignora_venv_pycache_y_ocultos(tmp_path):
     assert not any("fantasma" in m or "cache" in m for m in mods)
 
 
+def test_import_relativo_en_init_resuelve_al_paquete_correcto(tmp_path):
+    """Bug del review: `from .x import y` dentro de un __init__.py resolvía un
+    nivel demasiado arriba (el paquete de un __init__ es él mismo, no su padre)."""
+    root = str(tmp_path)
+    _write(root, "pkg/__init__.py", "from .models import User\n")  # pkg -> pkg.models
+    _write(root, "pkg/models.py", "class User: pass\n")
+
+    report = graph.analyze(root)
+    assert report["fan_in"]["pkg.models"] == 1  # el edge apunta a pkg.models, no a 'models'
+
+
+def test_ciclo_a_traves_de_init_se_detecta(tmp_path):
+    root = str(tmp_path)
+    _write(root, "pkg/__init__.py", "from .a import x\n")  # pkg -> pkg.a
+    _write(root, "pkg/a.py", "from pkg import y\n")         # pkg.a -> pkg
+
+    report = graph.analyze(root)
+    assert any(set(c) == {"pkg", "pkg.a"} for c in report["cycles"])
+
+
+def test_init_no_inventa_ciclo_falso_con_modulo_homonimo(tmp_path):
+    """El off-by-one antes creaba un edge pkg->'models' (top-level) y, con un
+    models.py que importa pkg, un CICLO FALSO pkg<->models."""
+    root = str(tmp_path)
+    _write(root, "pkg/__init__.py", "from .models import User\n")  # correcto: pkg -> pkg.models
+    _write(root, "pkg/models.py", "")
+    _write(root, "models.py", "from pkg import thing\n")           # top-level models -> pkg
+
+    report = graph.analyze(root)
+    assert not any(set(c) == {"pkg", "models"} for c in report["cycles"])
+
+
+def test_fichero_cp1252_no_tumba_el_analisis(tmp_path):
+    """Bug del review: build_graph abría en utf-8 estricto y el except solo cazaba
+    OSError; un .py en cp1252 (comunísimo en Windows) reventaba con UnicodeDecodeError."""
+    root = str(tmp_path)
+    _write(root, "pkg/__init__.py", "")
+    path = os.path.join(root, "pkg", "legacy.py")
+    with open(path, "w", encoding="cp1252") as handle:
+        handle.write("# a\xf1o fiscal\nX = 1\n")  # 0xf1 = ñ en cp1252, byte inválido en utf-8
+
+    report = graph.analyze(root)  # no debe crashear
+    assert "pkg.legacy" in report["fan_in"]
+
+
+def test_fichero_patologico_va_a_errores_sin_crashear(tmp_path):
+    """RecursionError/MemoryError de ast.parse no son SyntaxError/ValueError: un
+    .py con anidamiento enorme no puede tumbar el análisis entero."""
+    root = str(tmp_path)
+    _write(root, "pkg/__init__.py", "")
+    _write(root, "pkg/ok.py", "X = 1\n")
+    _write(root, "pkg/bomba.py", "e" + ".a" * 20000 + "\n")  # cadena de atributos -> RecursionError
+
+    report = graph.analyze(root)  # la clave: no crashea
+    assert any("bomba.py" in loc for loc in report["errors"])
+    assert "pkg.ok" in report["fan_in"]  # el resto se analiza igual
+
+
 def test_cli_graph_gate_falla_con_ciclo_y_pasa_sin_el(tmp_path):
     root = str(tmp_path)
     _write(root, "pkg/__init__.py", "")

@@ -99,6 +99,44 @@ def test_delta_con_fuente_utf8_no_da_falso_positivo(tmp_path):
     assert report["new_pairs"] == []  # y NO es nuevo (baseline leída correctamente)
 
 
+def test_delta_con_nombre_de_fichero_acentuado_no_da_falso_positivo(tmp_path):
+    """Bug del review: git C-escapa rutas no-ASCII (`"caf\\303\\251.py"`) por
+    defecto, el .endswith('.py') falla y el módulo acentuado se cae de la baseline
+    -> el ciclo parece NUEVO. Con core.quotePath=false no ocurre."""
+    root = str(tmp_path)
+    _init_repo(root)
+    _write(root, "pkg/__init__.py", "")
+    _write(root, "pkg/café.py", "from . import a\n")
+    _write(root, "pkg/a.py", "from . import café\n")  # ciclo con nombre acentuado
+    _commit(root, "baseline con ciclo acentuado")
+
+    _write(root, "pkg/otro.py", "X = 1\n")  # cambio ajeno
+    report = graph.analyze(root, since="HEAD")
+
+    assert report["cycles"]           # el ciclo existe
+    assert report["new_pairs"] == []  # y ya estaba en la baseline: NO es nuevo
+
+
+def test_new_pairs_sale_ordenado(tmp_path):
+    """Bug del review: new_pairs se construía iterando un set de frozensets, cuyo
+    orden depende de PYTHONHASHSEED -> salida no reproducible."""
+    root = str(tmp_path)
+    _init_repo(root)
+    for name in ("a", "b", "c", "d"):
+        _write(root, "pkg/%s.py" % name, "X = 1\n")
+    _write(root, "pkg/__init__.py", "")
+    _commit(root, "baseline sin ciclos")
+
+    _write(root, "pkg/a.py", "from . import b\n")
+    _write(root, "pkg/b.py", "from . import a\n")  # ciclo 1
+    _write(root, "pkg/c.py", "from . import d\n")
+    _write(root, "pkg/d.py", "from . import c\n")  # ciclo 2
+    report = graph.analyze(root, since="HEAD")
+
+    assert len(report["new_pairs"]) == 2
+    assert report["new_pairs"] == sorted(report["new_pairs"])  # ordenado, reproducible
+
+
 def test_build_graph_from_git_none_sin_repo(tmp_path):
     _write(str(tmp_path), "pkg/__init__.py", "")
     assert graph.build_graph_from_git(str(tmp_path), "HEAD") is None
