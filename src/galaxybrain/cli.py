@@ -105,6 +105,22 @@ def cmd_off(args):
     return 0 if ok else 1
 
 
+def cmd_graph(args):
+    from . import graph
+
+    root = os.path.abspath(args.path or ".")
+    report = graph.analyze(root)
+    if args.json:
+        emit(json.dumps(report, ensure_ascii=False, indent=2))
+    else:
+        emit(render.render_graph(report, _style(args)))
+    # Por defecto DEVUELVE el mapa (código 0). --gate le da el sabor de gate:
+    # falla si hay ciclos, para engancharlo a un pre-commit cuando quieras.
+    if args.gate and report["cycles"]:
+        return 1
+    return 0
+
+
 def cmd_status(args):
     entries = store.read_index(limit=1)
     emit("galaxy-brain %s" % __version__)
@@ -155,6 +171,13 @@ def build_parser():
 
     status = subparsers.add_parser("status", help="que hay activo ahora mismo")
     status.set_defaults(func=cmd_status)
+
+    graph_p = subparsers.add_parser("graph", help="mapa de acoplamiento: imports, ciclos, hotspots")
+    graph_p.add_argument("path", nargs="?", default=".", help="raiz del proyecto (por defecto .)")
+    graph_p.add_argument("--json", action="store_true", help="salida cruda")
+    graph_p.add_argument("--color", choices=["auto", "always", "never"], default="auto")
+    graph_p.add_argument("--gate", action="store_true", help="codigo != 0 si hay ciclos (para pre-commit)")
+    graph_p.set_defaults(func=cmd_graph)
 
     return parser
 

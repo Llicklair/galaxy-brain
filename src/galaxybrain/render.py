@@ -165,6 +165,45 @@ def _render_frame(frame, style, project):
     return lines
 
 
+def render_graph(report, style):
+    """El mapa de acoplamiento: resumen, ciclos (el hecho que importa) y hotspots."""
+    lines = []
+    lines.append(
+        style(
+            "%d modulos, %d aristas internas, %d ciclo(s)"
+            % (report["modules"], report["edges"], len(report["cycles"])),
+            BOLD,
+        )
+    )
+    if report.get("errors"):
+        lines.append(style("  %d fichero(s) no parsearon (ver --json)" % len(report["errors"]), DIM))
+    lines.append("")
+
+    if report["cycles"]:
+        lines.append(style("CICLOS de imports (acoplamiento circular — un hecho, no una opinion):", BOLD))
+        for cyc in report["cycles"]:
+            lines.append("  %s %s" % (style("*", YELLOW), "  <->  ".join(cyc)))
+    else:
+        lines.append(style("Sin ciclos de imports.", DIM))
+    lines.append("")
+
+    def _top(counts):
+        return [(m, n) for m, n in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))[:5] if n]
+
+    fan_in = _top(report["fan_in"])
+    fan_out = _top(report["fan_out"])
+    if fan_in:
+        lines.append(style("Mas importados (fan-in):", BOLD))
+        for mod, n in fan_in:
+            lines.append("  %3d  %s" % (n, mod))
+        lines.append("")
+    if fan_out:
+        lines.append(style("Mas dependientes (fan-out):", BOLD))
+        for mod, n in fan_out:
+            lines.append("  %3d  %s" % (n, mod))
+    return "\n".join(lines).rstrip()
+
+
 def render_groups(groups, style):
     """La vista de libreta: qué se rompe y cuántas veces, lo más frecuente arriba."""
     if not groups:
