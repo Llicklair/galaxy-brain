@@ -96,6 +96,14 @@ No se construyen ahora. Se construyen **si y solo si** v2 pasa su prueba.
 aquí cuando ocurra: `primer uso: 2026-07-29` → `revisión: 2026-08-12`.
 (Instalada en el Python real de Marcos y primer fallo capturado el 2026-07-29.)
 
+**Enmienda del owner, 2026-07-29 (mismo día):** se **obvia el periodo de prueba de 14 días**. Qué
+compra: velocidad. Qué renuncia: el dato de **adopción** —¿la usas o la abandonas?—, que era el único
+termómetro honesto; el criterio original medía eso, no la correctitud. La consola queda validada en
+**correctitud** (75 tests + batería de funcionamiento sobre la instalación real: hilos, cadenas,
+estado grande truncado, secretos anidados redactados, `__repr__` roto, frames de librería), **no en
+adopción**. Por tanto, si se abre v3, se abre sobre correctitud + decisión de owner, **no** sobre la
+evidencia que el criterio original pedía. Queda dicho para no confundir una cosa con la otra.
+
 Si el criterio no se cumple, no hay v3. No se renegocia el criterio: se acepta el resultado.
 
 ---
