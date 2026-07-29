@@ -46,9 +46,35 @@ DEFAULT_SKIP = frozenset(
 )
 
 
-def _iter_py_files(root, skip):
+#: Ficheros que marcan la raiz de un proyecto Python distinto. Un directorio
+#: anidado que tenga uno de estos NO es codigo de este proyecto: es otro proyecto
+#: metido dentro (fixture, vendorizado, submodulo, ejemplo). Sus ciclos son suyos.
+PROJECT_MARKERS = ("pyproject.toml", "setup.py", "setup.cfg", ".git")
+
+
+def _is_nested_project(path):
+    return any(os.path.exists(os.path.join(path, marker)) for marker in PROJECT_MARKERS)
+
+
+def _iter_py_files(root, skip, include_nested=False, skipped=None):
+    """Los .py de ESTE proyecto bajo `root`.
+
+    Poda los subproyectos anidados (ver PROJECT_MARKERS) salvo `include_nested`.
+    Lo podado se acumula en `skipped` para poder DECIRLO: una gate que reduce su
+    cobertura en silencio miente en verde, que es justo lo que no puede pasar.
+    """
     for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = [d for d in dirnames if d not in skip and not d.startswith(".")]
+        keep = []
+        for name in dirnames:
+            if name in skip or name.startswith("."):
+                continue
+            full = os.path.join(dirpath, name)
+            if not include_nested and _is_nested_project(full):
+                if skipped is not None:
+                    skipped.append(os.path.relpath(full, root).replace("\\", "/"))
+                continue
+            keep.append(name)
+        dirnames[:] = keep
         for name in filenames:
             if name.endswith(".py"):
                 yield os.path.join(dirpath, name)
@@ -121,7 +147,7 @@ def _resolve_base(node, this_module, is_package):
     return prefix
 
 
-def build_graph(root, skip=DEFAULT_SKIP):
+def build_graph(root, skip=DEFAULT_SKIP, include_nested=False, skipped=None):
     """Construye el grafo de imports INTERNOS del proyecto en `root`.
 
     Devuelve (nodes, edges, errors):
@@ -130,7 +156,7 @@ def build_graph(root, skip=DEFAULT_SKIP):
       - errors: dict fichero -> mensaje (ficheros que no parsean)
     """
     items = []
-    for path in _iter_py_files(root, skip):
+    for path in _iter_py_files(root, skip, include_nested, skipped):
         mod = module_name(path, root)
         if not mod:
             continue
@@ -206,7 +232,27 @@ def _git(cwd, *args):
     return result.stdout
 
 
-def build_graph_from_git(root, ref, skip=DEFAULT_SKIP):
+def _nested_prefixes_in_listing(paths, root_rel):
+    """Prefijos (rutas git) de subproyectos anidados, deducidos del propio listado.
+
+    Se calcula sobre la ref, no sobre el disco: la baseline debe verse a sí misma,
+    o un subproyecto que hoy existe y entonces no (o al revés) mueve la frontera y
+    el delta inventa ciclos "nuevos".
+    """
+    root_rel = "" if root_rel in (".", "") else root_rel.rstrip("/") + "/"
+    prefixes = set()
+    for path in paths:
+        head, _sep, tail = path.rpartition("/")
+        if tail not in PROJECT_MARKERS or not head:
+            continue
+        prefix = head + "/"
+        if prefix == root_rel or not prefix.startswith(root_rel):
+            continue  # el marcador de la propia raiz no la poda a ella misma
+        prefixes.add(prefix)
+    return prefixes
+
+
+def build_graph_from_git(root, ref, skip=DEFAULT_SKIP, include_nested=False):
     """Grafo de la baseline: los .py bajo `root` tal como estaban en `ref`.
 
     Lee los blobs directamente de git — NO toca el working tree. Los nombres de
@@ -229,10 +275,14 @@ def build_graph_from_git(root, ref, skip=DEFAULT_SKIP):
     if listing is None:
         return None
 
+    entries = [line.strip() for line in listing.splitlines() if line.strip()]
+    nested = set() if include_nested else _nested_prefixes_in_listing(entries, rel)
+
     items = []
-    for gitpath in listing.splitlines():
-        gitpath = gitpath.strip()
+    for gitpath in entries:
         if not gitpath.endswith(".py"):
+            continue
+        if any(gitpath.startswith(prefix) for prefix in nested):
             continue
         parts = gitpath.split("/")
         if any(p in skip or p.startswith(".") for p in parts):
@@ -478,7 +528,7 @@ def _is_protocol_class(classdef):
     return any((_dotted_name(b) or "").split(".")[-1] == "Protocol" for b in classdef.bases)
 
 
-def overengineering(root, skip=DEFAULT_SKIP):
+def overengineering(root, skip=DEFAULT_SKIP, include_nested=False):
     """Proxies de sobreingeniería — ADVISORY, NUNCA gate.
 
     El único que shippeamos por ser fact-adjacent y de bajo ruido: abstracciones
@@ -491,7 +541,7 @@ def overengineering(root, skip=DEFAULT_SKIP):
     """
     abstract = []  # {"module", "class"}
     subclass_bases = {}  # nombre simple de base -> nº de clases que la heredan
-    for path in _iter_py_files(root, skip):
+    for path in _iter_py_files(root, skip, include_nested):
         mod = module_name(path, root)
         if not mod:
             continue
@@ -521,14 +571,23 @@ def overengineering(root, skip=DEFAULT_SKIP):
     return out
 
 
-def analyze(root, skip=DEFAULT_SKIP, since=None, boundaries=None, smells=False):
+def analyze(root, skip=DEFAULT_SKIP, since=None, boundaries=None, smells=False, include_nested=False):
     """El informe del acoplamiento del proyecto.
 
     Con `since` (ref de git) añade el delta de acoplamiento cíclico NUEVO. Con un
     fichero de fronteras (`.gb-boundaries`) añade los cruces prohibidos; con ambos,
     también qué cruces son nuevos respecto a la baseline.
+
+    `root_error` y `skipped_nested` existen por el invariante 4: analizar una raíz
+    que no está, o quedarse sin módulos porque todo era subproyecto, NO puede salir
+    en verde. Una gate que cubre cero y calla es peor que no tenerla.
     """
-    nodes, edges, errors = build_graph(root, skip)
+    root_error = None
+    if not os.path.isdir(root):
+        root_error = "la raiz no existe o no es un directorio: %s" % root
+
+    skipped_nested = []
+    nodes, edges, errors = build_graph(root, skip, include_nested, skipped_nested)
     fan_out = {mod: len(deps) for mod, deps in edges.items()}
     fan_in = {mod: 0 for mod in nodes}
     for deps in edges.values():
@@ -541,6 +600,9 @@ def analyze(root, skip=DEFAULT_SKIP, since=None, boundaries=None, smells=False):
     edge_count = sum(len(d) for d in edges.values())
     report = {
         "root": root,
+        "root_error": root_error,
+        "skipped_nested": sorted(skipped_nested),
+        "include_nested": include_nested,
         "modules": len(nodes),
         "edges": edge_count,
         "cycles": cycles,
@@ -553,7 +615,7 @@ def analyze(root, skip=DEFAULT_SKIP, since=None, boundaries=None, smells=False):
         "malformed_boundaries": boundaries_info["malformed"],
         "boundaries_error": boundaries_info["error"],
         "smells": smells,
-        "abstractions": overengineering(root, skip) if smells else [],
+        "abstractions": overengineering(root, skip, include_nested) if smells else [],
         "since": since,
         "baseline_ok": None,
         "new_cycles": [],
@@ -561,7 +623,7 @@ def analyze(root, skip=DEFAULT_SKIP, since=None, boundaries=None, smells=False):
         "new_violations": [],
     }
     if since is not None:
-        base = build_graph_from_git(root, since, skip)
+        base = build_graph_from_git(root, since, skip, include_nested)
         if base is None:
             report["baseline_ok"] = False
         else:

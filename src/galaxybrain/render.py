@@ -168,6 +168,9 @@ def _render_frame(frame, style, project):
 def render_graph(report, style):
     """El mapa de acoplamiento: resumen, ciclos (el hecho que importa) y hotspots."""
     lines = []
+    if report.get("root_error"):
+        lines.append(style("ERROR: %s" % report["root_error"], RED))
+        lines.append("")
     lines.append(
         style(
             "%d modulos, %d aristas internas, %d ciclo(s)"
@@ -177,6 +180,23 @@ def render_graph(report, style):
     )
     if report.get("errors"):
         lines.append(style("  %d fichero(s) no parsearon (ver --json)" % len(report["errors"]), DIM))
+    # Decir SIEMPRE lo que se dejo fuera: reducir cobertura en silencio convierte
+    # un "sin ciclos" en una mentira comoda.
+    skipped = report.get("skipped_nested") or []
+    if skipped:
+        lines.append(
+            style(
+                "  %d subproyecto(s) anidado(s) omitido(s) (--include-nested para verlos):"
+                % len(skipped),
+                DIM,
+            )
+        )
+        for path in skipped[:5]:
+            lines.append(style("    %s" % path, DIM))
+        if len(skipped) > 5:
+            lines.append(style("    ... y %d mas" % (len(skipped) - 5), DIM))
+    if not report["modules"] and not report.get("root_error"):
+        lines.append(style("  AVISO: ni un modulo analizado — esto no comprueba nada.", YELLOW))
     lines.append("")
 
     if report["cycles"]:

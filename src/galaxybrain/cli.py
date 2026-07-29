@@ -109,14 +109,22 @@ def cmd_graph(args):
     from . import graph
 
     root = os.path.abspath(args.path or ".")
-    report = graph.analyze(root, since=args.since, boundaries=args.boundaries, smells=args.smells)
+    report = graph.analyze(
+        root,
+        since=args.since,
+        boundaries=args.boundaries,
+        smells=args.smells,
+        include_nested=args.include_nested,
+    )
     if args.json:
         emit(json.dumps(report, ensure_ascii=False, indent=2))
     else:
         emit(render.render_graph(report, _style(args)))
     if args.gate:
         return _graph_gate(report)
-    return 0
+    # Una raiz que no existe es un error de uso, se pida gate o no: si devolviera 0
+    # aqui, un typo en la ruta pasaria por analisis correcto.
+    return 1 if report.get("root_error") else 0
 
 
 def _graph_gate(report):
@@ -132,6 +140,24 @@ def _graph_gate(report):
         or report.get("malformed_boundaries")
         or report.get("unmatched_rules")
     ):
+        return 1
+    # Mismo motivo, un escalon antes: si la raiz no esta, o no quedo NI UN modulo
+    # que analizar, esta gate no comprueba nada. Verde aqui seria falsa cobertura
+    # permanente — un typo en la ruta del hook y no vuelve a mirar jamas.
+    if report.get("root_error"):
+        sys.stderr.write("[gb graph] %s\n" % report["root_error"])
+        return 1
+    if not report["modules"]:
+        sys.stderr.write(
+            "[gb graph] 0 modulos bajo %s: esta gate no comprueba nada, asi que no "
+            "puede pasar en verde. Revisa la ruta%s.\n"
+            % (
+                report["root"],
+                " (o usa --include-nested si el codigo esta en subproyectos)"
+                if report.get("skipped_nested")
+                else "",
+            )
+        )
         return 1
     if report["since"] is not None:
         if report["baseline_ok"] is False:
@@ -207,6 +233,11 @@ def build_parser():
     graph_p.add_argument("--since", metavar="REF", help="comparar con esta ref git; --gate falla solo con ciclos/cruces NUEVOS")
     graph_p.add_argument("--boundaries", metavar="FICHERO", help="reglas de frontera (por defecto .gb-boundaries en la raiz)")
     graph_p.add_argument("--smells", action="store_true", help="proxies de sobreingenieria (ADVISORY, no bloquea)")
+    graph_p.add_argument(
+        "--include-nested",
+        action="store_true",
+        help="analizar tambien los subproyectos anidados (por defecto se omiten y se dicen)",
+    )
     graph_p.set_defaults(func=cmd_graph)
 
     return parser
