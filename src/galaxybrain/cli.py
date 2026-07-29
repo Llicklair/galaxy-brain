@@ -123,10 +123,25 @@ def _graph_gate(report):
     """Código de salida del --gate. Con --since, falla solo con ciclos NUEVOS;
     sin --since, estricto (cualquier ciclo). Si no se puede comparar la baseline,
     NO se bloquea (un falso positivo acaba en --no-verify) — se avisa por stderr."""
+    # Un problema de CONFIGURACIÓN de reglas enforce nada, así que falla SIEMPRE:
+    # fichero ilegible, línea mal escrita, o una regla que no casa con ningún
+    # módulo. Pasar en verde con eso sería la falsa cobertura que la gate existe
+    # para evitar (el peor fallo de una gate).
+    if (
+        report.get("boundaries_error")
+        or report.get("malformed_boundaries")
+        or report.get("unmatched_rules")
+    ):
+        return 1
     if report["since"] is not None:
         if report["baseline_ok"] is False:
+            # Sin baseline no puedo comparar el DELTA de ciclos (y un ciclo
+            # preexistente no debe bloquear), pero un cruce de frontera ABSOLUTO es
+            # un hecho -> sí bloqueo por él.
+            if report["violations"]:
+                return 1
             sys.stderr.write(
-                "[gb graph] no pude comparar con '%s'; no bloqueo.\n" % report["since"]
+                "[gb graph] no pude comparar ciclos con '%s'; no bloqueo por eso.\n" % report["since"]
             )
             return 0
         return 1 if (report["new_pairs"] or report["new_violations"]) else 0

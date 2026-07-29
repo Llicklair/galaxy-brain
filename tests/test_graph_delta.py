@@ -171,6 +171,23 @@ def test_delta_marca_cruce_de_frontera_nuevo(tmp_path):
     assert cli.main(["graph", root, "--gate", "--since", "HEAD", "--color", "never"]) == 1
 
 
+def test_gate_bloquea_cruce_absoluto_aunque_no_haya_baseline(tmp_path):
+    """Falso negativo del review: con --since y baseline no disponible, un cruce de
+    frontera ABSOLUTO (un hecho, no un delta) debe seguir bloqueando."""
+    root = str(tmp_path)
+    _init_repo(root)
+    _write(root, ".gb-boundaries", "app.web -/-> app.db\n")
+    _write(root, "app/__init__.py", "")
+    _write(root, "app/db.py", "")
+    _write(root, "app/web.py", "from app import db\n")  # cruce presente
+    _commit(root, "con cruce")
+
+    from galaxybrain import cli
+
+    # ref inexistente -> baseline_ok False; el cruce absoluto debe bloquear igual
+    assert cli.main(["graph", root, "--gate", "--since", "ref-que-no-existe", "--color", "never"]) == 1
+
+
 def test_build_graph_from_git_none_sin_repo(tmp_path):
     _write(str(tmp_path), "pkg/__init__.py", "")
     assert graph.build_graph_from_git(str(tmp_path), "HEAD") is None

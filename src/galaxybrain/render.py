@@ -199,7 +199,14 @@ def render_graph(report, style):
             lines.append(style("Sin acoplamiento ciclico nuevo vs %s." % ref, DIM))
         lines.append("")
 
-    if report.get("boundaries"):
+    if (
+        report.get("boundaries")
+        or report.get("malformed_boundaries")
+        or report.get("boundaries_error")
+        or report.get("unmatched_rules")
+    ):
+        if report.get("boundaries_error"):
+            lines.append(style("ERROR de fronteras: %s" % report["boundaries_error"], RED))
         if report["violations"]:
             extra = ""
             if report.get("since") is not None and report.get("baseline_ok"):
@@ -210,8 +217,10 @@ def render_graph(report, style):
                     "  %s %s  ->  %s   [%s]"
                     % (style("!", YELLOW), v["importer"], v["imported"], v["rule"])
                 )
-        else:
+        elif report.get("boundaries"):
             lines.append(style("Sin cruces de frontera prohibidos (%d regla(s))." % report["boundaries"], DIM))
+        for m in report.get("malformed_boundaries", []):
+            lines.append(style("  AVISO: linea de regla no valida (ignorada): `%s`" % m, YELLOW))
         for u in report.get("unmatched_rules", []):
             lines.append(
                 style("  AVISO: la regla `%s` no casa con ningun modulo (typo o raiz equivocada)." % u["rule"], YELLOW)

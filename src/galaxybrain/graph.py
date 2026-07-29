@@ -15,10 +15,12 @@ dinámicos (`__import__`, `importlib.import_module`), y cuenta los imports dentr
 de `if TYPE_CHECKING:` o de funciones como aristas aunque no sean dependencias
 de runtime. Es un grafo de acoplamiento a nivel de módulo, no un call graph.
 
-El delta (`--since`) compara pares co-cíclicos por NOMBRE de módulo: renombrar o
-mover un módulo que está dentro de un ciclo cambia su nombre y puede marcar ese
-ciclo como "nuevo" (un falso positivo). Cerrarlo requiere seguir renombrados con
-git (`--find-renames`) y mapear nombres viejos->nuevos — trabajo futuro.
+El delta (`--since`) compara por NOMBRE de módulo, tanto los pares co-cíclicos
+como los cruces de frontera: renombrar o mover un módulo cambia su nombre y puede
+marcar como "nuevo" un ciclo o un cruce que ya existía (falso positivo). Cerrarlo
+requiere seguir renombrados con git (`--find-renames`) y mapear nombres
+viejos->nuevos — trabajo futuro. Mitigación hoy: sin `--since`, la gate es
+absoluta (no compara nombres, solo el hecho presente).
 """
 
 import ast
@@ -353,25 +355,42 @@ def load_boundaries(root, path=None):
         SRC -/-> DST
 
     significa: ningún módulo bajo SRC puede importar uno bajo DST. Comentarios con
-    `#`. Por defecto se busca `.gb-boundaries` en `root`. Devuelve [(src, dst), …];
-    lista vacía si no hay fichero (la gate de fronteras es opt-in).
+    `#`. Por defecto se busca `.gb-boundaries` en `root`. Devuelve un dict
+    {rules, malformed, error}: `rules` las reglas parseadas; `malformed` las líneas
+    que parecían regla pero no lo son (typo, se avisan, no se descartan mudas);
+    `error` un mensaje si el fichero debía leerse y no se pudo. La gate de fronteras
+    es opt-in: si el fichero por defecto no existe, no hay error.
     """
+    explicit = path is not None
     if path is None:
         path = os.path.join(root, BOUNDARIES_FILE)
     try:
         with open(path, "r", encoding="utf-8", errors="replace") as handle:
-            lines = handle.read().splitlines()
-    except OSError:
-        return []
+            content = handle.read()
+    except FileNotFoundError:
+        # Fichero por defecto ausente = opt-in (sin error). Ruta EXPLÍCITA que no
+        # existe = error: pediste unas reglas que no están, y pasar en verde sería
+        # la falsa cobertura del invariante 4.
+        error = ("no encuentro el fichero de fronteras: %s" % path) if explicit else None
+        return {"rules": [], "malformed": [], "error": error}
+    except OSError as error:
+        # Existe pero no se puede leer (permisos, es un directorio…): nunca silencioso.
+        return {"rules": [], "malformed": [], "error": "no pude leer %s (%s)" % (path, error)}
+
     rules = []
-    for line in lines:
-        line = line.split("#", 1)[0].strip()
-        if "-/->" not in line:
+    malformed = []
+    for raw in content.splitlines():
+        line = raw.split("#", 1)[0].strip()
+        if not line:
             continue
-        src, dst = (part.strip() for part in line.split("-/->", 1))
-        if src and dst:
-            rules.append((src, dst))
-    return rules
+        parts = [p.strip() for p in line.split("-/->")]
+        if len(parts) == 2 and parts[0] and parts[1]:
+            rules.append((parts[0], parts[1]))
+        else:
+            # Contenido que NO es una regla válida (flecha con typo, dos flechas,
+            # un lado vacío): enforced nada. Se avisa en vez de descartarse mudo.
+            malformed.append(line)
+    return {"rules": rules, "malformed": malformed, "error": None}
 
 
 def _under(module, pattern):
@@ -439,7 +458,8 @@ def analyze(root, skip=DEFAULT_SKIP, since=None, boundaries=None):
         for dep in deps:
             fan_in[dep] = fan_in.get(dep, 0) + 1
     cycles = find_cycles(edges)
-    rules = load_boundaries(root, boundaries)
+    boundaries_info = load_boundaries(root, boundaries)
+    rules = boundaries_info["rules"]
     violations = find_violations(edges, rules)
     edge_count = sum(len(d) for d in edges.values())
     report = {
@@ -453,6 +473,8 @@ def analyze(root, skip=DEFAULT_SKIP, since=None, boundaries=None):
         "boundaries": len(rules),
         "violations": violations,
         "unmatched_rules": unmatched_rules(nodes, rules),
+        "malformed_boundaries": boundaries_info["malformed"],
+        "boundaries_error": boundaries_info["error"],
         "since": since,
         "baseline_ok": None,
         "new_cycles": [],
