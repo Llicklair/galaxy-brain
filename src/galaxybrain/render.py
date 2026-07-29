@@ -227,6 +227,18 @@ def render_graph(report, style):
             )
         lines.append("")
 
+    if report.get("smells"):
+        if report.get("abstractions"):
+            lines.append(
+                style("Sobreingenieria (ADVISORY, no bloquea) — abstracciones con <=1 implementacion:", BOLD)
+            )
+            for a in report["abstractions"]:
+                cuenta = "sin implementacion" if a["impls"] == 0 else "1 implementacion"
+                lines.append("  %s %s.%s  (%s)" % (style("?", DIM), a["module"], a["class"], cuenta))
+        else:
+            lines.append(style("Sin abstracciones sospechosas.", DIM))
+        lines.append("")
+
     def _top(counts):
         return [(m, n) for m, n in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))[:5] if n]
 

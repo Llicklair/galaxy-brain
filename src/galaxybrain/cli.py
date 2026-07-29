@@ -109,7 +109,7 @@ def cmd_graph(args):
     from . import graph
 
     root = os.path.abspath(args.path or ".")
-    report = graph.analyze(root, since=args.since, boundaries=args.boundaries)
+    report = graph.analyze(root, since=args.since, boundaries=args.boundaries, smells=args.smells)
     if args.json:
         emit(json.dumps(report, ensure_ascii=False, indent=2))
     else:
@@ -206,6 +206,7 @@ def build_parser():
     graph_p.add_argument("--gate", action="store_true", help="codigo != 0 si hay ciclos (para pre-commit)")
     graph_p.add_argument("--since", metavar="REF", help="comparar con esta ref git; --gate falla solo con ciclos/cruces NUEVOS")
     graph_p.add_argument("--boundaries", metavar="FICHERO", help="reglas de frontera (por defecto .gb-boundaries en la raiz)")
+    graph_p.add_argument("--smells", action="store_true", help="proxies de sobreingenieria (ADVISORY, no bloquea)")
     graph_p.set_defaults(func=cmd_graph)
 
     return parser

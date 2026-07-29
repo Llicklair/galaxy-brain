@@ -444,7 +444,84 @@ def unmatched_rules(nodes, rules):
     return out
 
 
-def analyze(root, skip=DEFAULT_SKIP, since=None, boundaries=None):
+def _dotted_name(node):
+    """Nombre punteado de una expresión ast (Name/Attribute), o None."""
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        base = _dotted_name(node.value)
+        return (base + "." + node.attr) if base else node.attr
+    return None
+
+
+def _is_abc_class(classdef):
+    """¿Es una clase abstracta estilo `abc`? (base ABC/ABCMeta, metaclass=ABCMeta,
+    o algún método @abstractmethod). Los Protocol se tratan aparte: son
+    estructurales y tener 0 subclases explícitas es NORMAL, no un smell."""
+    for base in classdef.bases:
+        name = (_dotted_name(base) or "").split(".")[-1]
+        if name in ("ABC", "ABCMeta"):
+            return True
+    for kw in classdef.keywords:
+        if kw.arg == "metaclass" and (_dotted_name(kw.value) or "").split(".")[-1] == "ABCMeta":
+            return True
+    for item in classdef.body:
+        if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            for dec in item.decorator_list:
+                target = dec.func if isinstance(dec, ast.Call) else dec
+                if (_dotted_name(target) or "").split(".")[-1] in ("abstractmethod", "abstractproperty"):
+                    return True
+    return False
+
+
+def _is_protocol_class(classdef):
+    return any((_dotted_name(b) or "").split(".")[-1] == "Protocol" for b in classdef.bases)
+
+
+def overengineering(root, skip=DEFAULT_SKIP):
+    """Proxies de sobreingeniería — ADVISORY, NUNCA gate.
+
+    El único que shippeamos por ser fact-adjacent y de bajo ruido: abstracciones
+    (estilo abc.ABC) con 0 o 1 implementación concreta — la interfaz para una sola
+    cosa, el smell clásico. Tiene falsos positivos LEGÍTIMOS (puntos de extensión,
+    seams de test), así que NO es un veredicto ni bloquea: es una lista para que la
+    mires tú. Gatearlo sería el error de la forja (opiniones como gate). Los
+    Protocol se excluyen (estructurales). El matching de subclases es por nombre
+    simple: best-effort, coherente con lo advisory.
+    """
+    abstract = []  # {"module", "class"}
+    subclass_bases = {}  # nombre simple de base -> nº de clases que la heredan
+    for path in _iter_py_files(root, skip):
+        mod = module_name(path, root)
+        if not mod:
+            continue
+        try:
+            with open(path, "r", encoding="utf-8", errors="replace") as handle:
+                tree = ast.parse(handle.read())
+        except (SyntaxError, ValueError, RecursionError, MemoryError):
+            continue
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.ClassDef):
+                continue
+            for base in node.bases:
+                simple = (_dotted_name(base) or "").split(".")[-1]
+                if simple:
+                    subclass_bases[simple] = subclass_bases.get(simple, {})
+                    subclass_bases[simple][node.name] = True  # una clase distinta que la hereda
+            if _is_abc_class(node) and not _is_protocol_class(node):
+                abstract.append({"module": mod, "class": node.name})
+
+    out = []
+    for abc_class in abstract:
+        heirs = subclass_bases.get(abc_class["class"], {})
+        impls = len([h for h in heirs if h != abc_class["class"]])
+        if impls <= 1:
+            out.append({"module": abc_class["module"], "class": abc_class["class"], "impls": impls})
+    out.sort(key=lambda x: (x["impls"], x["module"], x["class"]))
+    return out
+
+
+def analyze(root, skip=DEFAULT_SKIP, since=None, boundaries=None, smells=False):
     """El informe del acoplamiento del proyecto.
 
     Con `since` (ref de git) añade el delta de acoplamiento cíclico NUEVO. Con un
@@ -475,6 +552,8 @@ def analyze(root, skip=DEFAULT_SKIP, since=None, boundaries=None):
         "unmatched_rules": unmatched_rules(nodes, rules),
         "malformed_boundaries": boundaries_info["malformed"],
         "boundaries_error": boundaries_info["error"],
+        "smells": smells,
+        "abstractions": overengineering(root, skip) if smells else [],
         "since": since,
         "baseline_ok": None,
         "new_cycles": [],
