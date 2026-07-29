@@ -103,19 +103,28 @@ Todo por variable de entorno; no hay fichero de configuración que mantener.
 
 ---
 
-## Secretos
+## Secretos — redacción parcial, best-effort
 
-Las variables locales alrededor de un fallo son exactamente donde viven las credenciales, así que
-**los valores de variables con nombre sensible no llegan nunca al disco** (`password`, `token`,
-`api_key`, `secret`, `auth`, `credential`, `session`, `cookie`… y las claves de diccionario con esos
-nombres).
+El estado alrededor de un fallo es exactamente donde viven las credenciales. La consola **redacta por
+nombre** (`password`, `token`, `api_key`, `secret`, `auth`, `credential`, `session`, `cookie`…) cuando
+el secreto aparece como **variable local suelta** o **clave de diccionario poco anidada**. Es una
+heurística por nombre, no por contenido: adivinar si una cadena es un secreto es caro y falible; el
+nombre lo escribió un humano a propósito.
 
-Es una heurística por **nombre**, no por contenido: adivinar si una cadena es un secreto es caro y
-falible; el nombre lo escribió un humano a propósito. Falso positivo = pierdes un valor que no
-necesitabas. Falso negativo = un token en un fichero. Coste asimétrico, que es la quinta propiedad
-del diseño.
+**Pero la cobertura es parcial, y hay que decirlo claro.** Una revisión adversarial
+([docs/review-2026-07-29.md](docs/review-2026-07-29.md)) confirmó cinco canales por los que un secreto
+llega igualmente a disco:
 
-Aun así, el histórico vive en tu `$HOME` en texto plano. No lo subas a ningún sitio.
+- el **texto del traceback** y las **líneas de código fuente** se guardan crudos;
+- el **mensaje de la excepción** (`raise ValueError(f"bad token {t}")`) se guarda crudo;
+- **`sys.argv`** entero (`mytool --password X`);
+- un dict con el secreto **anidado ≥2 niveles** (el cap de profundidad anula la redacción);
+- los **atributos de un objeto** (`dataclass`/pydantic con un campo `password`).
+
+Redactar cualquiera de esos de forma fiable exige heurísticas de contenido, que este proyecto rechaza
+a propósito (dan falsa sensación de seguridad). Así que la regla de oro no depende de la redacción:
+**el histórico vive en tu `$HOME` en texto plano; trátalo como sensible y no lo subas a ningún sitio.**
+La redacción por nombre quita el ruido más obvio, no es una garantía.
 
 ---
 
