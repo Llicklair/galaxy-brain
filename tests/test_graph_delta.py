@@ -137,6 +137,40 @@ def test_new_pairs_sale_ordenado(tmp_path):
     assert report["new_pairs"] == sorted(report["new_pairs"])  # ordenado, reproducible
 
 
+def test_delta_no_marca_cruce_de_frontera_preexistente(tmp_path):
+    root = str(tmp_path)
+    _init_repo(root)
+    _write(root, ".gb-boundaries", "app.web -/-> app.db\n")
+    _write(root, "app/__init__.py", "")
+    _write(root, "app/db.py", "")
+    _write(root, "app/web.py", "from app import db\n")  # cruce YA en la baseline
+    _commit(root, "baseline con cruce")
+
+    _write(root, "app/otro.py", "X = 1\n")  # cambio ajeno
+    report = graph.analyze(root, since="HEAD")
+
+    assert report["violations"]            # el cruce existe
+    assert report["new_violations"] == []  # pero ya estaba: no bloquea
+
+
+def test_delta_marca_cruce_de_frontera_nuevo(tmp_path):
+    root = str(tmp_path)
+    _init_repo(root)
+    _write(root, ".gb-boundaries", "app.web -/-> app.db\n")
+    _write(root, "app/__init__.py", "")
+    _write(root, "app/db.py", "")
+    _write(root, "app/web.py", "X = 1\n")  # baseline SIN cruce
+    _commit(root, "baseline limpia")
+
+    _write(root, "app/web.py", "from app import db\n")  # introduce el cruce
+    report = graph.analyze(root, since="HEAD")
+    assert any(v["importer"] == "app.web" for v in report["new_violations"])
+
+    from galaxybrain import cli
+
+    assert cli.main(["graph", root, "--gate", "--since", "HEAD", "--color", "never"]) == 1
+
+
 def test_build_graph_from_git_none_sin_repo(tmp_path):
     _write(str(tmp_path), "pkg/__init__.py", "")
     assert graph.build_graph_from_git(str(tmp_path), "HEAD") is None

@@ -344,12 +344,93 @@ def find_cycles(edges):
     return cycles
 
 
-def analyze(root, skip=DEFAULT_SKIP, since=None):
+BOUNDARIES_FILE = ".gb-boundaries"
+
+
+def load_boundaries(root, path=None):
+    """Lee las reglas de frontera del proyecto. Texto plano, una por línea:
+
+        SRC -/-> DST
+
+    significa: ningún módulo bajo SRC puede importar uno bajo DST. Comentarios con
+    `#`. Por defecto se busca `.gb-boundaries` en `root`. Devuelve [(src, dst), …];
+    lista vacía si no hay fichero (la gate de fronteras es opt-in).
+    """
+    if path is None:
+        path = os.path.join(root, BOUNDARIES_FILE)
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as handle:
+            lines = handle.read().splitlines()
+    except OSError:
+        return []
+    rules = []
+    for line in lines:
+        line = line.split("#", 1)[0].strip()
+        if "-/->" not in line:
+            continue
+        src, dst = (part.strip() for part in line.split("-/->", 1))
+        if src and dst:
+            rules.append((src, dst))
+    return rules
+
+
+def _under(module, pattern):
+    """¿`module` es `pattern` o cuelga de él, en frontera de punto?
+
+    Frontera de punto para no dar falsos positivos: `myapp.web` NO casa con
+    `myapp.website`, solo con `myapp.web` y `myapp.web.*`.
+    """
+    return module == pattern or module.startswith(pattern + ".")
+
+
+def find_violations(edges, rules):
+    """Aristas (importador -> importado) que cruzan una frontera prohibida.
+
+    Un cruce prohibido es un HECHO (declaraste la regla), no una opinión — de ahí
+    los casi cero falsos positivos.
+    """
+    violations = []
+    for importer in sorted(edges):
+        for imported in sorted(edges[importer]):
+            for src, dst in rules:
+                if _under(importer, src) and _under(imported, dst):
+                    violations.append(
+                        {
+                            "importer": importer,
+                            "imported": imported,
+                            "rule": "%s -/-> %s" % (src, dst),
+                        }
+                    )
+                    break  # una violación por arista basta
+    return violations
+
+
+def unmatched_rules(nodes, rules):
+    """Reglas cuyo SRC o DST no casa con NINGÚN módulo del grafo.
+
+    Una regla que no casa con nada nunca dispara: es un typo o —muy común— señal
+    de que apuntaste `gb graph` a otra raíz (los nombres de módulo dependen de
+    ella: `gb graph src` da `galaxybrain.store`, `gb graph src/galaxybrain` da
+    `store`). Avisar de esto evita el peor fallo de una gate: creer que cubre algo
+    que en realidad no comprueba.
+    """
+    out = []
+    for src, dst in rules:
+        src_ok = any(_under(m, src) for m in nodes)
+        dst_ok = any(_under(m, dst) for m in nodes)
+        if not (src_ok and dst_ok):
+            out.append(
+                {"rule": "%s -/-> %s" % (src, dst), "src_matches": src_ok, "dst_matches": dst_ok}
+            )
+    return out
+
+
+def analyze(root, skip=DEFAULT_SKIP, since=None, boundaries=None):
     """El informe del acoplamiento del proyecto.
 
-    Si `since` es una ref de git, añade el delta: qué acoplamiento cíclico es
-    NUEVO respecto a esa baseline (a nivel de pares co-cíclicos, para no dar
-    falsos positivos cuando un ciclo simplemente encoge).
+    Con `since` (ref de git) añade el delta de acoplamiento cíclico NUEVO. Con un
+    fichero de fronteras (`.gb-boundaries`) añade los cruces prohibidos; con ambos,
+    también qué cruces son nuevos respecto a la baseline.
     """
     nodes, edges, errors = build_graph(root, skip)
     fan_out = {mod: len(deps) for mod, deps in edges.items()}
@@ -358,6 +439,8 @@ def analyze(root, skip=DEFAULT_SKIP, since=None):
         for dep in deps:
             fan_in[dep] = fan_in.get(dep, 0) + 1
     cycles = find_cycles(edges)
+    rules = load_boundaries(root, boundaries)
+    violations = find_violations(edges, rules)
     edge_count = sum(len(d) for d in edges.values())
     report = {
         "root": root,
@@ -367,10 +450,14 @@ def analyze(root, skip=DEFAULT_SKIP, since=None):
         "fan_in": fan_in,
         "fan_out": fan_out,
         "errors": errors,
+        "boundaries": len(rules),
+        "violations": violations,
+        "unmatched_rules": unmatched_rules(nodes, rules),
         "since": since,
         "baseline_ok": None,
         "new_cycles": [],
         "new_pairs": [],
+        "new_violations": [],
     }
     if since is not None:
         base = build_graph_from_git(root, since, skip)
@@ -392,5 +479,13 @@ def analyze(root, skip=DEFAULT_SKIP, since=None):
                     for i in range(len(c))
                     for j in range(i + 1, len(c))
                 )
+            ]
+            # Cruces prohibidos NUEVOS: aplico las reglas ACTUALES a la baseline y
+            # comparo por (importador, importado). Un cruce preexistente no bloquea.
+            base_keys = {
+                (v["importer"], v["imported"]) for v in find_violations(base_edges, rules)
+            }
+            report["new_violations"] = [
+                v for v in violations if (v["importer"], v["imported"]) not in base_keys
             ]
     return report

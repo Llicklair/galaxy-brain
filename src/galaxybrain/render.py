@@ -199,6 +199,25 @@ def render_graph(report, style):
             lines.append(style("Sin acoplamiento ciclico nuevo vs %s." % ref, DIM))
         lines.append("")
 
+    if report.get("boundaries"):
+        if report["violations"]:
+            extra = ""
+            if report.get("since") is not None and report.get("baseline_ok"):
+                extra = " (%d nuevo(s) vs %s)" % (len(report["new_violations"]), report["since"])
+            lines.append(style("CRUCES de frontera prohibidos%s:" % extra, BOLD))
+            for v in report["violations"]:
+                lines.append(
+                    "  %s %s  ->  %s   [%s]"
+                    % (style("!", YELLOW), v["importer"], v["imported"], v["rule"])
+                )
+        else:
+            lines.append(style("Sin cruces de frontera prohibidos (%d regla(s))." % report["boundaries"], DIM))
+        for u in report.get("unmatched_rules", []):
+            lines.append(
+                style("  AVISO: la regla `%s` no casa con ningun modulo (typo o raiz equivocada)." % u["rule"], YELLOW)
+            )
+        lines.append("")
+
     def _top(counts):
         return [(m, n) for m, n in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))[:5] if n]
 

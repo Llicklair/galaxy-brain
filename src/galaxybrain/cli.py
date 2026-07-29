@@ -109,7 +109,7 @@ def cmd_graph(args):
     from . import graph
 
     root = os.path.abspath(args.path or ".")
-    report = graph.analyze(root, since=args.since)
+    report = graph.analyze(root, since=args.since, boundaries=args.boundaries)
     if args.json:
         emit(json.dumps(report, ensure_ascii=False, indent=2))
     else:
@@ -129,8 +129,8 @@ def _graph_gate(report):
                 "[gb graph] no pude comparar con '%s'; no bloqueo.\n" % report["since"]
             )
             return 0
-        return 1 if report["new_pairs"] else 0
-    return 1 if report["cycles"] else 0
+        return 1 if (report["new_pairs"] or report["new_violations"]) else 0
+    return 1 if (report["cycles"] or report["violations"]) else 0
 
 
 def cmd_status(args):
@@ -189,7 +189,8 @@ def build_parser():
     graph_p.add_argument("--json", action="store_true", help="salida cruda")
     graph_p.add_argument("--color", choices=["auto", "always", "never"], default="auto")
     graph_p.add_argument("--gate", action="store_true", help="codigo != 0 si hay ciclos (para pre-commit)")
-    graph_p.add_argument("--since", metavar="REF", help="comparar con esta ref git; --gate falla solo con ciclos NUEVOS")
+    graph_p.add_argument("--since", metavar="REF", help="comparar con esta ref git; --gate falla solo con ciclos/cruces NUEVOS")
+    graph_p.add_argument("--boundaries", metavar="FICHERO", help="reglas de frontera (por defecto .gb-boundaries en la raiz)")
     graph_p.set_defaults(func=cmd_graph)
 
     return parser
