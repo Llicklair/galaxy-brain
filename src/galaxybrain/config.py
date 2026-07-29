@@ -28,11 +28,17 @@ REDACT_PATTERNS = (
 )
 
 
-def _int(name, default):
+def _int(name, default, minimum=None):
+    """Entero de entorno, con suelo opcional. El suelo importa: un valor de
+    usuario a 0 o negativo saneado tarde rompe el recorte de frames o miente en
+    los contadores (era B3)."""
     try:
-        return int(os.environ[name])
+        value = int(os.environ[name])
     except (KeyError, ValueError):
         return default
+    if minimum is not None and value < minimum:
+        return minimum
+    return value
 
 
 def _flag(name, default=False):
@@ -54,28 +60,32 @@ def home():
 
 
 def max_frames():
-    """Cuantos frames se guardan (se conservan los MAS INTERNOS: ahi esta el fallo)."""
-    return _int("GB_MAX_FRAMES", 20)
+    """Cuantos frames se guardan (se conservan los MAS INTERNOS: ahi esta el fallo).
+
+    Suelo 1: 0 frames no tiene sentido y disparaba el bug de recorte (B3)."""
+    return _int("GB_MAX_FRAMES", 20, minimum=1)
 
 
 def max_locals():
-    """Cuantas variables por frame."""
-    return _int("GB_MAX_LOCALS", 40)
+    """Cuantas variables por frame. 0 = ninguna (valido); negativos, no."""
+    return _int("GB_MAX_LOCALS", 40, minimum=0)
 
 
 def max_value_chars():
     """Longitud maxima del repr de un valor."""
-    return _int("GB_MAX_VALUE_CHARS", 240)
+    return _int("GB_MAX_VALUE_CHARS", 240, minimum=1)
 
 
 def max_items():
     """Cuantos elementos de una coleccion se muestran antes de resumir."""
-    return _int("GB_MAX_ITEMS", 10)
+    return _int("GB_MAX_ITEMS", 10, minimum=0)
 
 
 def context_lines():
-    """Lineas de codigo fuente alrededor de la linea que fallo."""
-    return _int("GB_CONTEXT_LINES", 2)
+    """Lineas de codigo fuente alrededor de la linea que fallo.
+
+    0 es valido y util: desactiva la captura de lineas fuente (mitiga S1)."""
+    return _int("GB_CONTEXT_LINES", 2, minimum=0)
 
 
 def capture_library_locals():
@@ -98,6 +108,17 @@ def capture_threads():
     toca hilos, este interruptor lo devuelve.
     """
     return not _flag("GB_NO_THREADS", False)
+
+
+def keep_argv():
+    """Guardar la linea de comandos ENTERA en el registro.
+
+    Por defecto NO: los flags son donde viven los secretos (`mytool --password X`,
+    `--token=...`), y guardar argv crudo los mandaba a disco (era S3). Se guarda
+    solo el programa y cuantos argumentos habia. Este interruptor devuelve la
+    lista completa para CLIs cuyos argumentos son utiles y no sensibles.
+    """
+    return _flag("GB_KEEP_ARGV", False)
 
 
 def quiet():

@@ -218,6 +218,11 @@ def build_record(exc_type, exc, tb, source="excepthook", thread=None):
     except BaseException:  # noqa: BLE001
         pass
 
+    try:
+        argv = list(sys.argv)
+    except BaseException:  # noqa: BLE001
+        argv = []
+
     return {
         "schema": 1,
         "ts": datetime.datetime.now().astimezone().isoformat(timespec="seconds"),
@@ -235,7 +240,12 @@ def build_record(exc_type, exc, tb, source="excepthook", thread=None):
         "process": {
             "cwd": cwd,
             "project": detect_project(cwd),
-            "argv": list(sys.argv),
+            # S3: los flags son donde viven los secretos. Por defecto solo el
+            # programa y cuantos argumentos habia, no sus valores. GB_KEEP_ARGV
+            # devuelve la lista entera para args utiles y no sensibles.
+            "program": argv[0] if argv else None,
+            "argv": argv if config.keep_argv() else None,
+            "argv_count": len(argv),
             "python": sys.version.split()[0],
             "executable": sys.executable,
             "platform": sys.platform,

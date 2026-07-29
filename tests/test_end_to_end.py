@@ -191,6 +191,57 @@ def test_guarda_la_cadena_de_excepciones(gb_home, child_env):
     assert chain[0]["type"] == "ValueError"
 
 
+def test_no_guarda_secretos_de_argv(gb_home, child_env):
+    """S3: `sys.argv` entero se guardaba crudo — `mytool --password X` a disco.
+    Ahora solo el programa y la cuenta, no los valores de los flags."""
+    result = run_child("raise ValueError('roto')\n", child_env,
+                       extra_args=["--password", "hunter2-cli", "--token=ghp_secreto"])
+    assert result.returncode != 0
+
+    crudo = (gb_home / store.INDEX_NAME).read_text(encoding="utf-8")
+    for path in (gb_home / "errors").rglob("*.json"):
+        crudo += path.read_text(encoding="utf-8")
+
+    assert "hunter2-cli" not in crudo
+    assert "ghp_secreto" not in crudo
+
+    record = store.load()
+    proc = record["process"]
+    assert proc["argv"] is None          # por defecto no se guarda la lista
+    assert proc["argv_count"] >= 3       # pero sí cuántos había (el aviso de que hubo flags)
+    assert proc["program"] is not None
+
+
+def test_gb_keep_argv_restaura_la_lista_completa(gb_home, child_env):
+    child_env["GB_KEEP_ARGV"] = "1"
+    run_child("raise ValueError('roto')\n", child_env, extra_args=["sub", "--verbose"])
+    argv = store.load()["process"]["argv"]
+    assert argv is not None
+    assert "--verbose" in argv
+
+
+def test_gb_max_frames_cero_no_miente_ni_conserva_todo(gb_home, child_env, tmp_path):
+    """B3: con GB_MAX_FRAMES=0 el recorte conservaba TODO y el contador mentía.
+    Con el floor a 1 conserva el frame más interno y el contador es coherente."""
+    child_env["GB_MAX_FRAMES"] = "0"
+    path, _ = run_script(
+        tmp_path,
+        """
+        def c():
+            raise ValueError('x')
+        def b():
+            c()
+        def a():
+            b()
+        a()
+        """,
+        child_env,
+    )
+    record = store.load()
+    assert len(record["frames"]) == 1        # el más interno, no "todos"
+    assert record["frames_trimmed"] >= 1     # y de verdad recortó
+
+
 def test_no_escribe_secretos_en_disco(gb_home, child_env):
     run_child(
         """
