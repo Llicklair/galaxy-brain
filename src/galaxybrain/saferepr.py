@@ -37,6 +37,13 @@ def _repr_atom(obj, limit):
         return _describe_unrepresentable(obj, error)
 
 
+#: Cuánto se DESCIENDE en estructuras anidadas. Ojo: no es donde se deja de
+#: redactar —la redacción por clave ocurre en cada nivel de _repr_mapping— sino
+#: donde se deja de bajar: más hondo, un contenedor se resume por tamaño en vez
+#: de volcar su contenido. Acota coste y profundidad sin abrir un canal de fuga.
+_MAX_DEPTH = 4
+
+
 def safe_repr(obj, limit=None, max_items=None, _depth=0):
     """repr acotado, a prueba de excepciones y de objetos enormes.
 
@@ -49,19 +56,34 @@ def safe_repr(obj, limit=None, max_items=None, _depth=0):
     if isinstance(obj, _SAFE_ATOMS):
         return _repr_atom(obj, limit)
 
-    if _depth >= 2:
-        # Suficiente profundidad. Mas abajo el detalle deja de ayudar.
-        return _repr_atom(obj, min(limit, 80))
-
+    # Los contenedores SIEMPRE pasan por su manejador, a cualquier profundidad:
+    # ahí es donde _repr_mapping redacta las claves sensibles. El cap se aplica
+    # al DESCENDER (en _repr_value), nunca aquí cortocircuitando a repr() crudo —
+    # eso era S4: un dict con una clave sensible anidada se volcaba sin redactar.
     try:
-        if isinstance(obj, (list, tuple, set, frozenset)):
-            return _repr_sequence(obj, limit, max_items, _depth)
         if isinstance(obj, dict):
             return _repr_mapping(obj, limit, max_items, _depth)
+        if isinstance(obj, (list, tuple, set, frozenset)):
+            return _repr_sequence(obj, limit, max_items, _depth)
     except BaseException as error:  # noqa: BLE001
         return _describe_unrepresentable(obj, error)
 
     return _repr_atom(obj, limit)
+
+
+def _repr_value(value, limit, max_items, depth):
+    """Un valor hijo de un contenedor, respetando el cap de profundidad.
+
+    Pasado el cap no se desciende, y tampoco se vuelca el contenido de un
+    contenedor: se resume por tamaño. Así un secreto anidado más hondo que el
+    cap queda OCULTO, no filtrado (era S4)."""
+    if depth > _MAX_DEPTH:
+        if isinstance(value, dict):
+            return "{...%d %s...}" % (len(value), "clave" if len(value) == 1 else "claves")
+        if isinstance(value, (list, tuple, set, frozenset)):
+            return "[...%d...]" % len(value)
+        return _repr_atom(value, min(limit, 80))
+    return safe_repr(value, limit, max_items, depth)
 
 
 def _repr_sequence(obj, limit, max_items, depth):
@@ -77,7 +99,7 @@ def _repr_sequence(obj, limit, max_items, depth):
     for index, item in enumerate(obj):
         if index >= max_items:
             break
-        shown.append(safe_repr(item, min(limit, 80), max_items, depth + 1))
+        shown.append(_repr_value(item, min(limit, 80), max_items, depth + 1))
 
     body = ", ".join(shown)
     if total > max_items:
@@ -95,7 +117,7 @@ def _repr_mapping(obj, limit, max_items, depth):
         if is_sensitive(key if isinstance(key, str) else ""):
             value_text = REDACTED
         else:
-            value_text = safe_repr(value, min(limit, 80), max_items, depth + 1)
+            value_text = _repr_value(value, min(limit, 80), max_items, depth + 1)
         shown.append("%s: %s" % (key_text, value_text))
 
     body = ", ".join(shown)
