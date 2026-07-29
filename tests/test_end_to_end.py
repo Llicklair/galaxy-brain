@@ -1,0 +1,336 @@
+"""El test que decide si el proyecto existe.
+
+Criterio de terminado de v2 (SCOPE-v2.md): ante un fallo real, te dice donde y
+con que estado, sin que lo reproduzcas a mano. Estos tests provocan fallos
+reales en procesos Python de verdad y comprueban que el estado quedo guardado.
+
+Todo corre en subprocesos a proposito: un hook de excepciones instalado dentro
+del propio pytest no demuestra nada sobre un programa real.
+"""
+
+import json
+import subprocess
+import sys
+import textwrap
+
+from galaxybrain import store
+
+PRELUDIO = "import galaxybrain; galaxybrain.install()\n"
+
+
+def run_child(code, env, extra_args=()):
+    script = PRELUDIO + textwrap.dedent(code)
+    return subprocess.run(
+        [sys.executable, "-c", script, *extra_args],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+
+
+def run_script(tmp_path, code, env, name="programa.py"):
+    """Como run_child, pero con un fichero de verdad en disco.
+
+    No es un detalle de fontaneria: el codigo de `python -c` no tiene fuente
+    recuperable, asi que solo un fichero real ejercita la captura de contexto.
+    """
+    path = tmp_path / name
+    path.write_text(PRELUDIO + textwrap.dedent(code), encoding="utf-8")
+    return path, subprocess.run(
+        [sys.executable, str(path)],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+
+
+def test_captura_el_estado_de_un_fallo_real(gb_home, child_env):
+    result = run_child(
+        """
+        def cargar(filas):
+            total = 0
+            for fila in filas:
+                total += fila["cantidad"]
+            return total
+
+        cargar([{"cantidad": 3}, {"importe": 7}])
+        """,
+        child_env,
+    )
+
+    assert result.returncode != 0
+
+    records = store.read_index()
+    assert len(records) == 1, "un fallo real tiene que dejar exactamente un registro"
+
+    record = store.load()
+    assert record["exception"]["type"] == "KeyError"
+
+    frame = [f for f in record["frames"] if not f["is_library"]][-1]
+    assert frame["function"] == "cargar"
+    # Lo que distingue esto de un traceback: el ESTADO.
+    assert frame["locals"]["fila"] == "{'importe': 7}"
+    assert frame["locals"]["total"] == "3"
+
+
+def test_el_programa_observado_se_comporta_igual(gb_home, child_env):
+    """Regla 9: si la captura estorba, la herramienta muere. El traceback
+    original tiene que seguir saliendo, entero, y el codigo de salida igual."""
+    result = run_child("raise ValueError('roto')\n", child_env)
+
+    assert result.returncode == 1
+    assert "Traceback (most recent call last):" in result.stderr
+    assert "ValueError: roto" in result.stderr
+
+
+def test_deja_una_sola_linea_de_aviso(gb_home, child_env):
+    result = run_child("raise ValueError('roto')\n", child_env)
+    avisos = [line for line in result.stderr.splitlines() if "galaxy-brain" in line]
+    assert len(avisos) == 1
+    assert "gb last" in avisos[0]
+
+
+def test_gb_quiet_calla_el_aviso_pero_sigue_capturando(gb_home, child_env):
+    child_env["GB_QUIET"] = "1"
+    result = run_child("raise ValueError('roto')\n", child_env)
+
+    assert "galaxy-brain" not in result.stderr
+    assert len(store.read_index()) == 1
+
+
+def test_gb_disable_no_captura_nada(gb_home, child_env):
+    child_env["GB_DISABLE"] = "1"
+    result = run_child("raise ValueError('roto')\n", child_env)
+
+    assert "ValueError: roto" in result.stderr
+    assert store.read_index() == []
+
+
+def test_salir_con_sys_exit_no_es_un_fallo(gb_home, child_env):
+    run_child("import sys; sys.exit(2)\n", child_env)
+    assert store.read_index() == [], "sys.exit es una forma normal de terminar"
+
+
+def test_captura_excepciones_de_hilos(gb_home, child_env):
+    run_child(
+        """
+        import threading
+
+        def trabajo():
+            pieza = "engranaje"
+            raise RuntimeError("el hilo peto")
+
+        hilo = threading.Thread(target=trabajo, name="obrero")
+        hilo.start()
+        hilo.join()
+        """,
+        child_env,
+    )
+
+    record = store.load()
+    assert record is not None
+    assert record["exception"]["type"] == "RuntimeError"
+    assert record["thread"] == "obrero"
+    frame = [f for f in record["frames"] if not f["is_library"]][-1]
+    assert frame["locals"]["pieza"] == "'engranaje'"
+
+
+def test_el_frame_de_modulo_no_vomita_dunders(gb_home, child_env, tmp_path):
+    """Un frame de modulo trae __builtins__, __loader__, __spec__ y compania.
+    Ocho lineas de ruido que sepultan las dos variables que importan."""
+    _, _ = run_script(
+        tmp_path,
+        """
+        clientes = ["ana", "beto"]
+        raise ValueError('roto')
+        """,
+        child_env,
+    )
+
+    locales = [f for f in store.load()["frames"] if not f["is_library"]][-1]["locals"]
+
+    assert locales["clientes"] == "['ana', 'beto']"
+    assert not [name for name in locales if name.startswith("__")]
+    # `galaxybrain` aparece porque lo importa el preludio de estos tests; en uso
+    # real (via .pth) el programa no importa nada nuestro — lo cubre
+    # test_autoinstall.py::test_captura_sin_que_el_programa_sepa_que_existimos.
+    assert set(locales) <= {"clientes", "galaxybrain"}
+
+
+def test_gb_no_threads_ahorra_el_import_pero_conserva_lo_principal(gb_home, child_env):
+    """El interruptor de latencia: quien no usa hilos no paga los 5 ms de
+    `import threading`, y las excepciones del hilo principal siguen guardandose."""
+    child_env["GB_NO_THREADS"] = "1"
+    result = run_child(
+        """
+        import sys
+        raise ValueError('roto')
+        """,
+        child_env,
+    )
+
+    assert store.load()["exception"]["type"] == "ValueError"
+    assert "threading" not in result.stderr
+
+
+def test_guarda_la_cadena_de_excepciones(gb_home, child_env):
+    run_child(
+        """
+        try:
+            int("no soy un numero")
+        except ValueError as error:
+            raise RuntimeError("no pude configurar el cliente") from error
+        """,
+        child_env,
+    )
+
+    chain = store.load()["exception"]["chain"]
+    assert chain[0]["kind"] == "cause"
+    assert chain[0]["type"] == "ValueError"
+
+
+def test_no_escribe_secretos_en_disco(gb_home, child_env):
+    run_child(
+        """
+        def conectar(usuario, password, api_key):
+            raise ConnectionError("sin ruta al host")
+
+        conectar("ana", "hunter2", "sk-vive-para-siempre")
+        """,
+        child_env,
+    )
+
+    crudo = (gb_home / store.INDEX_NAME).read_text(encoding="utf-8")
+    for path in (gb_home / "errors").rglob("*.json"):
+        crudo += path.read_text(encoding="utf-8")
+
+    assert "hunter2" not in crudo
+    assert "sk-vive-para-siempre" not in crudo
+    assert "ana" in crudo  # lo que no es secreto si se guarda
+
+
+def test_un_repr_roto_no_tumba_la_captura(gb_home, child_env):
+    run_child(
+        """
+        class Bomba:
+            def __repr__(self):
+                raise SystemError("explota al mirarme")
+
+        def usar():
+            bomba = Bomba()
+            vecino = "sigo aqui"
+            raise ValueError("el fallo de verdad")
+
+        usar()
+        """,
+        child_env,
+    )
+
+    frame = [f for f in store.load()["frames"] if not f["is_library"]][-1]
+    assert "repr() fallo" in frame["locals"]["bomba"]
+    assert frame["locals"]["vecino"] == "'sigo aqui'"
+
+
+def test_incluye_el_codigo_fuente_alrededor_del_fallo(gb_home, child_env, tmp_path):
+    """Sin las lineas de codigo, el numero de linea obliga a abrir el fichero,
+    que es el paso manual que esto viene a quitar."""
+    path, _ = run_script(
+        tmp_path,
+        """
+        def calcular(a, b):
+            resultado = a / b
+            return resultado
+
+        calcular(1, 0)
+        """,
+        child_env,
+    )
+
+    frame = [f for f in store.load()["frames"] if not f["is_library"]][-1]
+    assert frame["file"] == str(path)
+
+    fallo = [line for line in frame["source"] if line["is_fail"]]
+    assert len(fallo) == 1
+    assert "a / b" in fallo[0]["text"]
+
+    # Y el contexto de alrededor, que es lo que evita abrir el fichero.
+    assert any("def calcular" in line["text"] for line in frame["source"])
+
+
+def test_sin_fuente_recuperable_degrada_en_vez_de_romperse(gb_home, child_env):
+    """`python -c`, `exec()` y el REPL no tienen fichero que leer. Ese caso
+    existe y la captura tiene que seguir dando lo demas: tipo, mensaje, frames
+    y ESTADO. Perder el contexto de fuente no puede costar el registro entero."""
+    run_child(
+        """
+        def calcular(a, b):
+            return a / b
+
+        calcular(1, 0)
+        """,
+        child_env,
+    )
+
+    record = store.load()
+    frame = [f for f in record["frames"] if not f["is_library"]][-1]
+    assert frame["source"] == []
+    assert frame["locals"] == {"a": "1", "b": "0"}
+    assert record["exception"]["type"] == "ZeroDivisionError"
+
+
+def test_el_cli_lee_lo_que_el_hook_escribio(gb_home, child_env):
+    run_child("raise KeyError('usuario')\n", child_env)
+
+    result = subprocess.run(
+        [sys.executable, "-m", "galaxybrain.cli", "last", "--all", "--json"],
+        env=child_env,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert result.returncode == 0
+    assert json.loads(result.stdout)["exception"]["type"] == "KeyError"
+
+
+def test_varios_fallos_se_acumulan_en_el_historico(gb_home, child_env):
+    for mensaje in ("uno", "dos", "tres"):
+        run_child("raise ValueError(%r)\n" % mensaje, child_env)
+
+    entradas = store.read_index()
+    assert [e["message"] for e in entradas] == ["tres", "dos", "uno"]
+
+
+def test_gb_list_agrupa_por_firma_con_cuenta(gb_home, child_env, tmp_path):
+    """La libreta automática: el mismo fallo tres veces es UNA firma con un 3,
+    y lo más frecuente sale primero."""
+    path, _ = run_script(tmp_path, "d = {}\nd['falta']\n", child_env)  # KeyError, mismo sitio
+    for _ in range(2):
+        subprocess.run([sys.executable, str(path)], env=child_env,
+                       capture_output=True, text=True, timeout=60)
+    run_script(tmp_path, "int('no soy numero')\n", child_env, name="otro.py")  # ValueError, otro sitio
+
+    result = subprocess.run(
+        [sys.executable, "-m", "galaxybrain.cli", "list", "--all", "--json"],
+        env=child_env, capture_output=True, text=True, timeout=60,
+    )
+    groups = json.loads(result.stdout)
+
+    by_type = {g["type"]: g["count"] for g in groups}
+    assert by_type["KeyError"] == 3
+    assert by_type["ValueError"] == 1
+    assert groups[0]["type"] == "KeyError"  # el más frecuente arriba
+
+
+def test_gb_list_chrono_devuelve_el_timeline_crudo(gb_home, child_env):
+    for mensaje in ("uno", "dos"):
+        run_child("raise ValueError(%r)\n" % mensaje, child_env)
+
+    result = subprocess.run(
+        [sys.executable, "-m", "galaxybrain.cli", "list", "--all", "--chrono", "--json"],
+        env=child_env, capture_output=True, text=True, timeout=60,
+    )
+    entries = json.loads(result.stdout)
+    # timeline = una fila por fallo, sin agrupar, más reciente primero
+    assert [e["message"] for e in entries] == ["dos", "uno"]

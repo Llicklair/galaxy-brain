@@ -1,0 +1,182 @@
+"""Historico local, append-only, fuera del proyecto observado.
+
+Esto es la libreta de la Fase 0 del plan, pero automatica: que se rompio,
+cuantas veces y donde. Un fichero JSON por captura y un indice de una linea por
+captura, para que listar sea barato y no haya que abrir mil ficheros.
+
+Regla 7 de ARCHITECTURE-v2: nada de esto toca el repo observado.
+"""
+
+import hashlib
+import json
+import os
+from pathlib import Path
+
+from . import config
+
+INDEX_NAME = "index.jsonl"
+
+
+def root():
+    return config.home()
+
+
+def _slug(path):
+    """Nombre de carpeta estable y legible para un proyecto.
+
+    Nombre + hash corto de la ruta completa: dos repos llamados `api` en
+    carpetas distintas no se mezclan.
+    """
+    if not path:
+        return "sin-proyecto"
+    name = os.path.basename(os.path.normpath(path)) or "raiz"
+    digest = hashlib.sha256(os.path.normcase(path).encode("utf-8", "replace")).hexdigest()[:8]
+    safe = "".join(char if (char.isalnum() or char in "-_.") else "-" for char in name)
+    return "%s-%s" % (safe[:40], digest)
+
+
+def make_id(record):
+    """Identificador ordenable por tiempo, sin depender de un contador global."""
+    stamp = record.get("ts", "").replace(":", "").replace("-", "").replace("+", "p")
+    suffix = hashlib.sha256(
+        ("%s|%s|%s" % (stamp, record.get("process", {}).get("pid"), os.urandom(8))).encode(
+            "utf-8", "replace"
+        )
+    ).hexdigest()[:6]
+    return "%s-%s" % (stamp[:15] or "sin-fecha", suffix)
+
+
+def write(record):
+    """Persiste el registro. Devuelve la ruta, o None si no se pudo.
+
+    Nunca lanza: quien llama esta en mitad de la muerte de un proceso ajeno.
+    """
+    try:
+        record_id = record.get("id") or make_id(record)
+        record["id"] = record_id
+        project = record.get("process", {}).get("project") or record.get("process", {}).get("cwd")
+        folder = root() / "errors" / _slug(project)
+        folder.mkdir(parents=True, exist_ok=True)
+
+        path = folder / ("%s.json" % record_id)
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump(record, handle, ensure_ascii=False, indent=1)
+
+        _append_index(record, path)
+        return path
+    except BaseException:  # noqa: BLE001 - regla 9: fallar hacia el lado seguro
+        return None
+
+
+def _append_index(record, path):
+    entry = {
+        "id": record["id"],
+        "ts": record.get("ts"),
+        "type": record.get("exception", {}).get("type"),
+        "message": (record.get("exception", {}).get("message") or "")[:200],
+        "project": record.get("process", {}).get("project"),
+        "where": _headline_frame(record),
+        "path": str(path),
+    }
+    index = root() / INDEX_NAME
+    index.parent.mkdir(parents=True, exist_ok=True)
+    with open(index, "a", encoding="utf-8") as handle:
+        handle.write(json.dumps(entry, ensure_ascii=False) + "\n")
+
+
+def _headline_frame(record):
+    """El frame que le importa a un humano: el mas interno que sea tuyo."""
+    frames = record.get("frames") or []
+    for frame in reversed(frames):
+        if not frame.get("is_library"):
+            return "%s:%s" % (frame.get("file"), frame.get("line"))
+    if frames:
+        return "%s:%s" % (frames[-1].get("file"), frames[-1].get("line"))
+    return None
+
+
+def read_index(limit=None, project=None):
+    """Entradas del indice, de la mas reciente a la mas antigua."""
+    index = root() / INDEX_NAME
+    if not index.exists():
+        return []
+    entries = []
+    with open(index, "r", encoding="utf-8") as handle:
+        for line in handle:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                entries.append(json.loads(line))
+            except ValueError:
+                continue  # una linea corrupta no invalida el historico
+    entries.reverse()
+    if project:
+        target = os.path.normcase(os.path.abspath(project))
+        entries = [
+            item
+            for item in entries
+            if item.get("project") and os.path.normcase(os.path.abspath(item["project"])) == target
+        ]
+    if limit is not None:
+        entries = entries[:limit]
+    return entries
+
+
+def summarize(entries):
+    """Agrupa el histórico por firma (tipo + sitio) y cuenta ocurrencias.
+
+    Es el "cuántas veces se rompió" que el scope promete como libreta
+    automática: un KeyError que peta catorce veces en el mismo sitio es UNA
+    línea con un 14, no catorce líneas que hay que contar a ojo.
+
+    `entries` viene de lo más reciente a lo más antiguo (read_index), así que la
+    primera vez que se ve una firma es la ocurrencia más nueva.
+    """
+    groups = {}
+    order = []
+    for entry in entries:
+        key = (entry.get("type"), entry.get("where"))
+        group = groups.get(key)
+        if group is None:
+            group = {
+                "type": entry.get("type"),
+                "where": entry.get("where"),
+                "project": entry.get("project"),
+                "count": 0,
+                "last_ts": entry.get("ts"),
+                "last_id": entry.get("id"),
+                "last_message": entry.get("message"),
+                "first_ts": entry.get("ts"),
+            }
+            groups[key] = group
+            order.append(key)
+        group["count"] += 1
+        group["first_ts"] = entry.get("ts")  # se va quedando en la más antigua
+    result = [groups[key] for key in order]
+    result.sort(key=lambda g: (g["count"], g["last_ts"] or ""), reverse=True)
+    return result
+
+
+def load(record_id=None, project=None):
+    """Carga un registro por id, o el mas reciente si no se da id."""
+    entries = read_index(project=project)
+    if not entries:
+        return None
+    if record_id is None:
+        entry = entries[0]
+    else:
+        entry = next(
+            (item for item in entries if item.get("id", "").startswith(record_id)),
+            None,
+        )
+        if entry is None:
+            return None
+    path = Path(entry.get("path", ""))
+    if not path.exists():
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            return json.load(handle)
+    except (ValueError, OSError):
+        return None

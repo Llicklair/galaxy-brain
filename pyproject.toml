@@ -1,0 +1,29 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "galaxy-brain"
+version = "2.0.0.dev0"
+description = "Cuando algo peta, te dice donde y con que estado, sin que tengas que reproducirlo a mano."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "Marcos Recio" }]
+keywords = ["debugging", "exceptions", "traceback", "post-mortem"]
+
+# Cero dependencias en runtime, a proposito: esto se instala en el venv de
+# cualquier proyecto y no puede arrastrar nada consigo.
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.scripts]
+gb = "galaxybrain.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/galaxybrain"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
