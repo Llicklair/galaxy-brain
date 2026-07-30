@@ -409,3 +409,30 @@ def test_las_senales_no_bloquean(tmp_path):
     report = changes.analyze(root, "HEAD~1..HEAD")
     assert report["flags"], "la senal tiene que existir..."
     assert cli.main(["check", "HEAD~1..HEAD", root, "--color", "never"]) == 0, "...pero no bloquear"
+
+
+def test_degradar_comparacion_a_truthy_sale_aunque_el_neto_sea_cero(tmp_path):
+    """El falso negativo de la prueba de uso real: romper el descuento, cambiar
+    `assert total(x) == 90.0` por `assert total(x)` y aniadir un test trivial.
+    Neto de aserciones 1<->1, WEAKENER solo cazaba `assert True` literal: paso
+    limpio. Una asercion que compara afirma algo; una truthy solo "no es falsy"."""
+    root = _repo(tmp_path)
+    _write(root, "tests/test_caja.py",
+           "def test_descuento():\n    assert total([100], 0.1) == 90.0\n")
+    _commit(root, "base")
+    _write(root, "tests/test_caja.py",
+           "def test_descuento():\n    assert total([100], 0.1)\n")
+    _commit(root, "ablanda")
+
+    assert "ASSERT_WEAKENED" in _senales(changes.analyze(root, "HEAD~1..HEAD"))
+
+
+def test_cambiar_una_comparacion_por_otra_no_chilla(tmp_path):
+    """El contrapeso: actualizar el valor esperado conserva la comparacion."""
+    root = _repo(tmp_path)
+    _write(root, "tests/test_caja.py", "def test_x():\n    assert nombre() == 'viejo'\n")
+    _commit(root, "base")
+    _write(root, "tests/test_caja.py", "def test_x():\n    assert nombre() == 'nuevo'\n")
+    _commit(root, "actualiza")
+
+    assert changes.analyze(root, "HEAD~1..HEAD")["flags"] == []

@@ -102,6 +102,13 @@ def _code_only(line):
     return _STRING.sub(lambda m: m.group(1) * 2, line)
 
 
+#: Una asercion que COMPARA (==, in, is, <...) afirma algo concreto; una truthy
+#: pelada solo afirma "no es falsy". Degradar la primera a la segunda es la forma
+#: de amano que el conteo neto no ve: 1 asercion quitada, 1 puesta, resta cero.
+#: Encontrado en prueba de uso real (descuento roto + assert sin ==): paso limpio.
+_COMPARA = re.compile(r"(==|!=|<=|>=|<|>|\bin\b|\bis\b|\.raises|approx)")
+
+
 def _matches(patterns, line):
     code = _code_only(line)
     return any(p.search(code) for p in patterns)
@@ -225,6 +232,17 @@ def test_signals(files):
             for section in data.get("sections") or []:
                 gone = [l for l in section["removed"] if _matches(ASSERTION, l)]
                 came = _replacement_asserts(section["added"])
+                gone_cmp = [l for l in gone if _COMPARA.search(_code_only(l))]
+                came_cmp = [l for l in came if _COMPARA.search(_code_only(l))]
+                if len(gone) <= len(came) and len(gone_cmp) > len(came_cmp):
+                    where = section["func"] or "nivel de modulo"
+                    flags.append({
+                        "file": path,
+                        "signal": "ASSERT_WEAKENED",
+                        "detail": "en %s: %d asercion(es) degradada(s) de comparacion a truthy"
+                        % (where, len(gone_cmp) - len(came_cmp)),
+                        "evidence": [l.strip() for l in gone_cmp[:3]],
+                    })
                 if len(gone) > len(came):
                     where = section["func"] or "nivel de modulo"
                     flags.append(
