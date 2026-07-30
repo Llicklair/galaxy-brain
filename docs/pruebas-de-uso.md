@@ -79,6 +79,54 @@ medía el caso equivocado.
 
 ---
 
+## 2026-07-30 · Fase B, primera prueba — **`gb check` contra sus propios commits**
+
+En vez de escribir más tests, se corrió `gb check` sobre los diez commits reales de
+la sesión. Traía 17 tests en verde. Encontró **cuatro defectos**, tres suyos y uno
+heredado de v1.
+
+### Lo que salió bien
+
+- **`f7967dd` → 7 × `TEST_FILE_DELETED`.** Es el commit donde se retiró `eval/`.
+  Se borraron siete ficheros de test **y lo único que lo dijo fue el propio
+  agente**. Con `gb check` en el pre-commit, esa lista habría salido sola delante
+  de quien decide. Eso es *imposible de esconder* funcionando.
+- **`115ee8c` → `ASSERT_REMOVED`** (tras el arreglo): nombra la función y la
+  aserción exacta que desapareció.
+
+### Los cuatro defectos
+
+1. **Enmascaramiento por aritmética** (el grave). `ASSERT_REMOVED` era un neto por
+   fichero: quitar la aserción que fallaba y añadir un test trivial que pasa hacía
+   subir el neto y desaparecer la resta. Es la ruta de amaño más obvia después de
+   borrar el fichero, y era justo la que se escapaba.
+2. **Y el primer arreglo no valía.** Contar por *hunk*, usando la función que git
+   pone en la cabecera, seguía tapándolo: git etiqueta el hunk con la función donde
+   **empieza**, y en el caso real el borrado y el test nuevo caían en el mismo
+   hunk. Solo se vio volviendo a correrlo sobre el commit real — el test sintético
+   pasaba. La regla correcta: las aserciones dentro de un test **nuevo** no cuentan
+   como sustitución de las quitadas.
+3. **Patrón dentro de un docstring.** Marcó su propio docstring, donde
+   `@pytest.mark.skip` aparece entre backticks. Vaciar literales de una línea no
+   bastaba: las líneas interiores de una cadena triple no llevan comillas. Se
+   anclaron los decoradores a principio de línea.
+4. **Heredado de v1:** `^\s*assert\s+(True|1)\b` casaba **dentro** de
+   `assert 1 == 1`, marcando una comparación legítima como aserción debilitada.
+
+### Estado final
+
+Diez commits: **2 con señal, ambas verdaderas; ocho limpios; cero falsos
+positivos.**
+
+### La lección, que ya va por la cuarta vez hoy
+
+Los cuatro defectos aparecieron **corriendo la herramienta sobre trabajo real**,
+con la suite en verde en todo momento. Ninguno lo habría encontrado escribiendo más
+tests: el defecto 2 es el caso puro, donde el test sintético pasaba y el commit real
+fallaba. Escribir tests comprueba lo que ya imaginaste; usarlo te enseña lo que no.
+
+---
+
 ## 2026-07-30 · Fase A, segunda prueba — **POSITIVO, y encuentra el caso donde no hay rival**
 
 Tras estrechar el alcance a "excepciones no capturadas", tocaba comprobar si ese alcance nuevo
