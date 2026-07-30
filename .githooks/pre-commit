@@ -20,3 +20,10 @@ python -m pytest tests/ -q || exit 1
 
 echo "[galaxy-brain] pre-commit: gate de acoplamiento (gb graph src --gate)..."
 python -m galaxybrain.cli graph src --gate --color never || exit 1
+
+# Fase B — "imposible de esconder". INFORMA, no bloquea: las senales sobre los
+# tests son proxies (un refactor legitimo las levanta) y gatear proxies fue el
+# error de v1. Lo que las hace inevitables es que salgan aqui, delante de quien
+# decide, sin tener que acordarse de pedirlas. --staged porque en pre-commit el
+# commit todavia no existe: un rango miraria el commit ANTERIOR.
+python -m galaxybrain.cli check --staged --brief --color never || true

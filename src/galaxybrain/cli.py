@@ -181,11 +181,11 @@ def cmd_check(args):
     from . import changes
 
     root = os.path.abspath(args.path or ".")
-    report = changes.analyze(root, args.range)
+    report = changes.analyze(root, args.range, staged=args.staged)
     if args.json:
         emit(json.dumps(report, ensure_ascii=False, indent=2))
     else:
-        emit(render.render_changes(report, _style(args)))
+        emit(render.render_changes(report, _style(args), brief=args.brief))
     # Un rango ilegible es error de USO (no hay nada revisado). Las senales, en
     # cambio, NO son motivo de salida != 0: son proxies, y gatear proxies fue el
     # error de v1. Informar delante de quien decide es lo que las hace inevitables.
@@ -317,6 +317,14 @@ def build_parser():
         "range", nargs="?", default="HEAD~1..HEAD", help="rango git (por defecto HEAD~1..HEAD)"
     )
     check.add_argument("path", nargs="?", default=".", help="raiz del proyecto (por defecto .)")
+    check.add_argument(
+        "--staged",
+        action="store_true",
+        help="revisar el indice en vez de un rango (lo unico correcto en un pre-commit)",
+    )
+    check.add_argument(
+        "--brief", action="store_true", help="una linea si no hay senales (para hooks)"
+    )
     check.add_argument("--json", action="store_true", help="salida cruda")
     check.add_argument("--color", choices=["auto", "always", "never"], default="auto")
     check.set_defaults(func=cmd_check)

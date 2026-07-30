@@ -165,11 +165,15 @@ def _render_frame(frame, style, project):
     return lines
 
 
-def render_changes(report, style):
+def render_changes(report, style, brief=False):
     """Qué le hizo el cambio a la evidencia. Informe, no veredicto.
 
     Lo que NO se ha mirado va SIEMPRE al final y con el mismo peso visual: un
     informe que solo enumera lo que revisó se lee como si lo hubiera revisado todo.
+
+    `brief` es para los hooks: sin señales, una línea. Un informe largo en CADA
+    commit deja de leerse a la tercera vez, y entonces no protege de nada — el
+    mismo motivo por el que el aviso de captura es una sola línea.
     """
     lines = []
     if report.get("range_error"):
@@ -177,6 +181,18 @@ def render_changes(report, style):
         return "\n".join(lines)
 
     flags = report.get("flags") or []
+
+    if brief and not flags:
+        return style(
+            "[gb check] %s: %d fichero(s) de test tocado(s), sin senales "
+            "(detalle: gb check%s)"
+            % (
+                report["range"],
+                report["test_files_changed"],
+                " --staged" if report.get("staged") else "",
+            ),
+            DIM,
+        )
     lines.append(
         style(
             "%s — %d fichero(s) de test tocado(s), %d senal(es)"

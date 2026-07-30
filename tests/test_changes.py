@@ -180,6 +180,76 @@ def test_raiz_inexistente_es_error(tmp_path):
 # --- el contrato de salida ---------------------------------------------------
 
 
+def test_staged_mira_el_indice_no_el_commit_anterior(tmp_path):
+    """El bug que casi se cuela al enganchar el hook: en pre-commit el commit
+    todavia NO EXISTE, asi que un rango revisa el commit ANTERIOR. Aqui se fija
+    que --staged mire lo que va a entrar: el commit previo esta limpio y lo
+    staged trae el amaño, asi que un rango no veria nada."""
+    root = _repo(tmp_path)
+    _write(root, "tests/test_app.py", SUITE)
+    _write(root, "app.py", "valor = 1\n")
+    _commit(root, "base limpia")
+    _write(root, "app.py", "valor = 2\n")
+    _commit(root, "commit anterior, limpio")
+
+    # Ahora se ablanda un test y se deja EN EL INDICE, sin commitear.
+    _write(root, "tests/test_app.py", SUITE.replace("assert 2 == 2", "assert True"))
+    _run(root, "git", "add", "-A")
+
+    assert changes.analyze(root, "HEAD~1..HEAD")["flags"] == [], "el rango mira el commit de antes"
+    assert "WEAKENER_ADDED" in _senales(changes.analyze(root, staged=True))
+
+
+def test_staged_declara_la_asimetria_indice_working_tree(tmp_path):
+    root = _repo(tmp_path)
+    _write(root, "app.py", "valor = 1\n")
+    _commit(root, "base")
+    _write(root, "app.py", "valor = 2\n")
+    _run(root, "git", "add", "-A")
+
+    report = changes.analyze(root, staged=True)
+    assert any("sin stagear" in item for item in report["not_covered"])
+
+
+def test_sin_rango_ni_staged_es_error(tmp_path):
+    root = _repo(tmp_path)
+    _write(root, "app.py", "v = 1\n")
+    _commit(root, "base")
+
+    assert changes.analyze(root, None)["range_error"]
+
+
+def test_brief_es_una_linea_cuando_no_hay_senales(tmp_path):
+    """Un informe largo en CADA commit deja de leerse a la tercera vez, y
+    entonces no protege de nada."""
+    from galaxybrain import render
+
+    root = _repo(tmp_path)
+    _write(root, "app.py", "valor = 1\n")
+    _commit(root, "base")
+    _write(root, "app.py", "valor = 2\n")
+    _run(root, "git", "add", "-A")
+
+    report = changes.analyze(root, staged=True)
+    salida = render.render_changes(report, render.Style(False), brief=True)
+    assert len(salida.splitlines()) == 1
+
+
+def test_brief_no_se_calla_cuando_SI_hay_senales(tmp_path):
+    from galaxybrain import render
+
+    root = _repo(tmp_path)
+    _write(root, "tests/test_app.py", SUITE)
+    _commit(root, "base")
+    os.remove(os.path.join(root, "tests", "test_app.py"))
+    _run(root, "git", "add", "-A")
+
+    report = changes.analyze(root, staged=True)
+    salida = render.render_changes(report, render.Style(False), brief=True)
+    assert "TEST_FILE_DELETED" in salida
+    assert len(salida.splitlines()) > 1
+
+
 def test_las_senales_no_bloquean(tmp_path):
     """Son PROXIES. Gatear proxies fue el error de v1: un refactor legitimo las
     levanta, y una gate que chilla sin motivo acaba en --no-verify."""

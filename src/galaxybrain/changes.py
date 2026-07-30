@@ -185,8 +185,13 @@ def test_signals(files):
     return flags
 
 
-def analyze(root, rev_range, skip=None, include_nested=False):
+def analyze(root, rev_range=None, skip=None, include_nested=False, staged=False):
     """El informe de un cambio: qué le hizo a los tests y al acoplamiento.
+
+    Con `staged=True` mira lo que está en el índice en vez de un rango de commits.
+    Esa es la única forma correcta de usarlo en un pre-commit: ahí el commit TODAVÍA
+    NO EXISTE, así que `HEAD~1..HEAD` revisaría el commit anterior — no el que se
+    está haciendo. Revisar lo que no es se lee igual de verde que revisar bien.
 
     Devuelve siempre `covered` y `not_covered`: decir qué NO se ha mirado es parte
     del contrato, porque una revisión que calla lo que no cubrió se lee como si lo
@@ -194,9 +199,11 @@ def analyze(root, rev_range, skip=None, include_nested=False):
     """
     from . import graph
 
+    label = "staged" if staged else rev_range
     report = {
         "root": root,
-        "range": rev_range,
+        "range": label,
+        "staged": staged,
         "range_error": None,
         "test_files_changed": 0,
         "flags": [],
@@ -209,21 +216,30 @@ def analyze(root, rev_range, skip=None, include_nested=False):
         report["range_error"] = "la raiz no existe o no es un directorio: %s" % root
         return report
 
-    diff = _git_output(root, "diff", "--unified=0", rev_range)
+    if staged:
+        diff = _git_output(root, "diff", "--unified=0", "--cached")
+    elif rev_range:
+        diff = _git_output(root, "diff", "--unified=0", rev_range)
+    else:
+        report["range_error"] = "hace falta un rango git, o --staged"
+        return report
+
     if diff is None:
         # Sin diff no hay NADA que revisar. Devolver un informe vacio y limpio seria
         # exactamente la falsa cobertura que este modulo dice evitar.
         report["range_error"] = (
-            "no pude leer el diff de '%s' (repo git? rango valido?)" % rev_range
+            "no pude leer el diff de '%s' (repo git? rango valido?)" % label
         )
         return report
 
     files = parse_diff(diff)
     report["test_files_changed"] = len(files)
     report["flags"] = test_signals(files)
-    report["covered"].append("ficheros de test tocados en %s" % rev_range)
+    report["covered"].append("ficheros de test tocados en %s" % label)
 
-    base = rev_range.split("..")[0] or None
+    # Con --staged la baseline es HEAD: se compara lo que va a entrar contra lo
+    # ultimo commiteado.
+    base = "HEAD" if staged else (rev_range.split("..")[0] or None)
     if base:
         coupling = graph.analyze(
             root,
@@ -267,4 +283,13 @@ def analyze(root, rev_range, skip=None, include_nested=False):
     report["not_covered"].append(
         "tests que ya eran debiles antes del cambio: esto compara, no audita lo preexistente"
     )
+    if staged:
+        # Asimetria real y facil de pasar por alto: las senales salen del INDICE,
+        # pero el acoplamiento se calcula sobre el WORKING TREE (asi lo hace
+        # build_graph). Si hay cambios sin stagear, las dos mitades no miran
+        # exactamente lo mismo. Se dice, no se disimula.
+        report["not_covered"].append(
+            "cambios sin stagear: las senales salen del indice, el acoplamiento del "
+            "working tree — si tienes cosas a medias, las dos mitades no miran lo mismo"
+        )
     return report
