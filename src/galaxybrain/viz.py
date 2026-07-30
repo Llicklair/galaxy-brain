@@ -33,16 +33,40 @@ import html as _html
 import math
 
 
-def force_layout(nodes, edges, iteraciones=320, lado=1000.0):
-    """Fruchterman-Reingold, **determinista**: mismo grafo, mismas posiciones.
+def _jitter(nombre, amplitud):
+    """Desplazamiento pseudoaleatorio pero DETERMINISTA, derivado del nombre.
 
-    Un layout de fuerzas solo baila entre ejecuciones si lo arrancas al azar. Aquí
-    los nodos empiezan repartidos en un círculo por orden alfabético y se corren
-    iteraciones fijas, así que el resultado es reproducible byte a byte — se puede
-    tener el aspecto orgánico Y poder comparar dos capturas del mismo proyecto.
+    Donde una implementacion tipica pone `Math.random()` —y con el la
+    irreproducibilidad— aqui va un hash: mismo nombre, mismo jitter, siempre.
+    """
+    import hashlib
 
-    O(n²) por iteración: de sobra hasta unos pocos miles de nodos, que es el techo
-    en el que un grafo así sigue siendo legible de todas formas.
+    h = hashlib.md5(nombre.encode("utf-8", "replace")).digest()
+    x = (int.from_bytes(h[0:4], "big") / 0xFFFFFFFF - 0.5) * 2 * amplitud
+    y = (int.from_bytes(h[4:8], "big") / 0xFFFFFFFF - 0.5) * 2 * amplitud
+    return x, y
+
+
+def force_layout(nodes, edges, iteraciones=300, lado=1000.0, mass=None, seeds=None):
+    """Layout de fuerzas **determinista**, portado de la arquitectura de GitNexus
+    (gitnexus-web/src/lib/graph-adapter.ts, leido — no supuesto).
+
+    Las tres decisiones que hacen que su nube tenga forma y la primera version de
+    esta no la tuviera:
+
+    - **Siembra jerarquica, no circulo.** Lo estructural se coloca primero en
+      espiral de angulo aureo; cada hijo nace JUNTO a su padre con un jitter
+      determinista. El comentario de su codigo lo dice tal cual: *"used only for
+      initial spatial seeding before FA2 runs"*. Se pasa via `seeds`.
+    - **Masa por tipo** (`mass`): un modulo pesa 20, una funcion 2. Lo pesado
+      repele fuerte y arrastra a sus hijos — de ahi los clusters.
+    - **Gravedad, no caja.** La version anterior acotaba con un clamp a los
+      bordes, y el resultado fue un rectangulo de nodos pegados a las paredes
+      (visto en captura real). La gravedad hacia el centro hace el mismo trabajo
+      sin ese artefacto.
+
+    Determinista de punta a punta: siembra por hash, iteraciones fijas, desempate
+    de superpuestos por indice. Mismo grafo, mismo dibujo, byte a byte.
     """
     n = len(nodes)
     if n == 0:
@@ -51,11 +75,22 @@ def force_layout(nodes, edges, iteraciones=320, lado=1000.0):
         return {nodes[0]: (lado / 2, lado / 2)}
 
     indice = {nodo: i for i, nodo in enumerate(nodes)}
-    radio = lado / 2.5
-    pos = {}
+    centro = lado / 2
+    crudas = [max(0.5, (mass or {}).get(nodo, 1.0)) for nodo in nodes]
+    # Normalizadas a media 1 y combinadas con RAIZ del producto, no el producto
+    # crudo: con masas 20x20 la repulsion vencia a la gravedad y el layout
+    # explotaba (comprobado: nodos en x=-6969 sobre un lienzo de 1000).
+    media = sum(crudas) / len(crudas)
+    masas = [m / media for m in crudas]
+
+    lista = []
     for i, nodo in enumerate(nodes):
-        angulo = 2 * math.pi * i / n
-        pos[nodo] = [lado / 2 + radio * math.cos(angulo), lado / 2 + radio * math.sin(angulo)]
+        if seeds and nodo in seeds:
+            lista.append([seeds[nodo][0], seeds[nodo][1]])
+        else:
+            angulo = 2 * math.pi * i / n
+            radio = lado / 2.5
+            lista.append([centro + radio * math.cos(angulo), centro + radio * math.sin(angulo)])
 
     pares = [
         (indice[a], indice[b])
@@ -63,10 +98,10 @@ def force_layout(nodes, edges, iteraciones=320, lado=1000.0):
         if a in indice and b in indice and a != b
     ]
     k = math.sqrt((lado * lado) / n)
+    gravedad = 0.06
     temperatura = lado / 10.0
     enfriamiento = temperatura / (iteraciones + 1)
 
-    lista = [pos[nodo] for nodo in nodes]
     for _ in range(iteraciones):
         desplazamiento = [[0.0, 0.0] for _ in range(n)]
         for i in range(n):
@@ -76,11 +111,11 @@ def force_layout(nodes, edges, iteraciones=320, lado=1000.0):
                 dy = yi - lista[j][1]
                 dist2 = dx * dx + dy * dy
                 if dist2 < 0.01:
-                    # Superpuestos: se separan de forma DETERMINISTA (por indice), no
-                    # con un aleatorio, que es lo que rompe la reproducibilidad.
                     dx, dy, dist2 = 0.01 * (i + 1), 0.01 * (j + 1), 0.0002
                 dist = math.sqrt(dist2)
-                fuerza = (k * k) / dist
+                # Repulsion escalada por la raiz del producto de masas: lo
+                # estructural se abre paso y lo ligero orbita alrededor.
+                fuerza = (k * k) / dist * math.sqrt(masas[i] * masas[j])
                 ux, uy = dx / dist * fuerza, dy / dist * fuerza
                 desplazamiento[i][0] += ux
                 desplazamiento[i][1] += uy
@@ -97,16 +132,34 @@ def force_layout(nodes, edges, iteraciones=320, lado=1000.0):
             desplazamiento[b][0] += ux
             desplazamiento[b][1] += uy
         for i in range(n):
+            # Gravedad lineal hacia el centro, en vez del clamp que fabricaba el
+            # rectangulo: los nodos sueltos derivan hacia dentro, no hacia el borde.
+            desplazamiento[i][0] += (centro - lista[i][0]) * gravedad
+            desplazamiento[i][1] += (centro - lista[i][1]) * gravedad
             dx, dy = desplazamiento[i]
             largo = math.sqrt(dx * dx + dy * dy) or 1.0
             paso = min(largo, temperatura)
             lista[i][0] += dx / largo * paso
             lista[i][1] += dy / largo * paso
-            lista[i][0] = max(10.0, min(lado - 10.0, lista[i][0]))
-            lista[i][1] = max(10.0, min(lado - 10.0, lista[i][1]))
         temperatura -= enfriamiento
 
-    return {nodo: (round(lista[i][0], 2), round(lista[i][1], 2)) for nodo, i in indice.items()}
+    # Renormalizar al lienzo al final, conservando la forma (escala uniforme).
+    # La dinamica puede acabar donde quiera; lo que el navegador espera es un
+    # dibujo dentro de lado x lado, y esto lo garantiza pase lo que pase.
+    xs = [p[0] for p in lista]
+    ys = [p[1] for p in lista]
+    margen = lado * 0.05
+    rango = max(max(xs) - min(xs), max(ys) - min(ys)) or 1.0
+    escala = (lado - 2 * margen) / rango
+    cx0 = (max(xs) + min(xs)) / 2
+    cy0 = (max(ys) + min(ys)) / 2
+    return {
+        nodo: (
+            round(centro + (lista[i][0] - cx0) * escala, 2),
+            round(centro + (lista[i][1] - cy0) * escala, 2),
+        )
+        for nodo, i in indice.items()
+    }
 
 
 def _layers(nodes, edges, cycles):
@@ -178,10 +231,19 @@ def _corto(nombre, limite=26):
     return ("…" + corto) if len(corto) < limite else ("…" + corto[-(limite - 1):])
 
 
-#: Paleta por cluster: saturada, para fondo casi negro. Los tonos apagados que
-#: funcionan sobre papel se comen unos a otros aqui — con 150 circulos pequenios lo
-#: unico que separa un grupo de otro es el color, asi que tiene que gritar.
-#: Asignada por orden alfabetico del grupo: mismo proyecto, mismos colores siempre.
+#: Color y tamanio POR TIPO, no por modulo — portados tal cual de la paleta de
+#: GitNexus (gitnexus-web/src/lib/constants.ts): la jerarquia se lee por tamanio
+#: (un modulo ES mas grande que una funcion) y el tipo por color. Con color-por-
+#: modulo, dos funciones del mismo fichero eran indistinguibles de su clase.
+_KIND_COLOR = {
+    "module": "#7c3aed",    # violeta — contenedor
+    "class": "#f59e0b",     # ambar — destaca
+    "function": "#10b981",  # esmeralda
+    "method": "#14b8a6",    # teal
+}
+_KIND_SIZE = {"module": 13.0, "class": 8.0, "function": 4.0, "method": 3.0}
+
+#: Fallback para agrupaciones sin tipo (vista de modulos): paleta ciclica.
 _COLORES = [
     "#7c5cff", "#22d3ee", "#f472b6", "#fb923c", "#4ade80",
     "#60a5fa", "#c084fc", "#facc15", "#2dd4bf", "#f87171",
@@ -197,11 +259,41 @@ def render_graph_cloud(report, title="galaxy-brain — grafo", modo="simbolos"):
     calculan aquí (deterministas), así que el navegador solo dibuja: ni layout en
     JS, ni librería, ni WebGL.
     """
+    lado = 1000.0
     if modo == "simbolos":
-        llamadas = [(a, b) for a, b, tipo in report.get("edges", []) if tipo == "CALLS"]
         kinds = {n["qual"]: n["kind"] for n in report.get("nodes", [])}
         grupo_de = {n["qual"]: n.get("module", "") for n in report.get("nodes", [])}
-        implicados = sorted({x for par in llamadas for x in par})
+        # TODOS los simbolos, no solo los que aparecen en llamadas: en la primera
+        # version los sueltos ni salian, y "no llamado desde ninguna parte" es
+        # precisamente algo que se quiere VER.
+        implicados = sorted(kinds)
+        llamadas = [(a, b) for a, b, t in report.get("edges", []) if t == "CALLS"]
+        # La jerarquia entra al layout como MUELLE y al dibujo como linea tenue:
+        # es lo que mantiene cada funcion pegada a su modulo. Sin esto, la mitad
+        # de los nodos no tenia nada que los sujetara y la repulsion los lanzaba
+        # al borde (el rectangulo de la captura del owner).
+        jerarquia = [(a, b) for a, b, t in report.get("edges", []) if t != "CALLS"]
+
+        # Siembra jerarquica de GitNexus: modulos en espiral de angulo aureo,
+        # cada simbolo junto a su modulo con jitter determinista.
+        modulos = sorted({n for n in implicados if kinds.get(n) == "module"})
+        aureo = math.pi * (3 - math.sqrt(5))
+        centros = {}
+        for i, mod in enumerate(modulos):
+            radio = (lado / 3.2) * math.sqrt((i + 1) / max(len(modulos), 1))
+            centros[mod] = (lado / 2 + radio * math.cos(i * aureo),
+                            lado / 2 + radio * math.sin(i * aureo))
+        seeds = {}
+        for n in implicados:
+            if n in centros:
+                seeds[n] = centros[n]
+            else:
+                cx, cy = centros.get(grupo_de.get(n, ""), (lado / 2, lado / 2))
+                jx, jy = _jitter(n, lado / 12)
+                seeds[n] = (cx + jx, cy + jy)
+        masa = {n: {"module": 20.0, "class": 5.0}.get(kinds.get(n), 2.0) for n in implicados}
+
+        pos = force_layout(implicados, llamadas + jerarquia, mass=masa, seeds=seeds)
         total = report.get("calls_candidates") or 0
         pct = round(100 * report.get("calls_resolved", 0) / total) if total else 0
         resumen = "%d simbolos · %d llamadas resueltas de %d (%d%%)" % (
@@ -209,31 +301,44 @@ def render_graph_cloud(report, title="galaxy-brain — grafo", modo="simbolos"):
         pie = "sin resolver: " + ", ".join(
             "%s %d" % (k, v) for k, v in sorted((report.get("unresolved") or {}).items())
         )
+        color_nodo = lambda n: _KIND_COLOR.get(kinds.get(n), "#64748b")  # noqa: E731
+        base_nodo = lambda n: _KIND_SIZE.get(kinds.get(n), 3.0)  # noqa: E731
+        leyenda = "".join(
+            '<span><i style="background:%s"></i>%s</span>' % (_KIND_COLOR[k], k)
+            for k in ("module", "class", "function", "method")
+        )
     else:
         llamadas = [(a, b) for a, b in (report.get("edge_list") or [])]
+        jerarquia = []
         implicados = sorted(report.get("fan_in", {}))
         kinds = {m: "module" for m in implicados}
         grupo_de = {m: m.split(".")[0] for m in implicados}
+        grupos = sorted({grupo_de.get(n, "") for n in implicados})
+        color_grupo = {g: _COLORES[i % len(_COLORES)] for i, g in enumerate(grupos)}
+        pos = force_layout(implicados, llamadas)
         resumen = "%d modulos · %d aristas · %d ciclo(s)" % (
             report.get("modules", 0), report.get("edges", 0), len(report.get("cycles") or []))
         pie = str(report.get("root", ""))
+        color_nodo = lambda n: color_grupo.get(grupo_de.get(n, ""), _COLORES[0])  # noqa: E731
+        base_nodo = lambda n: 6.0  # noqa: E731
+        leyenda = "".join(
+            '<span><i style="background:%s"></i>%s</span>'
+            % (color_grupo[g], _html.escape(g.split(".")[-1] or "—"))
+            for g in grupos[:12]
+        )
 
-    pos = force_layout(implicados, llamadas)
     grados = {}
     for a, b in llamadas:
         grados[a] = grados.get(a, 0) + 1
         grados[b] = grados.get(b, 0) + 1
-
-    grupos = sorted({grupo_de.get(n, "") for n in implicados})
-    color_de = {g: _COLORES[i % len(_COLORES)] for i, g in enumerate(grupos)}
 
     datos = [
         {
             "id": n,
             "x": pos[n][0],
             "y": pos[n][1],
-            "r": round(4 + 2.2 * math.sqrt(grados.get(n, 0)), 2),
-            "c": color_de.get(grupo_de.get(n, ""), _COLORES[0]),
+            "r": round(base_nodo(n) + 0.9 * math.sqrt(grados.get(n, 0)), 2),
+            "c": color_nodo(n),
             "g": grupo_de.get(n, ""),
             "k": kinds.get(n, ""),
             "l": n.split(".")[-1],
@@ -242,20 +347,21 @@ def render_graph_cloud(report, title="galaxy-brain — grafo", modo="simbolos"):
     ]
     import json as _json
 
+    indice = {n: i for i, n in enumerate(implicados)}
+    # Cada arista lleva su clase: 1 = llamada (se pinta), 0 = jerarquia (tenue).
+    lista_aristas = [
+        [indice[a], indice[b], 1] for a, b in llamadas if a in indice and b in indice
+    ] + [
+        [indice[a], indice[b], 0] for a, b in jerarquia if a in indice and b in indice
+    ]
+
     return _NUBE % {
         "title": _html.escape(title),
         "resumen": _html.escape(resumen),
         "pie": _html.escape(pie),
         "nodos": _json.dumps(datos, ensure_ascii=False),
-        "aristas": _json.dumps(
-            [[implicados.index(a), implicados.index(b)] for a, b in llamadas
-             if a in pos and b in pos],
-        ),
-        "leyenda": "".join(
-            '<span><i style="background:%s"></i>%s</span>'
-            % (color_de[g], _html.escape(g.split(".")[-1] or "—"))
-            for g in grupos[:12]
-        ),
+        "aristas": _json.dumps(lista_aristas),
+        "leyenda": leyenda,
     }
 
 
@@ -517,7 +623,7 @@ const cv = document.getElementById('lienzo'), cx = cv.getContext('2d');
 const ficha = document.getElementById('ficha'), buscar = document.getElementById('buscar');
 let esc = 1, ox = 0, oy = 0, activo = null, filtro = '';
 const vecinos = NODOS.map(() => new Set());
-ARISTAS.forEach(([a, b]) => { vecinos[a].add(b); vecinos[b].add(a); });
+ARISTAS.forEach(([a, b, t]) => { vecinos[a].add(b); vecinos[b].add(a); });
 
 function medir(){ cv.width = innerWidth; cv.height = innerHeight;
   const m = Math.min(cv.width, cv.height - 60) / 1020; esc = m; ox = (cv.width - 1000*m)/2; oy = 60 + (cv.height - 60 - 1000*m)/2; }
@@ -527,13 +633,16 @@ function pinta(){
   cx.clearRect(0,0,cv.width,cv.height);
   const resalta = activo !== null ? vecinos[activo] : null;
   cx.lineWidth = 1;
-  ARISTAS.forEach(([a,b]) => {
+  // Dos pasadas: la jerarquia (t=0) tenue debajo, las llamadas (t=1) encima.
+  [0, 1].forEach(capa => ARISTAS.forEach(([a,b,t]) => {
+    if ((t|0) !== capa) return;
     const tocada = activo !== null && (a === activo || b === activo);
-    if (activo !== null && !tocada) { cx.globalAlpha = 0.03; } else { cx.globalAlpha = tocada ? 0.9 : 0.16; }
-    cx.strokeStyle = tocada ? NODOS[a].c : NODOS[a].c;
+    const base = capa === 0 ? 0.05 : 0.18;
+    if (activo !== null && !tocada) { cx.globalAlpha = 0.02; } else { cx.globalAlpha = tocada ? 0.9 : base; }
+    cx.strokeStyle = NODOS[a].c;
     const [x1,y1] = px(NODOS[a]), [x2,y2] = px(NODOS[b]);
     cx.beginPath(); cx.moveTo(x1,y1); cx.lineTo(x2,y2); cx.stroke();
-  });
+  }));
   NODOS.forEach((n,i) => {
     const coincide = filtro && n.id.toLowerCase().includes(filtro);
     const cerca = activo === null || i === activo || resalta.has(i);

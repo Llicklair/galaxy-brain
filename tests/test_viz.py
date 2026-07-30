@@ -121,6 +121,65 @@ def test_el_layout_separa_lo_que_no_esta_conectado():
     assert entre_grupos > dentro
 
 
+def test_el_layout_no_amontona_nodos_en_el_borde(tmp_path):
+    """Los dos fallos que enseno la captura real del owner, fijados:
+    (1) el clamp a la caja apilaba los nodos sueltos en las paredes formando un
+    rectangulo; (2) al portar las masas de GitNexus, la repulsion 20x20 vencia a
+    la gravedad y el layout explotaba (nodos en x=-6969 sobre un lienzo de 1000).
+    El contrato: todo dentro del lienzo y sin pila en el borde."""
+    from galaxybrain import symbols
+    import json as _json
+    import re
+
+    root = _proyecto(tmp_path)
+    salida = viz.render_graph_cloud(symbols.analyze(root))
+    nodos = _json.loads(re.search(r"const NODOS = (\[.*?\]), ARISTAS", salida, re.S).group(1))
+
+    assert nodos, "el montaje tiene que producir nodos"
+    for n in nodos:
+        assert 0 <= n["x"] <= 1000 and 0 <= n["y"] <= 1000, "fuera del lienzo: %r" % n["id"]
+    en_borde = [n for n in nodos if n["x"] < 20 or n["x"] > 980 or n["y"] < 20 or n["y"] > 980]
+    assert len(en_borde) < max(2, len(nodos) // 4), "pila de nodos en el borde"
+
+
+def test_cada_simbolo_queda_cerca_de_su_modulo(tmp_path):
+    """La siembra jerarquica portada de GitNexus: una funcion orbita su modulo.
+    Se mide, no se mira: distancia media al modulo < distancia media al centro."""
+    from galaxybrain import symbols
+    import json as _json
+    import math
+    import re
+
+    root = _proyecto(tmp_path)
+    salida = viz.render_graph_cloud(symbols.analyze(root))
+    nodos = _json.loads(re.search(r"const NODOS = (\[.*?\]), ARISTAS", salida, re.S).group(1))
+
+    centros = {n["id"]: (n["x"], n["y"]) for n in nodos if n["k"] == "module"}
+    cx = sum(n["x"] for n in nodos) / len(nodos)
+    cy = sum(n["y"] for n in nodos) / len(nodos)
+    al_modulo, al_centro = [], []
+    for n in nodos:
+        if n["k"] == "module" or n["g"] not in centros:
+            continue
+        al_modulo.append(math.dist((n["x"], n["y"]), centros[n["g"]]))
+        al_centro.append(math.dist((n["x"], n["y"]), (cx, cy)))
+    if al_modulo:
+        assert sum(al_modulo) / len(al_modulo) < sum(al_centro) / len(al_centro)
+
+
+def test_la_nube_incluye_los_simbolos_sin_llamadas(tmp_path):
+    """En la primera version un simbolo sin llamadas ni salia — y 'no llamado
+    desde ninguna parte' es exactamente algo que se quiere VER."""
+    from galaxybrain import symbols
+
+    root = str(tmp_path)
+    _write(root, "app/__init__.py", "")
+    _write(root, "app/solo.py", "def huerfana():\n    return 1\n")
+
+    salida = viz.render_graph_cloud(symbols.analyze(root))
+    assert "huerfana" in salida
+
+
 def test_la_nube_es_autocontenida_y_determinista(tmp_path):
     root = _proyecto(tmp_path)
     from galaxybrain import symbols
