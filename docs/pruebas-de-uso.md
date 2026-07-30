@@ -245,3 +245,18 @@ en **coste y evidencia**, no en **pasa/falla**.
 **Consecuencia:** `eval/` se retira (708 líneas trackeadas). Medía la tesis de v1, que está retirada,
 contra un commit fijado de un repo privado que solo corre en Docker en esta máquina. No se volverá a
 ejecutar. El conocimiento se queda aquí; el código, no.
+
+---
+
+## 2026-07-30 · Pruebas de uso dirigidas — un stack nuevo y un amaño realista
+
+**`gb floor` sobre un repo Node (stack 2 de 3 del criterio):** detecta `npm test` y
+eslint, y en el mapa **dice** "hoy `gb graph` solo lee Python" en vez de callar.
+Cero avisos falsos.
+
+**`gb check` contra un amaño realista — NEGATIVO, y arreglado:** romper el
+descuento, degradar `assert total(x) == 90.0` a `assert total(x)` y añadir un test
+trivial pasó **limpio**: neto 1↔1 y WEAKENER solo cazaba `assert True` literal.
+Nueva señal `ASSERT_WEAKENED` (pérdida neta de aserciones *que comparan* con total
+estable), con contrapeso. Sexta vez en dos días: la suite estaba verde y el hueco lo
+encontró el uso, no un test.
