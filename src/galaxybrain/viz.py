@@ -581,9 +581,9 @@ _NUBE = """<!doctype html>
 <meta charset="utf-8">
 <title>%(title)s</title>
 <style>
+  /* Oscuro siempre, a proposito: la paleta neon esta diseniada para negro y en
+     claro se lava (comprobado en captura real). Compromiso visual, no descuido. */
   :root{--fondo:#0a0d14;--tinta:#e8edf3;--suave:#7d8b9c;--linea:#1e2836;--panel:#111722}
-  @media (prefers-color-scheme:light){
-    :root{--fondo:#eef1f4;--tinta:#131c24;--suave:#5b6b78;--linea:#c3cdd6;--panel:#fff}}
   *{box-sizing:border-box}
   body{margin:0;background:var(--fondo);color:var(--tinta);overflow:hidden;
        font:13px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
@@ -626,7 +626,14 @@ const vecinos = NODOS.map(() => new Set());
 ARISTAS.forEach(([a, b, t]) => { vecinos[a].add(b); vecinos[b].add(a); });
 
 function medir(){ cv.width = innerWidth; cv.height = innerHeight;
-  const m = Math.min(cv.width, cv.height - 60) / 1020; esc = m; ox = (cv.width - 1000*m)/2; oy = 60 + (cv.height - 60 - 1000*m)/2; }
+  // Encaja la caja de los NODOS, no el lienzo fijo: si el layout usa 800px, el
+  // dibujo llena la pantalla igual.
+  let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;
+  NODOS.forEach(n=>{ x0=Math.min(x0,n.x); y0=Math.min(y0,n.y); x1=Math.max(x1,n.x); y1=Math.max(y1,n.y); });
+  const pad=70, w=Math.max(x1-x0,1), h=Math.max(y1-y0,1);
+  esc = Math.min((cv.width-2*pad)/w, (cv.height-60-2*pad)/h);
+  ox = pad + (cv.width-2*pad-w*esc)/2 - x0*esc;
+  oy = 60 + pad + (cv.height-60-2*pad-h*esc)/2 - y0*esc; }
 function px(n){ return [n.x*esc + ox, n.y*esc + oy]; }
 
 function pinta(){
@@ -637,7 +644,7 @@ function pinta(){
   [0, 1].forEach(capa => ARISTAS.forEach(([a,b,t]) => {
     if ((t|0) !== capa) return;
     const tocada = activo !== null && (a === activo || b === activo);
-    const base = capa === 0 ? 0.05 : 0.18;
+    const base = capa === 0 ? 0.09 : 0.3;
     if (activo !== null && !tocada) { cx.globalAlpha = 0.02; } else { cx.globalAlpha = tocada ? 0.9 : base; }
     cx.strokeStyle = NODOS[a].c;
     const [x1,y1] = px(NODOS[a]), [x2,y2] = px(NODOS[b]);
