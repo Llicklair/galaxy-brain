@@ -17,3 +17,5 @@ galaxybrain.hooks     -/->  galaxybrain.cli
 galaxybrain.hooks     -/->  galaxybrain.render
 galaxybrain.changes   -/->  galaxybrain.cli
 galaxybrain.changes   -/->  galaxybrain.render
+galaxybrain.floor     -/->  galaxybrain.cli
+galaxybrain.floor     -/->  galaxybrain.render

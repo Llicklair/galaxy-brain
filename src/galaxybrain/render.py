@@ -165,6 +165,52 @@ def _render_frame(frame, style, project):
     return lines
 
 
+MARKS = {"ok": "+", "parcial": "~", "falta": "!", "no-detectable": "?"}
+
+
+def render_floor(report, style):
+    """El suelo: que hay, que falta, y que no puede mirar esto.
+
+    Lo delegado y lo no cubierto van al final CON el mismo peso: un informe que solo
+    enumera lo que comprobo se lee como si eso fuera todo lo que hay que comprobar.
+    """
+    lines = []
+    if report.get("root_error"):
+        return style("ERROR: %s" % report["root_error"], RED)
+
+    levels = report.get("levels") or []
+    faltan = [l for l in levels if l["status"] == "falta"]
+    lines.append(
+        style(
+            "El suelo de %s — %d nivel(es) sin cubrir de %d"
+            % (report["root"], len(faltan), len(levels)),
+            BOLD,
+        )
+    )
+    lines.append("")
+
+    for level in levels:
+        mark = MARKS.get(level["status"], "?")
+        color = {"ok": None, "parcial": YELLOW, "falta": RED, "no-detectable": DIM}.get(level["status"])
+        head = "  %s %s" % (style(mark, color) if color else mark, level["title"])
+        lines.append(head)
+        lines.append("      %s" % style(level["detail"], DIM))
+    lines.append("")
+
+    if report.get("delegated"):
+        lines.append(style("Delegado a herramientas que ya lo hacen:", BOLD))
+        for item in report["delegated"]:
+            lines.append("  %s %s" % (style("->", DIM), style(item, DIM)))
+        lines.append("")
+
+    if report.get("not_covered"):
+        lines.append(style("Lo que esto NO ha mirado:", BOLD))
+        for item in report["not_covered"]:
+            lines.append("  %s %s" % (style("-", DIM), style(item, DIM)))
+
+    return "\n".join(lines)
+
+
 def render_changes(report, style, brief=False):
     """Qué le hizo el cambio a la evidencia. Informe, no veredicto.
 

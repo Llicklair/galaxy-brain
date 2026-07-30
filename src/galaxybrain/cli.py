@@ -177,6 +177,20 @@ def cmd_graph(args):
     return 1 if report.get("root_error") else 0
 
 
+def cmd_floor(args):
+    from . import floor
+
+    root = os.path.abspath(args.path or ".")
+    report = floor.analyze(root, run_tests=args.time)
+    if args.json:
+        emit(json.dumps(report, ensure_ascii=False, indent=2))
+    else:
+        emit(render.render_floor(report, _style(args)))
+    # Un suelo incompleto NO es un fallo: es una lista de lo que falta. Solo la
+    # raiz inexistente es error de uso. Gatear esto lo volveria ceremonia.
+    return 1 if report["root_error"] else 0
+
+
 def cmd_check(args):
     from . import changes
 
@@ -328,6 +342,19 @@ def build_parser():
     check.add_argument("--json", action="store_true", help="salida cruda")
     check.add_argument("--color", choices=["auto", "always", "never"], default="auto")
     check.set_defaults(func=cmd_check)
+
+    floor_p = subparsers.add_parser(
+        "floor", help="el andamiaje base: que hay y que falta antes de construir"
+    )
+    floor_p.add_argument("path", nargs="?", default=".", help="raiz del proyecto (por defecto .)")
+    floor_p.add_argument(
+        "--time",
+        action="store_true",
+        help="cronometrar la suite contra el umbral DORA (ejecuta los tests: opt-in)",
+    )
+    floor_p.add_argument("--json", action="store_true", help="salida cruda")
+    floor_p.add_argument("--color", choices=["auto", "always", "never"], default="auto")
+    floor_p.set_defaults(func=cmd_floor)
 
     return parser
 
