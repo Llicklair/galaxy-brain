@@ -8,7 +8,27 @@ importante— que lo que NO se ha mirado se diga en voz alta.
 import os
 import subprocess
 
+import pytest
+
 from galaxybrain import changes, cli
+
+
+@pytest.mark.parametrize(
+    "linea,es_debil",
+    [
+        ("assert True", True),
+        ("assert 1", True),
+        ("assert True, 'con mensaje'", True),
+        ("assert 1 == 1", False),  # comparacion real, no asercion pelada
+        ("    assert 1 == 1  # nota", False),
+        ("assert True is True", False),
+    ],
+)
+def test_la_asercion_truthy_pelada_se_distingue_de_una_comparacion(linea, es_debil):
+    """El patron heredado de v1 terminaba en \\b y casaba DENTRO de `assert 1 == 1`.
+    Marcar una comparacion legitima como 'debilitada' es ruido, y el ruido es lo que
+    manda una revision a --no-verify."""
+    assert changes._matches(changes.WEAKENER, linea) is es_debil
 
 
 def _run(cwd, *args):
@@ -267,6 +287,30 @@ def test_un_patron_dentro_de_un_string_no_es_una_senal(tmp_path):
         '    assert detecta(fuente) and detecta(otra)\n',
     )
     _commit(root, "tests del detector, con patrones como dato")
+
+    assert changes.analyze(root, "HEAD~1..HEAD")["flags"] == []
+
+
+def test_mencionar_un_marcador_en_un_docstring_no_es_una_senal(tmp_path):
+    """El falso positivo que salto en el commit que arreglaba los falsos positivos:
+    el detector marco su PROPIO docstring, donde `@pytest.mark.skip` aparece entre
+    backticks a mitad de frase. Vaciar literales no bastaba —las lineas interiores
+    de una cadena triple no llevan comillas— asi que los decoradores van anclados a
+    principio de linea, que es donde estan los de verdad."""
+    root = _repo(tmp_path)
+    _write(root, "tests/test_app.py", SUITE)
+    _commit(root, "base")
+    _write(
+        root,
+        "tests/test_app.py",
+        SUITE
+        + '\ndef test_documentado():\n'
+        '    """Explica por que no usamos `@pytest.mark.skip` aqui,\n'
+        '    ni @unittest.skip, ni pytest.skip(...) a media frase.\n'
+        '    """\n'
+        '    assert 1 == 1\n',
+    )
+    _commit(root, "docstring que menciona marcadores")
 
     assert changes.analyze(root, "HEAD~1..HEAD")["flags"] == []
 

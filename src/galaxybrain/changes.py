@@ -50,19 +50,29 @@ ASSERTION = [
     re.compile(r"\bt\.(is|deepEqual|truthy|falsy|throws)\("),
 ]
 
+# Anclados a principio de linea. Un decorador de verdad SIEMPRE va ahi (modulo
+# indentacion); una mencion en prosa —un docstring, un comentario— casi nunca. Lo
+# descubrio este modulo marcando su propio docstring, donde `@pytest.mark.skip`
+# aparece entrecomillado con backticks a mitad de frase. Vaciar literales no bastaba:
+# las lineas interiores de una cadena triple no llevan comillas, asi que no hay nada
+# que vaciar. Anclar es mas barato y mas robusto que entender cadenas multilinea.
 SKIP_ADDED = [
-    re.compile(r"@pytest\.mark\.(skip|skipif|xfail)"),
-    re.compile(r"@unittest\.skip"),
-    re.compile(r"\b(it|test|describe)\.(skip|todo|failing)\s*\("),
+    re.compile(r"^\s*@pytest\.mark\.(skip|skipif|xfail)"),
+    re.compile(r"^\s*@unittest\.skip"),
+    re.compile(r"^\s*(it|test|describe)\.(skip|todo|failing)\s*\("),
     re.compile(r"^\s*x(it|test|describe)\s*\("),
-    re.compile(r"pytest\.skip\s*\("),
+    re.compile(r"^\s*pytest\.skip\s*\("),
 ]
 
 WEAKENER = [
     re.compile(r"pytest\.approx\s*\("),
     re.compile(r"assertAlmostEqual\s*\("),
     re.compile(r"\.(toBeTruthy|toBeDefined|toBeInstanceOf)\s*\("),
-    re.compile(r"^\s*assert\s+(True|1)\b"),
+    # Solo la asercion truthy PELADA (`assert True`, `assert 1`, con mensaje o sin
+    # el). El patron heredado de v1 terminaba en \b y por tanto casaba dentro de
+    # `assert 1 == 1`, que es una comparacion de verdad. Marcar eso como
+    # "debilitada" es ruido, y el ruido es lo que manda una revision a --no-verify.
+    re.compile(r"^\s*assert\s+(True|1)\s*($|,|#)"),
     re.compile(r"\bor\s+True\b"),
     re.compile(r"\|\|\s*true\b"),
     re.compile(r"expect\s*\(\s*true\s*\)", re.IGNORECASE),
