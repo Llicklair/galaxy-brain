@@ -194,6 +194,63 @@ def cmd_graph(args):
     return 1 if report.get("root_error") else 0
 
 
+def cmd_symbols(args):
+    from . import symbols
+
+    root = os.path.abspath(args.path or ".")
+    report = symbols.analyze(root)
+    if report["root_error"]:
+        sys.stderr.write("[gb symbols] %s\n" % report["root_error"])
+        return 1
+
+    if args.html:
+        from . import viz
+
+        destino = os.path.abspath(args.html)
+        try:
+            with open(destino, "w", encoding="utf-8") as handle:
+                handle.write(
+                    viz.render_symbols_html(report, title="simbolos · %s" % os.path.basename(root))
+                )
+        except OSError as error:
+            sys.stderr.write("[gb symbols] no pude escribir %s (%s)\n" % (destino, error))
+            return 2
+        emit("mapa de simbolos en %s" % destino)
+        if args.open:
+            import webbrowser
+
+            webbrowser.open("file://" + destino.replace("\\", "/"))
+        return 0
+
+    if args.json:
+        emit(json.dumps(report, ensure_ascii=False, indent=2))
+        return 0
+
+    tipos = {}
+    for node in report["nodes"]:
+        tipos[node["kind"]] = tipos.get(node["kind"], 0) + 1
+    relaciones = {}
+    for arista in report["edges"]:
+        relaciones[arista[2]] = relaciones.get(arista[2], 0) + 1
+
+    emit("%s" % ", ".join("%d %s" % (v, k) for k, v in sorted(tipos.items())))
+    emit(", ".join("%d %s" % (v, k) for k, v in sorted(relaciones.items())))
+    emit("")
+    total = report["calls_candidates"]
+    emit(
+        "llamadas: %d resueltas de %d candidatas (%.0f%%) · %d a builtins, excluidas"
+        % (report["calls_resolved"], total, symbols.coverage(report) * 100,
+           report["calls_builtin"])
+    )
+    for motivo, cuantas in report["unresolved"].items():
+        emit("  sin resolver · %-24s %d" % (motivo, cuantas))
+    emit("")
+    emit("Lo que esta tecnica NO puede ver:")
+    for item in report["not_covered"]:
+        emit("  - %s" % item)
+    return 0
+
+
 def cmd_floor(args):
     from . import floor
 
@@ -372,6 +429,16 @@ def build_parser():
     check.add_argument("--json", action="store_true", help="salida cruda")
     check.add_argument("--color", choices=["auto", "always", "never"], default="auto")
     check.set_defaults(func=cmd_check)
+
+    syms = subparsers.add_parser(
+        "symbols", help="grafo de simbolos: quien llama a quien, con su cobertura"
+    )
+    syms.add_argument("path", nargs="?", default=".", help="raiz del proyecto")
+    syms.add_argument("--html", metavar="FICHERO", help="escribirlo como HTML autocontenido")
+    syms.add_argument("--open", action="store_true", help="abrirlo en el navegador")
+    syms.add_argument("--json", action="store_true", help="salida cruda")
+    syms.add_argument("--color", choices=["auto", "always", "never"], default="auto")
+    syms.set_defaults(func=cmd_symbols)
 
     floor_p = subparsers.add_parser(
         "floor", help="el andamiaje base: que hay y que falta antes de construir"

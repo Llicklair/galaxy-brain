@@ -94,6 +94,64 @@ def _corto(nombre, limite=26):
     return ("…" + corto) if len(corto) < limite else ("…" + corto[-(limite - 1):])
 
 
+def render_symbols_html(report, title="galaxy-brain — simbolos"):
+    """El grafo de símbolos, con su cobertura escrita en la cabecera.
+
+    La cobertura va EN LA IMAGEN a propósito: un grafo parcial que no dice que es
+    parcial se lee como completo, y entonces la parte que falta parece que no existe
+    en vez de parecer que no se pudo resolver.
+    """
+    llamadas = [(a, b) for a, b, tipo in report.get("edges", []) if tipo == "CALLS"]
+    implicados = {x for par in llamadas for x in par}
+    kinds = {n["qual"]: n["kind"] for n in report.get("nodes", [])}
+    nodes = sorted(implicados)
+    edges = {}
+    for a, b in llamadas:
+        edges.setdefault(a, []).append(b)
+
+    capas = _layers(nodes, edges, [])
+    pos, ancho, alto = _posiciones(nodes, capas, ancho_nodo=210)
+
+    entrantes = {}
+    for _a, b in llamadas:
+        entrantes[b] = entrantes.get(b, 0) + 1
+
+    lineas = [
+        '<path class="arista" data-a="%s" data-b="%s" d="M%d %d C%d %d %d %d %d %d"/>'
+        % (_html.escape(a), _html.escape(b),
+           pos[a][0] + 80, pos[a][1] + 26, pos[a][0] + 80, pos[a][1] + 60,
+           pos[b][0] + 80, pos[b][1] - 20, pos[b][0], pos[b][1])
+        for a, b in llamadas if a in pos and b in pos
+    ]
+    cajas = [
+        '<g class="nodo %s" data-mod="%s" transform="translate(%d,%d)">'
+        '<rect width="180" height="26" rx="4"/><text x="8" y="17">%s</text>'
+        '<text class="peso" x="172" y="17" text-anchor="end">%s</text></g>'
+        % (kinds.get(mod, ""), _html.escape(mod), pos[mod][0], pos[mod][1],
+           _html.escape(_corto(mod, 30)), entrantes.get(mod, "") or "")
+        for mod in nodes
+    ]
+
+    total = report.get("calls_candidates") or 0
+    pct = round(100 * report.get("calls_resolved", 0) / total) if total else 0
+    resumen = "%d simbolos · %d llamadas resueltas de %d candidatas (%d%%)" % (
+        len(nodes), report.get("calls_resolved", 0), total, pct,
+    )
+    return _PAGINA % {
+        "title": _html.escape(title),
+        "resumen": _html.escape(resumen),
+        "raiz": _html.escape(
+            "sin resolver: " + ", ".join(
+                "%s %d" % (k, v) for k, v in sorted((report.get("unresolved") or {}).items())
+            )
+        ),
+        "ancho": ancho,
+        "alto": alto,
+        "aristas": "\n".join(lineas),
+        "nodos": "\n".join(cajas),
+    }
+
+
 def render_html(report, title="galaxy-brain — mapa"):
     """El informe de `graph.analyze` a un HTML autocontenido."""
     nodes = sorted(report.get("fan_in", {}))

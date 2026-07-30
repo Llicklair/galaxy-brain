@@ -1,0 +1,143 @@
+"""El grafo de símbolos. Lo que se comprueba aquí NO es cuánto resuelve, sino que
+**no se invente nada** y que **diga cuánto no ve**.
+
+Una arista falsa en un grafo de llamadas es peor que una arista ausente: la ausente
+se nota al usarlo, la falsa se cree. Por eso la mitad de estos tests comprueban que
+ante la duda no salga arista, y que el número de las no resueltas esté a la vista.
+"""
+
+import os
+
+from galaxybrain import symbols
+
+
+def _write(root, rel, content):
+    path = os.path.join(root, *rel.split("/"))
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write(content)
+
+
+def _calls(report):
+    return {(a, b) for a, b, tipo in report["edges"] if tipo == "CALLS"}
+
+
+# --- lo que SI es un hecho sintactico ---------------------------------------
+
+
+def test_resuelve_una_llamada_por_nombre(tmp_path):
+    root = str(tmp_path)
+    _write(root, "app/__init__.py", "")
+    _write(root, "app/core.py", "def ayuda():\n    return 1\n\ndef principal():\n    return ayuda()\n")
+
+    assert ("app.core.principal", "app.core.ayuda") in _calls(symbols.analyze(root))
+
+
+def test_resuelve_a_traves_de_un_import(tmp_path):
+    root = str(tmp_path)
+    _write(root, "app/__init__.py", "")
+    _write(root, "app/util.py", "def limpia(x):\n    return x\n")
+    _write(root, "app/core.py", "from app.util import limpia\n\ndef principal():\n    return limpia(1)\n")
+
+    assert ("app.core.principal", "app.util.limpia") in _calls(symbols.analyze(root))
+
+
+def test_resuelve_self_punto_metodo(tmp_path):
+    """`self.metodo()` si es demostrable: el metodo esta escrito ahi al lado."""
+    root = str(tmp_path)
+    _write(root, "app/__init__.py", "")
+    _write(
+        root, "app/svc.py",
+        "class Servicio:\n"
+        "    def interno(self):\n        return 1\n"
+        "    def publico(self):\n        return self.interno()\n",
+    )
+
+    assert ("app.svc.Servicio.publico", "app.svc.Servicio.interno") in _calls(symbols.analyze(root))
+
+
+def test_registra_herencia_cuando_la_base_es_del_proyecto(tmp_path):
+    root = str(tmp_path)
+    _write(root, "app/__init__.py", "")
+    _write(root, "app/base.py", "class Base:\n    pass\n")
+    _write(root, "app/hijo.py", "from app.base import Base\n\nclass Hijo(Base):\n    pass\n")
+
+    extiende = {(a, b) for a, b, t in symbols.analyze(root)["edges"] if t == "EXTENDS"}
+    assert ("app.hijo.Hijo", "app.base.Base") in extiende
+
+
+# --- lo que NO es un hecho: no se adivina, se cuenta -------------------------
+
+
+def test_no_inventa_arista_para_un_metodo_sobre_una_variable(tmp_path):
+    """El limite real de la tecnica. Saber a que apunta `objeto` exige inferir tipos;
+    adivinarlo produce una arista falsa, que es peor que ninguna."""
+    root = str(tmp_path)
+    _write(root, "app/__init__.py", "")
+    _write(root, "app/otro.py", "class Cosa:\n    def hacer(self):\n        return 1\n")
+    _write(
+        root, "app/core.py",
+        "def principal(objeto):\n    return objeto.hacer()\n",
+    )
+
+    report = symbols.analyze(root)
+    assert not any(b.endswith(".hacer") for _a, b in _calls(report)), "no puede inventarsela"
+    assert report["unresolved"].get("atributo-de-variable", 0) >= 1, "pero tiene que contarla"
+
+
+def test_los_builtins_no_hunden_la_cobertura(tmp_path):
+    """`len()` no es un simbolo del proyecto: no resolverla es lo correcto, no un
+    fallo. Meterla en el denominador hacia parecer inutil una tecnica que no lo es —
+    fue el primer numero que dio este modulo."""
+    root = str(tmp_path)
+    _write(root, "app/__init__.py", "")
+    _write(
+        root, "app/core.py",
+        "def ayuda():\n    return 1\n\n"
+        "def principal(xs):\n    return len(xs) + sorted(xs)[0] + ayuda()\n",
+    )
+
+    report = symbols.analyze(root)
+    assert report["calls_builtin"] >= 2
+    assert report["calls_candidates"] == report["calls_total"] - report["calls_builtin"]
+    assert symbols.coverage(report) == 1.0, "la unica candidata era ayuda(), y se resolvio"
+
+
+def test_siempre_declara_lo_que_no_puede_ver(tmp_path):
+    report = symbols.analyze(str(tmp_path))
+
+    assert report["not_covered"]
+    assert any("inferencia de tipos" in item for item in report["not_covered"])
+    assert any("dinamico" in item for item in report["not_covered"])
+
+
+def test_la_cobertura_es_un_suelo_no_una_cifra_exacta(tmp_path):
+    """El denominador conserva metodos de objetos de stdlib (`handle.read()`), que
+    tampoco eran del proyecto. Se documenta como suelo en vez de venderlo mejor."""
+    assert "suelo" in symbols.coverage.__doc__
+
+
+# --- contrato general --------------------------------------------------------
+
+
+def test_es_determinista(tmp_path):
+    root = str(tmp_path)
+    _write(root, "app/__init__.py", "")
+    _write(root, "app/core.py", "def a():\n    return b()\n\ndef b():\n    return 1\n")
+
+    assert symbols.analyze(root)["edges"] == symbols.analyze(root)["edges"]
+
+
+def test_un_fichero_roto_no_tumba_el_barrido(tmp_path):
+    root = str(tmp_path)
+    _write(root, "app/__init__.py", "")
+    _write(root, "app/roto.py", "def (((\n")
+    _write(root, "app/bueno.py", "def vale():\n    return 1\n")
+
+    report = symbols.analyze(root)
+    assert report["errors"], "el fichero roto se reporta"
+    assert any(n["qual"] == "app.bueno.vale" for n in report["nodes"]), "y el resto se analiza"
+
+
+def test_raiz_inexistente_es_error(tmp_path):
+    assert symbols.analyze(os.path.join(str(tmp_path), "no-existe"))["root_error"]

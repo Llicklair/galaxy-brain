@@ -30,3 +30,6 @@ galaxybrain.floor     -/->  galaxybrain.viz
 galaxybrain.companions -/->  galaxybrain.cli
 galaxybrain.companions -/->  galaxybrain.render
 galaxybrain.companions -/->  galaxybrain.viz
+galaxybrain.symbols   -/->  galaxybrain.cli
+galaxybrain.symbols   -/->  galaxybrain.render
+galaxybrain.symbols   -/->  galaxybrain.viz
