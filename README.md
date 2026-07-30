@@ -45,6 +45,21 @@ gb status            # comprueba que quedó activa
 `gb on` deja un fichero `.pth` en site-packages. A partir de ahí **no hay que acordarse de nada**:
 todo proceso Python de ese entorno queda cubierto, sin tocar el código de ningún proyecto.
 
+Llevarlo a otro proyecto es un solo comando, con el venv de ese proyecto activado:
+
+```bash
+# bash / WSL
+pip install -e <ruta-a-este-repo> && gb on && gb status
+
+# Windows — instala.ps1 hace exactamente eso, sin escribir rutas (se autolocaliza)
+powershell -ExecutionPolicy Bypass -File <ruta-a-este-repo>\instala.ps1
+```
+
+Se lleva todo lo que existe (consola + gate de acoplamiento): es un solo paquete, no hay versiones
+que elegir. La cobertura es **por entorno Python, no por repo** — si el otro proyecto usa un entorno
+donde `gb` ya está activa, no hay nada que ejecutar. Y al ser editable (`-e`), un `git pull` aquí
+actualiza todos los entornos sin reinstalar.
+
 Para quitarlo: `gb off`. Es una línea y no deja rastro — que apagarlo sea barato es deliberado
 (ARCHITECTURE-v2, regla 10: el abandono es un dato, no algo que blindar).
 
