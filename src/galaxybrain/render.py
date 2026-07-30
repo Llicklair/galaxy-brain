@@ -165,7 +165,7 @@ def _render_frame(frame, style, project):
     return lines
 
 
-MARKS = {"ok": "+", "parcial": "~", "falta": "!", "no-detectable": "?"}
+MARKS = {"ok": "+", "parcial": "~", "falta": "!", "no-detectable": "?", "esqueleto": "o"}
 
 
 def render_floor(report, style):
@@ -191,11 +191,27 @@ def render_floor(report, style):
 
     for level in levels:
         mark = MARKS.get(level["status"], "?")
-        color = {"ok": None, "parcial": YELLOW, "falta": RED, "no-detectable": DIM}.get(level["status"])
+        color = {
+            "ok": None, "parcial": YELLOW, "falta": RED,
+            "no-detectable": DIM, "esqueleto": YELLOW,
+        }.get(level["status"])
         head = "  %s %s" % (style(mark, color) if color else mark, level["title"])
         lines.append(head)
         lines.append("      %s" % style(level["detail"], DIM))
     lines.append("")
+
+    if report.get("pending"):
+        lines.append(style("Documentos puestos pero SIN RELLENAR:", BOLD))
+        for path in report["pending"]:
+            lines.append("  %s %s" % (style("o", YELLOW), path))
+        lines.append(
+            style(
+                "      Un documento que existe y no dice nada pasa la lista sin aportar nada. "
+                "Esto no cuenta como suelo hasta que se rellene.",
+                DIM,
+            )
+        )
+        lines.append("")
 
     if report.get("delegated"):
         lines.append(style("Delegado a herramientas que ya lo hacen:", BOLD))

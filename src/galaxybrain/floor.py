@@ -40,6 +40,20 @@ DORA_FEEDBACK_SECONDS = 600
 DORA_ELITE_SECONDS = 163
 
 
+#: Marca lo que el esqueleto NO puede rellenar solo. Existe para cerrar el lazo:
+#: `--init` la pone, y `analyze` la detecta y NO da el nivel por cubierto. Un
+#: documento presente pero sin rellenar es PEOR que ausente — pasa la lista y no
+#: dice nada, que es como se fabrica un suelo de mentira.
+PENDING_MARK = "<!-- gb:pendiente -->"
+
+#: Los imprescindibles. Los tres primeros son la puerta de entrada de cualquiera
+#: que llegue al proyecto —incluido tu dentro de seis meses—; los dos ultimos son
+#: donde va a parar lo que se aprende. Se escriben pre-rellenados con lo DETECTADO;
+#: lo que exige criterio se deja marcado con PENDING_MARK y una razon, nunca con un
+#: hueco mudo: un encabezado vacio no se rellena, una pregunta si.
+SCAFFOLD_FILES = ["AGENTS.md", "SCOPE.md", "ARCHITECTURE.md", "docs/adr/README.md", "docs/evidencia.md"]
+
+
 def _exists(root, *rel):
     return os.path.exists(os.path.join(root, *rel))
 
@@ -165,7 +179,13 @@ def detect_adrs(root):
         path = os.path.join(root, *folder.split("/"))
         if os.path.isdir(path):
             try:
-                files = [f for f in os.listdir(path) if f.endswith(".md")]
+                # El indice de la carpeta NO es una decision. Contarlo daria el nivel
+                # por cubierto con cero decisiones registradas — y lo crea el propio
+                # `--init`, asi que el esqueleto se aprobaria a si mismo.
+                files = [
+                    f for f in os.listdir(path)
+                    if f.endswith(".md") and f.lower() not in ("readme.md", "index.md")
+                ]
             except OSError:
                 files = []
             if files:
@@ -192,6 +212,134 @@ def time_test_command(root, command, timeout=900):
     return time.time() - started, result.returncode == 0
 
 
+def _plantilla_agents(nombre, comando, gates, modulos):
+    gates_txt = (
+        "\n".join("- %s: `%s`" % (k, v) for k, v in sorted(gates.items()))
+        if gates
+        else "%s Sin gate de lint/tipos declarada. Es el nivel 2 del suelo: sin ella, "
+        "cada revision discute estilo en vez de discutir el cambio." % PENDING_MARK
+    )
+    return """# %s
+
+Contexto ejecutable para agentes. Formato [AGENTS.md](https://agents.md), que leen
+Claude Code, Codex, Cursor, Copilot, Gemini CLI y Aider — a diferencia de un fichero
+de una sola herramienta.
+
+## Comandos
+
+Lo de esta seccion se EJECUTA, asi que no puede pudrirse en silencio: si miente, falla.
+
+```bash
+%s
+```
+
+## Gates
+
+%s
+
+## Arquitectura
+
+%s
+
+## Convenciones de commit y PR
+
+%s Escribe aqui el formato de commit y que exige un PR para entrar. Sin esto, cada
+agente inventa el suyo y el historico deja de poder leerse.
+""" % (
+        nombre,
+        comando or (PENDING_MARK + " Sin comando de tests detectado. Declaralo aqui."),
+        gates_txt,
+        (
+            "%d modulos analizados; el mapa vivo esta en `gb graph` (se deriva del "
+            "codigo, asi que no se desincroniza)." % modulos
+            if modulos
+            else PENDING_MARK + " Describe en dos lineas como se divide el proyecto."
+        ),
+        PENDING_MARK,
+    )
+
+
+def _plantilla_scope(nombre):
+    return """# %s — alcance
+
+## En una frase
+
+%s Una sola frase. Si algo no cabe en ella, no entra. Esa frase es la que despues
+te deja decir que no sin discutir.
+
+## Lo que NO entra
+
+%s **Esta es la mitad que sostiene peso.** Un alcance que solo enumera funcionalidades
+es una lista de deseos; lo que frena el crecimiento es la lista de lo descartado, con
+su motivo. Escribe aqui lo que has decidido no hacer — sobre todo lo que te apetece.
+
+## Criterio de terminado
+
+%s Comprobable, escrito ANTES de la primera linea de codigo. No "que funcione bien":
+algo que se pueda mirar y responder si o no. Es la cura mas barata que existe contra
+la sobreingenieria, cuya causa numero uno es no saber cuando parar.
+""" % (nombre, PENDING_MARK, PENDING_MARK, PENDING_MARK)
+
+
+def _plantilla_architecture(nombre):
+    return """# %s — la ley de diseno
+
+Reglas **numeradas**, y lo de numeradas no es cosmetico: una regla con numero se cita
+en una revision ("esto viola la 3") y una cita decide. Un principio en prosa no se cita,
+y lo que no se cita no ata.
+
+Una regla entra aqui solo si alguna vez vas a poder decir que algo la incumple.
+
+1. %s
+2. …
+
+## Como se cambia esto
+
+%s Di quien puede cambiar una regla y que hace falta para retirarla. Sin esto, la ley
+se erosiona sola y nadie sabe cuando dejo de aplicarse.
+""" % (nombre, PENDING_MARK + " Primera regla.", PENDING_MARK)
+
+
+def _plantilla_adr():
+    return """# Registros de decision (ADR)
+
+Un fichero por decision: `0001-titulo-corto.md`. Formato
+[MADR](https://adr.github.io/): contexto, decision, consecuencias.
+
+## Cuando se escribe uno
+
+Solo si la decision cambia **arquitectura, operacion, postura de seguridad o coste de
+mantenimiento a largo plazo**. Con ese disparador salen pocos y se leen; sin el salen
+doscientos y no se lee ninguno, que es la forma elegante de no tener ninguno.
+
+## Por que
+
+Sin registro del porque, la arquitectura se vuelve folklore: el siguiente que llegue
+—persona o agente— repite los mismos debates, reabre lo cerrado y a veces elimina la
+restriccion que mantenia el sistema en pie. Eso ultimo es lo caro.
+"""
+
+
+def _plantilla_evidencia():
+    return """# Evidencia — la libreta
+
+Cada medicion real: que se probo, que salio, que cambio por ello.
+
+**Los resultados negativos se escriben con el mismo detalle que los positivos, o mas.**
+Un proyecto que solo registra lo que funciono no tiene evidencia: tiene publicidad. Y el
+dato que no esta en el repo, no existe — la memoria de nadie cuenta.
+
+## Formato
+
+`## AAAA-MM-DD · que se probo — VEREDICTO`, y debajo: montaje, resultado, consecuencia.
+
+---
+
+%s Primera entrada cuando midas algo. Si al mes no hay ninguna, la pregunta no es esta
+libreta: es si estas midiendo algo.
+""" % PENDING_MARK
+
+
 def _level(key, title, status, detail, evidence=None, source=None):
     return {
         "key": key,
@@ -201,6 +349,62 @@ def _level(key, title, status, detail, evidence=None, source=None):
         "evidence": evidence or [],
         "source": source,
     }
+
+
+def scaffold(root):
+    """Deja los imprescindibles, pre-rellenados con lo detectado.
+
+    **Nunca pisa un fichero existente.** Un esqueleto que sobreescribe la ley de un
+    proyecto seria peor que no existir; ante un fichero presente, se informa y se deja.
+
+    Lo que se puede detectar se escribe con su valor real —comandos, gates, numero de
+    modulos—, y va al nivel 1: se ejecuta, luego no puede pudrirse en silencio. Lo que
+    exige criterio se deja con PENDING_MARK y **la razon por la que importa**, nunca un
+    encabezado mudo: un hueco vacio no se rellena, una pregunta si.
+    """
+    from . import graph
+
+    nombre = os.path.basename(os.path.normpath(root)) or "proyecto"
+    comando, _fuente = detect_test_command(root)
+    gates = detect_gates(root)
+    modulos = graph.analyze(root)["modules"]
+
+    contenidos = {
+        "AGENTS.md": _plantilla_agents(nombre, comando, gates, modulos),
+        "SCOPE.md": _plantilla_scope(nombre),
+        "ARCHITECTURE.md": _plantilla_architecture(nombre),
+        "docs/adr/README.md": _plantilla_adr(),
+        "docs/evidencia.md": _plantilla_evidencia(),
+    }
+
+    hechos = []
+    for rel in SCAFFOLD_FILES:
+        destino = os.path.join(root, *rel.split("/"))
+        if os.path.exists(destino):
+            hechos.append({"path": rel, "action": "ya-existia"})
+            continue
+        try:
+            os.makedirs(os.path.dirname(destino), exist_ok=True)
+            with open(destino, "w", encoding="utf-8") as handle:
+                handle.write(contenidos[rel])
+            hechos.append({"path": rel, "action": "creado"})
+        except OSError as error:
+            hechos.append({"path": rel, "action": "error: %s" % error})
+    return hechos
+
+
+def pending_sections(root):
+    """Documentos del esqueleto que existen pero siguen sin rellenar.
+
+    Es el cierre del lazo: `--init` los crea marcados y esto los delata. Un documento
+    que existe y no dice nada pasa cualquier lista de comprobacion sin aportar nada —
+    exactamente el suelo de mentira que este modulo existe para no fabricar.
+    """
+    pendientes = []
+    for rel in SCAFFOLD_FILES:
+        if _exists(root, *rel.split("/")) and PENDING_MARK in _read(root, *rel.split("/")):
+            pendientes.append(rel)
+    return pendientes
 
 
 def analyze(root, run_tests=False):
@@ -341,7 +545,16 @@ def analyze(root, run_tests=False):
     # + contexto para agentes (no es de §10; sale del estandar del mercado).
     agents = _first_existing(root, AGENT_FILES)
     single = _first_existing(root, AGENT_FILES_SINGLE_TOOL)
-    if agents:
+    pendientes = pending_sections(root)
+    report["pending"] = pendientes
+    if agents and "AGENTS.md" in pendientes:
+        # Existe pero sigue siendo el esqueleto. Darlo por cubierto seria el suelo
+        # de mentira: pasa la lista sin decir nada.
+        report["levels"].append(
+            _level("agentes", "Contexto ejecutable para agentes", "esqueleto",
+                   "AGENTS.md existe pero conserva marcas sin rellenar")
+        )
+    elif agents:
         report["levels"].append(
             _level("agentes", "Contexto ejecutable para agentes", "ok",
                    "AGENTS.md presente (estandar cross-tool)")
@@ -372,4 +585,8 @@ def analyze(root, run_tests=False):
     report["not_covered"].append(
         "el techo: donde corre esto, contra que habla, que carga aguanta. Ninguna checklist lo genera"
     )
+    if pendientes:
+        report["not_covered"].append(
+            "si lo escrito en los documentos es CIERTO: solo se ve si quedan marcas sin rellenar"
+        )
     return report

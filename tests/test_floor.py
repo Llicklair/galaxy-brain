@@ -158,6 +158,78 @@ def test_un_suelo_incompleto_no_bloquea(tmp_path):
     assert cli.main(["floor", str(tmp_path), "--color", "never"]) == 0
 
 
+# --- el esqueleto: poner los imprescindibles sin fabricar suelo de mentira ----
+
+
+def test_init_deja_los_imprescindibles(tmp_path):
+    root = str(tmp_path)
+    hechos = floor.scaffold(root)
+
+    assert {h["path"] for h in hechos} == set(floor.SCAFFOLD_FILES)
+    assert all(h["action"] == "creado" for h in hechos)
+    for rel in floor.SCAFFOLD_FILES:
+        assert os.path.exists(os.path.join(root, *rel.split("/")))
+
+
+def test_init_NUNCA_pisa_lo_que_ya_existe(tmp_path):
+    """Un esqueleto que sobreescribe la ley de un proyecto es peor que no existir."""
+    root = str(tmp_path)
+    _write(root, "SCOPE.md", "# mi alcance, escrito a mano\n")
+
+    hechos = {h["path"]: h["action"] for h in floor.scaffold(root)}
+
+    assert hechos["SCOPE.md"] == "ya-existia"
+    assert "escrito a mano" in open(os.path.join(root, "SCOPE.md"), encoding="utf-8").read()
+
+
+def test_agents_md_sale_prerelleno_con_lo_detectado(tmp_path):
+    """Lo detectable se escribe con su valor real, no como hueco: eso lo pone en el
+    nivel que se ejecuta, y lo que se ejecuta no puede pudrirse en silencio."""
+    root = str(tmp_path)
+    _write(root, "go.mod", "module ejemplo\n")
+    floor.scaffold(root)
+
+    contenido = open(os.path.join(root, "AGENTS.md"), encoding="utf-8").read()
+    assert "go test ./..." in contenido
+
+
+def test_un_esqueleto_sin_rellenar_no_cuenta_como_suelo(tmp_path):
+    """El cierre del lazo: --init lo crea marcado y analyze lo delata. Un documento
+    que existe y no dice nada pasa la lista sin aportar nada."""
+    root = str(tmp_path)
+    floor.scaffold(root)
+
+    report = floor.analyze(root)
+    assert "AGENTS.md" in report["pending"]
+    assert _nivel(report, "agentes")["status"] == "esqueleto"
+
+
+def test_rellenarlo_lo_convierte_en_cubierto(tmp_path):
+    root = str(tmp_path)
+    floor.scaffold(root)
+    _write(root, "AGENTS.md", "# mi proyecto\n\n## Comandos\n\n```bash\npytest -q\n```\n")
+
+    report = floor.analyze(root)
+    assert "AGENTS.md" not in report["pending"]
+    assert _nivel(report, "agentes")["status"] == "ok"
+
+
+def test_el_readme_de_adr_no_cuenta_como_decision(tmp_path):
+    """Lo crea el propio --init: contarlo dejaria al esqueleto aprobandose a si
+    mismo, con cero decisiones registradas."""
+    root = str(tmp_path)
+    floor.scaffold(root)
+
+    assert _nivel(floor.analyze(root), "porque")["status"] == "parcial"
+
+    _write(root, "docs/adr/0001-usar-sqlite.md", "# 1. Usar SQLite\n")
+    assert _nivel(floor.analyze(root), "porque")["status"] == "ok"
+
+
+def test_init_por_cli_no_bloquea(tmp_path):
+    assert cli.main(["floor", str(tmp_path), "--init", "--color", "never"]) == 0
+
+
 def test_raiz_inexistente_si_es_error(tmp_path):
     root = os.path.join(str(tmp_path), "no-existe")
     assert floor.analyze(root)["root_error"]

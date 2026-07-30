@@ -182,6 +182,13 @@ def cmd_floor(args):
     from . import floor
 
     root = os.path.abspath(args.path or ".")
+    if args.init:
+        if not os.path.isdir(root):
+            sys.stderr.write("[gb floor] la raiz no existe: %s\n" % root)
+            return 1
+        for hecho in floor.scaffold(root):
+            emit("  %-9s %s" % (hecho["action"], hecho["path"]))
+        emit("")
     report = floor.analyze(root, run_tests=args.time)
     if args.json:
         emit(json.dumps(report, ensure_ascii=False, indent=2))
@@ -352,6 +359,11 @@ def build_parser():
         "--time",
         action="store_true",
         help="cronometrar la suite contra el umbral DORA (ejecuta los tests: opt-in)",
+    )
+    floor_p.add_argument(
+        "--init",
+        action="store_true",
+        help="dejar los documentos imprescindibles (nunca pisa lo que ya existe)",
     )
     floor_p.add_argument("--json", action="store_true", help="salida cruda")
     floor_p.add_argument("--color", choices=["auto", "always", "never"], default="auto")
