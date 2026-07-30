@@ -112,6 +112,83 @@ sola máquina.
 
 ---
 
+## 4·bis. El suelo: lo que hay debajo de las tres
+
+**Añadido el 2026-07-30.** Las tres propiedades son todas *post-hoc*: reaccionan a un fallo, a un
+cambio o a código que ya existe. Eso dejaba el proyecto **100% reactivo** — sabía decir qué pasó y
+nada sobre lo que estás a punto de construir. Con la mesa del ejemplo: sabía comprobar si cojea, no
+preguntar dónde va a estar ni de qué madera.
+
+Y al mirarlo de cerca, esto no es una cuarta propiedad hermana de las otras tres. **Es aquello sobre
+lo que las tres se apoyan**, que es justo por qué faltaba sin que se notara:
+
+- *Baratos de encontrar* no existe sin un **bucle de feedback rápido**.
+- *Imposibles de esconder* no existe sin una **gate que corra en segundos**.
+- *Estructuralmente acotados* no existe sin **invariantes escritos** y un **mapa**.
+
+Construimos las tres y nunca nombramos el suelo que pisaban.
+
+### La estructura: por quién obliga a que sea verdad
+
+No por temas. El dato que manda es el de la podredumbre documental — **el 60% de la documentación
+queda obsoleta en seis meses**, y la causa es una sola: *nada en el proceso la obliga a seguir siendo
+verdad*. De ahí tres niveles, y una regla:
+
+| Nivel | Quién lo obliga | Qué vive aquí |
+|---|---|---|
+| **1** | **Se ejecuta.** Si miente, falla. | Comandos (arrancar, testear), gates, el mapa derivado del código, las fronteras que bloquean |
+| **2** | **Se revisa** donde ya hay enforcement: el PR | AGENTS.md, ADRs, criterios de aceptación en EARS |
+| **3** | **Nadie.** Solo lo escribe un humano | El criterio de terminado, las preguntas de dominio |
+
+> **La regla: todo lo que se quede en el nivel 3 y no baje al 1 o al 2, se pudre.**
+> El trabajo del suelo es empujar hacia abajo lo que se pueda, y **decir** lo que no.
+
+### Lo que NO se construye: se integra por referencia (regla 7)
+
+Casi todo el suelo ya está resuelto por el mercado, y reimplementarlo sería exactamente la
+sobreingeniería que este documento combate:
+
+| Pieza | Qué cubre |
+|---|---|
+| **[AGENTS.md](https://agents.md)** | Contexto ejecutable para agentes. Estándar cross-tool desde dic-2025 (Linux Foundation); lo leen Claude Code, Codex, Cursor, Copilot, Gemini CLI, Aider. `CLAUDE.md` vale pero es de **una** herramienta |
+| **[OpenSSF Scorecard](https://openssf.org/projects/scorecard/)** | Higiene de proceso: branch protection, deps pinneadas, revisión, releases firmadas. 20 checks automáticos |
+| **[ADR / MADR](https://adr.github.io/)** | El porqué de lo decidido (§10 #5). Sin registro, *la arquitectura se vuelve folklore* y el siguiente elimina la restricción que sostenía el sistema |
+| **[EARS](https://alistairmavin.com/ears/)** | Criterios de aceptación no ambiguos para humanos **y** modelos: la cláusula compila a test |
+| **[Diátaxis](https://diataxis.fr/)** | Cómo se organiza la documentación: por lo que el lector intenta hacer, no por lo que el autor quiere contar |
+
+### El número que le faltaba al nivel 1
+
+[DORA](https://dora.dev/capabilities/test-automation/) lo fija: **feedback de los tests automáticos
+en menos de diez minutos**, en local y en CI. Referencia: los equipos buenos van por **2m43s** de
+mediana; la media del mercado ha subido a 11 minutos.
+
+Y el motivo no es la impaciencia, es el comportamiento que induce: *una suite de cuatro horas puede
+pillar bugs, pero entrena al desarrollador a agrupar cambios y a no commitear seguido*. Eso convierte
+el nivel 1 de intuición en **check cronometrable**, que es lo que hace `gb floor --time`.
+
+### Criterio de terminado, comprobable
+
+> Sobre **3 proyectos distintos** (stacks distintos, no tres carpetas del mismo): **cero avisos
+> falsos**, y **al menos un nivel señalado que acabes arreglando**.
+
+**Qué lo mata:** un aviso falso que se repita. Un *"falta X"* cuando X existe manda a escribir algo
+que ya está escrito, y a la segunda vez el informe deja de leerse — que es la muerte de esto, no un
+bug menor. En su primera ejecución real ya dio dos, ambos corregidos y ambos convertidos en test.
+
+### Lo que el suelo NO puede hacer, y queda abierto
+
+El suelo es universal y determinista: igual en un compilador que en una tienda. **El techo no.**
+*¿Dónde va la mesa? ¿Qué materiales? ¿Qué pasa cuando el frío contraiga el material?* Eso no lo
+genera ninguna checklist, sale del dominio, y es el único sitio donde un modelo es legítimamente el
+motor — porque es el techo del §1, *"he construido correctamente la cosa equivocada"*, donde por
+definición no hay oráculo determinista.
+
+No se construye todavía. Cuando se construya, su criterio ya está decidido y es duro de fingir:
+**¿alguna pregunta cambió lo que ibas a construir?** Si en tres proyectos ninguna cambió nada, es
+teatro y se quita.
+
+---
+
 ## 5. Las fases, en orden, con su criterio de terminado
 
 El orden no es por valor a largo plazo: es por **cuándo devuelve algo**. Ésa fue la lección del giro,

@@ -9,8 +9,9 @@ propiedades de ese documento, una familia por propiedad.
   last · list · show · on · off · status   ->  baratos de encontrar   (v2)
   graph                                    ->  estructuralmente acotados (v3)
   check                                    ->  imposibles de esconder (Fase B)
+  floor                                    ->  el suelo, debajo de las tres
 
-Un comando nuevo tiene que caer en una de las tres. Si no cae, no entra.
+Un comando nuevo tiene que caer en una de esas cuatro. Si no cae, no entra.
 """
 
 import argparse
