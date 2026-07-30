@@ -262,6 +262,8 @@ def render_graph_cloud(report, title="galaxy-brain — grafo", modo="simbolos"):
     JS, ni librería, ni WebGL.
     """
     lado = 1000.0
+    nuevos_n = set(report.get("new_nodes") or [])
+    nuevas_c = {tuple(e) for e in (report.get("new_calls") or [])}
     if modo == "simbolos":
         kinds = {n["qual"]: n["kind"] for n in report.get("nodes", [])}
         grupo_de = {n["qual"]: n.get("module", "") for n in report.get("nodes", [])}
@@ -306,6 +308,10 @@ def render_graph_cloud(report, title="galaxy-brain — grafo", modo="simbolos"):
         pct = round(100 * report.get("calls_resolved", 0) / total) if total else 0
         resumen = "%d simbolos · %d llamadas resueltas de %d (%d%%)" % (
             len(implicados), report.get("calls_resolved", 0), total, pct)
+        if report.get("baseline_ok"):
+            resumen += " · +%d simbolos, +%d llamadas, -%d vs %s" % (
+                len(report["new_nodes"]), len(report["new_calls"]),
+                report["gone_nodes"], report["since"])
         pie = "sin resolver: " + ", ".join(
             "%s %d" % (k, v) for k, v in sorted((report.get("unresolved") or {}).items())
         )
@@ -357,6 +363,7 @@ def render_graph_cloud(report, title="galaxy-brain — grafo", modo="simbolos"):
             "k": kinds.get(n, ""),
             "l": n.split(".")[-1],
             "m": masa.get(n, 1.0),
+            "nu": 1 if n in nuevos_n else 0,
         }
         for n in implicados
     ]
@@ -365,7 +372,8 @@ def render_graph_cloud(report, title="galaxy-brain — grafo", modo="simbolos"):
     indice = {n: i for i, n in enumerate(implicados)}
     # Cada arista lleva su clase: 1 = llamada (se pinta), 0 = jerarquia (tenue).
     lista_aristas = [
-        [indice[a], indice[b], 1] for a, b in llamadas if a in indice and b in indice
+        [indice[a], indice[b], 2 if (a, b) in nuevas_c else 1]
+        for a, b in llamadas if a in indice and b in indice
     ] + [
         [indice[a], indice[b], 0] for a, b in jerarquia if a in indice and b in indice
     ]
@@ -742,13 +750,13 @@ function pinta(t){
   }
   cx.lineWidth=1;
   // Jerarquia (tipo 0) tenue debajo; llamadas (tipo 1) encima.
-  for(const capa of [0,1]) for(const par of ARISTAS){
+  for(const capa of [0,1,2]) for(const par of ARISTAS){
     const a=par[0], b=par[1], tp=par[2]|0;
     if(tp!==capa) continue;
     const tocada = foco!==null && (a===foco || b===foco);
     if(foco!==null && !tocada){ cx.globalAlpha=0.02; }
-    else { cx.globalAlpha = tocada ? 0.9 : (capa===0 ? 0.09 : 0.3); }
-    cx.strokeStyle = NODOS[a].c;
+    else { cx.globalAlpha = tocada ? 0.9 : (capa===0 ? 0.09 : (capa===2 ? 0.7 : 0.3)); }
+    cx.strokeStyle = capa===2 ? '#22d3ee' : NODOS[a].c;
     cx.beginPath(); cx.moveTo(WX[a],WY[a]); cx.lineTo(WX[b],WY[b]); cx.stroke();
   }
   cx.globalAlpha=1;
@@ -766,6 +774,7 @@ function pinta(t){
     if(i===foco){ rr *= 1+0.12*Math.sin(t/250); }
     cx.beginPath(); cx.arc(WX[i],WY[i],rr,0,6.284);
     cx.fillStyle=color; cx.fill();
+    if(n.nu){ cx.strokeStyle='#22d3ee'; cx.lineWidth=1.2; cx.stroke(); cx.lineWidth=1; }
     if(i===foco || coincide){
       cx.strokeStyle='#fff'; cx.lineWidth=1.5; cx.stroke(); cx.lineWidth=1;
       cx.fillStyle='#e8edf3'; cx.font='11px ui-monospace,Consolas,monospace';

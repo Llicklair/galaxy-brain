@@ -148,7 +148,7 @@ def _llamadas_en(cuerpo, origen, modulo, clase, tabla_global, modulos, aristas, 
             motivos[motivo] = motivos.get(motivo, 0) + 1
 
 
-def analyze(root, skip=DEFAULT_SKIP, include_nested=False):
+def analyze(root, skip=DEFAULT_SKIP, include_nested=False, since=None):
     """El grafo de símbolos del proyecto, con su cobertura de resolución declarada."""
     report = {
         "root": root,
@@ -241,7 +241,105 @@ def analyze(root, skip=DEFAULT_SKIP, include_nested=False):
     report["not_covered"].append(
         "despacho dinamico (`getattr`, registros, decoradores que reenvian): invisible al AST"
     )
+
+    # La pelicula: comparar contra el grafo tal como estaba en `since` (git, no
+    # cache). Comparacion por NOMBRE: un renombrado sale como nuevo+desaparecido.
+    report["since"] = since
+    report["baseline_ok"] = None
+    report["new_nodes"] = []
+    report["new_calls"] = []
+    report["gone_nodes"] = 0
+    if since is not None:
+        base = baseline(root, since)
+        if base is None:
+            report["baseline_ok"] = False
+            report["not_covered"].append(
+                "el delta vs '%s': no pude leer la baseline de git" % since
+            )
+        else:
+            base_nodes, base_calls = base
+            ahora = {n["qual"] for n in report["nodes"]}
+            calls_ahora = {(a, b) for a, b, t in report["edges"] if t == "CALLS"}
+            report["baseline_ok"] = True
+            report["new_nodes"] = sorted(ahora - base_nodes)
+            report["new_calls"] = sorted([a, b] for a, b in calls_ahora - base_calls)
+            report["gone_nodes"] = len(base_nodes - ahora)
     return report
+
+
+def _scan_items(items):
+    """El nucleo de analyze() sobre (modulo, ruta, fuente, es_pkg) ya leidos."""
+    modulos = {}
+    errores = {}
+    for mod, ruta, texto, es_pkg in items:
+        if texto is None:
+            errores[ruta] = "no se pudo leer"
+            continue
+        try:
+            tree = ast.parse(texto, filename=ruta)
+        except (SyntaxError, ValueError, RecursionError, MemoryError) as error:
+            errores[ruta] = "%s: %s" % (type(error).__name__, error)
+            continue
+        modulos[mod] = _scan_module(mod, tree, es_pkg)
+    return modulos, errores
+
+
+def baseline(root, ref):
+    """El conjunto de aristas CALLS tal como estaba en `ref`, leido de git.
+
+    Sin indice y sin cache, a proposito: una cache puede mentir (el indice de
+    GitNexus quedo 6 commits desfasado el mismo dia que se midio contra el), y
+    git ya guarda cada version. Devuelve (nodes, calls) o None si no hay repo/ref.
+    """
+    from .graph import _git, module_name
+
+    repo = _git(root, "rev-parse", "--show-toplevel")
+    if repo is None:
+        return None
+    repo = repo.strip()
+    listing = _git(repo, "ls-tree", "-r", "--name-only", ref)
+    if listing is None:
+        return None
+    items = []
+    for gitpath in listing.splitlines():
+        gitpath = gitpath.strip()
+        if not gitpath.endswith(".py"):
+            continue
+        abspath = os.path.join(repo, *gitpath.split("/"))
+        try:
+            if os.path.relpath(abspath, root).startswith(".."):
+                continue
+        except ValueError:
+            continue
+        mod = module_name(abspath, root)
+        if not mod:
+            continue
+        texto = _git(repo, "show", "%s:%s" % (ref, gitpath))
+        items.append((mod, gitpath, texto, gitpath.endswith("__init__.py")))
+    modulos, _err = _scan_items(items)
+    tabla = set()
+    for mod, info in modulos.items():
+        tabla.add(mod)
+        tabla.update(info["functions"].values())
+        for clase in info["classes"].values():
+            tabla.add(clase["qual"])
+            tabla.update(clase["methods"].values())
+    # Reusar el resolutor real: mismas reglas, cero divergencia con analyze().
+    tabla_dict = {q: {} for q in tabla}
+    aristas = set()
+    motivos = {}
+    for mod, info in modulos.items():
+        for node in _def_nodes(info["tree"].body):
+            _llamadas_en(node, info["functions"][node.name], info, None, tabla_dict,
+                         modulos, aristas, motivos)
+        for nombre, clase in info["classes"].items():
+            cuerpo = next(c for c in info["tree"].body
+                          if isinstance(c, ast.ClassDef) and c.name == nombre)
+            for m in _def_nodes(cuerpo.body):
+                _llamadas_en(m, clase["methods"][m.name], info, clase, tabla_dict,
+                             modulos, aristas, motivos)
+    calls = {(a, b) for a, b, _t in aristas}
+    return tabla, calls
 
 
 def coverage(report):

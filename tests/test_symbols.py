@@ -141,3 +141,34 @@ def test_un_fichero_roto_no_tumba_el_barrido(tmp_path):
 
 def test_raiz_inexistente_es_error(tmp_path):
     assert symbols.analyze(os.path.join(str(tmp_path), "no-existe"))["root_error"]
+
+
+def test_since_marca_lo_nuevo_leyendo_de_git(tmp_path):
+    """La pelicula sin indice: la baseline sale de git, no de una cache — una
+    cache puede mentir (el indice de GitNexus quedo 6 commits desfasado el mismo
+    dia que se midio contra el). Nuevo = en el working tree y no en la ref."""
+    import subprocess
+
+    root = str(tmp_path)
+    def _run(*a): subprocess.run(a, cwd=root, check=True, capture_output=True)
+    _write(root, "app/__init__.py", "")
+    _write(root, "app/core.py", "def vieja():\n    return 1\n")
+    _run("git", "init", "-q"); _run("git", "config", "user.email", "t@t")
+    _run("git", "config", "user.name", "t"); _run("git", "config", "commit.gpgsign", "false")
+    _run("git", "add", "-A"); _run("git", "commit", "-q", "-m", "base")
+    _write(root, "app/core.py", "def vieja():\n    return 1\n\ndef nueva():\n    return vieja()\n")
+
+    report = symbols.analyze(root, since="HEAD")
+    assert report["baseline_ok"] is True
+    assert "app.core.nueva" in report["new_nodes"]
+    assert ["app.core.nueva", "app.core.vieja"] in report["new_calls"]
+    assert "app.core.vieja" not in report["new_nodes"], "lo preexistente no es nuevo"
+
+
+def test_since_sin_repo_lo_dice_no_lo_calla(tmp_path):
+    root = str(tmp_path)
+    _write(root, "app/core.py", "def f():\n    return 1\n")
+
+    report = symbols.analyze(root, since="HEAD")
+    assert report["baseline_ok"] is False
+    assert any("baseline" in x for x in report["not_covered"])

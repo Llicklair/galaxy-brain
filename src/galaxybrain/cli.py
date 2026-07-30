@@ -198,7 +198,7 @@ def cmd_symbols(args):
     from . import symbols
 
     root = os.path.abspath(args.path or ".")
-    report = symbols.analyze(root)
+    report = symbols.analyze(root, since=args.since)
     if report["root_error"]:
         sys.stderr.write("[gb symbols] %s\n" % report["root_error"])
         return 1
@@ -237,6 +237,12 @@ def cmd_symbols(args):
 
     emit("%s" % ", ".join("%d %s" % (v, k) for k, v in sorted(tipos.items())))
     emit(", ".join("%d %s" % (v, k) for k, v in sorted(relaciones.items())))
+    if report.get("baseline_ok"):
+        emit("vs %s: +%d simbolos, +%d llamadas, -%d desaparecidos"
+             % (report["since"], len(report["new_nodes"]), len(report["new_calls"]),
+                report["gone_nodes"]))
+    elif report.get("baseline_ok") is False:
+        emit("vs %s: no pude leer la baseline (repo git? ref valida?)" % report["since"])
     emit("")
     total = report["calls_candidates"]
     emit(
@@ -439,6 +445,7 @@ def build_parser():
     syms.add_argument("--html", metavar="FICHERO", help="escribirlo como HTML autocontenido")
     syms.add_argument("--capas", action="store_true", help="vista por capas en vez de nube")
     syms.add_argument("--open", action="store_true", help="abrirlo en el navegador")
+    syms.add_argument("--since", metavar="REF", help="marcar lo NUEVO respecto a esa ref de git")
     syms.add_argument("--json", action="store_true", help="salida cruda")
     syms.add_argument("--color", choices=["auto", "always", "never"], default="auto")
     syms.set_defaults(func=cmd_symbols)
