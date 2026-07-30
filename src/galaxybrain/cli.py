@@ -7,7 +7,7 @@ decirlo en vez de ir colando comandos: hoy la superficie cubre las tres
 propiedades de ese documento, una familia por propiedad.
 
   last · list · show · on · off · status   ->  baratos de encontrar   (v2)
-  graph                                    ->  estructuralmente acotados (v3)
+  graph · symbols                          ->  estructuralmente acotados (v3)
   check                                    ->  imposibles de esconder (Fase B)
   floor                                    ->  el suelo, debajo de las tres
 

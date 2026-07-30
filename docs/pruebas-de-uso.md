@@ -79,6 +79,36 @@ medía el caso equivocado.
 
 ---
 
+## 2026-07-30 · `gb symbols` contra el índice de GitNexus — **93% de recall, y las discrepancias favorecen la honestidad**
+
+Mismo repo, mismo commit, arista a arista (CALLS internas de `src/galaxybrain`,
+función→función). GitNexus usa tree-sitter + inferencia; `gb symbols` solo resuelve
+hechos sintácticos y cuenta lo que no puede.
+
+**Suyas: 215 · Mías: 222 · Comunes: 200 → recall 93%.**
+
+Las discrepancias, verificadas a mano (muestra, no exhaustivo):
+
+- **Solo suyas (15):** al menos 4 son **falsos positivos de ellos** — su resolutor casó
+  `analyze` por nombre con el módulo equivocado (`cmd_check → symbols.analyze` cuando el
+  código llama a `changes.analyze`, y autollamadas `analyze→analyze` que no existen).
+  Una es un acierto real suyo: `build_parser → common`, función **anidada**, que gb declara
+  fuera de alcance. Es la validación empírica de la tesis del módulo: *una arista falsa se
+  cree; una ausente y declarada, no.*
+- **Solo mías (22):** ganancias reales (alias `from .graph import _git as _git_output`,
+  llamadas `modulo.funcion()` vía import) más artefactos del script de comparación
+  (paquetes `__init__` mapeados a ruta sintética).
+
+**De la misma sesión, dos datos de la Fase A:** el script de comparación petó 3 veces
+(3 excepciones no capturadas, 3 capturas). La primera se resolvió **enteramente desde
+`gb show`** sin re-ejecutar (`shell=True` + `.CMD`): **contador (c) 1/3**. La causa raíz
+final (gitnexus escribe resultados por **stderr**) exigió correr el comando aparte, porque
+`saferepr` trunca el repr de un `CompletedProcess` de 18 KB antes de llegar al stderr —
+**límite real de la captura, apuntado**: el estado grande anidado queda fuera del alcance
+del `--full`.
+
+---
+
 ## 2026-07-30 · Fase B, primera prueba — **`gb check` contra sus propios commits**
 
 En vez de escribir más tests, se corrió `gb check` sobre los diez commits reales de
