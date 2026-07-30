@@ -60,6 +60,27 @@ gb status            # qué hay activo
 
 Sin argumentos, `gb last` y `gb list` filtran por el repo en el que estás.
 
+## El mapa y las gates
+
+La otra mitad de la superficie: qué forma tiene el proyecto y qué le hizo cada cambio.
+Todo determinista, cero modelos, cero dependencias — mismos hechos, distintas vistas.
+
+```bash
+gb graph src --gate        # ciclos de imports + fronteras (.gb-boundaries); para pre-commit
+gb graph src --html m.html # el mapa de módulos, dibujado
+gb symbols src             # el grafo de símbolos: quién llama a quién, con su cobertura
+gb symbols src --html n.html --open   # la nube interactiva (física en vivo, buscar, arrastrar)
+gb symbols src --since v1.0           # lo que creció desde esa ref: la película, baseline en git
+gb check --staged          # qué le hace este cambio a los tests y al acoplamiento (informa, no bloquea)
+gb floor --init            # el suelo: qué falta antes de construir, y deja los documentos base
+```
+
+Dos números honestos que van siempre en la salida: `gb symbols` **declara cuánto no pudo
+resolver** (las llamadas `objeto.metodo()` exigen inferencia de tipos y aquí no se adivina:
+una arista falsa se cree, una ausente se nota), y medido contra un índice con inferencia
+(GitNexus) da **93% de recall** con cero dependencias. Los detalles y los negativos, en
+[docs/pruebas-de-uso.md](docs/pruebas-de-uso.md).
+
 ---
 
 ## Coste, medido
