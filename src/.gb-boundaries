@@ -19,3 +19,11 @@ galaxybrain.changes   -/->  galaxybrain.cli
 galaxybrain.changes   -/->  galaxybrain.render
 galaxybrain.floor     -/->  galaxybrain.cli
 galaxybrain.floor     -/->  galaxybrain.render
+galaxybrain.capture   -/->  galaxybrain.viz
+galaxybrain.store     -/->  galaxybrain.viz
+galaxybrain.saferepr  -/->  galaxybrain.viz
+galaxybrain.graph     -/->  galaxybrain.viz
+galaxybrain.config    -/->  galaxybrain.viz
+galaxybrain.hooks     -/->  galaxybrain.viz
+galaxybrain.changes   -/->  galaxybrain.viz
+galaxybrain.floor     -/->  galaxybrain.viz

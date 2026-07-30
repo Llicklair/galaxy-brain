@@ -9,3 +9,5 @@ scratch/
 __pycache__/
 *.pyc
 .pytest_cache/
+mapa.html
+*.map.html

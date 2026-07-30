@@ -605,6 +605,10 @@ def analyze(root, skip=DEFAULT_SKIP, since=None, boundaries=None, smells=False, 
         "include_nested": include_nested,
         "modules": len(nodes),
         "edges": edge_count,
+        # La lista de aristas, no solo su numero: es el grafo de verdad, y sin ella
+        # `--json` obliga a reconstruirlo por fuera. Ordenada, para que dos
+        # ejecuciones den el mismo fichero.
+        "edge_list": sorted([mod, dep] for mod, deps in edges.items() for dep in deps),
         "cycles": cycles,
         "fan_in": fan_in,
         "fan_out": fan_out,

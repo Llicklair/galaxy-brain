@@ -167,6 +167,22 @@ def cmd_graph(args):
         smells=args.smells,
         include_nested=args.include_nested,
     )
+    if args.html:
+        from . import viz
+
+        destino = os.path.abspath(args.html)
+        try:
+            with open(destino, "w", encoding="utf-8") as handle:
+                handle.write(viz.render_html(report, title="mapa · %s" % os.path.basename(root)))
+        except OSError as error:
+            sys.stderr.write("[gb graph] no pude escribir %s (%s)\n" % (destino, error))
+            return 2
+        emit("mapa escrito en %s" % destino)
+        if args.open:
+            import webbrowser
+
+            webbrowser.open("file://" + destino.replace("\\", "/"))
+        return 1 if report.get("root_error") else 0
     if args.json:
         emit(json.dumps(report, ensure_ascii=False, indent=2))
     else:
@@ -330,6 +346,12 @@ def build_parser():
         action="store_true",
         help="analizar tambien los subproyectos anidados (por defecto se omiten y se dicen)",
     )
+    graph_p.add_argument(
+        "--html",
+        metavar="FICHERO",
+        help="escribir el mapa como HTML autocontenido (sin dependencias ni CDN)",
+    )
+    graph_p.add_argument("--open", action="store_true", help="abrirlo en el navegador")
     graph_p.set_defaults(func=cmd_graph)
 
     check = subparsers.add_parser(
