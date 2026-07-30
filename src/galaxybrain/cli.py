@@ -210,7 +210,9 @@ def cmd_symbols(args):
         try:
             with open(destino, "w", encoding="utf-8") as handle:
                 handle.write(
-                    viz.render_symbols_html(report, title="simbolos · %s" % os.path.basename(root))
+                    (viz.render_symbols_html if args.capas else viz.render_graph_cloud)(
+                        report, title="simbolos · %s" % os.path.basename(root)
+                    )
                 )
         except OSError as error:
             sys.stderr.write("[gb symbols] no pude escribir %s (%s)\n" % (destino, error))
@@ -435,6 +437,7 @@ def build_parser():
     )
     syms.add_argument("path", nargs="?", default=".", help="raiz del proyecto")
     syms.add_argument("--html", metavar="FICHERO", help="escribirlo como HTML autocontenido")
+    syms.add_argument("--capas", action="store_true", help="vista por capas en vez de nube")
     syms.add_argument("--open", action="store_true", help="abrirlo en el navegador")
     syms.add_argument("--json", action="store_true", help="salida cruda")
     syms.add_argument("--color", choices=["auto", "always", "never"], default="auto")

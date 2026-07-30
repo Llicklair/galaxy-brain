@@ -5,12 +5,19 @@ el mismo hecho pintado: no hay dato nuevo, hay otra forma de mirarlo.
 
 Dos decisiones que no son estéticas:
 
-**Posiciones DETERMINISTAS, calculadas en Python.** Un layout de fuerzas queda más
-bonito y salta en cada ejecución, y entonces dos capturas del mismo proyecto no se
-pueden comparar — que es justamente lo que uno quiere al mirar crecer algo. Aquí la
-posición sale de la estructura (capas por profundidad de dependencia, orden alfabético
-dentro de cada capa), así que **el mismo grafo da siempre la misma imagen** y lo que
-se mueve es porque el proyecto se movió.
+**Posiciones DETERMINISTAS, calculadas en Python.** Dos capturas del mismo proyecto
+tienen que poder compararse; si las cajas bailan solas, mirar crecer algo no dice
+nada. Aquí el mismo grafo da siempre la misma imagen, y lo que se mueva es porque el
+proyecto se movió.
+
+Aviso sobre una afirmación anterior de este mismo fichero, que era **falsa**: se dijo
+que un layout de fuerzas renuncia al determinismo. No es cierto — un layout de
+fuerzas solo baila si lo arrancas al azar. Con posiciones iniciales deterministas e
+iteraciones fijas sale idéntico siempre, así que se puede tener el aspecto orgánico
+*y* la comparabilidad. Ver `force_layout`.
+
+Dos vistas, dos preguntas distintas: la de **capas** responde *"¿qué depende de qué?"*
+y la de **nube** responde *"¿qué forma tiene esto?"*. Ninguna sustituye a la otra.
 
 **Cero dependencias, un fichero.** Nada de CDN, ni npm, ni build. El SVG se calcula
 aquí y el HTML se escribe entero; se abre con doble clic o desde VS Code. Esto no es
@@ -23,6 +30,83 @@ qué apareció desde la última vez.
 """
 
 import html as _html
+import math
+
+
+def force_layout(nodes, edges, iteraciones=320, lado=1000.0):
+    """Fruchterman-Reingold, **determinista**: mismo grafo, mismas posiciones.
+
+    Un layout de fuerzas solo baila entre ejecuciones si lo arrancas al azar. Aquí
+    los nodos empiezan repartidos en un círculo por orden alfabético y se corren
+    iteraciones fijas, así que el resultado es reproducible byte a byte — se puede
+    tener el aspecto orgánico Y poder comparar dos capturas del mismo proyecto.
+
+    O(n²) por iteración: de sobra hasta unos pocos miles de nodos, que es el techo
+    en el que un grafo así sigue siendo legible de todas formas.
+    """
+    n = len(nodes)
+    if n == 0:
+        return {}
+    if n == 1:
+        return {nodes[0]: (lado / 2, lado / 2)}
+
+    indice = {nodo: i for i, nodo in enumerate(nodes)}
+    radio = lado / 2.5
+    pos = {}
+    for i, nodo in enumerate(nodes):
+        angulo = 2 * math.pi * i / n
+        pos[nodo] = [lado / 2 + radio * math.cos(angulo), lado / 2 + radio * math.sin(angulo)]
+
+    pares = [
+        (indice[a], indice[b])
+        for a, b in edges
+        if a in indice and b in indice and a != b
+    ]
+    k = math.sqrt((lado * lado) / n)
+    temperatura = lado / 10.0
+    enfriamiento = temperatura / (iteraciones + 1)
+
+    lista = [pos[nodo] for nodo in nodes]
+    for _ in range(iteraciones):
+        desplazamiento = [[0.0, 0.0] for _ in range(n)]
+        for i in range(n):
+            xi, yi = lista[i]
+            for j in range(i + 1, n):
+                dx = xi - lista[j][0]
+                dy = yi - lista[j][1]
+                dist2 = dx * dx + dy * dy
+                if dist2 < 0.01:
+                    # Superpuestos: se separan de forma DETERMINISTA (por indice), no
+                    # con un aleatorio, que es lo que rompe la reproducibilidad.
+                    dx, dy, dist2 = 0.01 * (i + 1), 0.01 * (j + 1), 0.0002
+                dist = math.sqrt(dist2)
+                fuerza = (k * k) / dist
+                ux, uy = dx / dist * fuerza, dy / dist * fuerza
+                desplazamiento[i][0] += ux
+                desplazamiento[i][1] += uy
+                desplazamiento[j][0] -= ux
+                desplazamiento[j][1] -= uy
+        for a, b in pares:
+            dx = lista[a][0] - lista[b][0]
+            dy = lista[a][1] - lista[b][1]
+            dist = math.sqrt(dx * dx + dy * dy) or 0.01
+            fuerza = (dist * dist) / k
+            ux, uy = dx / dist * fuerza, dy / dist * fuerza
+            desplazamiento[a][0] -= ux
+            desplazamiento[a][1] -= uy
+            desplazamiento[b][0] += ux
+            desplazamiento[b][1] += uy
+        for i in range(n):
+            dx, dy = desplazamiento[i]
+            largo = math.sqrt(dx * dx + dy * dy) or 1.0
+            paso = min(largo, temperatura)
+            lista[i][0] += dx / largo * paso
+            lista[i][1] += dy / largo * paso
+            lista[i][0] = max(10.0, min(lado - 10.0, lista[i][0]))
+            lista[i][1] = max(10.0, min(lado - 10.0, lista[i][1]))
+        temperatura -= enfriamiento
+
+    return {nodo: (round(lista[i][0], 2), round(lista[i][1], 2)) for nodo, i in indice.items()}
 
 
 def _layers(nodes, edges, cycles):
@@ -92,6 +176,87 @@ def _corto(nombre, limite=26):
     partes = nombre.split(".")
     corto = partes[-1]
     return ("…" + corto) if len(corto) < limite else ("…" + corto[-(limite - 1):])
+
+
+#: Paleta por cluster: saturada, para fondo casi negro. Los tonos apagados que
+#: funcionan sobre papel se comen unos a otros aqui — con 150 circulos pequenios lo
+#: unico que separa un grupo de otro es el color, asi que tiene que gritar.
+#: Asignada por orden alfabetico del grupo: mismo proyecto, mismos colores siempre.
+_COLORES = [
+    "#7c5cff", "#22d3ee", "#f472b6", "#fb923c", "#4ade80",
+    "#60a5fa", "#c084fc", "#facc15", "#2dd4bf", "#f87171",
+    "#a3e635", "#e879f9",
+]
+
+
+def render_graph_cloud(report, title="galaxy-brain — grafo", modo="simbolos"):
+    """La nube: nodos repartidos por fuerzas, coloreados por módulo, navegable.
+
+    Mismo dato que el informe, otro modo de mirarlo — este responde *"¿qué forma
+    tiene esto?"* y el de capas responde *"¿qué depende de qué?"*. Las posiciones se
+    calculan aquí (deterministas), así que el navegador solo dibuja: ni layout en
+    JS, ni librería, ni WebGL.
+    """
+    if modo == "simbolos":
+        llamadas = [(a, b) for a, b, tipo in report.get("edges", []) if tipo == "CALLS"]
+        kinds = {n["qual"]: n["kind"] for n in report.get("nodes", [])}
+        grupo_de = {n["qual"]: n.get("module", "") for n in report.get("nodes", [])}
+        implicados = sorted({x for par in llamadas for x in par})
+        total = report.get("calls_candidates") or 0
+        pct = round(100 * report.get("calls_resolved", 0) / total) if total else 0
+        resumen = "%d simbolos · %d llamadas resueltas de %d (%d%%)" % (
+            len(implicados), report.get("calls_resolved", 0), total, pct)
+        pie = "sin resolver: " + ", ".join(
+            "%s %d" % (k, v) for k, v in sorted((report.get("unresolved") or {}).items())
+        )
+    else:
+        llamadas = [(a, b) for a, b in (report.get("edge_list") or [])]
+        implicados = sorted(report.get("fan_in", {}))
+        kinds = {m: "module" for m in implicados}
+        grupo_de = {m: m.split(".")[0] for m in implicados}
+        resumen = "%d modulos · %d aristas · %d ciclo(s)" % (
+            report.get("modules", 0), report.get("edges", 0), len(report.get("cycles") or []))
+        pie = str(report.get("root", ""))
+
+    pos = force_layout(implicados, llamadas)
+    grados = {}
+    for a, b in llamadas:
+        grados[a] = grados.get(a, 0) + 1
+        grados[b] = grados.get(b, 0) + 1
+
+    grupos = sorted({grupo_de.get(n, "") for n in implicados})
+    color_de = {g: _COLORES[i % len(_COLORES)] for i, g in enumerate(grupos)}
+
+    datos = [
+        {
+            "id": n,
+            "x": pos[n][0],
+            "y": pos[n][1],
+            "r": round(4 + 2.2 * math.sqrt(grados.get(n, 0)), 2),
+            "c": color_de.get(grupo_de.get(n, ""), _COLORES[0]),
+            "g": grupo_de.get(n, ""),
+            "k": kinds.get(n, ""),
+            "l": n.split(".")[-1],
+        }
+        for n in implicados
+    ]
+    import json as _json
+
+    return _NUBE % {
+        "title": _html.escape(title),
+        "resumen": _html.escape(resumen),
+        "pie": _html.escape(pie),
+        "nodos": _json.dumps(datos, ensure_ascii=False),
+        "aristas": _json.dumps(
+            [[implicados.index(a), implicados.index(b)] for a, b in llamadas
+             if a in pos and b in pos],
+        ),
+        "leyenda": "".join(
+            '<span><i style="background:%s"></i>%s</span>'
+            % (color_de[g], _html.escape(g.split(".")[-1] or "—"))
+            for g in grupos[:12]
+        ),
+    }
 
 
 def render_symbols_html(report, title="galaxy-brain — simbolos"):
@@ -302,5 +467,118 @@ svg.addEventListener('wheel', e=>{
   vb.x += vb.width * (1 - k) / 2; vb.y += vb.height * (1 - k) / 2;
   vb.width *= k; vb.height *= k;
 }, {passive:false});
+</script>
+"""
+
+
+_NUBE = """<!doctype html>
+<meta charset="utf-8">
+<title>%(title)s</title>
+<style>
+  :root{--fondo:#0a0d14;--tinta:#e8edf3;--suave:#7d8b9c;--linea:#1e2836;--panel:#111722}
+  @media (prefers-color-scheme:light){
+    :root{--fondo:#eef1f4;--tinta:#131c24;--suave:#5b6b78;--linea:#c3cdd6;--panel:#fff}}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--fondo);color:var(--tinta);overflow:hidden;
+       font:13px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+  header{position:fixed;top:0;left:0;right:0;z-index:5;padding:10px 14px;
+         background:var(--panel);border-bottom:1px solid var(--linea);
+         display:flex;gap:14px;align-items:center;flex-wrap:wrap}
+  h1{font:600 14px ui-monospace,Consolas,monospace;margin:0;letter-spacing:-.02em}
+  .meta{font:11px ui-monospace,Consolas,monospace;color:var(--suave)}
+  input{background:var(--fondo);border:1px solid var(--linea);color:var(--tinta);
+        border-radius:4px;padding:5px 9px;font:12px ui-monospace,Consolas,monospace;width:210px}
+  input:focus{outline:2px solid #4a7fb5;outline-offset:1px}
+  .leyenda{display:flex;gap:10px;flex-wrap:wrap;margin-left:auto;
+           font:10px ui-monospace,Consolas,monospace;color:var(--suave)}
+  .leyenda span{display:flex;align-items:center;gap:4px}
+  .leyenda i{width:8px;height:8px;border-radius:50%%;display:inline-block}
+  canvas{display:block;cursor:grab}
+  canvas.arrastrando{cursor:grabbing}
+  #ficha{position:fixed;bottom:12px;left:12px;z-index:5;background:var(--panel);
+         border:1px solid var(--linea);border-radius:5px;padding:9px 12px;max-width:460px;
+         font:12px ui-monospace,Consolas,monospace;display:none}
+  #ficha b{color:var(--tinta)} #ficha span{color:var(--suave)}
+  #pie{position:fixed;bottom:12px;right:12px;z-index:5;
+       font:10px ui-monospace,Consolas,monospace;color:var(--suave);max-width:40vw;text-align:right}
+</style>
+<header>
+  <h1>%(title)s</h1>
+  <span class="meta">%(resumen)s</span>
+  <input id="buscar" placeholder="buscar simbolo..." autocomplete="off">
+  <span class="leyenda">%(leyenda)s</span>
+</header>
+<canvas id="lienzo"></canvas>
+<div id="ficha"></div>
+<div id="pie">%(pie)s</div>
+<script>
+const NODOS = %(nodos)s, ARISTAS = %(aristas)s;
+const cv = document.getElementById('lienzo'), cx = cv.getContext('2d');
+const ficha = document.getElementById('ficha'), buscar = document.getElementById('buscar');
+let esc = 1, ox = 0, oy = 0, activo = null, filtro = '';
+const vecinos = NODOS.map(() => new Set());
+ARISTAS.forEach(([a, b]) => { vecinos[a].add(b); vecinos[b].add(a); });
+
+function medir(){ cv.width = innerWidth; cv.height = innerHeight;
+  const m = Math.min(cv.width, cv.height - 60) / 1020; esc = m; ox = (cv.width - 1000*m)/2; oy = 60 + (cv.height - 60 - 1000*m)/2; }
+function px(n){ return [n.x*esc + ox, n.y*esc + oy]; }
+
+function pinta(){
+  cx.clearRect(0,0,cv.width,cv.height);
+  const resalta = activo !== null ? vecinos[activo] : null;
+  cx.lineWidth = 1;
+  ARISTAS.forEach(([a,b]) => {
+    const tocada = activo !== null && (a === activo || b === activo);
+    if (activo !== null && !tocada) { cx.globalAlpha = 0.03; } else { cx.globalAlpha = tocada ? 0.9 : 0.16; }
+    cx.strokeStyle = tocada ? NODOS[a].c : NODOS[a].c;
+    const [x1,y1] = px(NODOS[a]), [x2,y2] = px(NODOS[b]);
+    cx.beginPath(); cx.moveTo(x1,y1); cx.lineTo(x2,y2); cx.stroke();
+  });
+  NODOS.forEach((n,i) => {
+    const coincide = filtro && n.id.toLowerCase().includes(filtro);
+    const cerca = activo === null || i === activo || resalta.has(i);
+    cx.globalAlpha = filtro ? (coincide ? 1 : 0.08) : (cerca ? 1 : 0.12);
+    const [x,y] = px(n);
+    cx.beginPath(); cx.arc(x, y, n.r*Math.max(esc,0.55), 0, 6.284);
+    cx.fillStyle = n.c; cx.fill();
+    if (i === activo || coincide){ cx.strokeStyle = '#fff'; cx.lineWidth = 1.5; cx.stroke(); }
+    if (i === activo || coincide){
+      cx.globalAlpha = 1;
+      cx.fillStyle = getComputedStyle(document.body).color;
+      cx.font = '10px ui-monospace,Consolas,monospace';
+      cx.fillText(n.l, x + n.r*esc + 3, y + 3);
+    }
+  });
+  cx.globalAlpha = 1;
+}
+
+function cercano(mx,my){
+  let mejor = null, dmin = 18;
+  NODOS.forEach((n,i) => { const [x,y] = px(n); const d = Math.hypot(x-mx, y-my);
+    if (d < dmin){ dmin = d; mejor = i; } });
+  return mejor;
+}
+cv.addEventListener('mousemove', e => {
+  if (arrastrando){ ox += e.clientX-lx; oy += e.clientY-ly; lx=e.clientX; ly=e.clientY; pinta(); return; }
+  const i = cercano(e.clientX, e.clientY);
+  if (i !== activo){
+    activo = i;
+    if (i === null) ficha.style.display = 'none';
+    else { const n = NODOS[i];
+      ficha.innerHTML = '<b>'+n.id+'</b><br><span>'+(n.k||'')+' · '+vecinos[i].size+' conexiones · '+(n.g||'')+'</span>';
+      ficha.style.display = 'block'; }
+    pinta();
+  }
+});
+let arrastrando=false, lx=0, ly=0;
+cv.addEventListener('mousedown', e => { arrastrando=true; lx=e.clientX; ly=e.clientY; cv.classList.add('arrastrando'); });
+addEventListener('mouseup', () => { arrastrando=false; cv.classList.remove('arrastrando'); });
+cv.addEventListener('wheel', e => { e.preventDefault();
+  const k = e.deltaY>0 ? 0.9 : 1.1;
+  ox = e.clientX - (e.clientX-ox)*k; oy = e.clientY - (e.clientY-oy)*k; esc *= k; pinta();
+}, {passive:false});
+buscar.addEventListener('input', e => { filtro = e.target.value.trim().toLowerCase(); pinta(); });
+addEventListener('resize', () => { medir(); pinta(); });
+medir(); pinta();
 </script>
 """

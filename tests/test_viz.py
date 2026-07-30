@@ -98,6 +98,49 @@ def test_los_nombres_van_escapados(tmp_path):
     assert "&lt;script&gt;" in salida
 
 
+def test_el_layout_de_fuerzas_tambien_es_determinista():
+    """Corrige una afirmacion anterior de este proyecto: se dijo que un layout de
+    fuerzas renuncia al determinismo, y es falso — solo baila si lo arrancas al azar.
+    Con inicio determinista e iteraciones fijas sale identico siempre."""
+    nodos = ["a", "b", "c", "d", "e"]
+    aristas = [("a", "b"), ("b", "c"), ("c", "d"), ("d", "e"), ("e", "a")]
+
+    assert viz.force_layout(nodos, aristas) == viz.force_layout(nodos, aristas)
+
+
+def test_el_layout_separa_lo_que_no_esta_conectado():
+    """Comprobacion minima de que hace su trabajo: dos grupos sin arista entre ellos
+    no pueden acabar amontonados en el mismo punto."""
+    nodos = ["a1", "a2", "b1", "b2"]
+    pos = viz.force_layout(nodos, [("a1", "a2"), ("b1", "b2")])
+
+    import math
+
+    entre_grupos = math.dist(pos["a1"], pos["b1"])
+    dentro = math.dist(pos["a1"], pos["a2"])
+    assert entre_grupos > dentro
+
+
+def test_la_nube_es_autocontenida_y_determinista(tmp_path):
+    root = _proyecto(tmp_path)
+    from galaxybrain import symbols
+
+    report = symbols.analyze(root)
+    primera = viz.render_graph_cloud(report)
+
+    assert primera == viz.render_graph_cloud(report)
+    for prohibido in ('src="http', "cdn.", "sigma", "unpkg"):
+        assert prohibido not in primera.lower()
+
+
+def test_la_nube_lleva_la_cobertura_en_la_cabecera(tmp_path):
+    """Un grafo parcial que no dice que es parcial se lee como completo."""
+    from galaxybrain import symbols
+
+    salida = viz.render_graph_cloud(symbols.analyze(_proyecto(tmp_path)))
+    assert "resueltas de" in salida
+
+
 def test_el_cli_escribe_el_fichero(tmp_path):
     root = _proyecto(tmp_path)
     destino = os.path.join(root, "mapa.html")
