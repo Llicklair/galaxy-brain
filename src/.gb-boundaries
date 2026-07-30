@@ -27,3 +27,6 @@ galaxybrain.config    -/->  galaxybrain.viz
 galaxybrain.hooks     -/->  galaxybrain.viz
 galaxybrain.changes   -/->  galaxybrain.viz
 galaxybrain.floor     -/->  galaxybrain.viz
+galaxybrain.companions -/->  galaxybrain.cli
+galaxybrain.companions -/->  galaxybrain.render
+galaxybrain.companions -/->  galaxybrain.viz

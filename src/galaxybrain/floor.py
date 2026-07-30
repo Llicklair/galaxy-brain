@@ -474,15 +474,25 @@ def analyze(root, run_tests=False):
                    "sin config de lint, tipos ni formato")
         )
 
-    # 3 — el mapa.
-    from . import graph
+    # 3 — el mapa. Si hay una herramienta que lo hace mejor, se dice: `gb graph` ve
+    # modulos e imports; GitNexus ve simbolos y llamadas. Senalarlo es la regla 7.
+    from . import companions, graph
+
+    nexus = companions.gitnexus(root)
+    report["companions"] = [nexus]
 
     coupling = graph.analyze(root)
     if coupling["modules"]:
+        # Se traslada el detalle tal cual: "sin indexar", "desfasado" y "no pude
+        # comprobarlo" son estados distintos, y aplanarlos a uno solo fue justo el
+        # fallo que dio este detector en su primera ejecucion.
+        extra = ""
+        if nexus["installed"]:
+            extra = " · GitNexus: %s (`%s`)" % (nexus["detail"], nexus["hint"])
         report["levels"].append(
             _level("mapa", "Un mapa, no una lectura", "ok",
-                   "%d modulos, %d aristas, %d ciclo(s) — `gb graph`"
-                   % (coupling["modules"], coupling["edges"], len(coupling["cycles"])))
+                   "%d modulos, %d aristas, %d ciclo(s) — `gb graph`%s"
+                   % (coupling["modules"], coupling["edges"], len(coupling["cycles"]), extra))
         )
     else:
         report["levels"].append(
@@ -547,7 +557,18 @@ def analyze(root, run_tests=False):
     single = _first_existing(root, AGENT_FILES_SINGLE_TOOL)
     pendientes = pending_sections(root)
     report["pending"] = pendientes
-    if agents and "AGENTS.md" in pendientes:
+    ratio, herramientas = companions.tool_generated_ratio(_read(root, "AGENTS.md")) if agents else (0.0, [])
+    if agents and ratio > 0.7:
+        # Existe, pero lo escribio una herramienta para si misma. Darlo por bueno
+        # seria aprobar el continente ignorando el contenido: quien llegue no
+        # encuentra como arrancar el proyecto, encuentra un anuncio.
+        report["levels"].append(
+            _level("agentes", "Contexto ejecutable para agentes", "esqueleto",
+                   "AGENTS.md existe pero el %d%% lo genero %s, no es el contexto del proyecto"
+                   % (round(ratio * 100), " y ".join(herramientas) or "una herramienta"),
+                   evidence=herramientas)
+        )
+    elif agents and "AGENTS.md" in pendientes:
         # Existe pero sigue siendo el esqueleto. Darlo por cubierto seria el suelo
         # de mentira: pasa la lista sin decir nada.
         report["levels"].append(
