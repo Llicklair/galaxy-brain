@@ -180,6 +180,109 @@ def test_raiz_inexistente_es_error(tmp_path):
 # --- el contrato de salida ---------------------------------------------------
 
 
+def test_quitar_una_asercion_no_se_enmascara_anadiendo_otro_test(tmp_path):
+    """El agujero encontrado corriendo esto sobre trabajo real (115ee8c): con el
+    neto POR FICHERO, quitar la asercion que fallaba y añadir un test trivial que
+    pasa hacia subir el neto y desaparecer la resta. Es la ruta de amaño mas obvia
+    despues de borrar el fichero, asi que no puede ser la que se escape."""
+    root = _repo(tmp_path)
+    _write(
+        root,
+        "tests/test_app.py",
+        "def test_importante():\n    assert caro() == 42\n    assert barato() == 1\n",
+    )
+    _commit(root, "base")
+    _write(
+        root,
+        "tests/test_app.py",
+        "def test_importante():\n    assert barato() == 1\n\n"
+        "def test_nuevo_trivial():\n    assert True is True\n    assert 1 == 1\n    assert 2 == 2\n",
+    )
+    _commit(root, "quita la cara, mete tres triviales")
+
+    report = changes.analyze(root, "HEAD~1..HEAD")
+    assert "ASSERT_REMOVED" in _senales(report), "el neto por fichero subia y lo tapaba"
+    flag = next(f for f in report["flags"] if f["signal"] == "ASSERT_REMOVED")
+    assert "test_importante" in flag["detail"], "y dice en QUE funcion se perdio"
+
+
+def test_el_borrado_y_el_test_nuevo_en_EL_MISMO_hunk_tampoco_se_enmascaran(tmp_path):
+    """La forma REAL del caso, que el primer arreglo no cubrio: cuando el borrado y
+    el test nuevo son lineas contiguas, git emite UN SOLO hunk y lo etiqueta con la
+    funcion donde empieza. Contar por hunk seguia tapandolo. Reproduce la geometria
+    exacta de 115ee8c."""
+    root = _repo(tmp_path)
+    _write(
+        root,
+        "tests/test_app.py",
+        "def test_uno():\n    x = calcula()\n    assert x == 42\n",
+    )
+    _commit(root, "base")
+    # Se quita la asercion y, PEGADO, se añade un test nuevo con mas aserciones.
+    _write(
+        root,
+        "tests/test_app.py",
+        "def test_uno():\n    x = calcula()\n\n\n"
+        "def test_nuevo():\n    assert 1 == 1\n    assert 2 == 2\n    assert 3 == 3\n",
+    )
+    _commit(root, "mismo hunk")
+
+    diff = subprocess.run(
+        ["git", "-C", root, "diff", "--unified=0", "HEAD~1..HEAD"],
+        capture_output=True, text=True,
+    ).stdout
+    assert diff.count("@@ -") == 1, "el test solo vale si git emite un unico hunk"
+    assert "ASSERT_REMOVED" in _senales(changes.analyze(root, "HEAD~1..HEAD"))
+
+
+def test_reescribir_aserciones_en_sitio_no_levanta_nada(tmp_path):
+    """El contrapeso de los dos anteriores: cambiar una asercion por otra DENTRO de
+    la misma funcion es lo que hace cualquiera al actualizar un contrato. Si eso
+    chilla, la revision acaba ignorada."""
+    root = _repo(tmp_path)
+    _write(root, "tests/test_app.py", "def test_uno():\n    assert nombre() == 'viejo'\n")
+    _commit(root, "base")
+    _write(root, "tests/test_app.py", "def test_uno():\n    assert nombre() == 'nuevo'\n")
+    _commit(root, "actualiza el contrato")
+
+    assert changes.analyze(root, "HEAD~1..HEAD")["flags"] == []
+
+
+def test_un_patron_dentro_de_un_string_no_es_una_senal(tmp_path):
+    """El falso positivo que dio en su primer cambio real: marco un
+    `@pytest.mark.skip` que vivia DENTRO de una cadena, como dato de prueba de sus
+    propios tests. Recurrente por construccion en cualquier repo que testee un
+    detector, y el criterio de la Fase B dice que un falso positivo recurrente la
+    mata."""
+    root = _repo(tmp_path)
+    _write(root, "tests/test_app.py", SUITE)
+    _commit(root, "base")
+    _write(
+        root,
+        "tests/test_app.py",
+        SUITE
+        + '\ndef test_del_detector():\n'
+        '    fuente = "@pytest.mark.skip\\ndef test_x(): pass"\n'
+        '    otra = "assert True"\n'
+        '    assert detecta(fuente) and detecta(otra)\n',
+    )
+    _commit(root, "tests del detector, con patrones como dato")
+
+    assert changes.analyze(root, "HEAD~1..HEAD")["flags"] == []
+
+
+def test_un_skip_de_verdad_sigue_saliendo(tmp_path):
+    """El contrapeso del anterior: vaciar las cadenas no puede volver ciego al
+    detector para el caso real."""
+    root = _repo(tmp_path)
+    _write(root, "tests/test_app.py", SUITE)
+    _commit(root, "base")
+    _write(root, "tests/test_app.py", SUITE + '\n@pytest.mark.skip(reason="luego")\ndef test_x():\n    assert 1\n')
+    _commit(root, "skip real, con string dentro")
+
+    assert "SKIP_ADDED" in _senales(changes.analyze(root, "HEAD~1..HEAD"))
+
+
 def test_staged_mira_el_indice_no_el_commit_anterior(tmp_path):
     """El bug que casi se cuela al enganchar el hook: en pre-commit el commit
     todavia NO EXISTE, asi que un rango revisa el commit ANTERIOR. Aqui se fija

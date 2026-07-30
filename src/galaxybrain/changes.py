@@ -69,8 +69,56 @@ WEAKENER = [
 ]
 
 
+#: Un literal de cadena completo, con escapes. Se usa para VACIARLOS antes de
+#: buscar patrones: si no, un marcador escrito DENTRO de un string cuenta como si
+#: fuera código. Ese falso positivo no es teórico — lo dio este mismo modulo en su
+#: primer cambio real, marcando el `@pytest.mark.skip` que sus propios tests usan
+#: como dato de prueba. Y es recurrente por construcción en cualquier proyecto que
+#: teste un detector: sus fixtures contienen por fuerza lo que el detector busca.
+_STRING = re.compile(r"""(['"])(?:\\.|(?!\1).)*\1""")
+
+#: `git diff --unified=0` pone en la cabecera del hunk la funcion que lo contiene
+#: (heuristica de git). Es gratis y es lo que permite contar POR FUNCION.
+_HUNK = re.compile(r"^@@ -\d+(?:,\d+)? \+\d+(?:,\d+)? @@\s*(.*)$")
+
+
+def _code_only(line):
+    """La línea con sus literales de cadena vaciados (`"x"` -> `""`).
+
+    Best-effort a propósito: no entiende cadenas triples que abarcan varias líneas,
+    porque el diff se procesa línea a línea. Cubre el caso real, que es un patrón
+    escrito como dato dentro de una cadena de una sola línea.
+    """
+    return _STRING.sub(lambda m: m.group(1) * 2, line)
+
+
 def _matches(patterns, line):
-    return any(p.search(line) for p in patterns)
+    code = _code_only(line)
+    return any(p.search(code) for p in patterns)
+
+
+def _replacement_asserts(added):
+    """De las aserciones añadidas, las que cuentan como SUSTITUCION de una quitada.
+
+    Las que viven dentro de un test NUEVO no cuentan, y ahí está todo el asunto:
+    *añadir un test trivial que pasa mientras borras la aserción que fallaba* es la
+    ruta de amaño que este modulo existe para cerrar. Si las nuevas compensan a las
+    viejas, esa ruta queda invisible por aritmética.
+
+    No vale fiarse de la funcion que git pone en la cabecera del hunk: etiqueta el
+    hunk con la funcion donde EMPIEZA, y en el caso real que descubrio esto
+    (115ee8c) el borrado y el test nuevo caian en el mismo hunk. Hay que seguir las
+    definiciones dentro de las propias lineas añadidas.
+    """
+    out = []
+    in_new_test = False
+    for line in added:
+        if _matches(TEST_DEF, line):
+            in_new_test = True
+            continue
+        if not in_new_test and _matches(ASSERTION, line):
+            out.append(line)
+    return out
 
 
 def parse_diff(text):
@@ -82,8 +130,15 @@ def parse_diff(text):
     """
     files = {}
     current = None
+    section = None
     old_path = None
     for line in (text or "").split("\n"):
+        hunk = _HUNK.match(line)
+        if hunk is not None:
+            if current is not None:
+                section = {"func": hunk.group(1).strip(), "added": [], "removed": []}
+                current["sections"].append(section)
+            continue
         if line.startswith("--- "):
             target = line[4:].strip()
             old_path = None if target == "/dev/null" else re.sub(r"^a/", "", target)
@@ -96,19 +151,24 @@ def parse_diff(text):
                 path, deleted = re.sub(r"^b/", "", target), False
             if path and TEST_FILE.search(path):
                 current = files.setdefault(
-                    path, {"added": [], "removed": [], "deleted": deleted}
+                    path, {"added": [], "removed": [], "deleted": deleted, "sections": []}
                 )
                 current["deleted"] = current["deleted"] or deleted
             else:
                 current = None
+            section = None
             continue
         if current is None:
             continue
         # Se descartan los marcadores del propio diff (+++/---), ya tratados arriba.
         if line.startswith("+") and not line.startswith("+++"):
             current["added"].append(line[1:])
+            if section is not None:
+                section["added"].append(line[1:])
         elif line.startswith("-") and not line.startswith("---"):
             current["removed"].append(line[1:])
+            if section is not None:
+                section["removed"].append(line[1:])
     return files
 
 
@@ -144,22 +204,28 @@ def test_signals(files):
                 }
             )
 
-        removed_asserts = [l for l in removed if _matches(ASSERTION, l)]
-        added_asserts = [l for l in added if _matches(ASSERTION, l)]
-        if len(removed_asserts) > len(added_asserts) and not data.get("deleted"):
-            flags.append(
-                {
-                    "file": path,
-                    "signal": "ASSERT_REMOVED",
-                    "detail": "perdida neta de aserciones: -%d (quitadas %d, puestas %d)"
-                    % (
-                        len(removed_asserts) - len(added_asserts),
-                        len(removed_asserts),
-                        len(added_asserts),
-                    ),
-                    "evidence": [l.strip() for l in removed_asserts[:3]],
-                }
-            )
+        # Neto POR FUNCION, no por fichero. El neto por fichero tenia un agujero
+        # justo en la ruta de amaño mas obvia despues de borrar el fichero: quitas
+        # la asercion que fallaba y añades un test trivial que pasa, el neto sube y
+        # la resta desaparece. Comprobado sobre un commit real de este repo (115ee8c),
+        # donde se quito una asercion de un test existente y el detector callo.
+        # El precio: mover aserciones de una funcion a otra ahora se señala. Es
+        # aceptable — se nombra la funcion, y descartarlo cuesta un vistazo.
+        if not data.get("deleted"):
+            for section in data.get("sections") or []:
+                gone = [l for l in section["removed"] if _matches(ASSERTION, l)]
+                came = _replacement_asserts(section["added"])
+                if len(gone) > len(came):
+                    where = section["func"] or "nivel de modulo"
+                    flags.append(
+                        {
+                            "file": path,
+                            "signal": "ASSERT_REMOVED",
+                            "detail": "en %s: perdida neta de aserciones -%d (quitadas %d, puestas %d)"
+                            % (where, len(gone) - len(came), len(gone), len(came)),
+                            "evidence": [l.strip() for l in gone[:3]],
+                        }
+                    )
 
         skips = [l for l in added if _matches(SKIP_ADDED, l)]
         if skips:
