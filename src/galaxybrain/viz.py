@@ -5,16 +5,18 @@ el mismo hecho pintado: no hay dato nuevo, hay otra forma de mirarlo.
 
 Dos decisiones que no son estéticas:
 
-**Posiciones DETERMINISTAS, calculadas en Python.** Dos capturas del mismo proyecto
-tienen que poder compararse; si las cajas bailan solas, mirar crecer algo no dice
-nada. Aquí el mismo grafo da siempre la misma imagen, y lo que se mueva es porque el
-proyecto se movió.
+**DETERMINISTA aunque se mueva.** Dos capturas del mismo proyecto tienen que poder
+compararse. En la nube, Python calcula las semillas (jerarquía + jitter por hash) y
+el sim converge EN VIVO en el navegador — el "Layout optimizing…" de GitNexus: la
+convergencia animada es el efecto. Sigue siendo determinista porque nada usa
+`random()`: mismas semillas, mismas iteraciones, mismo estado final en cada carga.
+La respiración y el pulso posteriores viven en espacio de *dibujo*, no de física —
+la estructura no deriva. `force_layout` queda como gemela de referencia del sim en
+JS (mismo algoritmo y constantes), y es donde se testea la física con pytest.
 
 Aviso sobre una afirmación anterior de este mismo fichero, que era **falsa**: se dijo
-que un layout de fuerzas renuncia al determinismo. No es cierto — un layout de
-fuerzas solo baila si lo arrancas al azar. Con posiciones iniciales deterministas e
-iteraciones fijas sale idéntico siempre, así que se puede tener el aspecto orgánico
-*y* la comparabilidad. Ver `force_layout`.
+que un layout de fuerzas renuncia al determinismo. No es cierto — solo baila si lo
+arrancas al azar.
 
 Dos vistas, dos preguntas distintas: la de **capas** responde *"¿qué depende de qué?"*
 y la de **nube** responde *"¿qué forma tiene esto?"*. Ninguna sustituye a la otra.
@@ -293,7 +295,13 @@ def render_graph_cloud(report, title="galaxy-brain — grafo", modo="simbolos"):
                 seeds[n] = (cx + jx, cy + jy)
         masa = {n: {"module": 20.0, "class": 5.0}.get(kinds.get(n), 2.0) for n in implicados}
 
-        pos = force_layout(implicados, llamadas + jerarquia, mass=masa, seeds=seeds)
+        # Se emiten las SEMILLAS, no el layout final: el sim corre en el navegador
+        # (mismo algoritmo y constantes que force_layout, que queda como gemela de
+        # referencia testeable). Es el "Layout optimizing..." de GitNexus — la
+        # convergencia animada ES el efecto — y con el sim vivo, arrastrar un nodo
+        # y que sus vecinos respondan sale casi gratis. Determinista igual: mismas
+        # semillas por hash, mismas iteraciones, cero Math.random().
+        pos = seeds
         total = report.get("calls_candidates") or 0
         pct = round(100 * report.get("calls_resolved", 0) / total) if total else 0
         resumen = "%d simbolos · %d llamadas resueltas de %d (%d%%)" % (
@@ -315,7 +323,13 @@ def render_graph_cloud(report, title="galaxy-brain — grafo", modo="simbolos"):
         grupo_de = {m: m.split(".")[0] for m in implicados}
         grupos = sorted({grupo_de.get(n, "") for n in implicados})
         color_grupo = {g: _COLORES[i % len(_COLORES)] for i, g in enumerate(grupos)}
-        pos = force_layout(implicados, llamadas)
+        aureo = math.pi * (3 - math.sqrt(5))
+        masa = {n: 1.0 for n in implicados}
+        pos = {
+            n: (500 + (1000 / 3.2) * math.sqrt((i + 1) / len(implicados)) * math.cos(i * aureo),
+                500 + (1000 / 3.2) * math.sqrt((i + 1) / len(implicados)) * math.sin(i * aureo))
+            for i, n in enumerate(implicados)
+        }
         resumen = "%d modulos · %d aristas · %d ciclo(s)" % (
             report.get("modules", 0), report.get("edges", 0), len(report.get("cycles") or []))
         pie = str(report.get("root", ""))
@@ -342,6 +356,7 @@ def render_graph_cloud(report, title="galaxy-brain — grafo", modo="simbolos"):
             "g": grupo_de.get(n, ""),
             "k": kinds.get(n, ""),
             "l": n.split(".")[-1],
+            "m": masa.get(n, 1.0),
         }
         for n in implicados
     ]
@@ -592,9 +607,13 @@ _NUBE = """<!doctype html>
          display:flex;gap:14px;align-items:center;flex-wrap:wrap}
   h1{font:600 14px ui-monospace,Consolas,monospace;margin:0;letter-spacing:-.02em}
   .meta{font:11px ui-monospace,Consolas,monospace;color:var(--suave)}
+  #estado{font:11px ui-monospace,Consolas,monospace;color:#4ade80;transition:opacity .8s}
   input{background:var(--fondo);border:1px solid var(--linea);color:var(--tinta);
         border-radius:4px;padding:5px 9px;font:12px ui-monospace,Consolas,monospace;width:210px}
-  input:focus{outline:2px solid #4a7fb5;outline-offset:1px}
+  input:focus{outline:2px solid #7c5cff;outline-offset:1px}
+  button{background:var(--fondo);border:1px solid var(--linea);color:var(--suave);
+         border-radius:4px;padding:4px 9px;font:12px ui-monospace,Consolas,monospace;cursor:pointer}
+  button:hover{color:var(--tinta);border-color:var(--suave)}
   .leyenda{display:flex;gap:10px;flex-wrap:wrap;margin-left:auto;
            font:10px ui-monospace,Consolas,monospace;color:var(--suave)}
   .leyenda span{display:flex;align-items:center;gap:4px}
@@ -611,90 +630,214 @@ _NUBE = """<!doctype html>
 <header>
   <h1>%(title)s</h1>
   <span class="meta">%(resumen)s</span>
+  <span id="estado">layout optimizando&hellip;</span>
   <input id="buscar" placeholder="buscar simbolo..." autocomplete="off">
+  <button id="btnPausa" title="pausar/reanudar la fisica">&#9208;</button>
+  <button id="btnEncaja" title="reencuadrar">&#8862;</button>
   <span class="leyenda">%(leyenda)s</span>
 </header>
 <canvas id="lienzo"></canvas>
 <div id="ficha"></div>
 <div id="pie">%(pie)s</div>
 <script>
-const NODOS = %(nodos)s, ARISTAS = %(aristas)s;
-const cv = document.getElementById('lienzo'), cx = cv.getContext('2d');
-const ficha = document.getElementById('ficha'), buscar = document.getElementById('buscar');
-let esc = 1, ox = 0, oy = 0, activo = null, filtro = '';
-const vecinos = NODOS.map(() => new Set());
-ARISTAS.forEach(([a, b, t]) => { vecinos[a].add(b); vecinos[b].add(a); });
+// ================= datos =================
+const NODOS = %(nodos)s, ARISTAS = %(aristas)s, LADO = 1000;
+const N = NODOS.length;
 
-function medir(){ cv.width = innerWidth; cv.height = innerHeight;
-  // Encaja la caja de los NODOS, no el lienzo fijo: si el layout usa 800px, el
-  // dibujo llena la pantalla igual.
-  let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;
-  NODOS.forEach(n=>{ x0=Math.min(x0,n.x); y0=Math.min(y0,n.y); x1=Math.max(x1,n.x); y1=Math.max(y1,n.y); });
-  const pad=70, w=Math.max(x1-x0,1), h=Math.max(y1-y0,1);
-  esc = Math.min((cv.width-2*pad)/w, (cv.height-60-2*pad)/h);
-  ox = pad + (cv.width-2*pad-w*esc)/2 - x0*esc;
-  oy = 60 + pad + (cv.height-60-2*pad-h*esc)/2 - y0*esc; }
-function px(n){ return [n.x*esc + ox, n.y*esc + oy]; }
+// ================= simulacion =================
+// El mismo algoritmo que force_layout en Python (que queda como gemela de
+// referencia con tests); aqui corre EN VIVO, que es el "Layout optimizing..."
+// de GitNexus — la convergencia animada ES el efecto. Determinista: semillas
+// por hash desde Python, iteraciones fijas, cero Math.random().
+const X = NODOS.map(n=>n.x), Y = NODOS.map(n=>n.y);
+const M = NODOS.map(n=>Math.max(0.5, n.m||1));
+const mediaM = M.reduce((a,b)=>a+b,0)/Math.max(N,1);
+for(let i=0;i<N;i++) M[i] /= mediaM;
+const K = Math.sqrt(LADO*LADO/Math.max(N,1));
+const MAXIT = 300, GRAV = 0.06;
+let temp = LADO/10, iter = 0, corriendo = true;
+let agarrado = null, cola = 0;   // nodo en arrastre + enfriamiento tras soltar
 
-function pinta(){
-  cx.clearRect(0,0,cv.width,cv.height);
-  const resalta = activo !== null ? vecinos[activo] : null;
-  cx.lineWidth = 1;
-  // Dos pasadas: la jerarquia (t=0) tenue debajo, las llamadas (t=1) encima.
-  [0, 1].forEach(capa => ARISTAS.forEach(([a,b,t]) => {
-    if ((t|0) !== capa) return;
-    const tocada = activo !== null && (a === activo || b === activo);
-    const base = capa === 0 ? 0.09 : 0.3;
-    if (activo !== null && !tocada) { cx.globalAlpha = 0.02; } else { cx.globalAlpha = tocada ? 0.9 : base; }
-    cx.strokeStyle = NODOS[a].c;
-    const [x1,y1] = px(NODOS[a]), [x2,y2] = px(NODOS[b]);
-    cx.beginPath(); cx.moveTo(x1,y1); cx.lineTo(x2,y2); cx.stroke();
-  }));
-  NODOS.forEach((n,i) => {
-    const coincide = filtro && n.id.toLowerCase().includes(filtro);
-    const cerca = activo === null || i === activo || resalta.has(i);
-    cx.globalAlpha = filtro ? (coincide ? 1 : 0.08) : (cerca ? 1 : 0.12);
-    const [x,y] = px(n);
-    cx.beginPath(); cx.arc(x, y, n.r*Math.max(esc,0.55), 0, 6.284);
-    cx.fillStyle = n.c; cx.fill();
-    if (i === activo || coincide){ cx.strokeStyle = '#fff'; cx.lineWidth = 1.5; cx.stroke(); }
-    if (i === activo || coincide){
-      cx.globalAlpha = 1;
-      cx.fillStyle = getComputedStyle(document.body).color;
-      cx.font = '10px ui-monospace,Consolas,monospace';
-      cx.fillText(n.l, x + n.r*esc + 3, y + 3);
+function paso(){
+  const dx = new Float64Array(N), dy = new Float64Array(N);
+  for(let i=0;i<N;i++){
+    for(let j=i+1;j<N;j++){
+      let ax = X[i]-X[j], ay = Y[i]-Y[j];
+      let d2 = ax*ax+ay*ay;
+      if(d2<0.01){ ax=0.01*(i+1); ay=0.01*(j+1); d2=0.0002; }
+      const d = Math.sqrt(d2);
+      const f = K*K/d*Math.sqrt(M[i]*M[j]);
+      const ux=ax/d*f, uy=ay/d*f;
+      dx[i]+=ux; dy[i]+=uy; dx[j]-=ux; dy[j]-=uy;
     }
-  });
-  cx.globalAlpha = 1;
+  }
+  for(const par of ARISTAS){
+    const a=par[0], b=par[1];
+    if(a===b) continue;
+    let ax=X[a]-X[b], ay=Y[a]-Y[b];
+    const d=Math.sqrt(ax*ax+ay*ay)||0.01;
+    const f=d*d/K, ux=ax/d*f, uy=ay/d*f;
+    dx[a]-=ux; dy[a]-=uy; dx[b]+=ux; dy[b]+=uy;
+  }
+  const c = LADO/2;
+  for(let i=0;i<N;i++){
+    dx[i]+=(c-X[i])*GRAV; dy[i]+=(c-Y[i])*GRAV;
+    if(i===agarrado) continue;   // al agarrado lo mueve el raton, no la fisica
+    const l=Math.sqrt(dx[i]*dx[i]+dy[i]*dy[i])||1;
+    const p=Math.min(l,Math.max(temp,0));
+    X[i]+=dx[i]/l*p; Y[i]+=dy[i]/l*p;
+  }
+  if(iter<MAXIT){ temp -= (LADO/10)/(MAXIT+1); iter++; }
 }
 
-function cercano(mx,my){
-  let mejor = null, dmin = 18;
-  NODOS.forEach((n,i) => { const [x,y] = px(n); const d = Math.hypot(x-mx, y-my);
-    if (d < dmin){ dmin = d; mejor = i; } });
+// ================= camara =================
+const cv = document.getElementById('lienzo'), cx = cv.getContext('2d');
+let esc=1, ox=0, oy=0, camaraLibre=false;
+function encaje(){
+  let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;
+  for(let i=0;i<N;i++){ x0=Math.min(x0,X[i]); y0=Math.min(y0,Y[i]); x1=Math.max(x1,X[i]); y1=Math.max(y1,Y[i]); }
+  const pad=70, w=Math.max(x1-x0,1), h=Math.max(y1-y0,1);
+  const e = Math.min((cv.width-2*pad)/w, (cv.height-60-2*pad)/h);
+  return [e, pad+(cv.width-2*pad-w*e)/2 - x0*e, 60+pad+(cv.height-60-2*pad-h*e)/2 - y0*e];
+}
+function medir(){ cv.width=innerWidth; cv.height=innerHeight;
+  const r=encaje(); esc=r[0]; ox=r[1]; oy=r[2]; }
+
+// ================= atenuado con tinte =================
+// El dimColor de GitNexus: mezclar hacia el color del FONDO conservando el
+// matiz, en vez de bajar alfa y dejarlo gris.
+function mezcla(hex, f){
+  const n=parseInt(hex.slice(1),16), r=(n>>16)&255, g=(n>>8)&255, b=n&255;
+  return 'rgb('+Math.round(10+(r-10)*f)+','+Math.round(13+(g-13)*f)+','+Math.round(20+(b-20)*f)+')';
+}
+NODOS.forEach(n=>{ n.cd = mezcla(n.c, 0.28); });
+
+// ================= vecindario / interaccion =================
+const vecinos = NODOS.map(()=>new Set());
+ARISTAS.forEach(par=>{ vecinos[par[0]].add(par[1]); vecinos[par[1]].add(par[0]); });
+const ficha = document.getElementById('ficha'), buscar = document.getElementById('buscar');
+const estado = document.getElementById('estado');
+let activo=null, fijado=null, filtro='';
+
+function muestraFicha(i){
+  if(i===null){ ficha.style.display='none'; return; }
+  const n=NODOS[i];
+  ficha.innerHTML='<b>'+n.id+'</b><br><span>'+(n.k||'')+' &middot; '+vecinos[i].size+
+    ' conexiones &middot; '+(n.g||'')+'</span>';
+  ficha.style.display='block';
+}
+
+// ================= dibujo =================
+function pinta(t){
+  cx.clearRect(0,0,cv.width,cv.height);
+  const foco = fijado!==null ? fijado : activo;
+  const cerca = foco!==null ? vecinos[foco] : null;
+  // Respiracion en espacio de DIBUJO, no de fisica: la estructura queda quieta
+  // y el grafo respira. Fase por indice: determinista.
+  const WX=new Float64Array(N), WY=new Float64Array(N);
+  const vivo = iter>=MAXIT ? 1 : 0;
+  for(let i=0;i<N;i++){
+    WX[i]=X[i]*esc+ox + vivo*2.2*Math.sin(t/1100+i*2.1);
+    WY[i]=Y[i]*esc+oy + vivo*2.2*Math.cos(t/1300+i*1.3);
+  }
+  cx.lineWidth=1;
+  // Jerarquia (tipo 0) tenue debajo; llamadas (tipo 1) encima.
+  for(const capa of [0,1]) for(const par of ARISTAS){
+    const a=par[0], b=par[1], tp=par[2]|0;
+    if(tp!==capa) continue;
+    const tocada = foco!==null && (a===foco || b===foco);
+    if(foco!==null && !tocada){ cx.globalAlpha=0.02; }
+    else { cx.globalAlpha = tocada ? 0.9 : (capa===0 ? 0.09 : 0.3); }
+    cx.strokeStyle = NODOS[a].c;
+    cx.beginPath(); cx.moveTo(WX[a],WY[a]); cx.lineTo(WX[b],WY[b]); cx.stroke();
+  }
+  cx.globalAlpha=1;
+  const fase=(Math.sin(t/180)+1)/2;   // pulso de busqueda: formula de GitNexus
+  for(let i=0;i<N;i++){
+    const n=NODOS[i];
+    const coincide = filtro && n.id.toLowerCase().includes(filtro);
+    const relacionado = foco===null || i===foco || cerca.has(i);
+    let rr = n.r*Math.min(Math.max(esc,0.55),1.6);
+    rr *= 1 + vivo*0.05*Math.sin(t/900+i*2.4);          // respiracion
+    let color = n.c;
+    if(filtro && !coincide){ color=n.cd; }
+    else if(foco!==null && !relacionado){ color=n.cd; }
+    if(coincide){ rr *= 1.2+fase*0.5; if(fase>0.5) color='#06b6d4'; }
+    if(i===foco){ rr *= 1+0.12*Math.sin(t/250); }
+    cx.beginPath(); cx.arc(WX[i],WY[i],rr,0,6.284);
+    cx.fillStyle=color; cx.fill();
+    if(i===foco || coincide){
+      cx.strokeStyle='#fff'; cx.lineWidth=1.5; cx.stroke(); cx.lineWidth=1;
+      cx.fillStyle='#e8edf3'; cx.font='11px ui-monospace,Consolas,monospace';
+      cx.fillText(n.l, WX[i]+rr+4, WY[i]+3);
+    }
+  }
+}
+
+// ================= bucle =================
+function bucle(t){
+  if(N>1){
+    if(corriendo && iter<MAXIT){
+      for(let s=0;s<3 && iter<MAXIT;s++) paso();
+      if(!camaraLibre){ const r=encaje(); esc+=(r[0]-esc)*0.08; ox+=(r[1]-ox)*0.08; oy+=(r[2]-oy)*0.08; }
+      if(iter>=MAXIT) estado.style.opacity=0;
+    } else if(agarrado!==null || cola>0){
+      // Fisica local al arrastrar: los vecinos responden; al soltar, se enfria.
+      temp=Math.max(temp,10); paso();
+      if(agarrado===null) cola--;
+    }
+  } else { estado.style.opacity=0; }
+  pinta(t);
+  requestAnimationFrame(bucle);
+}
+
+// ================= raton =================
+function nodoEn(mx,my){
+  let mejor=null, dmin=16;
+  for(let i=0;i<N;i++){
+    const d=Math.hypot(X[i]*esc+ox-mx, Y[i]*esc+oy-my);
+    if(d<dmin){ dmin=d; mejor=i; }
+  }
   return mejor;
 }
-cv.addEventListener('mousemove', e => {
-  if (arrastrando){ ox += e.clientX-lx; oy += e.clientY-ly; lx=e.clientX; ly=e.clientY; pinta(); return; }
-  const i = cercano(e.clientX, e.clientY);
-  if (i !== activo){
-    activo = i;
-    if (i === null) ficha.style.display = 'none';
-    else { const n = NODOS[i];
-      ficha.innerHTML = '<b>'+n.id+'</b><br><span>'+(n.k||'')+' · '+vecinos[i].size+' conexiones · '+(n.g||'')+'</span>';
-      ficha.style.display = 'block'; }
-    pinta();
-  }
+let panning=false, lx=0, ly=0, movido=false;
+cv.addEventListener('mousedown', e=>{
+  movido=false; lx=e.clientX; ly=e.clientY;
+  const i=nodoEn(e.clientX,e.clientY);
+  if(i!==null){ agarrado=i; camaraLibre=true; }
+  else { panning=true; cv.classList.add('arrastrando'); }
 });
-let arrastrando=false, lx=0, ly=0;
-cv.addEventListener('mousedown', e => { arrastrando=true; lx=e.clientX; ly=e.clientY; cv.classList.add('arrastrando'); });
-addEventListener('mouseup', () => { arrastrando=false; cv.classList.remove('arrastrando'); });
-cv.addEventListener('wheel', e => { e.preventDefault();
+addEventListener('mousemove', e=>{
+  if(Math.hypot(e.clientX-lx,e.clientY-ly)>3) movido=true;
+  if(agarrado!==null){
+    X[agarrado]=(e.clientX-ox)/esc; Y[agarrado]=(e.clientY-oy)/esc;
+    return;
+  }
+  if(panning){ ox+=e.clientX-lx; oy+=e.clientY-ly; lx=e.clientX; ly=e.clientY; camaraLibre=true; return; }
+  const i=nodoEn(e.clientX,e.clientY);
+  if(i!==activo){ activo=i; if(fijado===null) muestraFicha(i); }
+});
+addEventListener('mouseup', e=>{
+  if(agarrado!==null){
+    if(!movido){ fijado = (fijado===agarrado) ? null : agarrado; muestraFicha(fijado); }
+    else cola=90;
+    agarrado=null;
+  } else if(panning && !movido){ fijado=null; muestraFicha(null); }
+  panning=false; cv.classList.remove('arrastrando');
+});
+cv.addEventListener('wheel', e=>{
+  e.preventDefault(); camaraLibre=true;
   const k = e.deltaY>0 ? 0.9 : 1.1;
-  ox = e.clientX - (e.clientX-ox)*k; oy = e.clientY - (e.clientY-oy)*k; esc *= k; pinta();
+  ox = e.clientX-(e.clientX-ox)*k; oy = e.clientY-(e.clientY-oy)*k; esc*=k;
 }, {passive:false});
-buscar.addEventListener('input', e => { filtro = e.target.value.trim().toLowerCase(); pinta(); });
-addEventListener('resize', () => { medir(); pinta(); });
-medir(); pinta();
+buscar.addEventListener('input', e=>{ filtro=e.target.value.trim().toLowerCase(); });
+document.getElementById('btnPausa').addEventListener('click', ev=>{
+  corriendo=!corriendo; ev.target.innerHTML = corriendo ? '&#9208;' : '&#9654;';
+});
+document.getElementById('btnEncaja').addEventListener('click', ()=>{
+  const r=encaje(); esc=r[0]; ox=r[1]; oy=r[2];
+});
+addEventListener('resize', ()=>{ if(!camaraLibre) medir(); else { cv.width=innerWidth; cv.height=innerHeight; } });
+medir(); requestAnimationFrame(bucle);
 </script>
 """
