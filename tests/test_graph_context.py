@@ -11,7 +11,7 @@ en cada edicion — y entonces deja de leerse, que es como muere una senal.
 
 import os
 
-from galaxybrain import graph, render
+from galaxybrain import cli, graph, render
 
 
 def _write(root, rel, content):
@@ -83,6 +83,25 @@ def test_un_modulo_nuevo_y_suelto_ya_cambia_la_forma(tmp_path):
 
     _write(root, "pkg/nuevo.py", "")
     assert graph.fingerprint(graph.analyze(root)) != antes
+
+
+def test_la_misma_carpeta_escrita_distinto_comparte_cache(tmp_path):
+    """En Windows `c:\\x` y `C:\\x` son la MISMA carpeta, y abspath no unifica la
+    letra de unidad. Cuando no coincidian, el cache no acertaba nunca y
+    --if-changed dejaba de callar: el mapa entero repetido en cada edicion."""
+    base = str(tmp_path)
+    variantes = {base, base.replace(os.sep, "/"), os.path.join(base, "sub", "..")}
+    if base[1:2] == ":":  # Windows: la misma unidad en las dos cajas
+        variantes |= {base[0].lower() + base[1:], base[0].upper() + base[1:]}
+
+    claves = {cli._shape_cache(v).name for v in variantes}
+    assert len(claves) == 1, "una carpeta, una clave: %s" % claves
+
+
+def test_dos_proyectos_distintos_no_se_pisan_el_cache(tmp_path):
+    uno = cli._shape_cache(str(tmp_path / "proyecto-a"))
+    otro = cli._shape_cache(str(tmp_path / "proyecto-b"))
+    assert uno != otro
 
 
 def test_un_ciclo_nuevo_cambia_la_forma(tmp_path):

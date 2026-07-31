@@ -71,7 +71,14 @@ def _shape_cache(root):
     """
     import hashlib
 
-    clave = hashlib.sha256(os.path.abspath(root).encode("utf-8")).hexdigest()[:16]
+    # normcase, no solo abspath: en Windows `c:\x` y `C:\x` son la MISMA carpeta y
+    # abspath no unifica la letra de unidad. Sin esto la clave dependia de como
+    # viniera escrito el cwd, el cache no acertaba nunca y --if-changed dejaba de
+    # callar — el mapa entero repetido en cada edicion, justo lo que evita. En
+    # POSIX normcase no toca nada, asi que un sistema sensible a mayusculas sigue
+    # distinguiendo dos rutas que de verdad son distintas.
+    ruta = os.path.normcase(os.path.abspath(root))
+    clave = hashlib.sha256(ruta.encode("utf-8")).hexdigest()[:16]
     return config.home() / "shape" / (clave + ".txt")
 
 
