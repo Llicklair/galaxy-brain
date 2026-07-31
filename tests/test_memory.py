@@ -1,8 +1,9 @@
 """gb memory — la memoria cross-repo portada de scripts/memory-global.js.
 
 Se prueba lo que tiene que seguir siendo idéntico al JS: el formato del vault (las
-notas ya escritas siguen valiendo), el scoring de recall, y que `context` es magro
-por diseño — índice de TODO, texto completo solo de las notas always/proyecto.
+notas ya escritas siguen valiendo) y que `context` es magro por diseño — índice de
+TODO, texto completo solo de las notas always/proyecto. El scoring de recall diverge
+del JS a propósito: también mira el cuerpo, con el índice pesando doble.
 """
 
 import pytest
@@ -84,6 +85,20 @@ def test_recall_ranks_by_term_hits(vault):
     out = "\n".join(memory.recall("evaluador tooling"))
     assert "### gemini" in out
     assert "### otra" not in out  # cero hits -> excluida
+
+
+def test_recall_matches_body_terms(vault):
+    write_note(vault, "proveedor-nd", description="nota de prueba", body="el proveedor manda N/D sin precio")
+    out = "\n".join(memory.recall("proveedor precio"))
+    assert "### proveedor-nd" in out
+
+
+def test_recall_metadata_outranks_body(vault):
+    write_note(vault, "solo-cuerpo", description="nada", body="harbor harbor harbor")
+    write_note(vault, "en-descripcion", description="harbor en wsl", body="cuerpo")
+    out = memory.recall("harbor")
+    first_header = next(line for line in out if line.startswith("###"))
+    assert "en-descripcion" in first_header
 
 
 def test_recall_empty_query_returns_empty(vault):

@@ -91,8 +91,11 @@ def write_index(notes: list[Note]) -> None:
 
 
 def _score(note: Note, terms: list[str]) -> int:
-    hay = (note.name + " " + note.description + " " + " ".join(note.tags)).lower()
-    return sum(1 for t in terms if t in hay)
+    # El índice (nombre/descripción/tags) pesa doble: una descripción que casa
+    # exacta debe ganar a un cuerpo largo que solo roza la query.
+    meta = (note.name + " " + note.description + " " + " ".join(note.tags)).lower()
+    body = note.body.lower()
+    return sum(2 if t in meta else 1 if t in body else 0 for t in terms)
 
 
 def add(name, description, type="reference", scope="general", tags="", body="") -> Path:
