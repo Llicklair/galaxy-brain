@@ -25,6 +25,11 @@ absoluta (no compara nombres, solo el hecho presente).
 import ast
 import os
 
+#: El BOM de UTF-8, como carácter. Escrito con chr() y no literal a propósito: un
+#: BOM literal dentro del fuente es invisible, sobrevive mal a un copy-paste y es
+#: exactamente la clase de carácter que este módulo existe para tolerar.
+_BOM = chr(0xFEFF)
+
 #: Directorios que no son código del proyecto (no se analizan).
 DEFAULT_SKIP = frozenset(
     (
@@ -187,7 +192,12 @@ def _graph_from_sources(items):
             edges[mod] = set()
             continue
         try:
-            tree = ast.parse(text, filename=loc)
+            # El BOM de UTF-8 no es sintaxis: el interprete lo descarta al compilar,
+            # pero ast.parse sobre texto YA decodificado lo ve como U+FEFF y lanza
+            # SyntaxError. Sin este lstrip, un fichero que Python ejecuta sin
+            # pestanear desaparece del mapa — y en Windows es comunisimo, porque
+            # PowerShell y varios editores escriben UTF-8 con BOM por defecto.
+            tree = ast.parse(text.lstrip(_BOM), filename=loc)
         # RecursionError/MemoryError no son SyntaxError ni ValueError: un .py
         # patológico (anidamiento enorme) no puede tumbar el análisis entero.
         except (SyntaxError, ValueError, RecursionError, MemoryError) as error:
@@ -414,7 +424,9 @@ def load_boundaries(root, path=None):
     if path is None:
         path = os.path.join(root, BOUNDARIES_FILE)
     try:
-        with open(path, "r", encoding="utf-8", errors="replace") as handle:
+        # utf-8-sig: con BOM, la primera regla del fichero se leia como basura y
+        # acababa en `malformed` — enforced nada y por un caracter invisible.
+        with open(path, "r", encoding="utf-8-sig", errors="replace") as handle:
             content = handle.read()
     except FileNotFoundError:
         # Fichero por defecto ausente = opt-in (sin error). Ruta EXPLÍCITA que no
@@ -545,7 +557,9 @@ def overengineering(root, skip=DEFAULT_SKIP, include_nested=False):
         if not mod:
             continue
         try:
-            with open(path, "r", encoding="utf-8", errors="replace") as handle:
+            # utf-8-sig: descarta el BOM si lo hay (ver el lstrip de _graph_from_sources)
+            # y se comporta igual que utf-8 cuando no lo hay.
+            with open(path, "r", encoding="utf-8-sig", errors="replace") as handle:
                 tree = ast.parse(handle.read())
         except (SyntaxError, ValueError, RecursionError, MemoryError):
             continue

@@ -27,7 +27,7 @@ import os
 #: dio este modulo fue 17%, y era una mezcla de peras con manzanas.
 _BUILTINS = frozenset(dir(builtins))
 
-from .graph import DEFAULT_SKIP, _iter_py_files, _resolve_base, module_name
+from .graph import _BOM, DEFAULT_SKIP, _iter_py_files, _resolve_base, module_name
 
 #: Motivos por los que una llamada no se resuelve. Se cuentan por separado porque
 #: dicen cosas distintas: mucho `atributo-de-variable` es codigo orientado a objetos
@@ -171,7 +171,9 @@ def analyze(root, skip=DEFAULT_SKIP, include_nested=False, since=None):
         if not mod:
             continue
         try:
-            with open(path, "r", encoding="utf-8", errors="replace") as handle:
+            # utf-8-sig, no utf-8: con BOM el fichero caia en `errors` y sus
+            # simbolos desaparecian del grafo (mismo bug que en graph).
+            with open(path, "r", encoding="utf-8-sig", errors="replace") as handle:
                 tree = ast.parse(handle.read(), filename=path)
         except (SyntaxError, ValueError, RecursionError, MemoryError) as error:
             report["errors"][path] = "%s: %s" % (type(error).__name__, error)
@@ -276,7 +278,9 @@ def _scan_items(items):
             errores[ruta] = "no se pudo leer"
             continue
         try:
-            tree = ast.parse(texto, filename=ruta)
+            # Mismo motivo que en graph._graph_from_sources: el BOM no es sintaxis
+            # para el interprete, pero si para ast.parse sobre texto decodificado.
+            tree = ast.parse(texto.lstrip(_BOM), filename=ruta)
         except (SyntaxError, ValueError, RecursionError, MemoryError) as error:
             errores[ruta] = "%s: %s" % (type(error).__name__, error)
             continue
