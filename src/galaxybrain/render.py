@@ -112,6 +112,15 @@ def render_record(record, style, full=False):
     meta = "%s%s" % (relative_time(record.get("ts")), where)
     if project:
         meta += "%s%s" % (dot, os.path.basename(project))
+    # `gb list` ya los aparta, pero `gb last` devuelve lo ULTIMO sea lo que sea, y
+    # un `python -c` de exploracion presentado como "el ultimo fallo" manda a
+    # buscar en el proyecto algo que nunca estuvo ahi. Se marca, no se esconde:
+    # a veces ES lo que acabas de ejecutar y lo quieres.
+    if index >= 0 and str(frames[index].get("file") or "").startswith("<"):
+        meta += "%sefimero (%s: no es un fichero del proyecto)" % (
+            dot,
+            frames[index].get("file"),
+        )
     if record.get("thread") and record.get("thread") != "MainThread":
         meta += "%shilo %s" % (dot, record["thread"])
     lines.append(style(meta, DIM))

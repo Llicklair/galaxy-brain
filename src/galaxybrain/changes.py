@@ -363,8 +363,19 @@ def analyze(root, rev_range=None, skip=None, include_nested=False, staged=False)
                     "acoplamiento: 0 modulos analizados bajo %s, no se comprobo nada" % root
                 )
         else:
+            # La confusion tipica, y le paso a alguien usando esto de verdad:
+            # `gb graph src` toma una RUTA en el primer positional y `gb check src`
+            # toma un RANGO. Mismo hueco, significado distinto. Sin este aviso, el
+            # mensaje se lee como "el baseline esta roto" en vez de "te has
+            # equivocado de argumento", que es lo que de verdad pasa.
+            pista = ""
+            if os.path.isdir(os.path.join(root, base)) or os.path.isdir(base):
+                pista = (
+                    " — pero '%s' SI es un directorio: aqui el rango va PRIMERO y la "
+                    "ruta despues (`gb check HEAD~1..HEAD %s`)" % (base, base)
+                )
             report["not_covered"].append(
-                "acoplamiento: no pude construir la baseline de '%s'" % base
+                "acoplamiento: no pude construir la baseline de '%s'%s" % (base, pista)
             )
     else:
         report["not_covered"].append("acoplamiento: el rango no trae base comparable")

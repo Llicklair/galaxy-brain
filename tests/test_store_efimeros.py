@@ -35,6 +35,28 @@ def test_sin_frame_NO_cuenta_como_efimero():
     assert not store.is_ephemeral({})
 
 
+def test_gb_last_MARCA_el_efimero_en_vez_de_esconderlo():
+    """`list` los aparta; `last` devuelve lo ULTIMO sea lo que sea.
+
+    Presentar un `python -c` de exploracion como "el ultimo fallo" sin decirlo
+    manda a buscar en el proyecto algo que nunca estuvo ahi. Pero esconderlo seria
+    peor: a veces ES lo que acabas de ejecutar. Se marca. Reportado en uso real.
+    """
+    from galaxybrain import render
+
+    record = {
+        "exception": {"type": "ValueError", "message": "boom"},
+        "process": {"project": "/proyecto"},
+        "ts": "2026-07-31T10:00:00+02:00",
+        "frames": [{"file": "<string>", "line": 1, "function": "<module>"}],
+    }
+    salida = render.render_record(record, render.Style(False))
+    assert "efimero" in salida
+
+    record["frames"] = [{"file": "/proyecto/pkg/a.py", "line": 7, "function": "f"}]
+    assert "efimero" not in render.render_record(record, render.Style(False))
+
+
 def test_el_filtro_deja_pasar_lo_real_y_cuenta_lo_oculto():
     entries = [
         _entry("<string>:1"),
