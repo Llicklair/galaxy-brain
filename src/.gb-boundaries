@@ -33,3 +33,6 @@ galaxybrain.companions -/->  galaxybrain.viz
 galaxybrain.symbols   -/->  galaxybrain.cli
 galaxybrain.symbols   -/->  galaxybrain.render
 galaxybrain.symbols   -/->  galaxybrain.viz
+galaxybrain.memory    -/->  galaxybrain.cli
+galaxybrain.memory    -/->  galaxybrain.render
+galaxybrain.memory    -/->  galaxybrain.viz

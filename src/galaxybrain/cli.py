@@ -6,12 +6,13 @@ cuando el proyecto se dio un PLANTEAMIENTO por encima del SCOPE, y conviene
 decirlo en vez de ir colando comandos: hoy la superficie cubre las tres
 propiedades de ese documento, una familia por propiedad.
 
-  last · list · show · on · off · status   ->  baratos de encontrar   (v2)
-  graph · symbols                          ->  estructuralmente acotados (v3)
-  check                                    ->  imposibles de esconder (Fase B)
+  last · list · show · on · off · status   ->  baratos de encontrar
+  graph · symbols                          ->  estructuralmente acotados
+  check                                    ->  imposibles de esconder
   floor                                    ->  el suelo, debajo de las tres
+  memory                                   ->  memoria permanente cross-repo
 
-Un comando nuevo tiene que caer en una de esas cuatro. Si no cae, no entra.
+Un comando nuevo tiene que caer en una de esas familias. Si no cae, no entra.
 """
 
 import argparse
@@ -37,6 +38,23 @@ def emit(text):
     except UnicodeEncodeError:
         encoding = getattr(stream, "encoding", None) or "utf-8"
         stream.write(text.encode(encoding, "replace").decode(encoding, "replace") + "\n")
+
+
+def emit_utf8(text):
+    """Como emit(), pero UTF-8 fiel — para la memoria, no para el crash.
+
+    En el camino caliente emit() tolera perder un caracter raro de una variable
+    antes que tumbar la lectura del fallo. La memoria es lo contrario: una nota
+    mal codificada es basura, y su stdout lo consume el hook de SessionStart. Se
+    escribe en bytes al buffer para no depender del locale de la consola (cp1252
+    en Windows mutila acentos y flechas). Se cae a emit() si no hay buffer.
+    """
+    buffer = getattr(sys.stdout, "buffer", None)
+    if buffer is None:
+        emit(text)
+        return
+    buffer.write((text + "\n").encode("utf-8", "replace"))
+    buffer.flush()
 
 
 def _style(args):
@@ -295,6 +313,50 @@ def cmd_check(args):
     return 1 if report["range_error"] else 0
 
 
+def cmd_memory(args):
+    from . import memory
+
+    action = getattr(args, "mem_command", None) or "index"
+    if action == "context":
+        # El payload de SessionStart. Sale 0 SIEMPRE y calla si no hay nada: una
+        # herramienta de memoria jamas debe tumbar el arranque de una sesion.
+        payload = memory.context(getattr(args, "project", None))
+        if payload:
+            emit_utf8(payload)
+        return 0
+    if action == "recall":
+        query = " ".join(getattr(args, "query", []) or [])
+        if not query.strip():
+            sys.stderr.write("[gb memory] recall necesita palabras de busqueda\n")
+            return 2
+        for line in memory.recall(query):
+            emit_utf8(line)
+        return 0
+    if action == "add":
+        if not args.name or not args.description:
+            sys.stderr.write("[gb memory] add necesita --name y --description\n")
+            return 2
+        body = args.body
+        if not body and not sys.stdin.isatty():
+            try:
+                body = sys.stdin.read().strip()
+            except (OSError, ValueError):
+                body = ""
+        path = memory.add(
+            args.name,
+            args.description,
+            type=args.type,
+            scope=args.scope,
+            tags=args.tags or "",
+            body=body or "",
+        )
+        emit_utf8("saved: %s [%s] -> %s" % (args.name, args.scope, path))
+        return 0
+    for line in memory.index_lines():
+        emit_utf8(line)
+    return 0
+
+
 def _graph_gate(report):
     """Código de salida del --gate. Con --since, falla solo con ciclos NUEVOS;
     sin --since, estricto (cualquier ciclo). Si no se puede comparar la baseline,
@@ -467,6 +529,37 @@ def build_parser():
     floor_p.add_argument("--json", action="store_true", help="salida cruda")
     floor_p.add_argument("--color", choices=["auto", "always", "never"], default="auto")
     floor_p.set_defaults(func=cmd_floor)
+
+    memory_p = subparsers.add_parser(
+        "memory", help="memoria permanente cross-repo (vault markdown en ~/.claude/memory-global)"
+    )
+    mem_sub = memory_p.add_subparsers(dest="mem_command")
+
+    mem_ctx = mem_sub.add_parser(
+        "context", help="payload de SessionStart: indice + notas always/proyecto"
+    )
+    mem_ctx.add_argument(
+        "--project", help="proyecto actual (por defecto se deriva de CLAUDE_PROJECT_DIR/cwd)"
+    )
+    mem_ctx.set_defaults(func=cmd_memory)
+
+    mem_idx = mem_sub.add_parser("index", help="el indice compacto, una linea por nota")
+    mem_idx.set_defaults(func=cmd_memory)
+
+    mem_rec = mem_sub.add_parser("recall", help="texto completo de las notas mas relevantes")
+    mem_rec.add_argument("query", nargs="*", help="palabras de busqueda")
+    mem_rec.set_defaults(func=cmd_memory)
+
+    mem_add = mem_sub.add_parser("add", help="anadir o sobrescribir una nota (cuerpo por --body o stdin)")
+    mem_add.add_argument("--name")
+    mem_add.add_argument("--description")
+    mem_add.add_argument("--type", default="reference")
+    mem_add.add_argument("--scope", default="general")
+    mem_add.add_argument("--tags", default="")
+    mem_add.add_argument("--body", default="")
+    mem_add.set_defaults(func=cmd_memory)
+
+    memory_p.set_defaults(func=cmd_memory)
 
     return parser
 
