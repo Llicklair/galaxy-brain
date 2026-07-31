@@ -23,6 +23,8 @@ absoluta (no compara nombres, solo el hecho presente).
 """
 
 import ast
+import hashlib
+import json
 import os
 
 #: El BOM de UTF-8, como carácter. Escrito con chr() y no literal a propósito: un
@@ -669,3 +671,28 @@ def analyze(root, skip=DEFAULT_SKIP, since=None, boundaries=None, smells=False, 
                 v for v in violations if (v["importer"], v["imported"]) not in base_keys
             ]
     return report
+
+
+def fingerprint(report):
+    """La FORMA del informe, reducida a una huella comparable.
+
+    Solo se mueve si cambia algo estructural: un modulo, una arista, un ciclo o un
+    cruce de frontera. Renombrar una variable, reformatear o reescribir el cuerpo de
+    una funcion NO la mueven — y esa insensibilidad es justo el punto: permite avisar
+    cuando la forma cambia sin repetir el mapa entero en cada edicion.
+    """
+    forma = {
+        # fan_in tiene una entrada por modulo analizado, tambien los que no importan
+        # a nadie: un modulo nuevo y suelto ya es un cambio de forma.
+        "modules": sorted(report.get("fan_in") or {}),
+        "edges": sorted([list(e) for e in (report.get("edge_list") or [])]),
+        "cycles": sorted([sorted(c) for c in (report.get("cycles") or [])]),
+        "violations": sorted(
+            [
+                v.get("importer", "") + ">" + v.get("imported", "")
+                for v in (report.get("violations") or [])
+            ]
+        ),
+    }
+    crudo = json.dumps(forma, sort_keys=True, ensure_ascii=False)
+    return hashlib.sha256(crudo.encode("utf-8")).hexdigest()[:16]

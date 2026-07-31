@@ -419,6 +419,48 @@ def render_graph(report, style):
     return "\n".join(lines).rstrip()
 
 
+def render_graph_context(report):
+    """El mapa comprimido a payload de sesión: la forma del proyecto de una pasada.
+
+    Sin color y sin adornos porque no lo lee un humano en una terminal: lo lee un
+    agente al arrancar. Y **cadena vacía cuando no hay nada que decir** — un payload
+    que anuncia "0 módulos" es ruido inyectado en cada sesión, y la regla 2 dice
+    devolver algo o callarse. El techo es la decena de líneas: si esto engorda,
+    compite con el contexto que `gb memory` se esfuerza en mantener magro (H6).
+    """
+    if report.get("root_error") or not report.get("modules"):
+        return ""
+    raiz = report.get("root") or ""
+    nombre = os.path.basename(raiz.rstrip("\\/")) or raiz
+    padre = os.path.basename(os.path.dirname(raiz.rstrip("\\/")))
+    etiqueta = (padre + "/" + nombre) if padre and nombre in ("src", "lib", "app") else nombre
+
+    ciclos = report.get("cycles") or []
+    violaciones = report.get("violations") or []
+    lines = [
+        "# mapa de %s — %d modulos, %d aristas, %d ciclo(s) [gb graph]"
+        % (etiqueta, report["modules"], report["edges"], len(ciclos))
+    ]
+
+    # Los dos hechos que bloquean van arriba y enteros: son la unica salida de
+    # `graph` que detiene un commit (regla 11), asi que no se resumen.
+    for ciclo in ciclos[:5]:
+        lines.append("  CICLO: " + " -> ".join(ciclo))
+    for v in violaciones[:5]:
+        lines.append("  CRUCE DE FRONTERA: %s -> %s" % (v.get("importer", "?"), v.get("imported", "?")))
+
+    def _top(counts, n=4):
+        return [(m, c) for m, c in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))[:n] if c]
+
+    entrantes = _top(report.get("fan_in") or {})
+    salientes = _top(report.get("fan_out") or {})
+    if entrantes:
+        lines.append("  nucleo (mas importado): " + " · ".join("%s<-%d" % (m, c) for m, c in entrantes))
+    if salientes:
+        lines.append("  cabeza (mas depende): " + " · ".join("%s->%d" % (m, c) for m, c in salientes))
+    return "\n".join(lines)
+
+
 def render_groups(groups, style):
     """La vista de libreta: qué se rompe y cuántas veces, lo más frecuente arriba."""
     if not groups:

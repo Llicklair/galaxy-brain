@@ -61,6 +61,52 @@ def _style(args):
     return render.Style(sys.stdout.isatty())
 
 
+def _shape_cache(root):
+    """Donde se recuerda la ultima forma vista de un proyecto.
+
+    En config.home(), NUNCA dentro del repo observado (ARCHITECTURE regla 7: el
+    arnes no ensucia el proyecto que mira). La clave es el hash de la ruta para que
+    dos proyectos distintos no se pisen y ningun nombre raro llegue al sistema de
+    ficheros.
+    """
+    import hashlib
+
+    clave = hashlib.sha256(os.path.abspath(root).encode("utf-8")).hexdigest()[:16]
+    return config.home() / "shape" / (clave + ".txt")
+
+
+def _graph_context(report, root, solo_si_cambia):
+    """Payload de sesion: la forma del proyecto de una pasada, o silencio.
+
+    Silencio en los dos casos que importan — sin modulos que mapear (un proyecto que
+    no es Python) y, con `--if-changed`, forma identica a la ultima vista. Un aviso
+    que se repite igual en cada edicion deja de leerse, y ademas gasta el contexto
+    que el resto del proyecto se esfuerza en no gastar (H6).
+    """
+    from . import graph
+
+    payload = render.render_graph_context(report)
+    if not payload:
+        return 0
+    huella = graph.fingerprint(report)
+    cache = _shape_cache(root)
+    try:
+        previa = cache.read_text(encoding="utf-8").strip()
+    except OSError:
+        previa = ""
+    if huella != previa:
+        try:
+            cache.parent.mkdir(parents=True, exist_ok=True)
+            cache.write_text(huella, encoding="utf-8")
+        except OSError:
+            # Regla 9: si el cache no se puede escribir, esto sigue informando.
+            pass
+    elif solo_si_cambia:
+        return 0
+    emit(payload)
+    return 0
+
+
 def _project_filter(args):
     if getattr(args, "all", False):
         return None
@@ -180,6 +226,8 @@ def cmd_graph(args):
         smells=args.smells,
         include_nested=args.include_nested,
     )
+    if args.context:
+        return _graph_context(report, root, args.if_changed)
     if args.html:
         from . import viz
 
@@ -463,6 +511,16 @@ def build_parser():
     graph_p.add_argument("--since", metavar="REF", help="comparar con esta ref git; --gate falla solo con ciclos/cruces NUEVOS")
     graph_p.add_argument("--boundaries", metavar="FICHERO", help="reglas de frontera (por defecto .gb-boundaries en la raiz)")
     graph_p.add_argument("--smells", action="store_true", help="proxies de sobreingenieria (ADVISORY, no bloquea)")
+    graph_p.add_argument(
+        "--context",
+        action="store_true",
+        help="el mapa comprimido como payload de sesion; nada si no hay modulos (para hooks)",
+    )
+    graph_p.add_argument(
+        "--if-changed",
+        action="store_true",
+        help="con --context: callar tambien si la forma no ha cambiado desde la ultima vez",
+    )
     graph_p.add_argument(
         "--include-nested",
         action="store_true",
