@@ -10,6 +10,51 @@ mismo detalle que los positivos, o más.
 
 ---
 
+## 2026-07-31 · Usar `gb` en OTRO repo mientras se construía este — **tres fallos silenciosos que 283 tests no vieron**
+
+Marcos abrió un proyecto distinto (documentación de un sistema de defensa) y trabajó con `gb` de
+verdad: `floor --init`, `graph --gate` como gate de cada tanda, `symbols` para orientar el diseño,
+`check` contra HEAD, `.gb-boundaries` como columna del diseño (41 reglas). Cero agentes, cero cuota:
+solo lo determinista. En un día salieron tres defectos, y los tres son de la misma familia.
+
+### 1 — Un BOM de UTF-8 borraba ficheros del mapa (`690d430`)
+
+Python compila un `.py` con BOM sin pestañear —lo descarta al decodificar—, pero `ast.parse` sobre el
+texto ya decodificado ve un `U+FEFF` y lanza `SyntaxError`. El fichero caía en `errors` y sus imports
+desaparecían del grafo. **El caso caro: un ciclo real quedaba oculto y la gate pasaba en verde.** En
+Windows no es raro (PowerShell y varios editores escriben BOM por defecto). Apareció al construir un
+fixture con `Set-Content -Encoding utf8`, es decir, por accidente y no por buscarlo.
+
+### 2 — La clave del caché dependía de cómo se escribiera la ruta (`240bc4e`)
+
+`os.path.abspath` no unifica la letra de unidad en Windows: `c:\x` y `C:\x` daban claves distintas
+para la misma carpeta, y ambas formas circulan de verdad en una sesión. El caché no acertaba nunca,
+así que `--if-changed` habría repetido el mapa entero en cada edición — justo el ruido que ese modo
+existe para evitar. Apareció al comprobar que el caché tuviera la entrada del propio repo: no estaba.
+
+### 3 — El gate pasaba en verde sin comprobar una sola frontera (`dfbe9ab`)
+
+Reportado desde el uso real. El `.gb-boundaries` estaba en la raíz, se analizaba `src/`, se cargaban
+cero reglas y `--gate` salía verde. La causa era **una asimetría de una sola rama**: con reglas se
+imprimía "Sin cruces de frontera prohibidos (N regla(s))" y con cero reglas la sección entera
+desaparecía. O sea que *"no he mirado"* era indistinguible de *"está limpio"*.
+
+### La lección, y es la más cara del proyecto hasta hoy
+
+**Los tres son fallos silenciosos que se leen como éxito, y ninguno se encuentra escribiendo más
+tests.** Un test fija lo que ya sabes comprobar; estos vivían justo en el punto ciego de lo que
+sabíamos comprobar. La suite estaba en 262 en verde mientras los tres existían.
+
+Regla operativa que sale de aquí, y que aplica a cualquier salida futura: **si algo puede leerse como
+"comprobado y limpio", tiene que decir QUÉ comprobó — también, y sobre todo, cuando la respuesta es
+"nada".** El silencio nunca puede ser un veredicto. Es la misma idea que la regla 11 de
+[ARCHITECTURE.md](../ARCHITECTURE.md) aplicada al revés: no basta con que la señal salga siempre,
+hace falta que la AUSENCIA de señal no se pueda confundir con una señal buena.
+
+Consecuencia práctica: el termómetro honesto del proyecto sigue siendo **usarlo**, no ampliarlo.
+
+---
+
 ## 2026-07-30 · Fase A (correlación) — **NEGATIVO en el caso principal**
 
 **Qué se probó.** Si el estado capturado sirve para resolver un fallo sin volver a ejecutar el
