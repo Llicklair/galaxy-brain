@@ -55,7 +55,9 @@ def test_los_ciclos_van_enteros_y_arriba(tmp_path):
 
     payload = render.render_graph_context(graph.analyze(root))
     assert "CICLO" in payload
-    assert payload.splitlines()[1].strip().startswith("CICLO")
+    # Por delante solo el titular y el alcance: el hecho que bloquea va arriba.
+    lineas = [l.strip() for l in payload.splitlines()]
+    assert lineas[2].startswith("CICLO")
 
 
 def test_la_huella_ignora_el_cuerpo_y_ve_la_forma(tmp_path):

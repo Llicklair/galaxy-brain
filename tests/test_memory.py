@@ -109,7 +109,25 @@ def test_recall_empty_query_returns_empty(vault):
 def test_recall_no_match_is_a_message_not_a_crash(vault):
     write_note(vault, "x", description="y")
     out = memory.recall("zzzzz")
-    assert len(out) == 1 and "no global memory matched" in out[0]
+    assert len(out) == 1 and "casa" in out[0]
+
+
+def test_recall_distingue_vault_vacio_de_sin_coincidencias(vault):
+    """"No he encontrado" y "no tenia donde buscar" no son la misma respuesta.
+
+    Paso de verdad: una sesion recomendo `gb memory recall <proyecto>` sin haber
+    escrito nunca una nota. El "no match" se leyo como que la memoria habia
+    fallado, cuando el vault estaba vacio — el mismo patron que el gate mudo:
+    un silencio que se lee como veredicto.
+    """
+    vacio = memory.recall("guardia")
+    assert "VACIA" in vacio[0]
+    assert "gb memory add" in vacio[0]  # y como arreglarlo
+
+    write_note(vault, "otra-cosa", description="nada que ver")
+    con_notas = memory.recall("guardia")
+    assert "VACIA" not in con_notas[0]
+    assert "1 nota" in con_notas[0]  # cuantas se han mirado de verdad
 
 
 def test_context_is_lean(vault):

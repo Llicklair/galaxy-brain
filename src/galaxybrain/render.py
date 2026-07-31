@@ -451,7 +451,12 @@ def render_graph_context(report):
     violaciones = report.get("violations") or []
     lines = [
         "# mapa de %s — %d modulos, %d aristas, %d ciclo(s) [gb graph]"
-        % (etiqueta, report["modules"], report["edges"], len(ciclos))
+        % (etiqueta, report["modules"], report["edges"], len(ciclos)),
+        # El alcance va SIEMPRE: este payload sale de la raiz del repo (incluye
+        # tests) y `gb graph src` mira solo el paquete, asi que los dos numeros son
+        # distintos y correctos. Sin decir sobre que se ha contado, parecen
+        # contradecirse y uno de los dos se toma por erroneo. Reportado en uso real.
+        "  alcance: %s — otra raiz da otros numeros" % raiz.replace("\\", "/"),
     ]
 
     # Los dos hechos que bloquean van arriba y enteros: son la unica salida de

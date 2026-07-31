@@ -152,6 +152,23 @@ def read_index(limit=None, project=None, since=None):
     return entries
 
 
+def is_ephemeral(entry):
+    """¿La captura viene de algo que NO es un fichero del proyecto?
+
+    `python -c ...` y la entrada por tubería producen frames cuyo "fichero" es
+    `<string>` o `<stdin>`: no existen en disco, no se pueden abrir y no van a
+    volver a ocurrir. Son exploración, no el código. Mezclarlas con los fallos
+    reales llena la libreta de efímeros y entierra lo que sí se repite —
+    reportado usando la herramienta de verdad.
+
+    El discriminante es un HECHO, no una intención adivinada: los ángulos los
+    pone el propio intérprete para las fuentes que no son ficheros. Un `?` (sin
+    frame, típico de `SyntaxError`) NO cuenta: eso también le pasa a un fichero
+    real, y esconderlo sería peor que el ruido.
+    """
+    return (entry.get("where") or "").strip().startswith("<")
+
+
 def summarize(entries):
     """Agrupa el histórico por firma (tipo + sitio) y cuenta ocurrencias.
 

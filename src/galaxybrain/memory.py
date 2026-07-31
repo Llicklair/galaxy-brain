@@ -132,14 +132,29 @@ def recall(query: str) -> list[str]:
     terms = [t for t in query.lower().split() if t]
     if not terms:
         return []
+    notes = all_notes()
     ranked = sorted(
-        ((n, _score(n, terms)) for n in all_notes()),
+        ((n, _score(n, terms)) for n in notes),
         key=lambda x: x[1],
         reverse=True,
     )
     ranked = [n for n, s in ranked if s > 0][:TOP_K]
     if not ranked:
-        return ["(no global memory matched: " + " ".join(terms) + ")"]
+        # "No he encontrado" y "no tengo nada donde buscar" NO son la misma
+        # respuesta, y confundirlas manda a quien pregunta a dudar de su query
+        # cuando el problema es que el vault esta vacio. Paso de verdad: una sesion
+        # recomendo `gb memory recall <proyecto>` sin haber escrito nunca una nota,
+        # y el "no match" se leyo como que la memoria habia fallado.
+        if not notes:
+            return [
+                "(la memoria global esta VACIA: 0 notas, asi que no habia donde buscar "
+                "'" + " ".join(terms) + "'. Se escribe con `gb memory add`; ojo, la "
+                "memoria por-proyecto de Claude es otro sistema y no llega aqui.)"
+            ]
+        return [
+            "(ninguna de las %d nota(s) casa con '%s' — `gb memory index` las lista todas)"
+            % (len(notes), " ".join(terms))
+        ]
     out: list[str] = []
     for n in ranked:
         out.append(f"### {n.name}  [{n.type}/{n.scope}]")
