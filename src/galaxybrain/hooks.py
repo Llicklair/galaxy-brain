@@ -14,9 +14,18 @@ _MARK = "_galaxy_brain_hook"
 
 _previous_excepthook = None
 _previous_threadhook = None
+_previous_unraisablehook = None
 
 #: Estas no son fallos: son formas normales de terminar.
 _IGNORED = (SystemExit, KeyboardInterrupt)
+
+#: Tope de capturas "unraisable" por proceso. Un `__del__` que revienta suele
+#: reventar para TODAS las instancias de su clase, asi que un bucle que crea diez
+#: mil objetos escribiria diez mil registros: inundaria el historico y, peor,
+#: frenaria el programa observado (regla 4). Al llegar al tope se dice y se para;
+#: callarse seria convertir un limite en un silencio que se lee como "no paso nada".
+_MAX_UNRAISABLE = 10
+_unraisable_vistas = 0
 
 
 def _env_flag(name):
@@ -39,9 +48,20 @@ def install():
     if _env_flag("GB_DISABLE"):
         return False
 
+    global _previous_unraisablehook
+
     _previous_excepthook = sys.excepthook
     setattr(_excepthook, _MARK, True)
     sys.excepthook = _excepthook
+
+    # La tercera puerta. Va ANTES del corte de GB_NO_THREADS a proposito: ese flag
+    # existe para no pagar `import threading`, y esto no importa nada — asignar el
+    # hook es gratis, asi que quien apaga los hilos no deberia perder ademas los
+    # fallos de finalizador.
+    if hasattr(sys, "unraisablehook"):
+        _previous_unraisablehook = sys.unraisablehook
+        setattr(_unraisablehook, _MARK, True)
+        sys.unraisablehook = _unraisablehook
 
     if _env_flag("GB_NO_THREADS"):
         return True
@@ -62,11 +82,14 @@ def install():
 
 
 def uninstall():
-    global _previous_excepthook, _previous_threadhook
+    global _previous_excepthook, _previous_threadhook, _previous_unraisablehook
 
     if _previous_excepthook is not None:
         sys.excepthook = _previous_excepthook
         _previous_excepthook = None
+    if _previous_unraisablehook is not None:
+        sys.unraisablehook = _previous_unraisablehook
+        _previous_unraisablehook = None
     if _previous_threadhook is not None:
         import threading
 
@@ -113,6 +136,53 @@ def _threadhook(args):
         getattr(args, "exc_traceback", None),
         source="threading",
         thread=getattr(thread, "name", None),
+    )
+
+
+def _unraisablehook(args):
+    """Una excepcion que Python NO pudo propagar: `__del__`, un callback de
+    weakref, el recolector de basura.
+
+    Es la unica de las tres puertas que desaparecia sin dejar rastro: el
+    interprete la imprime, el proceso NO muere, y por eso `sys.excepthook` no la
+    ve jamas. No es un segundo tipo de fallo — es el mismo hecho (una excepcion
+    que nadie capturo) saliendo por otro sitio.
+    """
+    global _unraisable_vistas
+
+    try:
+        if _previous_unraisablehook is not None:
+            _previous_unraisablehook(args)
+        else:
+            sys.__unraisablehook__(args)
+    except BaseException:  # noqa: BLE001
+        pass
+
+    exc_type = getattr(args, "exc_type", None)
+    if exc_type is None or (isinstance(exc_type, type) and issubclass(exc_type, _IGNORED)):
+        return
+
+    _unraisable_vistas += 1
+    if _unraisable_vistas > _MAX_UNRAISABLE:
+        return
+    if _unraisable_vistas == _MAX_UNRAISABLE:
+        try:
+            sys.stderr.write(
+                "\n[galaxy-brain] %d fallos de finalizador en este proceso; dejo de "
+                "guardarlos para no frenarte. Los anteriores estan en `gb list`.\n"
+                % _MAX_UNRAISABLE
+            )
+        except BaseException:  # noqa: BLE001
+            pass
+
+    # El hilo no se sabe: un finalizador corre donde el GC lo despierte, y
+    # afirmar "MainThread" seria inventarse un hecho.
+    _capture(
+        exc_type,
+        getattr(args, "exc_value", None),
+        getattr(args, "exc_traceback", None),
+        source="unraisable",
+        thread=None,
     )
 
 

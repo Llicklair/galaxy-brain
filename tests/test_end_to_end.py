@@ -153,6 +153,102 @@ def test_captura_excepciones_de_hilos(gb_home, child_env):
     assert frame["locals"]["pieza"] == "'engranaje'"
 
 
+def test_captura_lo_que_python_no_pudo_propagar(gb_home, child_env):
+    """La tercera puerta: un `__del__` que revienta.
+
+    El interprete la imprime y sigue — el proceso NO muere, asi que
+    `sys.excepthook` no la ve jamas y hasta ahora desaparecia sin dejar rastro.
+    Es el mismo hecho (una excepcion que nadie capturo) por otra salida.
+    """
+    result = run_child(
+        """
+        class Recurso:
+            def __init__(self):
+                self.nombre = "conexion"
+            def __del__(self):
+                raise ValueError("el finalizador peto")
+
+        r = Recurso()
+        del r
+        print("el programa sigue")
+        """,
+        child_env,
+    )
+
+    # (2) del criterio: el programa observado no cambia de comportamiento.
+    assert "el programa sigue" in result.stdout
+    assert "el finalizador peto" in result.stderr  # la traza de Python, intacta
+
+    record = store.load()
+    assert record is not None
+    assert record["exception"]["type"] == "ValueError"
+    assert record["source"] == "unraisable"
+    frame = [f for f in record["frames"] if not f["is_library"]][-1]
+    assert frame["function"] == "__del__"
+
+
+def test_un_finalizador_en_bucle_no_inunda_el_historico(gb_home, child_env):
+    """(5) del criterio. Un `__del__` roto suele estarlo para TODAS las instancias
+    de su clase, asi que sin tope un bucle de mil objetos escribiria mil registros:
+    enterraria el historico y frenaria el programa observado (regla 4)."""
+    result = run_child(
+        """
+        class Roto:
+            def __del__(self):
+                raise ValueError("otra vez")
+
+        for _ in range(40):
+            Roto()
+        print("acabado")
+        """,
+        child_env,
+    )
+
+    assert "acabado" in result.stdout
+    guardados = store.read_index()
+    assert 0 < len(guardados) <= 10, "el tope no se respeto: %d" % len(guardados)
+    # Y se DICE que se ha dejado de guardar: un tope callado se lee como "no paso mas".
+    assert "dejo de guardarlos" in result.stderr
+
+
+def test_sys_exit_dentro_de_un_finalizador_sigue_sin_ser_un_fallo(gb_home, child_env):
+    """(3) del criterio: las salidas normales se ignoran por las tres puertas."""
+    run_child(
+        """
+        class Salida:
+            def __del__(self):
+                raise SystemExit(0)
+
+        s = Salida()
+        del s
+        """,
+        child_env,
+    )
+    assert store.read_index() == []
+
+
+def test_gb_no_threads_no_apaga_la_tercera_puerta(gb_home, child_env):
+    """`GB_NO_THREADS` existe para no pagar `import threading`. El hook de
+    finalizadores no importa nada, asi que apagar los hilos no puede costarte
+    ademas los fallos que Python no pudo propagar."""
+    child_env["GB_NO_THREADS"] = "1"
+    run_child(
+        """
+        class Roto:
+            def __del__(self):
+                raise RuntimeError("sin hilos, pero capturado")
+
+        r = Roto()
+        del r
+        """,
+        child_env,
+    )
+
+    record = store.load()
+    assert record is not None
+    assert record["exception"]["type"] == "RuntimeError"
+
+
 def test_el_frame_de_modulo_no_vomita_dunders(gb_home, child_env, tmp_path):
     """Un frame de modulo trae __builtins__, __loader__, __spec__ y compania.
     Ocho lineas de ruido que sepultan las dos variables que importan."""

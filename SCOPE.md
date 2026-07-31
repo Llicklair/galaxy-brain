@@ -26,6 +26,32 @@ Cualquier cuarto elemento en esa tabla es scope creep, no una mejora. La consola
 no capturadas; las familias de análisis (`graph`, `symbols`, `check`, `floor`) leen fuente Python.
 Un solo lenguaje de punta a punta.
 
+#### Un tipo de fallo, tres puertas de salida
+
+"Excepción no capturada" no es sinónimo de `sys.excepthook`. Es un solo tipo de fallo que el
+intérprete deja salir por tres sitios distintos, y cubrir los tres **no** amplía la tabla de arriba:
+
+| Puerta | Cuándo | Estado |
+|---|---|---|
+| `sys.excepthook` | La excepción mata el hilo principal y el proceso | cubierto |
+| `threading.excepthook` | Mata un hilo de `threading`, el proceso sigue | cubierto (`GB_NO_THREADS=1` lo quita) |
+| `sys.unraisablehook` | Python **no pudo** propagarla: `__del__`, callbacks de weakref, GC | cubierto desde 2026-07-31 |
+
+La tercera se añadió porque era la única que desaparecía **sin dejar rastro**: el intérprete la
+imprime, el proceso no muere, y `gb last` no tenía nada que enseñar. Cumple las dos condiciones que
+hacen que algo quepa aquí — es el mismo hecho (una excepción que nadie capturó) y conserva el coste
+cero, porque el hook solo se ejecuta cuando algo ya ha fallado.
+
+**Criterio de terminado, escrito antes de implementarla:** (1) un `raise` dentro de `__del__` deja un
+registro recuperable con `gb show`; (2) el programa observado sigue exactamente igual, incluida la
+traza que Python ya imprimía; (3) `SystemExit` y `KeyboardInterrupt` se siguen ignorando por esta
+puerta también; (4) el coste de arranque no sube — no se importa nada nuevo; (5) un finalizador que
+revienta en bucle no puede inundar el histórico ni frenar el programa.
+
+**Lo que NO se hizo y por qué.** Las tareas sueltas de `asyncio` (una `Task` que revienta y nadie
+`await`ea) siguen fuera: exigen tocar el manejador del bucle de eventos, que es otra superficie y
+otro coste. Si la excepción propaga fuera de `asyncio.run()`, ya se captura por la primera puerta.
+
 ---
 
 ## Lo que NO hace
