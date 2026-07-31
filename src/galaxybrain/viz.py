@@ -245,6 +245,13 @@ _KIND_COLOR = {
 }
 _KIND_SIZE = {"module": 13.0, "class": 8.0, "function": 4.0, "method": 3.0}
 
+#: La arista de import. Rosa a proposito: tiene que ser un color que NO esté en
+#: _KIND_COLOR. En la primera version reusé el ámbar de las clases y en la
+#: pantalla dos clases sueltas parecían parte de la capa de imports — un color
+#: repetido es una mentira visual, y esta capa existe justo para separar el
+#: hecho exacto de la inferencia.
+_COLOR_IMPORT = "#fb7185"
+
 #: Fallback para agrupaciones sin tipo (vista de modulos): paleta ciclica.
 _COLORES = [
     "#7c5cff", "#22d3ee", "#f472b6", "#fb923c", "#4ade80",
@@ -342,10 +349,19 @@ def render_graph_cloud(report, title="galaxy-brain — grafo", modo="simbolos", 
             # Se dice de donde sale cada arista: el import es un hecho exacto y la
             # llamada es inferencia. Un grafo que no distingue las dos invita a
             # gatear sobre la mitad que no se puede gatear.
+            #
+            # El color NO puede repetir ninguno de _KIND_COLOR: en la primera
+            # version puse el mismo ambar que ya usaban las clases, y dos clases
+            # sueltas se leian como si fueran parte de la capa de imports.
+            #
+            # Y aqui NO va el porcentaje. El 19% es COBERTURA —cuantas candidatas
+            # se resolvieron— y en la leyenda se leia como fiabilidad, o sea justo
+            # al reves: las aristas dibujadas son las que SI se resolvieron. El
+            # numero exacto ya va en la cabecera, con su denominador.
             leyenda += (
-                '<span><i style="background:#f59e0b"></i>import (exacto)</span>'
-                '<span><i style="background:#94a3b8"></i>llamada (inferida, %d%%)</span>'
-            ) % pct
+                '<span><i style="background:%s"></i>import (exacto)</span>'
+                '<span><i style="background:#94a3b8"></i>llamada (inferida)</span>'
+            ) % _COLOR_IMPORT
     else:
         llamadas = [(a, b) for a, b in (report.get("edge_list") or [])]
         jerarquia = []
@@ -413,6 +429,7 @@ def render_graph_cloud(report, title="galaxy-brain — grafo", modo="simbolos", 
         "nodos": _json.dumps(datos, ensure_ascii=False),
         "aristas": _json.dumps(lista_aristas),
         "leyenda": leyenda,
+        "color_import": _COLOR_IMPORT,
     }
 
 
@@ -678,6 +695,7 @@ _NUBE = """<!doctype html>
 <script>
 // ================= datos =================
 const NODOS = %(nodos)s, ARISTAS = %(aristas)s, LADO = 1000;
+const IMPORT_COLOR = '%(color_import)s';
 const N = NODOS.length;
 
 // ================= simulacion =================
@@ -786,7 +804,7 @@ function pinta(t){
     const tocada = foco!==null && (a===foco || b===foco);
     if(foco!==null && !tocada){ cx.globalAlpha=0.02; }
     else { cx.globalAlpha = tocada ? 0.9 : (capa===0 ? 0.09 : capa===3 ? 0.5 : (capa===2 ? 0.7 : 0.3)); }
-    cx.strokeStyle = capa===2 ? '#22d3ee' : capa===3 ? '#f59e0b' : NODOS[a].c;
+    cx.strokeStyle = capa===2 ? '#22d3ee' : capa===3 ? IMPORT_COLOR : NODOS[a].c;
     cx.lineWidth = capa===3 ? 1.8 : 1;
     cx.beginPath(); cx.moveTo(WX[a],WY[a]); cx.lineTo(WX[b],WY[b]); cx.stroke();
   }

@@ -83,6 +83,26 @@ def test_la_leyenda_separa_el_hecho_de_la_inferencia(tmp_path):
     assert "inferida" in html
 
 
+def test_el_color_del_import_no_choca_con_ningun_tipo_de_nodo():
+    """Se vio mirando la pantalla, no leyendo el codigo: la primera version reuso
+    el ambar de las clases, y dos clases sueltas parecian parte de la capa de
+    imports. Un color repetido es una mentira visual, y esta capa existe justo
+    para separar el hecho exacto de la inferencia."""
+    assert viz._COLOR_IMPORT not in viz._KIND_COLOR.values()
+
+
+def test_la_leyenda_no_confunde_cobertura_con_fiabilidad(tmp_path):
+    """El porcentaje de llamadas resueltas es COBERTURA. Puesto junto a
+    "inferida" se leia como fiabilidad, o sea al reves: las aristas dibujadas son
+    precisamente las que SI se resolvieron. El numero va en la cabecera, con su
+    denominador, que es donde significa lo que dice."""
+    raiz = _proyecto(tmp_path)
+    html = viz.render_graph_cloud(symbols.analyze(raiz), graph_report=graph.analyze(raiz))
+    assert "inferida)" in html
+    assert re.search(r"inferida,\s*\d+%", html) is None
+    assert "resueltas de" in html  # el dato exacto sigue estando, arriba
+
+
 def test_el_dibujo_pinta_las_cuatro_clases(tmp_path):
     """Si el bucle de pintado no recorre la clase 3, los imports estarian en los
     datos y no en la pantalla — el peor fallo posible aqui: parecer completo."""
