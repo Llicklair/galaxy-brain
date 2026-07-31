@@ -421,6 +421,19 @@ def _graph_gate(report):
         or report.get("unmatched_rules")
     ):
         return 1
+    # El mismo fallo un escalon mas sutil: no hay error que leer, solo cero reglas
+    # y un verde. Que no exista NINGUN .gb-boundaries es legitimo (las fronteras
+    # son opt-in); que exista en otra carpeta y no se este aplicando es casi
+    # siempre el analisis apuntando al sitio equivocado, y entonces el verde
+    # significa "no he mirado", no "esta limpio".
+    if report.get("boundaries_elsewhere") and not report.get("boundaries"):
+        sys.stderr.write(
+            "[gb graph] 0 reglas de frontera cargadas (busque en %s), pero SI existe "
+            "%s. Esta gate no esta comprobando ninguna frontera: apunta el analisis a "
+            "esa carpeta o mueve el fichero.\n"
+            % (report.get("boundaries_path"), report["boundaries_elsewhere"])
+        )
+        return 1
     # Mismo motivo, un escalon antes: si la raiz no esta, o no quedo NI UN modulo
     # que analizar, esta gate no comprueba nada. Verde aqui seria falsa cobertura
     # permanente — un typo en la ruta del hook y no vuelve a mirar jamas.

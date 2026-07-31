@@ -5,7 +5,7 @@ fichero no hay reglas y (b) que la frontera es de punto (no casa por prefijo lax
 
 import os
 
-from galaxybrain import graph
+from galaxybrain import cli, graph, render
 
 
 def _write(root, rel, content):
@@ -13,6 +13,81 @@ def _write(root, rel, content):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as handle:
         handle.write(content)
+
+
+def _plain(report):
+    return render.render_graph(report, render.Style(False))
+
+
+def test_cero_reglas_no_puede_ser_mudo(tmp_path):
+    """El peor modo de fallo de un gate: pasar en verde sin comprobar nada.
+
+    Antes, la rama de cero reglas era la UNICA muda — con reglas se leia "Sin
+    cruces (N regla(s))" y sin reglas no salia nada, asi que "no he mirado" era
+    indistinguible de "esta limpio". Encontrado usando la herramienta de verdad.
+    """
+    root = str(tmp_path)
+    _write(root, "pkg/__init__.py", "")
+    _write(root, "pkg/a.py", "")
+
+    salida = _plain(graph.analyze(root))
+    assert "0 reglas cargadas" in salida
+    assert graph.BOUNDARIES_FILE in salida  # y DONDE se busco: sin eso no es accionable
+
+
+def test_sin_fichero_en_ningun_sitio_el_gate_pasa(tmp_path):
+    """Las fronteras son opt-in: no declararlas es legitimo y no puede bloquear."""
+    root = str(tmp_path)
+    _write(root, "pkg/__init__.py", "")
+    _write(root, "pkg/a.py", "")
+
+    report = graph.analyze(root)
+    assert report["boundaries_elsewhere"] is None
+    assert cli._graph_gate(report) == 0
+
+
+def test_un_fichero_mal_COLOCADO_tumba_el_gate(tmp_path):
+    """El caso real: `.gb-boundaries` en la raiz del repo y se analiza `src/`.
+
+    Nadie recibe un error, se cargan cero reglas y el verde se lee como
+    "comprobado y limpio". Aqui el verde significaria "no he mirado".
+    """
+    root = str(tmp_path)
+    _write(root, ".gb-boundaries", "pkg.a -/-> pkg.b\n")
+    _write(root, "src/pkg/__init__.py", "")
+    _write(root, "src/pkg/a.py", "from pkg import b\n")
+    _write(root, "src/pkg/b.py", "")
+
+    report = graph.analyze(os.path.join(root, "src"))
+    assert report["boundaries"] == 0
+    assert report["boundaries_elsewhere"] is not None
+    assert cli._graph_gate(report) == 1
+    assert "no se esta aplicando" in _plain(report)
+
+
+def test_tambien_al_reves_fichero_en_src_y_analisis_en_la_raiz(tmp_path):
+    root = str(tmp_path)
+    _write(root, "src/.gb-boundaries", "pkg.a -/-> pkg.b\n")
+    _write(root, "src/pkg/__init__.py", "")
+    _write(root, "src/pkg/a.py", "")
+
+    report = graph.analyze(root)
+    assert report["boundaries_elsewhere"] is not None
+    assert cli._graph_gate(report) == 1
+
+
+def test_el_fichero_que_SI_se_lee_no_cuenta_como_extraviado(tmp_path):
+    """Contra el falso positivo obvio: encontrarse a si mismo y fallar siempre."""
+    root = str(tmp_path)
+    _write(root, ".gb-boundaries", "pkg.a -/-> pkg.b\n")
+    _write(root, "pkg/__init__.py", "")
+    _write(root, "pkg/a.py", "")
+    _write(root, "pkg/b.py", "")
+
+    report = graph.analyze(root)
+    assert report["boundaries"] == 1
+    assert report["boundaries_elsewhere"] is None
+    assert cli._graph_gate(report) == 0
 
 
 def test_load_boundaries_parsea(tmp_path):

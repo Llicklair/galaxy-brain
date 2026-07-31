@@ -362,12 +362,12 @@ def render_graph(report, style):
             lines.append(style("Sin acoplamiento ciclico nuevo vs %s." % ref, DIM))
         lines.append("")
 
-    if (
-        report.get("boundaries")
-        or report.get("malformed_boundaries")
-        or report.get("boundaries_error")
-        or report.get("unmatched_rules")
-    ):
+    # El estado de las fronteras se dice SIEMPRE, y sobre todo cuando hay CERO
+    # reglas. Antes esa rama era la unica muda: con reglas se leia "Sin cruces
+    # (33 regla(s))" y sin reglas no salia nada, asi que un verde sin comprobar
+    # nada era indistinguible de un verde limpio. Es el peor modo de fallo de un
+    # gate y se encontro usando la herramienta de verdad (2026-07-31).
+    if not report.get("root_error"):
         if report.get("boundaries_error"):
             lines.append(style("ERROR de fronteras: %s" % report["boundaries_error"], RED))
         if report["violations"]:
@@ -382,6 +382,18 @@ def render_graph(report, style):
                 )
         elif report.get("boundaries"):
             lines.append(style("Sin cruces de frontera prohibidos (%d regla(s))." % report["boundaries"], DIM))
+        elif not report.get("boundaries_error"):
+            otro = report.get("boundaries_elsewhere")
+            lines.append(style("SIN FRONTERAS COMPROBADAS: 0 reglas cargadas.", YELLOW))
+            lines.append(style("  busque en %s" % report.get("boundaries_path", "?"), DIM))
+            if otro:
+                lines.append(
+                    style(
+                        "  pero SI existe %s — ese fichero no se esta aplicando; "
+                        "apunta el analisis a su carpeta o mueve el fichero" % otro,
+                        YELLOW,
+                    )
+                )
         for m in report.get("malformed_boundaries", []):
             lines.append(style("  AVISO: linea de regla no valida (ignorada): `%s`" % m, YELLOW))
         for u in report.get("unmatched_rules", []):

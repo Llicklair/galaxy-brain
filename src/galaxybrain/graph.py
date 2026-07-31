@@ -435,10 +435,15 @@ def load_boundaries(root, path=None):
         # existe = error: pediste unas reglas que no están, y pasar en verde sería
         # la falsa cobertura del invariante 4.
         error = ("no encuentro el fichero de fronteras: %s" % path) if explicit else None
-        return {"rules": [], "malformed": [], "error": error}
+        return {"rules": [], "malformed": [], "error": error, "path": path}
     except OSError as error:
         # Existe pero no se puede leer (permisos, es un directorio…): nunca silencioso.
-        return {"rules": [], "malformed": [], "error": "no pude leer %s (%s)" % (path, error)}
+        return {
+            "rules": [],
+            "malformed": [],
+            "error": "no pude leer %s (%s)" % (path, error),
+            "path": path,
+        }
 
     rules = []
     malformed = []
@@ -453,7 +458,47 @@ def load_boundaries(root, path=None):
             # Contenido que NO es una regla válida (flecha con typo, dos flechas,
             # un lado vacío): enforced nada. Se avisa en vez de descartarse mudo.
             malformed.append(line)
-    return {"rules": rules, "malformed": malformed, "error": None}
+    return {"rules": rules, "malformed": malformed, "error": None, "path": path}
+
+
+def _boundaries_elsewhere(root, consultado, max_arriba=3):
+    """Un `.gb-boundaries` que existe pero NO es el que se ha leido, o None.
+
+    El caso que engana de verdad: el fichero esta en la raiz del repo y se analiza
+    `src/` (o al reves). Nadie recibe un error — simplemente se cargan cero reglas
+    y el gate pasa en verde sin comprobar una sola frontera. Es el peor modo de
+    fallo que puede tener un gate, porque el verde se lee como "comprobado y
+    limpio". Encontrado usando la herramienta de verdad en otro repo (2026-07-31).
+
+    Se mira arriba (hasta la raiz del repo git) y un nivel abajo, que es donde cae
+    el layout tipico: root/src, root/paquete.
+    """
+    consultado = os.path.normcase(os.path.abspath(consultado))
+    candidatos = []
+
+    actual = os.path.abspath(root)
+    for _ in range(max_arriba):
+        padre = os.path.dirname(actual)
+        if padre == actual:
+            break
+        candidatos.append(os.path.join(padre, BOUNDARIES_FILE))
+        if os.path.isdir(os.path.join(padre, ".git")):
+            break
+        actual = padre
+
+    try:
+        for nombre in sorted(os.listdir(root)):
+            sub = os.path.join(root, nombre)
+            if nombre.startswith(".") or nombre in DEFAULT_SKIP or not os.path.isdir(sub):
+                continue
+            candidatos.append(os.path.join(sub, BOUNDARIES_FILE))
+    except OSError:
+        pass
+
+    for candidato in candidatos:
+        if os.path.normcase(candidato) != consultado and os.path.isfile(candidato):
+            return candidato
+    return None
 
 
 def _under(module, pattern):
@@ -629,6 +674,12 @@ def analyze(root, skip=DEFAULT_SKIP, since=None, boundaries=None, smells=False, 
         "fan_out": fan_out,
         "errors": errors,
         "boundaries": len(rules),
+        # La ruta CONSULTADA, se hayan encontrado reglas o no. Sin esto, "0 reglas"
+        # es un dato inaccionable: no dice donde habria que poner el fichero.
+        "boundaries_path": boundaries_info["path"],
+        # Un `.gb-boundaries` que existe pero NO es el consultado. Es el caso que
+        # de verdad enganna: crees que tienes fronteras y la gate no mira ninguna.
+        "boundaries_elsewhere": _boundaries_elsewhere(root, boundaries_info["path"]),
         "violations": violations,
         "unmatched_rules": unmatched_rules(nodes, rules),
         "malformed_boundaries": boundaries_info["malformed"],
