@@ -253,17 +253,28 @@ _COLORES = [
 ]
 
 
-def render_graph_cloud(report, title="galaxy-brain — grafo", modo="simbolos"):
+def render_graph_cloud(report, title="galaxy-brain — grafo", modo="simbolos", graph_report=None):
     """La nube: nodos repartidos por fuerzas, coloreados por módulo, navegable.
 
     Mismo dato que el informe, otro modo de mirarlo — este responde *"¿qué forma
     tiene esto?"* y el de capas responde *"¿qué depende de qué?"*. Las posiciones se
     calculan aquí (deterministas), así que el navegador solo dibuja: ni layout en
     JS, ni librería, ni WebGL.
+
+    Con `graph_report` la página deja de ser el grafo de símbolos y pasa a ser **el**
+    grafo: los imports entre módulos entran como una cuarta clase de arista sobre
+    nodos que YA estaban ahí (los módulos siempre fueron nodos de esta nube). Así
+    hay un solo artefacto en vez de dos que había que juntar de cabeza.
+
+    Lo que NO se funde son los hechos: el import es exacto y es lo único que puede
+    gatear; la llamada es inferencia con 93% de recall. Se dibujan distinto y la
+    leyenda lo dice, porque mezclarlos en un número acabaría gateando sobre un
+    proxy (regla 11).
     """
     lado = 1000.0
     nuevos_n = set(report.get("new_nodes") or [])
     nuevas_c = {tuple(e) for e in (report.get("new_calls") or [])}
+    importaciones = []
     if modo == "simbolos":
         kinds = {n["qual"]: n["kind"] for n in report.get("nodes", [])}
         grupo_de = {n["qual"]: n.get("module", "") for n in report.get("nodes", [])}
@@ -277,6 +288,12 @@ def render_graph_cloud(report, title="galaxy-brain — grafo", modo="simbolos"):
         # de los nodos no tenia nada que los sujetara y la repulsion los lanzaba
         # al borde (el rectangulo de la captura del owner).
         jerarquia = [(a, b) for a, b, t in report.get("edges", []) if t != "CALLS"]
+        # Los imports unen modulo con modulo, y los modulos ya son nodos de esta
+        # nube. Por eso unificar no exige inventar nada: es una clase de arista
+        # mas sobre el mismo lienzo. Que los nombres casen entre los dos
+        # analizadores lo garantiza la relacion "graph y symbols ven lo mismo".
+        if graph_report:
+            importaciones = [tuple(e) for e in (graph_report.get("edge_list") or [])]
 
         # Siembra jerarquica de GitNexus: modulos en espiral de angulo aureo,
         # cada simbolo junto a su modulo con jitter determinista.
@@ -321,6 +338,14 @@ def render_graph_cloud(report, title="galaxy-brain — grafo", modo="simbolos"):
             '<span><i style="background:%s"></i>%s</span>' % (_KIND_COLOR[k], k)
             for k in ("module", "class", "function", "method")
         )
+        if importaciones:
+            # Se dice de donde sale cada arista: el import es un hecho exacto y la
+            # llamada es inferencia. Un grafo que no distingue las dos invita a
+            # gatear sobre la mitad que no se puede gatear.
+            leyenda += (
+                '<span><i style="background:#f59e0b"></i>import (exacto)</span>'
+                '<span><i style="background:#94a3b8"></i>llamada (inferida, %d%%)</span>'
+            ) % pct
     else:
         llamadas = [(a, b) for a, b in (report.get("edge_list") or [])]
         jerarquia = []
@@ -376,6 +401,9 @@ def render_graph_cloud(report, title="galaxy-brain — grafo", modo="simbolos"):
         for a, b in llamadas if a in indice and b in indice
     ] + [
         [indice[a], indice[b], 0] for a, b in jerarquia if a in indice and b in indice
+    ] + [
+        # Clase 3: import entre modulos. Hecho exacto, no inferencia.
+        [indice[a], indice[b], 3] for a, b in importaciones if a in indice and b in indice
     ]
 
     return _NUBE % {
@@ -749,16 +777,20 @@ function pinta(t){
     WY[i]=Y[i]*esc+oy + vivo*2.2*Math.cos(t/1300+i*1.3);
   }
   cx.lineWidth=1;
-  // Jerarquia (tipo 0) tenue debajo; llamadas (tipo 1) encima.
-  for(const capa of [0,1,2]) for(const par of ARISTAS){
+  // Orden de pintado = orden de lectura. Jerarquia (0) casi invisible debajo,
+  // solo sujeta; imports entre modulos (3) como esqueleto ambar, que es el hecho
+  // exacto; llamadas (1) encima; lo nuevo (2) en cian, que es lo que se mira.
+  for(const capa of [0,3,1,2]) for(const par of ARISTAS){
     const a=par[0], b=par[1], tp=par[2]|0;
     if(tp!==capa) continue;
     const tocada = foco!==null && (a===foco || b===foco);
     if(foco!==null && !tocada){ cx.globalAlpha=0.02; }
-    else { cx.globalAlpha = tocada ? 0.9 : (capa===0 ? 0.09 : (capa===2 ? 0.7 : 0.3)); }
-    cx.strokeStyle = capa===2 ? '#22d3ee' : NODOS[a].c;
+    else { cx.globalAlpha = tocada ? 0.9 : (capa===0 ? 0.09 : capa===3 ? 0.5 : (capa===2 ? 0.7 : 0.3)); }
+    cx.strokeStyle = capa===2 ? '#22d3ee' : capa===3 ? '#f59e0b' : NODOS[a].c;
+    cx.lineWidth = capa===3 ? 1.8 : 1;
     cx.beginPath(); cx.moveTo(WX[a],WY[a]); cx.lineTo(WX[b],WY[b]); cx.stroke();
   }
+  cx.lineWidth=1;
   cx.globalAlpha=1;
   const fase=(Math.sin(t/180)+1)/2;   // pulso de busqueda: formula de GitNexus
   for(let i=0;i<N;i++){
