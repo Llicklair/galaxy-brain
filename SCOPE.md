@@ -40,6 +40,16 @@ Un solo lenguaje de punta a punta.
 - **No cubre `asyncio` ni `multiprocessing`** en la consola: hilo principal e hilos de `threading`.
 - **No reproduce el pasado paso a paso.** El estado es el del momento en que muere el proceso, no un
   depurador con viaje en el tiempo.
+- **No es un servidor MCP** (decidido 2026-07-31, tras plantearlo para ganar persistencia y tener el
+  grafo siempre delante). Ninguna de las dos cosas la da MCP: la persistencia ya está resuelta en
+  ficheros (`~/.galaxy-brain`, el vault de `memory`) y MCP es transporte, no almacenamiento; y un
+  servidor MCP mete en contexto los *esquemas* de sus herramientas, no sus *resultados* — o sea,
+  disponibilidad bajo demanda, que es lo que ya da el CLI. Lo que hace que algo esté siempre delante
+  es un **hook**, y por eso la respuesta fue `gb graph --context` (regla 11: que salga sin que haya
+  que pedirlo). Coste de haberlo hecho al revés: el SDK rompe `dependencies = []`, y los esquemas de
+  once subcomandos ocuparían contexto en cada sesión — justo lo que H6 manda cuidar. **Se reabre solo
+  si** aparece una necesidad que el hook no cubra, y entonces sería la rebanada de lectura
+  post-mortem (`last · show · list`), no la superficie entera.
 
 ---
 
