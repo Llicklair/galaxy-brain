@@ -1,28 +1,16 @@
 name: tests
 
-# v2.0 gate: the self-verifying toolchain runs on every push/PR, not just on someone's laptop.
+# Gate auto-verificable: la toolchain corre en cada push/PR, no solo en un portatil.
 on:
   push:
   pull_request:
 
 jobs:
-  scripts:
-    # v1 (congelado): red de regresión de la toolchain Node.
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-      - name: Install ast-grep (constitution.js rules need it; tests skip it if absent)
-        run: npm install -g @ast-grep/cli
-      - name: Run the scripts regression suite
-        run: node --test scripts/tests/*.test.js
-
-  console:
-    # v2: la consola de errores. Su propia tesis es "gates deterministas siempre
-    # puestas" — aplicarla a sí misma es lo mínimo. Instala (valida el build de
-    # hatchling) y corre los tests en el suelo (3.9) y en versiones recientes.
+  test:
+    # La propia tesis de galaxy-brain es "gates deterministas siempre puestas" —
+    # aplicarla a si misma es lo minimo. Instala (valida el build de hatchling),
+    # corre los tests en el suelo (3.9) y en versiones recientes, y pasa su propio
+    # gate de acoplamiento.
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -35,5 +23,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - name: Install (editable, con dev) — ejercita el empaquetado también
         run: pip install -e ".[dev]"
-      - name: Run the v2 console test suite
+      - name: Run the test suite
         run: python -m pytest tests/ -q
+      - name: Coupling gate (dogfood) — el mismo que corre el pre-commit
+        run: python -m galaxybrain.cli graph src --gate --color never
