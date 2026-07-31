@@ -12,11 +12,11 @@ ser la forma correcta de comparar flotantes. Gatear proxies fue el error de v1
 Lo que hace imposible esconder algo no es que bloquee: es que la lista salga
 SIEMPRE, delante de quien decide, sin que haya que acordarse de pedirla.
 
-Portado de `scripts/test-guard.js` (v1, Node) a Python por la hard rule 3 — un
-lenguaje, un runtime. Es código propio consolidado, no una herramienta externa
-reimplementada, así que no choca con la regla 7. En el camino se cerró un fallo
-del original: un fichero de tests BORRADO ENTERO produce `+++ /dev/null` y el
-parser antiguo lo saltaba, justo el amaño más descarado de todos.
+Consolidado en Python (antes en Node) por la hard rule 3 — un lenguaje, un
+runtime. Es código propio, no una herramienta externa reimplementada, así que no
+choca con la regla 7. En el camino se cerró un fallo del original: un fichero de
+tests BORRADO ENTERO produce `+++ /dev/null` y el parser antiguo lo saltaba,
+justo el amaño más descarado de todos.
 """
 
 import os

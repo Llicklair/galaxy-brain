@@ -33,7 +33,7 @@ def _write(root, rel, content):
 
 
 def _nested_project(root, rel):
-    """Un proyecto ajeno anidado, con ciclo propio, como los fixtures de eval/."""
+    """Un proyecto ajeno anidado, con ciclo propio."""
     _write(root, rel + "/pyproject.toml", "[project]\nname = 'ajeno'\n")
     _write(root, rel + "/otro/__init__.py", "")
     _write(root, rel + "/otro/a.py", CICLO_A)
