@@ -760,6 +760,136 @@ def analyze(root, skip=DEFAULT_SKIP, since=None, boundaries=None, smells=False, 
     return report
 
 
+def _escribir(raiz, rel, texto):
+    ruta = os.path.join(raiz, *rel.split("/"))
+    os.makedirs(os.path.dirname(ruta), exist_ok=True)
+    with open(ruta, "w", encoding="utf-8") as handle:
+        handle.write(texto)
+
+
+def _sonda_ciclo(raiz):
+    _escribir(raiz, "pkg/__init__.py", "")
+    _escribir(raiz, "pkg/a.py", "from . import b\n")
+    _escribir(raiz, "pkg/b.py", "from . import a\n")
+    rep = analyze(raiz)
+    return bool(rep["cycles"]), "%d ciclo(s) detectado(s)" % len(rep["cycles"])
+
+
+def _sonda_cruce(raiz):
+    _escribir(raiz, BOUNDARIES_FILE, "pkg.a  -/->  pkg.b\n")
+    _escribir(raiz, "pkg/__init__.py", "")
+    _escribir(raiz, "pkg/a.py", "from . import b\n")
+    _escribir(raiz, "pkg/b.py", "")
+    rep = analyze(raiz)
+    return bool(rep["violations"]), "%d cruce(s) sobre %d regla(s)" % (
+        len(rep["violations"]),
+        rep["boundaries"],
+    )
+
+
+def _sonda_limpio(raiz):
+    """La otra mitad, y la que casi nadie prueba: que NO grite sin motivo.
+
+    Un detector que dispara siempre pasa todas las sondas de deteccion y es
+    inservible. Sin esta, `--self-test` mediria solo la mitad barata.
+    """
+    _escribir(raiz, BOUNDARIES_FILE, "pkg.b  -/->  pkg.a\n")
+    _escribir(raiz, "pkg/__init__.py", "")
+    _escribir(raiz, "pkg/a.py", "from . import b\n")
+    _escribir(raiz, "pkg/b.py", "")
+    rep = analyze(raiz)
+    limpio = not rep["cycles"] and not rep["violations"]
+    return limpio, "sin ciclos ni cruces sobre %d regla(s)" % rep["boundaries"]
+
+
+def _sonda_verde_silencioso(raiz):
+    """El peor modo de fallo de un gate, y paso de verdad el 31-jul: el fichero de
+    reglas en la raiz del repo, el analisis apuntando a `src/`, cero reglas
+    cargadas y verde. Reproduce ese caso exacto.
+
+    Limite conocido y dicho: solo se buscan ancestros y un nivel por debajo. Un
+    `.gb-boundaries` en una carpeta HERMANA no se denuncia — rastrear hermanas
+    arbitrarias invitaria a adoptar el fichero de un proyecto que no es este.
+    """
+    _escribir(raiz, BOUNDARIES_FILE, "pkg.a  -/->  pkg.b\n")
+    _escribir(raiz, "src/pkg/__init__.py", "")
+    _escribir(raiz, "src/pkg/a.py", "from . import b\n")
+    _escribir(raiz, "src/pkg/b.py", "")
+    rep = analyze(os.path.join(raiz, "src"))
+    visto = rep["boundaries"] == 0 and rep["boundaries_elsewhere"] is not None
+    return visto, "0 reglas cargadas y el fichero extraviado, senalado"
+
+
+def _sonda_bom(raiz):
+    """Un fichero que el interprete compila no puede desaparecer del mapa."""
+    _escribir(raiz, "pkg/__init__.py", "")
+    _escribir(raiz, "pkg/a.py", _BOM + "from . import b\n")
+    _escribir(raiz, "pkg/b.py", "")
+    rep = analyze(raiz)
+    return (not rep["errors"] and rep["edges"] == 1), "%d error(es), %d arista(s)" % (
+        len(rep["errors"]),
+        rep["edges"],
+    )
+
+
+def _sonda_descubrimiento(raiz):
+    """Dos rutas al mismo repo tienen que leer el MISMO fichero de reglas."""
+    _escribir(raiz, "src/" + BOUNDARIES_FILE, "pkg.a  -/->  pkg.b\n")
+    _escribir(raiz, "src/pkg/__init__.py", "")
+    _escribir(raiz, "src/pkg/a.py", "from . import b\n")
+    _escribir(raiz, "src/pkg/b.py", "")
+    desde_raiz = analyze(raiz)
+    desde_src = analyze(os.path.join(raiz, "src"))
+    coherente = desde_raiz["boundaries"] == desde_src["boundaries"] == 1
+    return coherente, "%d regla(s) desde la raiz, %d desde src" % (
+        desde_raiz["boundaries"],
+        desde_src["boundaries"],
+    )
+
+
+#: Cada sonda es un defecto que ocurrio DE VERDAD (31-jul-2026) o el falso
+#: positivo simetrico. La lista crece cuando aparece un fallo nuevo, no antes.
+_SONDAS = (
+    ("ciclo de imports", "tiene que verlo", _sonda_ciclo),
+    ("cruce de frontera", "tiene que verlo", _sonda_cruce),
+    ("proyecto limpio", "tiene que CALLAR", _sonda_limpio),
+    ("fichero de reglas extraviado", "tiene que denunciarlo", _sonda_verde_silencioso),
+    ("fuente con BOM", "no puede perderla", _sonda_bom),
+    ("misma raiz, dos rutas", "tiene que dar lo mismo", _sonda_descubrimiento),
+)
+
+
+def self_test():
+    """Verifica el gate ROMPIENDOLO a proposito, no comprobando que pasa.
+
+    Un gate se degrada en silencio: sigue devolviendo cero y ya no mira nada. Los
+    tests fijan lo que el autor sabia comprobar; esto fija que el detector sigue
+    detectando cuando le pones delante el defecto. Es la leccion escrita en
+    docs/pruebas-de-uso.md el 31-jul, cobrada sobre la propia herramienta.
+
+    Cada sonda monta un proyecto de mentira en un temporal del sistema —jamas
+    dentro del tuyo (regla 7)— y lo borra al salir.
+    """
+    import shutil
+    import tempfile
+
+    resultados = []
+    for nombre, espera, sonda in _SONDAS:
+        raiz = tempfile.mkdtemp(prefix="gb-selftest-")
+        try:
+            ok, detalle = sonda(raiz)
+        except BaseException as error:  # noqa: BLE001 - una sonda rota es un fallo, no un crash
+            ok, detalle = False, "la sonda reviento: %s: %s" % (type(error).__name__, error)
+        finally:
+            shutil.rmtree(raiz, ignore_errors=True)
+        resultados.append({"sonda": nombre, "espera": espera, "ok": ok, "detalle": detalle})
+
+    return {
+        "probes": resultados,
+        "failed": [r["sonda"] for r in resultados if not r["ok"]],
+    }
+
+
 def shape(report):
     """La FORMA del informe: lo estructural, sin nada del cuerpo del código.
 

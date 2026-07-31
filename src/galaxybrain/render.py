@@ -440,6 +440,51 @@ def render_graph(report, style):
     return "\n".join(lines).rstrip()
 
 
+def render_self_test(report, style):
+    """El resultado de romper el gate a proposito.
+
+    Se enumeran TODAS las sondas, tambien las que pasan. Un "todo correcto" sin
+    decir que se probo es exactamente el silencio que este comando existe para
+    desmontar: quien lo lee tiene que poder ver que se comprobo, no fiarse.
+    """
+    lines = []
+    fallidas = report.get("failed") or []
+    probes = report.get("probes") or []
+    lines.append(
+        style(
+            "Gate contra %d defecto(s) inyectado(s) — %s"
+            % (len(probes), "TODO VISTO" if not fallidas else "%d SIN VER" % len(fallidas)),
+            BOLD,
+        )
+    )
+    lines.append("")
+    for probe in probes:
+        marca = "+" if probe["ok"] else "!"
+        color = None if probe["ok"] else RED
+        lines.append(
+            "  %s %s — %s" % (style(marca, color) if color else marca, probe["sonda"], probe["espera"])
+        )
+        lines.append("      %s" % style(probe["detalle"], DIM))
+    lines.append("")
+    if fallidas:
+        lines.append(
+            style(
+                "El gate NO vio %d defecto(s) que tenia delante. Mientras esto siga asi, "
+                "su verde no significa 'limpio': significa 'no he mirado'." % len(fallidas),
+                RED,
+            )
+        )
+    else:
+        lines.append(
+            style(
+                "Cada defecto inyectado fue visto, y el proyecto limpio no disparo nada. "
+                "El gate mira lo que dice mirar.",
+                DIM,
+            )
+        )
+    return "\n".join(lines).rstrip()
+
+
 def graph_label(report):
     """Como se llama el arbol analizado. `src` a secas no identifica nada, asi que
     para las carpetas-contenedor tipicas se antepone el padre: `galaxy-brain/src`."""

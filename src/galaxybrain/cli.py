@@ -266,6 +266,16 @@ def cmd_off(args):
 def cmd_graph(args):
     from . import graph
 
+    if args.self_test:
+        # No mira tu proyecto: monta defectos de mentira y comprueba que el gate
+        # los ve. Va lo primero porque `path` aqui no pinta nada.
+        informe = graph.self_test()
+        if args.json:
+            emit(json.dumps(informe, ensure_ascii=False, indent=2))
+        else:
+            emit(render.render_self_test(informe, _style(args)))
+        return 1 if informe["failed"] else 0
+
     root = os.path.abspath(args.path or ".")
     report = graph.analyze(
         root,
@@ -577,6 +587,11 @@ def build_parser():
     graph_p.add_argument("--since", metavar="REF", help="comparar con esta ref git; --gate falla solo con ciclos/cruces NUEVOS")
     graph_p.add_argument("--boundaries", metavar="FICHERO", help="reglas de frontera (por defecto .gb-boundaries en la raiz)")
     graph_p.add_argument("--smells", action="store_true", help="proxies de sobreingenieria (ADVISORY, no bloquea)")
+    graph_p.add_argument(
+        "--self-test",
+        action="store_true",
+        help="inyecta defectos conocidos y falla si el gate NO los ve (no mira tu proyecto)",
+    )
     graph_p.add_argument(
         "--context",
         action="store_true",
