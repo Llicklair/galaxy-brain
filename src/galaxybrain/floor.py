@@ -156,20 +156,19 @@ def detect_boundaries(root, max_depth=2):
     Buscar en vez de mirar solo la raiz no es comodidad: reportar "falta" cuando el
     fichero existe un nivel mas abajo manda a escribir algo que ya esta escrito, y
     un aviso falso es lo que hace que un informe deje de leerse.
+
+    La busqueda vive en `graph` desde 2026-07-31: tener DOS reglas de descubrimiento
+    (esta, que buscaba, y la de `graph`, que solo miraba la raiz) hacia que `floor`
+    viera el fichero y la gate de `check` no. Una sola, compartida, o la
+    incoherencia vuelve.
     """
     from . import graph
 
-    for depth_root, dirs, files in os.walk(root):
-        rel = os.path.relpath(depth_root, root)
-        depth = 0 if rel == "." else rel.count(os.sep) + 1
-        if depth >= max_depth:
-            dirs[:] = []
-        dirs[:] = [d for d in dirs if d not in graph.DEFAULT_SKIP and not d.startswith(".")]
-        if graph.BOUNDARIES_FILE in files:
-            path = os.path.join(depth_root, graph.BOUNDARIES_FILE)
-            info = graph.load_boundaries(root, path)
-            return os.path.relpath(path, root).replace("\\", "/"), len(info["rules"])
-    return None, 0
+    path = graph.find_boundaries(root, max_depth)
+    if path is None:
+        return None, 0
+    info = graph.load_boundaries(root, path)
+    return os.path.relpath(path, root).replace("\\", "/"), len(info["rules"])
 
 
 def detect_adrs(root):

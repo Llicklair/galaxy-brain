@@ -461,6 +461,37 @@ def load_boundaries(root, path=None):
     return {"rules": rules, "malformed": malformed, "error": None, "path": path}
 
 
+def find_boundaries(root, max_depth=2):
+    """Dónde está el `.gb-boundaries` que manda para `root`, o None.
+
+    **La raíz gana siempre**; si no está ahí, se busca poco profundo, porque el
+    layout típico es `root/src` o `root/paquete`.
+
+    Esto existe para que haya UNA sola regla de descubrimiento. Antes `graph` miraba
+    exactamente `root/.gb-boundaries` y `floor` sí buscaba, así que `gb graph src`
+    cargaba 33 reglas y `gb check` —que analiza desde la raíz del repo— cargaba
+    CERO en el mismo repo y con el mismo fichero. El que cargaba cero no comprobaba
+    nada, y esa mitad de la gate llevaba tiempo siendo decorativa. Reportado usando
+    la herramienta de verdad (2026-07-31).
+
+    No se busca hacia ARRIBA a propósito: subir podría agarrar el fichero de otro
+    proyecto que te contiene, y aplicar fronteras ajenas es peor que no aplicar
+    ninguna. Ese caso lo denuncia `_boundaries_elsewhere` en vez de resolverlo solo.
+    """
+    directo = os.path.join(root, BOUNDARIES_FILE)
+    if os.path.isfile(directo):
+        return directo
+    for depth_root, dirs, files in os.walk(root):
+        rel = os.path.relpath(depth_root, root)
+        depth = 0 if rel == "." else rel.count(os.sep) + 1
+        if depth >= max_depth:
+            dirs[:] = []
+        dirs[:] = [d for d in dirs if d not in DEFAULT_SKIP and not d.startswith(".")]
+        if BOUNDARIES_FILE in files:
+            return os.path.join(depth_root, BOUNDARIES_FILE)
+    return None
+
+
 def _boundaries_elsewhere(root, consultado, max_arriba=3):
     """Un `.gb-boundaries` que existe pero NO es el que se ha leido, o None.
 
@@ -654,6 +685,11 @@ def analyze(root, skip=DEFAULT_SKIP, since=None, boundaries=None, smells=False, 
         for dep in deps:
             fan_in[dep] = fan_in.get(dep, 0) + 1
     cycles = find_cycles(edges)
+    # Sin ruta explicita se DESCUBRE con la regla compartida: que `graph` y `check`
+    # resolvieran sitios distintos hacia que el mismo repo tuviera 33 reglas para
+    # uno y 0 para el otro (ver find_boundaries).
+    if boundaries is None:
+        boundaries = find_boundaries(root)
     boundaries_info = load_boundaries(root, boundaries)
     rules = boundaries_info["rules"]
     violations = find_violations(edges, rules)

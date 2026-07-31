@@ -65,13 +65,42 @@ def test_un_fichero_mal_COLOCADO_tumba_el_gate(tmp_path):
     assert "no se esta aplicando" in _plain(report)
 
 
-def test_tambien_al_reves_fichero_en_src_y_analisis_en_la_raiz(tmp_path):
+def test_un_fichero_en_src_se_ENCUENTRA_analizando_desde_la_raiz(tmp_path):
+    """Hacia abajo NO se denuncia: se encuentra y se aplica.
+
+    Es el hallazgo 6 del uso real. `gb graph src` cargaba 33 reglas y `gb check`
+    —que analiza desde la raiz del repo— cargaba CERO con el mismo fichero, asi
+    que esa mitad de la gate llevaba tiempo siendo decorativa. Denunciarlo habria
+    sido mejor que callarlo, pero encontrarlo es mejor que denunciarlo: las dos
+    rutas tienen que dar el MISMO numero o la incoherencia vuelve por otro lado.
+    """
     root = str(tmp_path)
     _write(root, "src/.gb-boundaries", "pkg.a -/-> pkg.b\n")
     _write(root, "src/pkg/__init__.py", "")
-    _write(root, "src/pkg/a.py", "")
+    _write(root, "src/pkg/a.py", "from pkg import b\n")
+    _write(root, "src/pkg/b.py", "")
 
-    report = graph.analyze(root)
+    desde_raiz = graph.analyze(root)
+    desde_src = graph.analyze(os.path.join(root, "src"))
+
+    assert desde_raiz["boundaries"] == desde_src["boundaries"] == 1
+    assert desde_raiz["boundaries_elsewhere"] is None  # no esta extraviado: se uso
+    # y el cruce se ve desde las dos, que es lo que de verdad estaba roto
+    assert len(desde_raiz["violations"]) == 1
+    assert len(desde_src["violations"]) == 1
+    assert cli._graph_gate(desde_raiz) == 1  # falla por el CRUCE, no por config
+
+
+def test_hacia_ARRIBA_se_denuncia_en_vez_de_adoptarse(tmp_path):
+    """Subir podria agarrar el fichero del proyecto que te contiene, y aplicar
+    fronteras ajenas es peor que no aplicar ninguna. Por eso ese caso se dice."""
+    root = str(tmp_path)
+    _write(root, ".gb-boundaries", "pkg.a -/-> pkg.b\n")
+    _write(root, "sub/pkg/__init__.py", "")
+    _write(root, "sub/pkg/a.py", "")
+
+    report = graph.analyze(os.path.join(root, "sub"))
+    assert report["boundaries"] == 0
     assert report["boundaries_elsewhere"] is not None
     assert cli._graph_gate(report) == 1
 
