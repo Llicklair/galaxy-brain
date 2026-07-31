@@ -431,6 +431,56 @@ def render_graph(report, style):
     return "\n".join(lines).rstrip()
 
 
+def graph_label(report):
+    """Como se llama el arbol analizado. `src` a secas no identifica nada, asi que
+    para las carpetas-contenedor tipicas se antepone el padre: `galaxy-brain/src`."""
+    raiz = (report.get("root") or "").rstrip("\\/")
+    nombre = os.path.basename(raiz) or raiz
+    padre = os.path.basename(os.path.dirname(raiz))
+    return (padre + "/" + nombre) if padre and nombre in ("src", "lib", "app") else nombre
+
+
+def render_graph_delta(delta, etiqueta):
+    """Lo que CAMBIÓ de forma — no el mapa otra vez.
+
+    Es la mitad de tiempo real: en una edición cualquiera lo útil no es volver a
+    ver 38 módulos, es leer "+1 arista: cli → foo". Ocupa una décima parte del
+    contexto y dice algo que el mapa completo obliga a deducir comparando a ojo
+    con lo que ya habías leído.
+
+    Los hechos que bloquean —ciclos y cruces— van primero y enteros; los módulos
+    y aristas se resumen, porque un refactor grande puede mover docenas y la lista
+    completa dejaría de leerse.
+    """
+    if not delta:
+        return ""
+    lines = ["# la forma de %s ha cambiado [gb graph]" % etiqueta]
+
+    for ciclo in delta.get("cycles_added", [])[:5]:
+        lines.append("  CICLO NUEVO: " + " -> ".join(ciclo))
+    for cruce in delta.get("violations_added", [])[:5]:
+        lines.append("  CRUCE DE FRONTERA NUEVO: " + cruce.replace(">", " -> "))
+    # Lo que se arregla tambien se dice: si solo se contaran las altas, quien lee
+    # se quedaria creyendo que el ciclo sigue ahi.
+    for ciclo in delta.get("cycles_removed", [])[:3]:
+        lines.append("  ciclo resuelto: " + " -> ".join(ciclo))
+    for cruce in delta.get("violations_removed", [])[:3]:
+        lines.append("  cruce resuelto: " + cruce.replace(">", " -> "))
+
+    def _resumen(rotulo, items, formato, tope=4):
+        if not items:
+            return
+        muestra = " · ".join(formato(i) for i in items[:tope])
+        resto = "" if len(items) <= tope else " (+%d mas)" % (len(items) - tope)
+        lines.append("  %s %d: %s%s" % (rotulo, len(items), muestra, resto))
+
+    _resumen("+modulos", delta.get("modules_added", []), lambda m: m)
+    _resumen("-modulos", delta.get("modules_removed", []), lambda m: m)
+    _resumen("+aristas", delta.get("edges_added", []), lambda e: "%s->%s" % (e[0], e[1]))
+    _resumen("-aristas", delta.get("edges_removed", []), lambda e: "%s->%s" % (e[0], e[1]))
+    return "\n".join(lines)
+
+
 def render_graph_context(report):
     """El mapa comprimido a payload de sesión: la forma del proyecto de una pasada.
 
@@ -443,9 +493,7 @@ def render_graph_context(report):
     if report.get("root_error") or not report.get("modules"):
         return ""
     raiz = report.get("root") or ""
-    nombre = os.path.basename(raiz.rstrip("\\/")) or raiz
-    padre = os.path.basename(os.path.dirname(raiz.rstrip("\\/")))
-    etiqueta = (padre + "/" + nombre) if padre and nombre in ("src", "lib", "app") else nombre
+    etiqueta = graph_label(report)
 
     ciclos = report.get("cycles") or []
     violaciones = report.get("violations") or []

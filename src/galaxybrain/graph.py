@@ -760,15 +760,19 @@ def analyze(root, skip=DEFAULT_SKIP, since=None, boundaries=None, smells=False, 
     return report
 
 
-def fingerprint(report):
-    """La FORMA del informe, reducida a una huella comparable.
+def shape(report):
+    """La FORMA del informe: lo estructural, sin nada del cuerpo del código.
 
-    Solo se mueve si cambia algo estructural: un modulo, una arista, un ciclo o un
-    cruce de frontera. Renombrar una variable, reformatear o reescribir el cuerpo de
-    una funcion NO la mueven — y esa insensibilidad es justo el punto: permite avisar
-    cuando la forma cambia sin repetir el mapa entero en cada edicion.
+    Es lo que se persiste entre sesiones, y por eso se guarda entera y no como un
+    hash: con la forma anterior en disco se puede decir **qué** cambió, no solo
+    *que* cambió — y un aviso que dice "+1 arista: cli → foo" vale mucho más y
+    ocupa mucho menos que repetir el mapa completo en cada edición.
+
+    Sólo se mueve con algo estructural: un módulo, una arista, un ciclo o un cruce.
+    Renombrar una variable o reescribir el cuerpo de una función NO la mueven, y
+    esa insensibilidad es justo el punto.
     """
-    forma = {
+    return {
         # fan_in tiene una entrada por modulo analizado, tambien los que no importan
         # a nadie: un modulo nuevo y suelto ya es un cambio de forma.
         "modules": sorted(report.get("fan_in") or {}),
@@ -781,5 +785,46 @@ def fingerprint(report):
             ]
         ),
     }
-    crudo = json.dumps(forma, sort_keys=True, ensure_ascii=False)
+
+
+def fingerprint(report):
+    """La forma reducida a una huella corta y comparable."""
+    crudo = json.dumps(shape(report), sort_keys=True, ensure_ascii=False)
     return hashlib.sha256(crudo.encode("utf-8")).hexdigest()[:16]
+
+
+def shape_delta(antes, ahora):
+    """Qué cambió entre dos formas.
+
+    Devuelve `None` si no hay forma anterior (la primera vez en un proyecto no hay
+    delta posible y quien llama debe enseñar el mapa entero), `{}` si no ha cambiado
+    nada, o el desglose. Se dicen las dos direcciones: una arista que DESAPARECE es
+    tan informativa como una que aparece, y un ciclo resuelto merece verse tanto
+    como uno nuevo — si sólo se contaran las altas, el mapa mental se desincroniza
+    en cuanto alguien borra algo.
+    """
+    if antes is None:
+        return None
+
+    def _aristas(forma):
+        return {tuple(e) for e in (forma.get("edges") or [])}
+
+    def _ciclos(forma):
+        return {tuple(c) for c in (forma.get("cycles") or [])}
+
+    mods_antes, mods_ahora = set(antes.get("modules") or []), set(ahora.get("modules") or [])
+    ar_antes, ar_ahora = _aristas(antes), _aristas(ahora)
+    cic_antes, cic_ahora = _ciclos(antes), _ciclos(ahora)
+    vio_antes, vio_ahora = set(antes.get("violations") or []), set(ahora.get("violations") or [])
+
+    delta = {
+        "modules_added": sorted(mods_ahora - mods_antes),
+        "modules_removed": sorted(mods_antes - mods_ahora),
+        "edges_added": sorted(ar_ahora - ar_antes),
+        "edges_removed": sorted(ar_antes - ar_ahora),
+        "cycles_added": sorted(cic_ahora - cic_antes),
+        "cycles_removed": sorted(cic_antes - cic_ahora),
+        "violations_added": sorted(vio_ahora - vio_antes),
+        "violations_removed": sorted(vio_antes - vio_ahora),
+    }
+    return delta if any(delta.values()) else {}

@@ -79,7 +79,7 @@ def _shape_cache(root):
     # distinguiendo dos rutas que de verdad son distintas.
     ruta = os.path.normcase(os.path.abspath(root))
     clave = hashlib.sha256(ruta.encode("utf-8")).hexdigest()[:16]
-    return config.home() / "shape" / (clave + ".txt")
+    return config.home() / "shape" / (clave + ".json")
 
 
 def _graph_context(report, root, solo_si_cambia):
@@ -95,22 +95,39 @@ def _graph_context(report, root, solo_si_cambia):
     payload = render.render_graph_context(report)
     if not payload:
         return 0
-    huella = graph.fingerprint(report)
+
+    forma = graph.shape(report)
     cache = _shape_cache(root)
+    previa = None
     try:
-        previa = cache.read_text(encoding="utf-8").strip()
-    except OSError:
-        previa = ""
-    if huella != previa:
+        previa = json.loads(cache.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        # Sin fichero, ilegible o de un formato viejo: se trata como "no habia
+        # forma previa". Peor caso, se enseña el mapa entero una vez de mas.
+        previa = None
+
+    if previa != forma:
         try:
             cache.parent.mkdir(parents=True, exist_ok=True)
-            cache.write_text(huella, encoding="utf-8")
+            cache.write_text(json.dumps(forma, ensure_ascii=False), encoding="utf-8")
         except OSError:
             # Regla 9: si el cache no se puede escribir, esto sigue informando.
             pass
-    elif solo_si_cambia:
+
+    # Sin --if-changed (el arranque de sesion) va el mapa entero: es la foto que
+    # orienta, y todavia no hay nada leido con lo que comparar.
+    if not solo_si_cambia:
+        emit(payload)
         return 0
-    emit(payload)
+
+    delta = graph.shape_delta(previa, forma)
+    if delta is None:
+        # Primera vez que se ve este proyecto: no hay delta posible, va la foto.
+        emit(payload)
+        return 0
+    if not delta:
+        return 0
+    emit(render.render_graph_delta(delta, render.graph_label(report)))
     return 0
 
 
