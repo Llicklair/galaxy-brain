@@ -473,25 +473,26 @@ def analyze(root, run_tests=False):
                    "sin config de lint, tipos ni formato")
         )
 
-    # 3 — el mapa. Si hay una herramienta que lo hace mejor, se dice: `gb graph` ve
-    # modulos e imports; GitNexus ve simbolos y llamadas. Senalarlo es la regla 7.
+    # 3 — el mapa. Lo cubre `gb graph`, y punto.
+    #
+    # Aqui colgaba una coletilla de GitNexus ("instalado, pero este repo NO esta
+    # indexado"). Se retira: su justificacion —`gb graph` ve modulos, GitNexus ve
+    # simbolos y llamadas— es de ANTES de que existiera `gb symbols`, que hoy ve
+    # simbolos y llamadas con un 93% de recall medido contra el propio GitNexus y
+    # cero dependencias (docs/pruebas-de-uso.md). Lo unico que ese indice sigue
+    # anadiendo es inferencia de tipos, y `gb symbols` ya declara ese limite en su
+    # propia salida, que es donde toca.
+    #
+    # Colgar un "te falta esto" de un nivel YA marcado como cubierto fabrica una
+    # tarea que no existe: es dictaminar en vez de devolver (regla 2).
     from . import companions, graph
-
-    nexus = companions.gitnexus(root)
-    report["companions"] = [nexus]
 
     coupling = graph.analyze(root)
     if coupling["modules"]:
-        # Se traslada el detalle tal cual: "sin indexar", "desfasado" y "no pude
-        # comprobarlo" son estados distintos, y aplanarlos a uno solo fue justo el
-        # fallo que dio este detector en su primera ejecucion.
-        extra = ""
-        if nexus["installed"]:
-            extra = " · GitNexus: %s (`%s`)" % (nexus["detail"], nexus["hint"])
         report["levels"].append(
             _level("mapa", "Un mapa, no una lectura", "ok",
-                   "%d modulos, %d aristas, %d ciclo(s) — `gb graph`%s"
-                   % (coupling["modules"], coupling["edges"], len(coupling["cycles"]), extra))
+                   "%d modulos, %d aristas, %d ciclo(s) — `gb graph`"
+                   % (coupling["modules"], coupling["edges"], len(coupling["cycles"])))
         )
     else:
         report["levels"].append(
