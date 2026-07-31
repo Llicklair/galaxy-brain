@@ -1,6 +1,6 @@
-"""galaxy-brain v2 — consola de errores determinista.
+"""galaxy-brain — consola de errores determinista.
 
-Regla 1 de ARCHITECTURE-v2: cero modelos en el camino caliente.
+Regla 1 de ARCHITECTURE: cero modelos en el camino caliente.
 Regla 3: presupuesto de latencia. Este modulo se importa en el arranque de
 *cada* proceso Python del venv donde este instalado, asi que no importa nada
 pesado: solo `sys` y `os`. Todo lo demas se carga cuando ya ha habido un fallo,

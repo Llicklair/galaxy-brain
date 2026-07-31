@@ -1,6 +1,6 @@
 """El analizador de acoplamiento. Un ciclo es un hecho, así que estos tests son
-sobre HECHOS: se detecta el ciclo o no. La condición de calidad de v3 (casi cero
-falsos positivos) se cubre comprobando que un grafo sin ciclos reporta cero."""
+sobre HECHOS: se detecta el ciclo o no. La condición de calidad del gate (casi
+cero falsos positivos) se cubre comprobando que un grafo sin ciclos reporta cero."""
 
 import os
 

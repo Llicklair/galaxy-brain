@@ -5,7 +5,7 @@ programa que acaba de fallar, es decir, sobre objetos que pueden estar a medio
 construir. `repr()` de un objeto asi puede lanzar, puede tardar, o puede
 devolver diez megas.
 
-Regla 9 de ARCHITECTURE-v2 (fallar hacia el lado seguro) aplicada al detalle:
+Regla 9 de ARCHITECTURE (fallar hacia el lado seguro) aplicada al detalle:
 aqui NADA propaga una excepcion hacia arriba. Un valor que no se puede
 representar se describe; no se pierde el frame entero por su culpa.
 """

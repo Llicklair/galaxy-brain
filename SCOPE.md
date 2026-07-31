@@ -1,159 +1,78 @@
-# galaxy-brain v2 — Scope
+# galaxy-brain — Scope
 
-Artefacto de la **Fase 1 (Restar)** de [galaxy-brain-v2-plan.md](galaxy-brain-v2-plan.md).
-Diagnóstico de origen: [conclusiones-2026-07-29.md](conclusiones-2026-07-29.md).
-
-Escrito el **29 julio 2026**. En español, como los dos documentos de los que deriva: esto es un
-documento de decisión, no un doc de producto. El alcance de **v1** queda archivado y congelado en
-[docs/v1/SCOPE.md](docs/v1/SCOPE.md) — histórico, no vigente.
+El *qué* y, sobre todo, el *qué no*. La ley de diseño está en [ARCHITECTURE.md](ARCHITECTURE.md);
+la evidencia, en [docs/research-report.md](docs/research-report.md) y [docs/pruebas-de-uso.md](docs/pruebas-de-uso.md).
 
 ---
 
 ## La frase
 
-> **Cuando algo peta, v2 te dice dónde y con qué estado, sin que tengas que reproducirlo a mano.**
+> **Cuando algo peta, te dice dónde y con qué estado, sin que tengas que reproducirlo a mano.**
 
-Una cosa. Determinista de arriba abajo. Devuelve algo en el mismo segundo.
+Esa es la columna: la consola de errores. El resto de la herramienta son **hechos deterministas
+sobre tu código en el mismo espíritu** — qué forma tiene, qué le hizo cada cambio, qué le falta de
+base, qué se aprendió entre repos. Ninguno emite veredictos; todos devuelven material en el mismo
+segundo.
 
-### Alcance duro de v2
+### Alcance duro
 
 | | |
 |---|---|
 | **Lenguaje** | Python. Uno. |
 | **Runtime** | Ejecución local. Uno. |
-| **Fallo** | Excepciones no capturadas. Uno. |
+| **Fallo (consola)** | Excepciones no capturadas. Uno. |
 
-Cualquier cuarto elemento en esa tabla es scope creep, no una mejora.
-
-**Terminado (criterio comprobable, escrito antes de empezar):** ante un fallo real en un proyecto
-tuyo, la consola te da el punto del fallo y el estado alrededor de él, y no has abierto el
-depurador ni has vuelto a lanzar nada a mano.
+Cualquier cuarto elemento en esa tabla es scope creep, no una mejora. La consola captura excepciones
+no capturadas; las familias de análisis (`graph`, `symbols`, `check`, `floor`) leen fuente Python.
+Un solo lenguaje de punta a punta.
 
 ---
 
-## Lo que v2 NO hace
+## Lo que NO hace
 
-Explícito, con nombre y fichero. Nada de esto se borra — se aparta del camino de v2.
-
-- **`/forja`** ([skills/forja](skills/forja), 368 líneas) — mete un modelo en el camino. Caro y lento
-  por diseño; veredicto a los veinte minutos.
-- **`/construye`** ([skills/construye](skills/construye), 188 líneas) + integración Spec Kit — igual,
-  más ceremonia.
-- **Los cuatro agentes del loop** ([agents/](agents/): finder, tester, fixer, evaluator, 163 líneas).
-- **`/galaxy-brain:setup`** ([skills/setup](skills/setup), 97 líneas) — instalar companions no es el
-  producto.
-- **Los hooks de bloqueo** ([hooks/verify-invariants.js](hooks/verify-invariants.js),
-  [scripts/external-gate.js](scripts/external-gate.js)) — blindan un camino (PR + no-auto-merge) por
-  el que nunca ha pasado nadie. Ver inventario abajo.
-- **El andamio de Spec Kit** ([scripts/constitution.js](scripts/constitution.js),
-  [scripts/ears.js](scripts/ears.js), [scripts/evidence.js](scripts/evidence.js),
-  [scripts/test-guard.js](scripts/test-guard.js)).
-- **El rig de eval** — ~~no lo tira nadie, pero no es v2~~. **Retirado el 2026-07-30**; el resultado y
-  las lecciones de diseño están en [docs/pruebas-de-uso.md](docs/pruebas-de-uso.md). Las cifras que
-  llevaba esta línea (5.480 líneas, 271 ficheros) contaban fixtures gitignorados: eran 708 líneas.
-- **Las gates deterministas de acoplamiento y sobreingeniería** — son v3, ver abajo. Es la parte
-  más difícil de dejar fuera y por eso está escrita aquí.
-- **Multi-lenguaje, multi-runtime, integración con CI, UI.** No en v2. No "más adelante" tampoco:
-  no antes de que la Fase 7 diga algo.
-
-**Excepción a revisar, con honestidad:** [scripts/memory-global.js](scripts/memory-global.js) (memoria
-cross-repo, inyectada en SessionStart) es la única pieza del repo que ya corre todos los días y
-devuelve algo. No está en el camino de v2, pero tampoco estorba. Decisión: se queda funcionando, no
-se desarrolla.
+- **No mete un modelo en el camino que siempre corre.** La IA entra después del hecho, a mano y
+  visible (ARCHITECTURE, regla 8). Nada que captura, guarda, muestra o analiza consulta a un modelo.
+- **No juzga ni bloquea sobre proxies.** Las señales de `check` y de `graph --smells` informan; solo
+  se bloquea sobre hechos (un ciclo de imports nuevo, un cruce de frontera declarado). Gatear proxies
+  fue el error que hundió el enfoque anterior (ARCHITECTURE, regla 11).
+- **No es multi-lenguaje ni multi-runtime.** Ni CI, ni UI, ni servidor. No "más adelante" como coartada:
+  no antes de que haya una razón medida escrita aquí.
+- **No cubre `asyncio` ni `multiprocessing`** en la consola: hilo principal e hilos de `threading`.
+- **No reproduce el pasado paso a paso.** El estado es el del momento en que muere el proceso, no un
+  depurador con viaje en el tiempo.
 
 ---
 
-## Por qué esta lista y no otra
+## Terminado (criterios comprobables, por familia)
 
-Inventario del repo, 29-jul-2026 (datos, no impresiones):
+Cada familia trae su criterio de *hecho* y su criterio de *muerte*. La regla común: **un falso
+positivo recurrente la mata** — una herramienta que chilla sin motivo acaba en `--no-verify`, y ese
+fue el error que no se repite.
 
-1. **40 commits en tres días de trabajo** (1 el 14-jul, 8 el 23, 31 el 24). Cinco días de silencio
-   desde entonces. El filtro que pedía el plan — *¿la he usado en los últimos dos meses?* — no se
-   puede aplicar: nada aquí tiene edad para responderlo.
-2. **Cero PRs, cero ramas, cero worktrees.** Todo fue directo a `main`. El contrato entero de
-   forja (*entrega un PR y para*) no se ha ejecutado ni una vez, ni sobre este repo.
-   Las hard rules que lo protegen defienden un camino sin pisadas.
-3. **El peso está invertido.** [CLAUDE.md](CLAUDE.md) dice *"the skills ARE the product"*:
-   skills+agents+hooks = 930 líneas, el 5% de la masa. `scripts/` pesa el doble. El monstruo no es la
-   forja, es el andamio.
-
-   **Corrección del 2026-07-30.** Este punto decía además *"`eval/`, seis veces más"*, y era **falso**:
-   contaba las 56.904 líneas **en disco**, que son copias gitignoradas del repo `consejo` usadas como
-   fixture. Trackeado, `eval/` eran **708 líneas** — menos que skills+agents+hooks. El número estuvo
-   un día justificando decisiones ("el monstruo es eval") que no sostenía. Medir disco cuando querías
-   medir repo es exactamente el folklore que este documento dice evitar; queda escrito para que el
-   error se vea, no para taparlo. Masa trackeada real: `src` 2402 · raíz 2217 · `tests` 2105 ·
-   `scripts` 1884 · `docs` 1069 · `eval` 708 · `skills` 653 · `agents` 163 · `hooks` 114.
-4. **El único dato empírico no está en el repo.** ~~El A/B de la báscula (t1/t2/t5/t6, rewards 8/8)
-   vive en memoria.~~ **Saldado el 2026-07-30:** el resultado y sus tres caveats están en
-   [docs/pruebas-de-uso.md](docs/pruebas-de-uso.md), que es desde hoy la libreta de evidencia del
-   proyecto — negativos incluidos, con el mismo detalle.
-
-Conclusión que se cae sola: por el criterio *¿me devolvió algo el mismo día?*, ninguna pieza de hoy
-sobrevive. Cero PRs es cero entregas.
-
-### Qué se retira y qué se queda (decidido 2026-07-30)
-
-- **`eval/` — fuera.** No por masa (708 líneas, de las más pequeñas) sino por **relevancia**: medía la
-  tesis de v1, retirada, contra un commit fijado de un repo privado que solo corre en Docker en esta
-  máquina. No se va a volver a ejecutar nunca. El resultado y las lecciones de diseño quedan en
-  [docs/pruebas-de-uso.md](docs/pruebas-de-uso.md); el código, no.
-- **v1 (`skills/`, `agents/`, `hooks/`, `.claude-plugin/`) — se queda, por ahora.** Tres razones
-  concretas, ninguna sentimental:
-  1. **Hay una dependencia viva y comprobada.** `extraKnownMarketplaces` apunta a este repo como
-     directorio, el plugin está habilitado, y su `hooks/hooks.json` es lo que cablea el `SessionStart`
-     que carga la memoria cross-repo. Borrar `.claude-plugin/` o `hooks/` **rompe algo que se usa
-     todos los días**.
-  2. **`skills/` + `agents/` son 816 líneas, el 5% de la masa.** Quitarlas ahorra poco y obliga a
-     tocar la regla 9 de [CLAUDE.md](CLAUDE.md), que ata una regla de seguridad a que existan.
-  3. **`scripts/` es el directorio pesado de verdad (1884 líneas), y es sobre todo futuro, no
-     pasado:** `memory-global.js` está en uso; `evidence.js` y `test-guard.js` son las piezas de la
-     Fase B; `external-gate.js` es la Fase C ([PLANTEAMIENTO.md](PLANTEAMIENTO.md)).
-
-  Lo que sí queda pendiente y no se decide hoy: `constitution.js`, `ears.js` y `loop-memory.js`
-  sirven al flujo de loops/spec-driven que se retira. Salen cuando la Fase B esté escrita y se vea
-  qué necesita de verdad — no antes, para no borrar algo y tener que reescribirlo en dos semanas.
-
----
-
-## v3 — las gates deterministas
-
-No se construyen ahora. Se construyen **si y solo si** v2 pasa su prueba.
-
-**Criterio de paso a v3 (los tres, no dos de tres):**
-
-1. v2 lleva **catorce días** en uso sin que lo desactives ni una vez.
-2. En esos catorce días te ha ahorrado reproducir un fallo a mano **al menos tres veces**.
-3. La libreta de la Fase 0 existe y está escrita — es la que decide *qué* gate se construye primero.
-
-**Fecha de revisión:** el día 14 contado desde el primer uso real de v2, no desde hoy. Se estampa
-aquí cuando ocurra: `primer uso: 2026-07-29` → `revisión: 2026-08-12`.
-(Instalada en el Python real de Marcos y primer fallo capturado el 2026-07-29.)
-
-**Enmienda del owner, 2026-07-29 (mismo día):** se **obvia el periodo de prueba de 14 días**. Qué
-compra: velocidad. Qué renuncia: el dato de **adopción** —¿la usas o la abandonas?—, que era el único
-termómetro honesto; el criterio original medía eso, no la correctitud. La consola queda validada en
-**correctitud** (75 tests + batería de funcionamiento sobre la instalación real: hilos, cadenas,
-estado grande truncado, secretos anidados redactados, `__repr__` roto, frames de librería), **no en
-adopción**. Por tanto, si se abre v3, se abre sobre correctitud + decisión de owner, **no** sobre la
-evidencia que el criterio original pedía. Queda dicho para no confundir una cosa con la otra.
-
-Si el criterio no se cumple, no hay v3. No se renegocia el criterio: se acepta el resultado.
+- **Consola** (`last`/`list`/`show`) — ante un fallo real en un proyecto tuyo, te da el punto y el
+  estado alrededor sin que abras el depurador ni vuelvas a lanzar nada a mano. Bar: resolver ≥ 3
+  fallos así en 5 sesiones.
+- **`check`** — sobre cambios reales, **cero falsos positivos** y **≥ 1 amaño real detectado** que
+  habría pasado desapercibido leyendo el diff por encima.
+- **`floor`** — sobre stacks distintos, **cero avisos falsos** y **≥ 1 nivel señalado** que acabes
+  arreglando.
+- **`graph --gate`** — cero bloqueos espurios: solo bloquea sobre ciclos nuevos o cruces declarados.
 
 ---
 
 ## Criterios de fracaso, escritos ahora que no duele
 
-- **Si te descubres desactivando v2 o saltándotelo: no se blinda, se investiga por qué.** El abandono
-  es el único termómetro honesto que ha dado este proyecto. Taparlo es perderlo.
-- **Presupuesto de latencia, innegociable:** lo que corre en cada edición, < 1 s; lo que corre en cada
-  commit, < 10 s. Lo que se salga de ahí muere en una semana. Ya pasó.
-- **Si v2 no cabe en la frase de arriba al terminarlo, no está terminado: está creciendo.**
+- **Si te descubres desactivándolo o saltándotelo: no se blinda, se investiga por qué.** El abandono
+  es el único termómetro honesto que ha dado este proyecto. Taparlo es perderlo (ARCHITECTURE, regla 10).
+- **Presupuesto de latencia, innegociable:** lo que corre en cada edición, < 1 s; en cada commit,
+  < 10 s. Lo que se salga de ahí muere en una semana. Ya pasó una vez.
+- **Si un comando no cabe en la frase de su familia, no está terminado: está creciendo.**
 
 ---
 
 ## Lo que este scope no resuelve
 
-Que nadie lo necesite. v2 puede funcionar perfectamente y no producir un solo *"ahora no puedo vivir
-sin esto"*. La única prueba de eso es la Fase 7 del plan, que no es técnica: ponerlo delante de una
-persona que no seas tú, y aguantar lo que pase, incluido el silencio.
+Que nadie lo necesite. La herramienta puede funcionar perfectamente y no producir un solo *"ahora no
+puedo vivir sin esto"*. Esa es la única prueba que falta, y no es técnica: usarla a diario y aguantar
+lo que pase, incluido el silencio. La correctitud está medida (ver [docs/pruebas-de-uso.md](docs/pruebas-de-uso.md));
+la **adopción**, no.

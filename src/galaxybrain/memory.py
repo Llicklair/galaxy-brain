@@ -10,7 +10,7 @@ payload de SessionStart es deliberadamente magro: el índice compacto de una lí
 más el texto COMPLETO solo de las notas `always` y las del proyecto actual. El resto se trae
 a demanda con `recall <query>`. Nunca se vuelca el vault entero.
 
-Portado de `scripts/memory-global.js` (v1, Node) a Python al unificar en una sola superficie:
+Reimplementado en Python desde la versión Node original, al unificar en una sola superficie:
 mismo vault, mismo formato, misma salida — las notas existentes siguen valiendo sin tocarlas.
 
 Vault: ~/.claude/memory-global/  (override con GALAXY_BRAIN_MEMORY_DIR para tests)

@@ -1,7 +1,7 @@
 """El suelo: el andamiaje que cualquier proyecto necesita antes de construir.
 
-Los siete niveles de `conclusiones-2026-07-29.md` §10, ordenados por impacto medido
-—no por lo que suena bien—, comprobados sobre el repo con hechos detectados.
+Los siete niveles del suelo, ordenados por impacto medido —no por lo que suena
+bien—, comprobados sobre el repo con hechos detectados.
 
 La estructura no es por temas, es por **quién obliga a que sea verdad**, que es la
 única lectura que sobrevive al dato de la podredumbre documental (el 60% de la
@@ -17,7 +17,7 @@ este modulo es empujar hacia abajo lo que se pueda, y DECIR lo que no.
 
 INFORMA, NO BLOQUEA (regla 2, devolver y no dictaminar). Un suelo incompleto no es
 un delito: es una lista de lo que falta. Gatear esto lo convertiria en ceremonia, y
-la ceremonia fue lo que mato a v1.
+la ceremonia fue lo que mato al enfoque anterior.
 
 Nada cableado a ningun proyecto (hard rule 6): todo sale de leer el repo. Lo que ya
 resuelve una herramienta del mercado se DELEGA por referencia (regla 7) — la higiene

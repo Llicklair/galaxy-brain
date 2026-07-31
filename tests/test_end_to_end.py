@@ -1,6 +1,6 @@
 """El test que decide si el proyecto existe.
 
-Criterio de terminado de v2 (SCOPE-v2.md): ante un fallo real, te dice donde y
+Criterio de terminado (SCOPE.md): ante un fallo real, te dice donde y
 con que estado, sin que lo reproduzcas a mano. Estos tests provocan fallos
 reales en procesos Python de verdad y comprueban que el estado quedo guardado.
 

@@ -1,4 +1,4 @@
-"""Fase A — la correlacion: distinguir "el ultimo fallo" de "el fallo de lo que
+"""La correlacion: distinguir "el ultimo fallo" de "el fallo de lo que
 acabo de ejecutar".
 
 Sin esto, quien lee el historico justo despues de un fallo puede recibir una

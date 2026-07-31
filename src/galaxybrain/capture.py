@@ -2,7 +2,7 @@
 
 Aqui no hay juicio ninguno: una excepcion es un hecho, la traza es un hecho, el
 valor de una variable en el momento del fallo es un hecho. Interpretar es un
-paso posterior, separado y descartable (ARCHITECTURE-v2, reglas 6 y 8).
+paso posterior, separado y descartable (ARCHITECTURE, reglas 6 y 8).
 """
 
 import datetime

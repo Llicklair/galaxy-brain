@@ -154,7 +154,7 @@ def test_declara_lo_delegado_y_lo_no_cubierto(tmp_path):
 
 def test_un_suelo_incompleto_no_bloquea(tmp_path):
     """Es una lista de lo que falta, no un delito. Gatearlo lo volveria ceremonia,
-    y la ceremonia fue lo que mato a v1."""
+    y la ceremonia fue lo que mato al enfoque anterior."""
     assert cli.main(["floor", str(tmp_path), "--color", "never"]) == 0
 
 

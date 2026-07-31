@@ -1,4 +1,4 @@
-# galaxy-brain v2
+# galaxy-brain
 
 > **Cuando algo peta, te dice dónde y con qué estado, sin que tengas que reproducirlo a mano.**
 
@@ -55,13 +55,13 @@ pip install -e <ruta-a-este-repo> && gb on && gb status
 powershell -ExecutionPolicy Bypass -File <ruta-a-este-repo>\instala.ps1
 ```
 
-Se lleva todo lo que existe (consola + gate de acoplamiento): es un solo paquete, no hay versiones
-que elegir. La cobertura es **por entorno Python, no por repo** — si el otro proyecto usa un entorno
+Se lleva la herramienta entera (consola, mapa, gate, floor, memoria): es un solo paquete, no hay
+versiones que elegir. La cobertura es **por entorno Python, no por repo** — si el otro proyecto usa un entorno
 donde `gb` ya está activa, no hay nada que ejecutar. Y al ser editable (`-e`), un `git pull` aquí
 actualiza todos los entornos sin reinstalar.
 
 Para quitarlo: `gb off`. Es una línea y no deja rastro — que apagarlo sea barato es deliberado
-(ARCHITECTURE-v2, regla 10: el abandono es un dato, no algo que blindar).
+(ARCHITECTURE, regla 10: el abandono es un dato, no algo que blindar).
 
 ## Uso
 
@@ -85,7 +85,7 @@ gb graph src --gate        # ciclos de imports + fronteras (.gb-boundaries); par
 gb graph src --html m.html # el mapa de módulos, dibujado
 gb symbols src             # el grafo de símbolos: quién llama a quién, con su cobertura
 gb symbols src --html n.html --open   # la nube interactiva (física en vivo, buscar, arrastrar)
-gb symbols src --since v1.0           # lo que creció desde esa ref: la película, baseline en git
+gb symbols src --since HEAD~50        # lo que creció desde esa ref: la película, baseline en git
 gb check --staged          # qué le hace este cambio a los tests y al acoplamiento (informa, no bloquea)
 gb floor --init            # el suelo: qué falta antes de construir, y deja los documentos base
 ```
@@ -95,6 +95,28 @@ resolver** (las llamadas `objeto.metodo()` exigen inferencia de tipos y aquí no
 una arista falsa se cree, una ausente se nota), y medido contra un índice con inferencia
 (GitNexus) da **93% de recall** con cero dependencias. Los detalles y los negativos, en
 [docs/pruebas-de-uso.md](docs/pruebas-de-uso.md).
+
+---
+
+## Memoria cross-repo
+
+Un hecho aprendido en un repo no debería morir ahí. `gb memory` es un vault de notas markdown
+durables (en `~/.claude/memory-global`, editables a mano, con `[[wikilinks]]` para abrir el grafo en
+Obsidian) que afloran en **cualquier** proyecto vía un hook de `SessionStart`.
+
+```bash
+gb memory index              # el índice compacto, una línea por nota
+gb memory recall <palabras>  # el texto completo de las notas más relevantes
+gb memory context            # el payload de arranque (lo llama el hook de SessionStart)
+gb memory add --name x --description "..." --scope always
+```
+
+Magro por diseño (H6): el arranque inyecta el índice de **todas** las notas pero el texto completo
+solo de las `always` y las del proyecto actual; el resto se trae a demanda con `recall`. Nunca se
+vuelca el vault entero.
+
+Para engancharlo, añade a `~/.claude/settings.json` un hook de `SessionStart` que ejecute
+`gb memory context` (ver la nota de instalación al final).
 
 ---
 
@@ -112,8 +134,8 @@ Python 3.11, Windows 10, mediana de 20 arranques:
 | — de los cuales, código propio | 0,5 ms |
 
 **Mientras el programa funciona, el coste es cero.** No "bajo": cero. `sys.excepthook` solo se
-ejecuta cuando el proceso ya se está muriendo. Por eso v2 empieza por excepciones no capturadas y
-no por instrumentación continua.
+ejecuta cuando el proceso ya se está muriendo. Por eso la consola empieza por excepciones no
+capturadas y no por instrumentación continua.
 
 Los 5,2 ms de `threading` la mayoría de programas los pagan igual (logging, asyncio, requests lo
 importan). Para un CLI diminuto que jamás toca hilos: `GB_NO_THREADS=1`.
@@ -181,7 +203,7 @@ de líneas fuente si prefieres no arriesgar ahí. Detalle: [docs/review-2026-07-
 python -m pytest tests/ -q
 ```
 
-### Gate de acoplamiento (v3) — sobre la propia consola
+### Gate de acoplamiento — sobre la propia herramienta
 
 Un segundo determinista, cero modelos, cero dependencias (solo `ast`):
 

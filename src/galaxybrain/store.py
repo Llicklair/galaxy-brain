@@ -4,7 +4,7 @@ Esto es la libreta de la Fase 0 del plan, pero automatica: que se rompio,
 cuantas veces y donde. Un fichero JSON por captura y un indice de una linea por
 captura, para que listar sea barato y no haya que abrir mil ficheros.
 
-Regla 7 de ARCHITECTURE-v2: nada de esto toca el repo observado.
+Regla 7 de ARCHITECTURE: nada de esto toca el repo observado.
 """
 
 import datetime

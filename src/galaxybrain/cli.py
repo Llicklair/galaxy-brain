@@ -1,18 +1,13 @@
 """`gb` — la superficie de lectura.
 
-Empezo con cinco comandos y la regla de que cada uno nuevo se justificaba contra
-la frase de SCOPE-v2 (*donde peto y con que estado*). Esa regla se quedo corta
-cuando el proyecto se dio un PLANTEAMIENTO por encima del SCOPE, y conviene
-decirlo en vez de ir colando comandos: hoy la superficie cubre las tres
-propiedades de ese documento, una familia por propiedad.
+Cada comando cae en una familia, una por tipo de hecho determinista sobre el
+codigo. Un comando nuevo tiene que caer en una de ellas, o no entra:
 
-  last · list · show · on · off · status   ->  baratos de encontrar
-  graph · symbols                          ->  estructuralmente acotados
-  check                                    ->  imposibles de esconder
-  floor                                    ->  el suelo, debajo de las tres
-  memory                                   ->  memoria permanente cross-repo
-
-Un comando nuevo tiene que caer en una de esas familias. Si no cae, no entra.
+  last · list · show · on · off · status   ->  donde peto y con que estado
+  graph · symbols                          ->  que forma tiene
+  check                                    ->  que le hizo cada cambio
+  floor                                    ->  que le falta de base
+  memory                                   ->  que se aprendio, cross-repo
 """
 
 import argparse
@@ -168,7 +163,7 @@ def cmd_off(args):
     ok, message = bootstrap.disable()
     emit(message)
     if ok:
-        # Regla 10 de ARCHITECTURE-v2: el abandono es dato. Si esto se apaga,
+        # Regla 10 de ARCHITECTURE: el abandono es dato. Si esto se apaga,
         # que quede dicho por que importa saberlo, no un hook que lo impida.
         emit("apuntalo: por que la has apagado. Ese dato vale mas que la herramienta.")
     return 0 if ok else 1
@@ -309,7 +304,7 @@ def cmd_check(args):
         emit(render.render_changes(report, _style(args), brief=args.brief))
     # Un rango ilegible es error de USO (no hay nada revisado). Las senales, en
     # cambio, NO son motivo de salida != 0: son proxies, y gatear proxies fue el
-    # error de v1. Informar delante de quien decide es lo que las hace inevitables.
+    # error anterior. Informar delante de quien decide es lo que las hace inevitables.
     return 1 if report["range_error"] else 0
 
 

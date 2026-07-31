@@ -1,4 +1,4 @@
-"""Fase B — *imposible de esconder*: qué le hizo un cambio a la evidencia.
+"""*imposible de esconder*: qué le hizo un cambio a la evidencia.
 
 Un verde se compra de dos formas, arreglando el código o ablandando lo que lo
 comprueba. Estos tests fijan que la segunda salga siempre a la luz, y —igual de
@@ -25,7 +25,7 @@ from galaxybrain import changes, cli
     ],
 )
 def test_la_asercion_truthy_pelada_se_distingue_de_una_comparacion(linea, es_debil):
-    """El patron heredado de v1 terminaba en \\b y casaba DENTRO de `assert 1 == 1`.
+    """El patron anterior terminaba en \\b y casaba DENTRO de `assert 1 == 1`.
     Marcar una comparacion legitima como 'debilitada' es ruido, y el ruido es lo que
     manda una revision a --no-verify."""
     assert changes._matches(changes.WEAKENER, linea) is es_debil
@@ -81,7 +81,7 @@ def test_borrar_una_definicion_de_test_sale(tmp_path):
 
 
 def test_borrar_el_fichero_de_tests_entero_sale(tmp_path):
-    """El caso que el test-guard de v1 se perdia: al borrarse el fichero, el diff
+    """El caso que el test-guard anterior se perdia: al borrarse el fichero, el diff
     dice `+++ /dev/null` y el parser antiguo lo saltaba. Es el amaño mas
     descarado de todos, asi que no puede ser justo el que se escape."""
     root = _repo(tmp_path)
@@ -272,7 +272,7 @@ def test_un_patron_dentro_de_un_string_no_es_una_senal(tmp_path):
     """El falso positivo que dio en su primer cambio real: marco un
     `@pytest.mark.skip` que vivia DENTRO de una cadena, como dato de prueba de sus
     propios tests. Recurrente por construccion en cualquier repo que testee un
-    detector, y el criterio de la Fase B dice que un falso positivo recurrente la
+    detector, y el criterio de check dice que un falso positivo recurrente la
     mata."""
     root = _repo(tmp_path)
     _write(root, "tests/test_app.py", SUITE)
@@ -398,7 +398,7 @@ def test_brief_no_se_calla_cuando_SI_hay_senales(tmp_path):
 
 
 def test_las_senales_no_bloquean(tmp_path):
-    """Son PROXIES. Gatear proxies fue el error de v1: un refactor legitimo las
+    """Son PROXIES. Gatear proxies fue el error anterior: un refactor legitimo las
     levanta, y una gate que chilla sin motivo acaba en --no-verify."""
     root = _repo(tmp_path)
     _write(root, "tests/test_app.py", SUITE)

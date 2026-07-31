@@ -4,7 +4,7 @@ dentro del handler, es decir, cuando ya ha habido un fallo.
 
 Consecuencia buscada: mientras el programa funciona, el coste es cero. No es
 "bajo", es cero — `sys.excepthook` solo se ejecuta cuando el proceso se muere.
-Por eso v2 empieza por excepciones no capturadas y no por otra cosa.
+Por eso la consola empieza por excepciones no capturadas y no por otra cosa.
 """
 
 import os

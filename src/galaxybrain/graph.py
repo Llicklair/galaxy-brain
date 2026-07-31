@@ -1,14 +1,13 @@
-"""Acoplamiento por el grafo de imports. v3, primer incremento.
+"""Acoplamiento por el grafo de imports.
 
 Determinista, cero modelos, cero dependencias (solo `ast`/stdlib). Devuelve el
 MAPA de acoplamiento del proyecto — quién importa a quién, qué ciclos hay, qué
 módulos están más acoplados. No dicta: muestra. Un ciclo de imports es un HECHO,
-no una opinión, y por eso casi no tiene falsos positivos (ARCHITECTURE-v2, la
-condición de calidad de v3: una gate que chilla sin motivo acaba en --no-verify).
+no una opinión, y por eso casi no tiene falsos positivos (ARCHITECTURE, regla 11:
+una gate que chilla sin motivo acaba en --no-verify).
 
-Conecta con el §9 de las conclusiones: lo que cambia todo es que el almacén
-tenga forma; un grafo responde "¿quién depende de X?" con aristas, no con
-ficheros enteros.
+Lo que cambia todo es que el almacén tenga forma: un grafo responde "¿quién
+depende de X?" con aristas, no con ficheros enteros.
 
 Límites honestos, dichos de frente: es análisis ESTÁTICO. No ve imports
 dinámicos (`__import__`, `importlib.import_module`), y cuenta los imports dentro

@@ -64,8 +64,8 @@ El supuesto de diseño *"se conservan los frames más internos: ahí está el fa
 
 ### Consecuencias
 
-1. **La Fase A se estrecha** a lo que de verdad cubre: excepciones no capturadas (scripts, CLIs,
-   servidores, procesos largos). No tests. Escrito en [PLANTEAMIENTO.md](../PLANTEAMIENTO.md).
+1. **La consola se estrecha** a lo que de verdad cubre: excepciones no capturadas (scripts, CLIs,
+   servidores, procesos largos). No tests.
 2. **Para tests se adopta `pytest -l` por referencia**, no se construye nada. Es la regla 7 de
    [CLAUDE.md](../CLAUDE.md) aplicada al pie de la letra: lo externo se integra por referencia. Coste:
    una línea. Construir una captura para pytest habría sido reimplementar un flag que ya existe — la

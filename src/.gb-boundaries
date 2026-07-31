@@ -1,4 +1,4 @@
-# galaxy-brain — invariantes de capas (v3), comprobadas con `gb graph src --gate`.
+# galaxy-brain — invariantes de capas, comprobadas con `gb graph src --gate`.
 # El nucleo (captura, almacen, analisis, hooks, config) no debe importar la
 # presentacion (cli, render). Al reves si: la presentacion se apoya en el nucleo.
 # Los nombres llevan el prefijo galaxybrain.* porque la raiz del analisis es src/

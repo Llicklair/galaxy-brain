@@ -1,5 +1,4 @@
-"""Qué le hizo un cambio a la evidencia. Fase B del PLANTEAMIENTO: *imposible de
-esconder*.
+"""Qué le hizo un cambio a la evidencia — *imposible de esconder*.
 
 Un verde se puede comprar de dos formas: arreglando el código, o ablandando lo
 que lo comprueba. La segunda no la ve nadie leyendo el diff por encima, porque
@@ -7,8 +6,8 @@ mirar los ficheros de test es justo lo que no se hace. Esto los mira siempre.
 
 **Informa, NO bloquea, y es deliberado.** Las señales de aquí son PROXIES, no
 hechos: borrar un test puede ser una limpieza legítima, y `pytest.approx` puede
-ser la forma correcta de comparar flotantes. Gatear proxies fue el error de v1
-(ver PLANTEAMIENTO §1) y una gate que chilla sin motivo acaba en `--no-verify`.
+ser la forma correcta de comparar flotantes. Gatear proxies fue el error que
+hundió el enfoque anterior, y una gate que chilla sin motivo acaba en `--no-verify`.
 Lo que hace imposible esconder algo no es que bloquee: es que la lista salga
 SIEMPRE, delante de quien decide, sin que haya que acordarse de pedirla.
 
@@ -69,7 +68,7 @@ WEAKENER = [
     re.compile(r"assertAlmostEqual\s*\("),
     re.compile(r"\.(toBeTruthy|toBeDefined|toBeInstanceOf)\s*\("),
     # Solo la asercion truthy PELADA (`assert True`, `assert 1`, con mensaje o sin
-    # el). El patron heredado de v1 terminaba en \b y por tanto casaba dentro de
+    # el). El patron anterior terminaba en \b y por tanto casaba dentro de
     # `assert 1 == 1`, que es una comparacion de verdad. Marcar eso como
     # "debilitada" es ruido, y el ruido es lo que manda una revision a --no-verify.
     re.compile(r"^\s*assert\s+(True|1)\s*($|,|#)"),

@@ -1,6 +1,6 @@
 """Presupuestos y ajustes. Todo por variable de entorno, nada de fichero de
-configuracion: un fichero de config es superficie que hay que mantener, y v2
-tiene una regla contra eso (CLAUDE.md, principio "restar antes que pulir").
+configuracion: un fichero de config es superficie que hay que mantener, y
+galaxy-brain tiene una regla contra eso (CLAUDE.md, principio "restar antes que pulir").
 
 Los limites de aqui son el presupuesto de la regla 4 (overhead) traducido a
 numeros. Si un valor de estos hay que subirlo a menudo, es senal de que "que es
@@ -51,7 +51,7 @@ def _flag(name, default=False):
 def home():
     """Donde vive el historico. FUERA del proyecto observado, siempre.
 
-    ARCHITECTURE-v2 regla 7: el arnes nunca ensucia el proyecto que observa.
+    ARCHITECTURE regla 7: el arnes nunca ensucia el proyecto que observa.
     """
     raw = os.environ.get("GB_HOME")
     if raw:
@@ -129,7 +129,7 @@ def quiet():
 def disabled():
     """Interruptor general. Existe para que apagarlo sea barato y visible.
 
-    ARCHITECTURE-v2 regla 10: si acabas usando esto a diario, el dato es que
+    ARCHITECTURE regla 10: si acabas usando esto a diario, el dato es que
     la herramienta molesta. Se investiga, no se blinda.
     """
     return _flag("GB_DISABLE", False)
