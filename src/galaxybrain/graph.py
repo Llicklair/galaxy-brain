@@ -859,7 +859,161 @@ _SONDAS = (
 )
 
 
-def self_test():
+def _primer_subdirectorio(root):
+    """El primer subdirectorio con codigo, para las relaciones que comparan
+    raiz contra subarbol. None si no hay ninguno: la relacion se salta."""
+    try:
+        for nombre in sorted(os.listdir(root)):
+            sub = os.path.join(root, nombre)
+            if nombre.startswith(".") or nombre in DEFAULT_SKIP or not os.path.isdir(sub):
+                continue
+            if analyze(sub)["modules"]:
+                return sub
+    except OSError:
+        pass
+    return None
+
+
+def _rel_idempotencia(root, _sym):
+    a, b = shape(analyze(root)), shape(analyze(root))
+    return a == b, "dos analisis seguidos dan la misma forma", None
+
+
+def _rel_grafia_de_ruta(root, _sym):
+    """La misma carpeta escrita de otra forma es la misma carpeta.
+
+    Esta relacion es la que habria cazado el bug de la clave de cache (`c:` vs
+    `C:`) sin necesidad de que a nadie se le ocurriera mirar.
+    """
+    variantes = [root, root + os.sep, os.path.join(root, ".")]
+    formas = [shape(analyze(v)) for v in variantes]
+    return all(f == formas[0] for f in formas), "3 grafias de la misma ruta, una sola forma", None
+
+
+def _rel_include_nested_monotono(root, _sym):
+    """Mirar TAMBIEN los subproyectos no puede hacer DESAPARECER modulos.
+
+    Es monotonia pura: `--include-nested` amplia el barrido, nunca lo estrecha.
+    Si alguna vez se estrecha, la logica de omitir anidados esta comiendose
+    codigo del proyecto — y lo haria en silencio, contando menos modulos.
+    """
+    estrecho = set(analyze(root).get("fan_in") or {})
+    ancho = set(analyze(root, include_nested=True).get("fan_in") or {})
+    perdidos = sorted(estrecho - ancho)
+    if perdidos:
+        return False, "con --include-nested DESAPARECEN %d modulo(s): %s" % (
+            len(perdidos), ", ".join(perdidos[:4])
+        ), None
+    return True, "%d modulos sin anidados, %d con ellos (nunca menos)" % (
+        len(estrecho), len(ancho)
+    ), None
+
+
+def _rel_huella_estable_por_json(root, _sym):
+    """La forma tiene que sobrevivir al viaje a disco y volver identica.
+
+    De esto depende el cache: si la ida y vuelta por JSON la cambiara, cada
+    arranque diria que el proyecto entero se ha movido.
+    """
+    forma = shape(analyze(root))
+    vuelta = json.loads(json.dumps(forma, ensure_ascii=False))
+    return forma == vuelta, "la forma sobrevive a JSON sin cambiar", None
+
+
+def _rel_ciclos_sobre_aristas_reales(root, _sym):
+    """Cada paso de un ciclo tiene que ser una arista que existe de verdad.
+
+    Es la relacion que protege lo unico que BLOQUEA: si el buscador de ciclos
+    pudiera inventarse un tramo, estaria deteniendo commits por un import que
+    nadie escribio.
+    """
+    rep = analyze(root)
+    reales = {tuple(e) for e in (rep.get("edge_list") or [])}
+    inventadas = []
+    for ciclo in rep.get("cycles") or []:
+        for i in range(len(ciclo)):
+            paso = (ciclo[i], ciclo[(i + 1) % len(ciclo)])
+            if paso not in reales:
+                inventadas.append("%s->%s" % paso)
+    if not rep.get("cycles"):
+        return None, "", "este proyecto no tiene ciclos que verificar"
+    return not inventadas, "%d ciclo(s), todos sus tramos son aristas reales" % len(
+        rep["cycles"]
+    ), (None if not inventadas else "tramos inventados: %s" % ", ".join(inventadas[:4]))
+
+
+def _rel_graph_vs_symbols(root, sym):
+    """Los dos analizadores tienen que ver el MISMO conjunto de modulos.
+
+    Que `graph` y `symbols` se separen es exactamente la familia de fallo del
+    31-jul: dos lecturas del mismo repo que dejan de coincidir sin avisar.
+    """
+    if sym is None:
+        return None, "", "sin informe de simbolos (lo pasa quien llama)"
+    de_graph = set(analyze(root).get("fan_in") or {})
+    de_symbols = {n.get("module") for n in (sym.get("nodes") or []) if n.get("module")}
+    fuera = sorted(de_symbols - de_graph)
+    return not fuera, "%d modulo(s) en symbols, todos conocidos por graph" % len(de_symbols), (
+        None if not fuera else "symbols ve modulos que graph no: %s" % ", ".join(fuera[:4])
+    )
+
+
+#: Relaciones que deben cumplirse sobre CUALQUIER proyecto, no sobre un fixture.
+#: Ahi esta su valor: un fixture fija lo que ya sabias comprobar; una relacion se
+#: evalua contra tu codigo de verdad y caza la incoherencia que nadie imagino.
+#: Se descartaron dos candidatas en la primera ejecucion, y merece quedar escrito:
+#: "los modulos del subarbol son un subconjunto de los de la raiz" y "la raiz y el
+#: subdirectorio cargan las mismas fronteras". Ninguna es invariante — los nombres
+#: de modulo son RELATIVOS a la raiz analizada, y las fronteras no se heredan hacia
+#: abajo a proposito. Daban falso positivo sobre codigo sano, que es justo lo que la
+#: regla 11 dice que acaba en `--no-verify`. Una relacion falsa es peor que ninguna.
+_RELACIONES = (
+    ("idempotencia", _rel_idempotencia),
+    ("grafia de la ruta", _rel_grafia_de_ruta),
+    ("include-nested es monotono", _rel_include_nested_monotono),
+    ("la forma sobrevive a JSON", _rel_huella_estable_por_json),
+    ("los ciclos usan aristas reales", _rel_ciclos_sobre_aristas_reales),
+    ("graph y symbols ven lo mismo", _rel_graph_vs_symbols),
+)
+
+
+def relations(root, symbols_report=None):
+    """Comprueba las relaciones metamorficas sobre un proyecto REAL.
+
+    Cada una dice "estas dos formas de preguntar tienen que coincidir". No
+    escriben nada: solo leen el arbol que les des.
+
+    Una relacion que no aplica sale como SALTADA con su motivo, jamas como
+    cumplida — contar un salto como un exito es la mentira que llevamos todo el
+    dia desmontando.
+
+    `symbols_report` lo pasa quien llama para no importar `symbols` desde aqui:
+    `symbols` ya importa a `graph`, y el import inverso seria un ciclo — el mismo
+    hecho que este modulo existe para detectar.
+    """
+    resultados = []
+    for nombre, relacion in _RELACIONES:
+        try:
+            ok, detalle, motivo_salto = relacion(root, symbols_report)
+        except BaseException as error:  # noqa: BLE001
+            ok, detalle, motivo_salto = False, "", None
+            detalle = "la relacion reviento: %s: %s" % (type(error).__name__, error)
+        resultados.append(
+            {
+                "relacion": nombre,
+                "ok": ok,  # None = saltada
+                "detalle": detalle or motivo_salto or "",
+                "saltada": ok is None,
+            }
+        )
+    return {
+        "relations": resultados,
+        "broken": [r["relacion"] for r in resultados if r["ok"] is False],
+        "skipped": [r["relacion"] for r in resultados if r["saltada"]],
+    }
+
+
+def self_test(root=None, symbols_report=None):
     """Verifica el gate ROMPIENDOLO a proposito, no comprobando que pasa.
 
     Un gate se degrada en silencio: sigue devolviendo cero y ya no mira nada. Los
@@ -884,10 +1038,23 @@ def self_test():
             shutil.rmtree(raiz, ignore_errors=True)
         resultados.append({"sonda": nombre, "espera": espera, "ok": ok, "detalle": detalle})
 
-    return {
+    informe = {
         "probes": resultados,
         "failed": [r["sonda"] for r in resultados if not r["ok"]],
+        "root": None,
+        "relations": [],
+        "broken": [],
+        "skipped": [],
     }
+    # Con una ruta se anade la otra mitad: las sondas comprueban que el detector
+    # ve defectos de mentira; las relaciones comprueban que el analisis es
+    # coherente consigo mismo sobre codigo DE VERDAD, que es donde vivian los
+    # seis fallos del 31-jul.
+    if root:
+        informe["root"] = root
+        informe.update(relations(root, symbols_report))
+        informe["failed"] = informe["failed"] + informe["broken"]
+    return informe
 
 
 def shape(report):

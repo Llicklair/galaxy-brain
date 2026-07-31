@@ -465,7 +465,44 @@ def render_self_test(report, style):
             "  %s %s — %s" % (style(marca, color) if color else marca, probe["sonda"], probe["espera"])
         )
         lines.append("      %s" % style(probe["detalle"], DIM))
-    lines.append("")
+    relaciones = report.get("relations") or []
+    if relaciones:
+        lines.append(
+            style(
+                "Relaciones sobre %s — lo que tiene que cumplirse sobre codigo de verdad"
+                % (report.get("root") or "?"),
+                BOLD,
+            )
+        )
+        lines.append("")
+        for rel in relaciones:
+            if rel["saltada"]:
+                marca, color = "?", DIM
+            elif rel["ok"]:
+                marca, color = "+", None
+            else:
+                marca, color = "!", RED
+            lines.append(
+                "  %s %s%s"
+                % (
+                    style(marca, color) if color else marca,
+                    rel["relacion"],
+                    style("  (saltada)", DIM) if rel["saltada"] else "",
+                )
+            )
+            lines.append("      %s" % style(rel["detalle"], DIM))
+        lines.append("")
+
+    saltadas = report.get("skipped") or []
+    if saltadas:
+        # Un salto contado como exito es la mentira que este comando desmonta.
+        lines.append(
+            style(
+                "%d relacion(es) NO se comprobaron. Un salto no es un aprobado."
+                % len(saltadas),
+                YELLOW,
+            )
+        )
     if fallidas:
         lines.append(
             style(

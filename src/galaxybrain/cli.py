@@ -267,9 +267,17 @@ def cmd_graph(args):
     from . import graph
 
     if args.self_test:
-        # No mira tu proyecto: monta defectos de mentira y comprueba que el gate
-        # los ve. Va lo primero porque `path` aqui no pinta nada.
-        informe = graph.self_test()
+        # Dos mitades. Las sondas montan defectos de mentira en un temporal y
+        # exigen que el gate los vea. Si ademas das una ruta, se comprueban las
+        # relaciones metamorficas sobre ESE codigo — que es donde vivian los
+        # fallos reales, porque un fixture solo fija lo que ya sabias comprobar.
+        raiz = os.path.abspath(args.path) if args.path else None
+        informe_simbolos = None
+        if raiz:
+            from . import symbols
+
+            informe_simbolos = symbols.analyze(raiz)
+        informe = graph.self_test(raiz, informe_simbolos)
         if args.json:
             emit(json.dumps(informe, ensure_ascii=False, indent=2))
         else:

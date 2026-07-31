@@ -94,6 +94,77 @@ def test_no_necesita_git(tmp_path, monkeypatch):
     assert graph.self_test()["failed"] == []
 
 
+def _proyecto(tmp_path):
+    raiz = str(tmp_path)
+    for rel, cuerpo in (
+        ("pkg/__init__.py", ""),
+        ("pkg/a.py", "from . import b\n"),
+        ("pkg/b.py", "def g():\n    return 2\n"),
+    ):
+        ruta = os.path.join(raiz, *rel.split("/"))
+        os.makedirs(os.path.dirname(ruta), exist_ok=True)
+        with open(ruta, "w", encoding="utf-8") as handle:
+            handle.write(cuerpo)
+    return raiz
+
+
+def test_sobre_codigo_sano_ninguna_relacion_se_rompe(tmp_path):
+    informe = graph.relations(_proyecto(tmp_path))
+    assert informe["broken"] == [], "relaciones rotas: %s" % informe["broken"]
+
+
+def test_una_relacion_que_no_aplica_sale_SALTADA_no_aprobada(tmp_path):
+    """Un salto contado como exito es la mentira que este comando desmonta.
+    Sin ciclos en el proyecto, la relacion de ciclos no puede decir "cumple"."""
+    informe = graph.relations(_proyecto(tmp_path))
+    assert "los ciclos usan aristas reales" in informe["skipped"]
+    saltada = [r for r in informe["relations"] if r["saltada"]][0]
+    assert saltada["ok"] is None  # ni True ni False
+    assert saltada["detalle"], "una relacion saltada tiene que decir POR QUE"
+
+
+def test_si_el_analisis_deja_de_ser_determinista_la_relacion_CAE(tmp_path, monkeypatch):
+    """La idempotencia es la relacion mas barata y la que mas cosas tapa: un
+    orden que depende del hash, una fecha colada en el informe, un set iterado."""
+    llamadas = {"n": 0}
+    original = graph.shape
+
+    def _inestable(report):
+        llamadas["n"] += 1
+        forma = dict(original(report))
+        forma["modules"] = forma["modules"] + ["fantasma-%d" % llamadas["n"]]
+        return forma
+
+    monkeypatch.setattr(graph, "shape", _inestable)
+    assert "idempotencia" in graph.relations(_proyecto(tmp_path))["broken"]
+
+
+def test_si_un_ciclo_se_inventa_un_tramo_la_relacion_CAE(tmp_path, monkeypatch):
+    """Protege lo unico que BLOQUEA: un ciclo con un tramo que nadie escribio
+    detendria commits por un import inexistente."""
+    monkeypatch.setattr(graph, "find_cycles", lambda edges: [["pkg.a", "pkg.inventado"]])
+    informe = graph.relations(_proyecto(tmp_path))
+    assert "los ciclos usan aristas reales" in informe["broken"]
+
+
+def test_las_relaciones_no_escriben_en_el_proyecto(tmp_path):
+    raiz = _proyecto(tmp_path)
+    antes = sorted(os.path.join(d, f) for d, _s, fs in os.walk(raiz) for f in fs)
+    graph.relations(raiz)
+    despues = sorted(os.path.join(d, f) for d, _s, fs in os.walk(raiz) for f in fs)
+    assert antes == despues
+
+
+def test_con_ruta_el_self_test_suma_las_dos_mitades(tmp_path):
+    """Sin ruta: solo las sondas. Con ruta: sondas + relaciones sobre ese codigo."""
+    sin_ruta = graph.self_test()
+    assert sin_ruta["relations"] == []
+
+    con_ruta = graph.self_test(_proyecto(tmp_path))
+    assert con_ruta["probes"] and con_ruta["relations"]
+    assert con_ruta["root"]
+
+
 def test_cada_sonda_declara_que_espera():
     """El informe se lee sin abrir el codigo: cada linea dice si el gate tenia
     que ver algo o tenia que callar."""
