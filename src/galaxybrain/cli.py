@@ -61,6 +61,48 @@ def _style(args):
     return render.Style(sys.stdout.isatty())
 
 
+def _abrir(destino):
+    """Abre el artefacto donde TU digas, no donde yo decida.
+
+    Por defecto, el navegador del sistema. `GB_OPEN_CMD` lo sustituye y recibe la
+    ruta como ultimo argumento — asi puedes mandarlo a un navegador concreto, a
+    un perfil, o a lo que tenga tu editor para renderizar HTML.
+
+    Va por variable de entorno y no cableando un editor porque la regla 6 dice
+    que un comando cableado es un bug: gb no sabe en que editas, ni tiene por que.
+    Y si tu orden falla, se cae al navegador en vez de dejarte sin abrir nada
+    (regla 9: fallar hacia el lado seguro).
+    """
+    orden = (os.environ.get("GB_OPEN_CMD") or "").strip()
+    if orden:
+        import shlex
+        import shutil
+        import subprocess
+
+        try:
+            # posix=False en Windows: si no, `shlex` se come las barras invertidas
+            # de una ruta como C:\Program Files\... y el comando sale destrozado.
+            partes = shlex.split(orden, posix=(os.name != "nt"))
+            # Resolver el ejecutable con `which` no es cosmetico en Windows: los
+            # lanzadores de editores y de node son ficheros .CMD, y Popen no puede
+            # ejecutarlos por nombre — falla con "no se encuentra el archivo".
+            # Con la ruta resuelta funcionan, y sin recurrir a shell=True, que
+            # traeria de vuelta todos los problemas de comillas.
+            resuelto = shutil.which(partes[0]) if partes else None
+            if resuelto:
+                partes[0] = resuelto
+            subprocess.Popen(partes + [destino])
+            return
+        except (OSError, ValueError) as error:
+            sys.stderr.write(
+                "[gb] GB_OPEN_CMD fallo (%s); lo abro con el navegador del sistema\n" % error
+            )
+
+    import webbrowser
+
+    webbrowser.open("file://" + destino.replace("\\", "/"))
+
+
 def _procedencia(root):
     """De que commit y de cuando es un artefacto exportado.
 
@@ -353,9 +395,7 @@ def cmd_graph(args):
             return 2
         emit("mapa escrito en %s" % destino)
         if args.open:
-            import webbrowser
-
-            webbrowser.open("file://" + destino.replace("\\", "/"))
+            _abrir(destino)
         return 1 if report.get("root_error") else 0
     if args.json:
         emit(json.dumps(report, ensure_ascii=False, indent=2))
@@ -403,9 +443,7 @@ def cmd_symbols(args):
             return 2
         emit("mapa de simbolos en %s" % destino)
         if args.open:
-            import webbrowser
-
-            webbrowser.open("file://" + destino.replace("\\", "/"))
+            _abrir(destino)
         return 0
 
     if args.json:
