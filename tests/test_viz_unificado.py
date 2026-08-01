@@ -294,6 +294,54 @@ def test_los_nombres_se_escapan_antes_de_innerHTML(tmp_path):
     assert "'<b>'+n.id+'</b>'" not in html  # la version cruda, fuera
 
 
+def _con_docs(tmp_path):
+    for rel, cuerpo in (
+        ("pkg/__init__.py", '"""El paquete de prueba."""\n'),
+        ("pkg/a.py", '"""Modulo A."""\n\n\ndef documentada():\n    """Hace algo concreto."""\n'),
+        ("pkg/b.py", '"""Modulo B."""\n\n\ndef muda():\n    return 1\n'),
+    ):
+        ruta = os.path.join(str(tmp_path), *rel.split("/"))
+        os.makedirs(os.path.dirname(ruta), exist_ok=True)
+        with open(ruta, "w", encoding="utf-8") as handle:
+            handle.write(cuerpo)
+    return str(tmp_path)
+
+
+def test_la_ficha_usa_la_prosa_QUE_YA_EXISTE(tmp_path):
+    """La descripcion sale del docstring, no de un modelo. La escribio quien
+    escribio el codigo, vive pegada a el, y cuando deja de ser cierta el diff que
+    la contradice pasa por delante de alguien — cosa que no le ocurre a un
+    documento aparte (el 60% caduca en seis meses justamente por eso)."""
+    nodos, _ = _capas(viz.render_graph_cloud(symbols.analyze(_con_docs(tmp_path))))
+    documentada = [n for n in nodos if n["id"].endswith("documentada")][0]
+    assert documentada["d"] == "Hace algo concreto."
+
+
+def test_lo_que_NO_esta_descrito_tambien_se_dice(tmp_path):
+    """Que un simbolo no tenga descripcion es un hecho sobre tu codigo, no un
+    hueco de la pagina. Dicho, se puede arreglar; callado, no existe."""
+    nodos, _ = _capas(viz.render_graph_cloud(symbols.analyze(_con_docs(tmp_path))))
+    muda = [n for n in nodos if n["id"].endswith("muda")][0]
+    assert muda["d"] == ""
+    assert "sin describir" in viz.render_graph_cloud(symbols.analyze(_con_docs(tmp_path)))
+
+
+def test_solo_la_primera_linea(tmp_path):
+    """El resto del docstring es el porque, y no cabe en una ficha."""
+    ruta = os.path.join(str(tmp_path), "pkg")
+    os.makedirs(ruta, exist_ok=True)
+    with open(os.path.join(ruta, "__init__.py"), "w", encoding="utf-8") as handle:
+        handle.write('"""Resumen.\n\nY aqui el porque largo que no debe salir."""\n')
+    nodos, _ = _capas(viz.render_graph_cloud(symbols.analyze(str(tmp_path))))
+    assert nodos[0]["d"] == "Resumen."
+
+
+def test_la_descripcion_tambien_va_escapada(tmp_path):
+    """Un docstring puede contener cualquier cosa: tambien entra por innerHTML."""
+    html = viz.render_graph_cloud(symbols.analyze(_con_docs(tmp_path)))
+    assert "esc(n.d)" in html
+
+
 def test_sigue_siendo_autocontenido(tmp_path):
     """Sin CDN ni dependencias: se abre sin red y se puede mover de sitio."""
     raiz = _proyecto(tmp_path)

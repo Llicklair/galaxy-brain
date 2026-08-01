@@ -290,6 +290,10 @@ def render_graph_cloud(
     if modo == "simbolos":
         kinds = {n["qual"]: n["kind"] for n in report.get("nodes", [])}
         grupo_de = {n["qual"]: n.get("module", "") for n in report.get("nodes", [])}
+        # La prosa que explica cada simbolo ya esta escrita y vive pegada a el.
+        # No hay que generarla, hay que recogerla — y asi el mapa se explica con
+        # las palabras de quien escribio el codigo, no con las de un modelo.
+        docs = {n["qual"]: (n.get("doc") or "") for n in report.get("nodes", [])}
         # TODOS los simbolos, no solo los que aparecen en llamadas: en la primera
         # version los sueltos ni salian, y "no llamado desde ninguna parte" es
         # precisamente algo que se quiere VER.
@@ -438,6 +442,7 @@ def render_graph_cloud(
             "m": masa.get(n, 1.0),
             "nu": 1 if n in nuevos_n else 0,
             "ci": 1 if n in en_ciclo else 0,
+            "d": (docs.get(n, "") if modo == "simbolos" else "")[:160],
         }
         for n in implicados
     ]
@@ -657,6 +662,10 @@ function muestraFicha(i){
   // sutilmente falsa aqui llegaria con la misma autoridad que el resto del mapa,
   // que es determinista de punta a punta.
   const filas = [];
+  // La descripcion primero: es lo que contesta "que es esto" antes de "con quien
+  // habla". Sale del docstring, o sea de quien escribio el codigo — no generada.
+  if(n.d) filas.push('<i>'+esc(n.d)+'</i>');
+  else filas.push('<span>sin describir</span>');
   const meta = [n.k||'', n.g && n.g!==n.id ? 'en ' + esc(n.g) : ''].filter(Boolean).join(' &middot; ');
   if(meta) filas.push('<span>'+meta+'</span>');
   const bloques = [
@@ -668,7 +677,7 @@ function muestraFicha(i){
   for(const [rotulo, contenido] of bloques){
     if(contenido) filas.push('<span>'+rotulo+':</span> '+contenido);
   }
-  if(!filas.length || (entran[i].length+salen[i].length)===0){
+  if((entran[i].length+salen[i].length)===0){
     // Decirlo es el dato: un simbolo que nadie llama es precisamente algo que se
     // quiere VER, no una ficha vacia que parezca un fallo de la pagina.
     filas.push('<span>sin llamadas resueltas ni imports</span>');

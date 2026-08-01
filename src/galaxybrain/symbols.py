@@ -67,6 +67,29 @@ def _imports(tree, mod, is_pkg):
     return tabla
 
 
+def _resumen(node):
+    """La PRIMERA línea del docstring, o "".
+
+    La prosa que explica un símbolo ya está escrita y vive pegada a él. No hace
+    falta generarla: hace falta recogerla. Y esta envejece de otra manera —
+    cuando deja de ser cierta, el diff que la contradice pasa por delante de
+    alguien, cosa que no le ocurre a un documento aparte (el 60% de la
+    documentación caduca en seis meses justamente porque nada la obliga).
+
+    Solo la primera línea: es la que resume, y el resto es el porqué, que no cabe
+    en una ficha.
+    """
+    try:
+        texto = ast.get_docstring(node) or ""
+    except (TypeError, ValueError):
+        return ""
+    for linea in texto.splitlines():
+        linea = linea.strip()
+        if linea:
+            return linea
+    return ""
+
+
 def _scan_module(mod, tree, is_pkg):
     """Los símbolos que este módulo DEFINE. Todo hecho: está escrito en el fichero."""
     info = {
@@ -75,14 +98,20 @@ def _scan_module(mod, tree, is_pkg):
         "classes": {},     # nombre -> {"qual":..., "bases": [...], "methods": {n: qual}}
         "imports": _imports(tree, mod, is_pkg),
         "tree": tree,
+        "docs": {mod: _resumen(tree)},   # cualificado -> primera linea del docstring
     }
     for node in _def_nodes(tree.body):
-        info["functions"][node.name] = "%s.%s" % (mod, node.name)
+        qual = "%s.%s" % (mod, node.name)
+        info["functions"][node.name] = qual
+        info["docs"][qual] = _resumen(node)
     for node in tree.body:
         if not isinstance(node, ast.ClassDef):
             continue
         qual = "%s.%s" % (mod, node.name)
         metodos = {m.name: "%s.%s" % (qual, m.name) for m in _def_nodes(node.body)}
+        info["docs"][qual] = _resumen(node)
+        for m in _def_nodes(node.body):
+            info["docs"]["%s.%s" % (qual, m.name)] = _resumen(m)
         info["classes"][node.name] = {
             "qual": qual,
             "bases": [b for b in (_base_name(x) for x in node.bases) if b],
@@ -183,14 +212,20 @@ def analyze(root, skip=DEFAULT_SKIP, include_nested=False, since=None):
     # Tabla global de simbolos: modulos, clases, funciones y metodos.
     tabla = {}
     for mod, info in modulos.items():
-        tabla[mod] = {"kind": "module", "module": mod}
+        docs = info.get("docs") or {}
+        tabla[mod] = {"kind": "module", "module": mod, "doc": docs.get(mod, "")}
         for nombre, qual in info["functions"].items():
-            tabla[qual] = {"kind": "function", "module": mod, "name": nombre}
+            tabla[qual] = {
+                "kind": "function", "module": mod, "name": nombre, "doc": docs.get(qual, "")
+            }
         for nombre, clase in info["classes"].items():
-            tabla[clase["qual"]] = {"kind": "class", "module": mod, "name": nombre}
+            tabla[clase["qual"]] = {
+                "kind": "class", "module": mod, "name": nombre,
+                "doc": docs.get(clase["qual"], ""),
+            }
             for mname, mqual in clase["methods"].items():
                 tabla[mqual] = {"kind": "method", "module": mod, "name": mname,
-                                "owner": clase["qual"]}
+                                "owner": clase["qual"], "doc": docs.get(mqual, "")}
 
     aristas = set()
     motivos = {}
