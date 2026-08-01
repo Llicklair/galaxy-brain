@@ -63,6 +63,32 @@ actualiza todos los entornos sin reinstalar.
 Para quitarlo: `gb off`. Es una línea y no deja rastro — que apagarlo sea barato es deliberado
 (ARCHITECTURE, regla 10: el abandono es un dato, no algo que blindar).
 
+### Opcional — con qué se abre el mapa
+
+`--open` usa tu navegador. Nada más que hacer: el HTML es autocontenido y no necesita servidor.
+
+Para mandarlo a otro sitio hay `GB_OPEN_CMD`, que recibe la ruta como último argumento:
+
+```bash
+GB_OPEN_CMD="firefox --new-window"   gb symbols src --html mapa.html --open
+```
+
+gb **no conoce ningún editor** y no va a mantener una lista de ellos: la regla 6 dice que un comando
+cableado es un bug. Esa variable es todo lo que hace falta para apuntarlo donde quieras.
+
+**Verlo dentro de VS Code / Cursor** necesita una extensión, porque ninguno de los dos sabe renderizar
+HTML de serie — abrirlo con `code fichero.html` te enseña el código, no el mapa:
+
+```bash
+code --install-extension ms-vscode.live-server
+```
+
+Y el aviso honesto, comprobado: esa extensión **solo expone comandos del editor**, sin entrada por
+línea de órdenes. O sea que `GB_OPEN_CMD` **no** puede lanzarla, y el flujo queda manual — generas el
+fichero sin `--open` y haces clic derecho → *Show Preview*. Si eso te resulta más incómodo que
+cambiar de ventana, no la instales: el navegador da más sitio para un mapa que se arrastra y se
+amplía.
+
 ## Uso
 
 ```bash
