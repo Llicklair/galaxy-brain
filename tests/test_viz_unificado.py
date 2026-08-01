@@ -225,6 +225,33 @@ def test_capas_sigue_siendo_determinista(tmp_path):
     )
 
 
+def test_el_refresco_es_opt_in(tmp_path):
+    """Por defecto no se recarga nada. Un refresco sobre un fichero que nadie
+    regenera solo consigue parpadear, asi que se pide a proposito."""
+    informe = symbols.analyze(_proyecto(tmp_path))
+    assert 'http-equiv="refresh"' not in viz.render_graph_cloud(informe)
+    assert 'content="60"' in viz.render_graph_cloud(informe, refresco=60)
+
+
+def test_la_camara_sobrevive_a_una_recarga(tmp_path):
+    """Sin esto el refresco automatico seria hostil: cada minuto te devolveria al
+    encuadre inicial y explorar seria pelearte con la pagina. La clave lleva el
+    titulo para que dos mapas abiertos a la vez no se pisen el encuadre."""
+    html = viz.render_graph_cloud(symbols.analyze(_proyecto(tmp_path)))
+    assert "sessionStorage" in html
+    assert "gb-camara:" in html
+    assert "beforeunload" in html
+
+
+def test_guardar_la_camara_nunca_puede_romper_la_pagina(tmp_path):
+    """sessionStorage lanza en algunos navegadores con file:// o modo privado.
+    Si eso tumbara el script, el mapa entero se quedaria en negro por guardar un
+    encuadre — el visor tiene que fallar hacia el lado seguro igual que el resto."""
+    html = viz.render_graph_cloud(symbols.analyze(_proyecto(tmp_path)))
+    trozo = html[html.find("gb-camara:") - 400 : html.find("beforeunload") + 300]
+    assert trozo.count("try{") >= 2 and trozo.count("catch(_)") >= 2
+
+
 def test_sigue_siendo_autocontenido(tmp_path):
     """Sin CDN ni dependencias: se abre sin red y se puede mover de sitio."""
     raiz = _proyecto(tmp_path)

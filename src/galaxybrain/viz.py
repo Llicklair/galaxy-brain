@@ -252,6 +252,7 @@ def render_graph_cloud(
     graph_report=None,
     procedencia=None,
     capas=False,
+    refresco=0,
 ):
     """La nube: nodos repartidos por fuerzas, coloreados por módulo, navegable.
 
@@ -476,11 +477,17 @@ def render_graph_cloud(
         "color_import": _COLOR_IMPORT,
         "color_ciclo": _COLOR_CICLO,
         "maxit": maxit,
+        # Recargar la pagina no la actualiza sola: hace falta que ALGO regenere el
+        # fichero. Por eso esto es opt-in y no el defecto — un refresco sobre un
+        # fichero que nadie regenera solo consigue parpadear.
+        "refresco": (
+            '\n<meta http-equiv="refresh" content="%d">' % int(refresco) if refresco else ""
+        ),
     }
 
 
 _NUBE = """<!doctype html>
-<meta charset="utf-8">
+<meta charset="utf-8">%(refresco)s
 <title>%(title)s</title>
 <style>
   /* Oscuro siempre, a proposito: la paleta neon esta diseniada para negro y en
@@ -581,6 +588,18 @@ function paso(){
 // ================= camara =================
 const cv = document.getElementById('lienzo'), cx = cv.getContext('2d');
 let esc=1, ox=0, oy=0, camaraLibre=false;
+// La camara sobrevive a una recarga. Sin esto, un refresco automatico te
+// devolveria al encuadre inicial cada vez y explorar seria pelearte con la
+// pagina; con esto la recarga es casi invisible. La clave lleva el titulo para
+// que dos mapas abiertos a la vez no se pisen el encuadre.
+const CAMARA = 'gb-camara:' + document.title;
+try{
+  const guardada = JSON.parse(sessionStorage.getItem(CAMARA) || 'null');
+  if(guardada){ esc=guardada.e; ox=guardada.x; oy=guardada.y; camaraLibre=true; }
+}catch(_){}
+addEventListener('beforeunload', ()=>{
+  try{ if(camaraLibre) sessionStorage.setItem(CAMARA, JSON.stringify({e:esc,x:ox,y:oy})); }catch(_){}
+});
 function encaje(){
   let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;
   for(let i=0;i<N;i++){ x0=Math.min(x0,X[i]); y0=Math.min(y0,Y[i]); x1=Math.max(x1,X[i]); y1=Math.max(y1,Y[i]); }

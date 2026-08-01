@@ -343,6 +343,7 @@ def cmd_graph(args):
                         title="mapa · %s" % os.path.basename(root),
                         graph_report=report,
                         procedencia=_procedencia(root),
+                        refresco=args.refresco,
                     )
                 )
         except OSError as error:
@@ -392,6 +393,7 @@ def cmd_symbols(args):
                         # juntar de cabeza, y eso era el fallo de diseno.
                         graph_report=graph_mod.analyze(root),
                         procedencia=_procedencia(root),
+                        refresco=args.refresco,
                     )
                 )
         except OSError as error:
@@ -685,6 +687,13 @@ def build_parser():
         metavar="FICHERO",
         help="escribir el mapa como HTML autocontenido (sin dependencias ni CDN)",
     )
+    graph_p.add_argument(
+        "--refresco",
+        type=int,
+        default=0,
+        metavar="SEGUNDOS",
+        help="que la pagina se recargue sola cada N s (necesita que algo regenere el fichero)",
+    )
     graph_p.add_argument("--open", action="store_true", help="abrirlo en el navegador")
     graph_p.set_defaults(func=cmd_graph)
 
@@ -713,6 +722,13 @@ def build_parser():
     syms.add_argument("path", nargs="?", default=".", help="raiz del proyecto")
     syms.add_argument("--html", metavar="FICHERO", help="escribirlo como HTML autocontenido")
     syms.add_argument("--capas", action="store_true", help="vista por capas en vez de nube")
+    syms.add_argument(
+        "--refresco",
+        type=int,
+        default=0,
+        metavar="SEGUNDOS",
+        help="que la pagina se recargue sola cada N s (necesita que algo regenere el fichero)",
+    )
     syms.add_argument("--open", action="store_true", help="abrirlo en el navegador")
     syms.add_argument("--since", metavar="REF", help="marcar lo NUEVO respecto a esa ref de git")
     syms.add_argument("--json", action="store_true", help="salida cruda")
