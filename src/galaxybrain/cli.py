@@ -132,6 +132,46 @@ def _procedencia(root):
     return "generado el %s (sin repo git)" % momento
 
 
+def _html_sin_cambios(root, destino, report, graph_report):
+    """True si el fichero HTML ya existe y la forma NO ha cambiado desde que se
+    escribio la ultima vez. Sirve para que un hook que corre en cada edicion no
+    reescriba 325 ms de mapa cuando solo cambio el cuerpo de una funcion.
+
+    Cache aparte del de `--context` (clave por root+destino): dos mapas del mismo
+    proyecto a ficheros distintos no deben pisarse la memoria, y `--context` y
+    `--html` miran lo mismo pero cada uno lleva su cuenta.
+    """
+    import hashlib
+
+    from . import graph
+
+    forma = {"s": graph.shape(report)}
+    if graph_report is not None:
+        forma["g"] = graph.shape(graph_report)
+    clave = hashlib.sha256(
+        (os.path.normcase(os.path.abspath(root)) + "|" + os.path.normcase(destino)).encode("utf-8")
+    ).hexdigest()[:16]
+    cache = config.home() / "html-shape" / (clave + ".json")
+    try:
+        previa = json.loads(cache.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        previa = None
+
+    # La forma se registra SIEMPRE, aunque el fichero no exista aun: si no, la
+    # primera escritura no dejaria contra que comparar y la segunda reescribiria
+    # de mas. Se escribe antes de decidir para que el proximo cotejo tenga base.
+    if previa != forma:
+        try:
+            cache.parent.mkdir(parents=True, exist_ok=True)
+            cache.write_text(json.dumps(forma, ensure_ascii=False), encoding="utf-8")
+        except OSError:
+            pass
+
+    # Solo se salta si el mapa YA esta en disco y la forma coincide. Un fichero
+    # borrado a mano tiene que regenerarse aunque la forma no haya cambiado.
+    return os.path.exists(destino) and previa == forma
+
+
 def _shape_cache(root):
     """Donde se recuerda la ultima forma vista de un proyecto.
 
@@ -379,11 +419,16 @@ def cmd_graph(args):
         # pagina: modulos, simbolos, imports y llamadas en un lienzo. Antes eran
         # dos ficheros del mismo sujeto que habia que juntar de cabeza.
         destino = os.path.abspath(args.html)
+        simbolos = symbols_mod.analyze(root)
+        # Mismo --if-changed que ya usa --context: si el mapa esta y la forma no
+        # se movio, no se reescribe. Aqui `report` es el grafo y `simbolos` el otro.
+        if args.if_changed and _html_sin_cambios(root, destino, simbolos, report):
+            return 0
         try:
             with open(destino, "w", encoding="utf-8") as handle:
                 handle.write(
                     viz.render_graph_cloud(
-                        symbols_mod.analyze(root),
+                        simbolos,
                         title="mapa · %s" % os.path.basename(root),
                         graph_report=report,
                         procedencia=_procedencia(root),
@@ -422,6 +467,11 @@ def cmd_symbols(args):
         from . import viz
 
         destino = os.path.abspath(args.html)
+        grafo = graph_mod.analyze(root)
+        # --if-changed: si el mapa ya esta y la forma no se movio, no se reescribe.
+        # Es lo que hace barato engancharlo a un hook por-edicion (regla 3).
+        if getattr(args, "if_changed", False) and _html_sin_cambios(root, destino, report, grafo):
+            return 0
         try:
             with open(destino, "w", encoding="utf-8") as handle:
                 handle.write(
@@ -433,7 +483,7 @@ def cmd_symbols(args):
                         # Un solo grafo: modulos, simbolos, imports y llamadas en
                         # el mismo lienzo. Antes salian dos ficheros que habia que
                         # juntar de cabeza, y eso era el fallo de diseno.
-                        graph_report=graph_mod.analyze(root),
+                        graph_report=grafo,
                         procedencia=_procedencia(root),
                         refresco=args.refresco,
                     )
@@ -780,6 +830,11 @@ def build_parser():
     syms.add_argument("path", nargs="?", default=".", help="raiz del proyecto")
     syms.add_argument("--html", metavar="FICHERO", help="escribirlo como HTML autocontenido")
     syms.add_argument("--capas", action="store_true", help="vista por capas en vez de nube")
+    syms.add_argument(
+        "--if-changed",
+        action="store_true",
+        help="con --html: no reescribir si la forma no cambio (barato para un hook)",
+    )
     syms.add_argument(
         "--refresco",
         type=int,
