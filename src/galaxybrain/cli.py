@@ -295,12 +295,22 @@ def cmd_graph(args):
     if args.context:
         return _graph_context(report, root, args.if_changed)
     if args.html:
+        from . import symbols as symbols_mod
         from . import viz
 
+        # Un solo grafo. `graph --html` y `symbols --html` llevan a la MISMA
+        # pagina: modulos, simbolos, imports y llamadas en un lienzo. Antes eran
+        # dos ficheros del mismo sujeto que habia que juntar de cabeza.
         destino = os.path.abspath(args.html)
         try:
             with open(destino, "w", encoding="utf-8") as handle:
-                handle.write(viz.render_html(report, title="mapa · %s" % os.path.basename(root)))
+                handle.write(
+                    viz.render_graph_cloud(
+                        symbols_mod.analyze(root),
+                        title="mapa · %s" % os.path.basename(root),
+                        graph_report=report,
+                    )
+                )
         except OSError as error:
             sys.stderr.write("[gb graph] no pude escribir %s (%s)\n" % (destino, error))
             return 2

@@ -18,17 +18,26 @@ Aviso sobre una afirmación anterior de este mismo fichero, que era **falsa**: s
 que un layout de fuerzas renuncia al determinismo. No es cierto — solo baila si lo
 arrancas al azar.
 
-Dos vistas, dos preguntas distintas: la de **capas** responde *"¿qué depende de qué?"*
-y la de **nube** responde *"¿qué forma tiene esto?"*. Ninguna sustituye a la otra.
+**UN solo grafo.** Antes había dos páginas del mismo sujeto —una de módulos y otra de
+símbolos— con CSS y JS duplicados, y había que juntarlas de cabeza. Ahora `graph --html`
+y `symbols --html` llevan a la misma: los módulos siempre fueron nodos de esta nube, así
+que los imports entraron como una clase de arista más sobre lo que ya se dibujaba. La
+vista de **capas** (`--capas`) sigue aparte porque responde otra pregunta: *"¿qué depende
+de qué?"* en orden, no *"¿qué forma tiene esto?"*.
 
-**Cero dependencias, un fichero.** Nada de CDN, ni npm, ni build. El SVG se calcula
-aquí y el HTML se escribe entero; se abre con doble clic o desde VS Code. Esto no es
-purismo: la regla de cero dependencias existe para que `gb` se pueda instalar en el
-venv de cualquier proyecto sin arrastrar nada, y un visor no es motivo para romperla.
+Lo que NO se funde son los hechos. El import sale de una declaración: es exacto y es lo
+único que puede gatear. La llamada sale de inferencia, con su porcentaje de resolución
+dicho en la cabecera. Se pintan distinto y la leyenda lo separa, porque un número que
+mezclara ambos acabaría gateando sobre un proxy (regla 11).
 
-Los ciclos van marcados, porque son el único hecho de este mapa que exige una decisión.
-Con `--since`, lo NUEVO va marcado aparte: ver crecer un proyecto es, sobre todo, ver
-qué apareció desde la última vez.
+Los ciclos van marcados por encima de su capa: son el único hecho de este mapa que
+detiene un commit. Con `--since`, lo NUEVO va aparte — ver crecer un proyecto es, sobre
+todo, ver qué apareció desde la última vez.
+
+**Cero dependencias, un fichero.** Ni CDN, ni npm, ni build: el HTML se escribe entero y
+se abre con doble clic. No es purismo — la regla de cero dependencias existe para que
+`gb` entre en el venv de cualquier proyecto sin arrastrar nada, y un visor no es motivo
+para romperla.
 """
 
 import html as _html
@@ -252,6 +261,11 @@ _KIND_SIZE = {"module": 13.0, "class": 8.0, "function": 4.0, "method": 3.0}
 #: hecho exacto de la inferencia.
 _COLOR_IMPORT = "#fb7185"
 
+#: El ciclo. Rojo, y por encima de la capa a la que pertenezca la arista: es el
+#: unico hecho de este grafo que detiene un commit, asi que no puede competir de
+#: igual a igual con el resto de colores.
+_COLOR_CICLO = "#ef4444"
+
 #: Fallback para agrupaciones sin tipo (vista de modulos): paleta ciclica.
 _COLORES = [
     "#7c5cff", "#22d3ee", "#f472b6", "#fb923c", "#4ade80",
@@ -282,6 +296,17 @@ def render_graph_cloud(report, title="galaxy-brain — grafo", modo="simbolos", 
     nuevos_n = set(report.get("new_nodes") or [])
     nuevas_c = {tuple(e) for e in (report.get("new_calls") or [])}
     importaciones = []
+
+    # Los ciclos son lo UNICO que bloquea un commit, asi que no pueden ser un
+    # color mas: se marcan el nodo y el tramo. La fuente es el informe de grafo
+    # —el de simbolos no los calcula— venga como informe principal (modo modulos)
+    # o como acompanante (modo unificado).
+    fuente_ciclos = graph_report if graph_report else report
+    ciclos = fuente_ciclos.get("cycles") or []
+    en_ciclo = {n for ciclo in ciclos for n in ciclo}
+    pasos_ciclicos = {
+        (ciclo[i], ciclo[(i + 1) % len(ciclo)]) for ciclo in ciclos for i in range(len(ciclo))
+    }
     if modo == "simbolos":
         kinds = {n["qual"]: n["kind"] for n in report.get("nodes", [])}
         grupo_de = {n["qual"]: n.get("module", "") for n in report.get("nodes", [])}
@@ -405,6 +430,7 @@ def render_graph_cloud(report, title="galaxy-brain — grafo", modo="simbolos", 
             "l": n.split(".")[-1],
             "m": masa.get(n, 1.0),
             "nu": 1 if n in nuevos_n else 0,
+            "ci": 1 if n in en_ciclo else 0,
         }
         for n in implicados
     ]
@@ -412,14 +438,19 @@ def render_graph_cloud(report, title="galaxy-brain — grafo", modo="simbolos", 
 
     indice = {n: i for i, n in enumerate(implicados)}
     # Cada arista lleva su clase: 1 = llamada (se pinta), 0 = jerarquia (tenue).
+    # Cuarto elemento: 1 si el tramo cierra un ciclo. Va aparte de la clase porque
+    # un ciclo puede recorrer aristas de cualquier capa, y porque es el unico hecho
+    # que detiene un commit: tiene que verse por encima de todo lo demas.
     lista_aristas = [
-        [indice[a], indice[b], 2 if (a, b) in nuevas_c else 1]
+        [indice[a], indice[b], 2 if (a, b) in nuevas_c else 1, 1 if (a, b) in pasos_ciclicos else 0]
         for a, b in llamadas if a in indice and b in indice
     ] + [
-        [indice[a], indice[b], 0] for a, b in jerarquia if a in indice and b in indice
+        [indice[a], indice[b], 0, 1 if (a, b) in pasos_ciclicos else 0]
+        for a, b in jerarquia if a in indice and b in indice
     ] + [
         # Clase 3: import entre modulos. Hecho exacto, no inferencia.
-        [indice[a], indice[b], 3] for a, b in importaciones if a in indice and b in indice
+        [indice[a], indice[b], 3, 1 if (a, b) in pasos_ciclicos else 0]
+        for a, b in importaciones if a in indice and b in indice
     ]
 
     return _NUBE % {
@@ -430,6 +461,7 @@ def render_graph_cloud(report, title="galaxy-brain — grafo", modo="simbolos", 
         "aristas": _json.dumps(lista_aristas),
         "leyenda": leyenda,
         "color_import": _COLOR_IMPORT,
+        "color_ciclo": _COLOR_CICLO,
     }
 
 
@@ -484,75 +516,6 @@ def render_symbols_html(report, title="galaxy-brain — simbolos"):
                 "%s %d" % (k, v) for k, v in sorted((report.get("unresolved") or {}).items())
             )
         ),
-        "ancho": ancho,
-        "alto": alto,
-        "aristas": "\n".join(lineas),
-        "nodos": "\n".join(cajas),
-    }
-
-
-def render_html(report, title="galaxy-brain — mapa"):
-    """El informe de `graph.analyze` a un HTML autocontenido."""
-    nodes = sorted(report.get("fan_in", {}))
-    edges = {}
-    for origen, destino in report.get("edge_list") or []:
-        edges.setdefault(origen, []).append(destino)
-    cycles = report.get("cycles") or []
-
-    en_ciclo = {mod for ciclo in cycles for mod in ciclo}
-    nuevos_pares = {frozenset(p) for p in (report.get("new_pairs") or [])}
-    violaciones = {
-        (v["importer"], v["imported"]) for v in (report.get("violations") or [])
-    }
-
-    capas = _layers(nodes, edges, cycles)
-    pos, ancho, alto = _posiciones(nodes, capas)
-
-    fan_in = report.get("fan_in", {})
-    lineas = []
-    for origen in sorted(edges):
-        for destino in edges[origen]:
-            if origen not in pos or destino not in pos:
-                continue
-            x1, y1 = pos[origen]
-            x2, y2 = pos[destino]
-            clase = "arista"
-            if (origen, destino) in violaciones:
-                clase = "arista prohibida"
-            elif frozenset((origen, destino)) in nuevos_pares:
-                clase = "arista nueva"
-            elif origen in en_ciclo and destino in en_ciclo:
-                clase = "arista ciclica"
-            lineas.append(
-                '<path class="%s" data-a="%s" data-b="%s" d="M%d %d C%d %d %d %d %d %d"/>'
-                % (clase, _html.escape(origen), _html.escape(destino),
-                   x1 + 80, y1 + 26, x1 + 80, y1 + 60, x2 + 80, y2 - 20, x2 + 80, y2)
-            )
-
-    cajas = []
-    for mod in nodes:
-        x, y = pos[mod]
-        clase = "nodo ciclo" if mod in en_ciclo else "nodo"
-        peso = fan_in.get(mod, 0)
-        cajas.append(
-            '<g class="%s" data-mod="%s" transform="translate(%d,%d)">'
-            '<rect width="160" height="26" rx="4"/>'
-            '<text x="8" y="17">%s</text>'
-            '<text class="peso" x="152" y="17" text-anchor="end">%s</text></g>'
-            % (clase, _html.escape(mod), x, y, _html.escape(_corto(mod)),
-               peso if peso else "")
-        )
-
-    resumen = "%d modulos · %d aristas · %d ciclo(s)" % (
-        report.get("modules", 0), report.get("edges", 0), len(cycles),
-    )
-    if report.get("since"):
-        resumen += " · nuevo vs %s" % _html.escape(str(report["since"]))
-
-    return _PAGINA % {
-        "title": _html.escape(title),
-        "resumen": _html.escape(resumen),
-        "raiz": _html.escape(str(report.get("root", ""))),
         "ancho": ancho,
         "alto": alto,
         "aristas": "\n".join(lineas),
@@ -695,7 +658,7 @@ _NUBE = """<!doctype html>
 <script>
 // ================= datos =================
 const NODOS = %(nodos)s, ARISTAS = %(aristas)s, LADO = 1000;
-const IMPORT_COLOR = '%(color_import)s';
+const IMPORT_COLOR = '%(color_import)s', CICLO_COLOR = '%(color_ciclo)s';
 const N = NODOS.length;
 
 // ================= simulacion =================
@@ -803,9 +766,10 @@ function pinta(t){
     if(tp!==capa) continue;
     const tocada = foco!==null && (a===foco || b===foco);
     if(foco!==null && !tocada){ cx.globalAlpha=0.02; }
-    else { cx.globalAlpha = tocada ? 0.9 : (capa===0 ? 0.09 : capa===3 ? 0.5 : (capa===2 ? 0.7 : 0.3)); }
-    cx.strokeStyle = capa===2 ? '#22d3ee' : capa===3 ? IMPORT_COLOR : NODOS[a].c;
-    cx.lineWidth = capa===3 ? 1.8 : 1;
+    else { cx.globalAlpha = tocada ? 0.9 : (par[3] ? 0.95 : (capa===0 ? 0.09 : capa===3 ? 0.5 : (capa===2 ? 0.7 : 0.3))); }
+    // El tramo ciclico manda sobre su capa: es el unico hecho que detiene un commit.
+    cx.strokeStyle = par[3] ? CICLO_COLOR : (capa===2 ? '#22d3ee' : capa===3 ? IMPORT_COLOR : NODOS[a].c);
+    cx.lineWidth = par[3] ? 2.4 : (capa===3 ? 1.8 : 1);
     cx.beginPath(); cx.moveTo(WX[a],WY[a]); cx.lineTo(WX[b],WY[b]); cx.stroke();
   }
   cx.lineWidth=1;
@@ -825,6 +789,7 @@ function pinta(t){
     cx.beginPath(); cx.arc(WX[i],WY[i],rr,0,6.284);
     cx.fillStyle=color; cx.fill();
     if(n.nu){ cx.strokeStyle='#22d3ee'; cx.lineWidth=1.2; cx.stroke(); cx.lineWidth=1; }
+    if(n.ci){ cx.strokeStyle=CICLO_COLOR; cx.lineWidth=2; cx.stroke(); cx.lineWidth=1; }
     if(i===foco || coincide){
       cx.strokeStyle='#fff'; cx.lineWidth=1.5; cx.stroke(); cx.lineWidth=1;
       cx.fillStyle='#e8edf3'; cx.font='11px ui-monospace,Consolas,monospace';

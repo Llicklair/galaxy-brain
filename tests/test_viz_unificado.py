@@ -111,6 +111,76 @@ def test_el_dibujo_pinta_las_cuatro_clases(tmp_path):
     assert "for(const capa of [0,3,1,2])" in html
 
 
+def _con_ciclo(tmp_path):
+    for rel, cuerpo in (
+        ("app/__init__.py", ""),
+        ("app/a.py", "from .b import cosa\notra = 2\n"),
+        ("app/b.py", "from .a import otra\ncosa = 1\n"),
+    ):
+        ruta = os.path.join(str(tmp_path), *rel.split("/"))
+        os.makedirs(os.path.dirname(ruta), exist_ok=True)
+        with open(ruta, "w", encoding="utf-8") as handle:
+            handle.write(cuerpo)
+    return str(tmp_path)
+
+
+def test_los_ciclos_van_marcados(tmp_path):
+    """Migrado del renderizador SVG que se retiro. Es el UNICO hecho de este mapa
+    que detiene un commit, asi que no puede ser un color mas: se marcan el nodo y
+    el tramo, y el tramo manda sobre la capa a la que pertenezca."""
+    raiz = _con_ciclo(tmp_path)
+    informe = graph.analyze(raiz)
+    assert informe["cycles"], "el montaje tiene que tener ciclo para que el test valga"
+
+    html = viz.render_graph_cloud(symbols.analyze(raiz), graph_report=informe)
+    nodos, _ = _capas(html)
+    assert any(n["ci"] for n in nodos), "ningun nodo marcado como ciclico"
+
+    m = re.search(r"ARISTAS = (\[.*?\]), LADO", html, re.S)
+    assert any(len(a) > 3 and a[3] for a in json.loads(m.group(1))), "ningun tramo ciclico"
+    assert "CICLO_COLOR" in html
+
+
+def test_sin_ciclos_no_se_marca_nada(tmp_path):
+    """La otra mitad: un detector que marca siempre no distingue nada."""
+    raiz = _proyecto(tmp_path)
+    informe = graph.analyze(raiz)
+    assert not informe["cycles"]
+    nodos, _ = _capas(viz.render_graph_cloud(symbols.analyze(raiz), graph_report=informe))
+    assert not any(n["ci"] for n in nodos)
+
+
+def test_lo_nuevo_se_distingue_de_lo_viejo(tmp_path):
+    """Ver crecer un proyecto es, sobre todo, ver que aparecio desde la ultima vez."""
+    raiz = _proyecto(tmp_path)
+    informe = symbols.analyze(raiz)
+    llamadas = [(a, b) for a, b, t in informe.get("edges", []) if t == "CALLS"]
+    assert llamadas, "el montaje necesita una llamada"
+    informe["new_calls"] = [list(llamadas[0])]
+
+    _nodos, conteo = _capas(viz.render_graph_cloud(informe))
+    assert conteo[2] >= 1, "lo nuevo tiene que ir en su propia clase"
+
+
+def test_los_nombres_van_escapados(tmp_path):
+    """El nombre de un modulo viene del disco: si alguien crea `<script>.py`, no
+    puede acabar ejecutandose en la pagina."""
+    raiz = _proyecto(tmp_path)
+    informe = symbols.analyze(raiz)
+    informe["nodes"] = [
+        {"qual": "app.<script>alert(1)</script>", "kind": "module", "module": "app"}
+    ]
+    informe["edges"] = []
+
+    html = viz.render_graph_cloud(informe)
+    assert "<script>alert(1)</script>" not in html.split("<script>")[-1]
+
+
+def test_un_proyecto_vacio_no_revienta(tmp_path):
+    html = viz.render_graph_cloud(symbols.analyze(str(tmp_path)))
+    assert "<canvas" in html
+
+
 def test_sigue_siendo_autocontenido(tmp_path):
     """Sin CDN ni dependencias: se abre sin red y se puede mover de sitio."""
     raiz = _proyecto(tmp_path)
