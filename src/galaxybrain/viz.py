@@ -18,12 +18,16 @@ Aviso sobre una afirmación anterior de este mismo fichero, que era **falsa**: s
 que un layout de fuerzas renuncia al determinismo. No es cierto — solo baila si lo
 arrancas al azar.
 
-**UN solo grafo.** Antes había dos páginas del mismo sujeto —una de módulos y otra de
-símbolos— con CSS y JS duplicados, y había que juntarlas de cabeza. Ahora `graph --html`
-y `symbols --html` llevan a la misma: los módulos siempre fueron nodos de esta nube, así
-que los imports entraron como una clase de arista más sobre lo que ya se dibujaba. La
-vista de **capas** (`--capas`) sigue aparte porque responde otra pregunta: *"¿qué depende
-de qué?"* en orden, no *"¿qué forma tiene esto?"*.
+**UN solo grafo, y una sola página.** Había tres renderizadores para el mismo sujeto
+—módulos en SVG, símbolos en lienzo, capas en SVG— con su CSS y su JS cada uno, y había
+que juntarlos de cabeza. Quedó uno.
+
+Los módulos siempre fueron nodos de esta nube, así que los imports entraron como una
+clase de arista más sobre lo que ya se dibujaba. Y `--capas` dejó de ser otra página para
+ser otra **siembra** de este mismo lienzo: las posiciones salen de la profundidad de
+dependencias en vez de la espiral áurea, y el sim no corre —la física desharía justo el
+orden que esa vista existe para enseñar—. Misma plantilla, mismas interacciones, misma
+pregunta respondida.
 
 Lo que NO se funde son los hechos. El import sale de una declaración: es exacto y es lo
 único que puede gatear. La llamada sale de inferencia, con su porcentaje de resolución
@@ -213,39 +217,6 @@ def _layers(nodes, edges, cycles):
     return {mod: profundidad.get(clave[mod], 0) for mod in nodes}
 
 
-def _posiciones(nodes, capas, ancho_nodo=190, alto_fila=92, margen=40):
-    por_capa = {}
-    for mod in sorted(nodes):
-        por_capa.setdefault(capas[mod], []).append(mod)
-
-    posiciones = {}
-    ancho_max = 0
-    # Capa alta = más profundo. Se pinta arriba lo que NO depende de nadie (las
-    # entradas) y abajo los cimientos, que es como se lee un sistema.
-    for fila, capa in enumerate(sorted(por_capa, reverse=True)):
-        modulos = por_capa[capa]
-        for columna, mod in enumerate(modulos):
-            posiciones[mod] = (
-                margen + columna * ancho_nodo,
-                margen + fila * alto_fila,
-            )
-        ancho_max = max(ancho_max, len(modulos) * ancho_nodo)
-    alto = margen * 2 + len(por_capa) * alto_fila
-    return posiciones, ancho_max + margen * 2, alto
-
-
-def _corto(nombre, limite=26):
-    if len(nombre) <= limite:
-        return nombre
-    partes = nombre.split(".")
-    corto = partes[-1]
-    return ("…" + corto) if len(corto) < limite else ("…" + corto[-(limite - 1):])
-
-
-#: Color y tamanio POR TIPO, no por modulo — portados tal cual de la paleta de
-#: GitNexus (gitnexus-web/src/lib/constants.ts): la jerarquia se lee por tamanio
-#: (un modulo ES mas grande que una funcion) y el tipo por color. Con color-por-
-#: modulo, dos funciones del mismo fichero eran indistinguibles de su clase.
 _KIND_COLOR = {
     "module": "#7c3aed",    # violeta — contenedor
     "class": "#f59e0b",     # ambar — destaca
@@ -275,7 +246,12 @@ _COLORES = [
 
 
 def render_graph_cloud(
-    report, title="galaxy-brain — grafo", modo="simbolos", graph_report=None, procedencia=None
+    report,
+    title="galaxy-brain — grafo",
+    modo="simbolos",
+    graph_report=None,
+    procedencia=None,
+    capas=False,
 ):
     """La nube: nodos repartidos por fuerzas, coloreados por módulo, navegable.
 
@@ -295,6 +271,7 @@ def render_graph_cloud(
     proxy (regla 11).
     """
     lado = 1000.0
+    maxit = 300  # iteraciones del sim en el navegador; 0 = posiciones definitivas
     nuevos_n = set(report.get("new_nodes") or [])
     nuevas_c = {tuple(e) for e in (report.get("new_calls") or [])}
     importaciones = []
@@ -355,6 +332,33 @@ def render_graph_cloud(
         # y que sus vecinos respondan sale casi gratis. Determinista igual: mismas
         # semillas por hash, mismas iteraciones, cero Math.random().
         pos = seeds
+        if capas:
+            # `--capas` PLEGADA: deja de ser otra pagina y pasa a ser otra siembra
+            # de este mismo lienzo. Responde la misma pregunta que antes —"¿que
+            # depende de que?", en orden— pero con las mismas interacciones (zoom,
+            # busqueda, foco) y una sola plantilla que mantener.
+            #
+            # Y sin simulacion: la fisica desharia justo el orden que esta vista
+            # existe para ensenar. Por eso `maxit` baja a 0.
+            aristas_capa = {}
+            for a, b in llamadas:
+                aristas_capa.setdefault(a, []).append(b)
+            niveles = _layers(implicados, aristas_capa, [])
+            por_nivel = {}
+            for n in implicados:
+                por_nivel.setdefault(niveles.get(n, 0), []).append(n)
+            hondo = max(por_nivel) or 1
+            margen = lado * 0.06
+            util = lado - 2 * margen
+            pos = {
+                n: (
+                    margen + util * ((k + 0.5) / len(fila)),
+                    margen + util * (nivel / hondo),
+                )
+                for nivel, fila in por_nivel.items()
+                for k, n in enumerate(sorted(fila))
+            }
+            maxit = 0
         total = report.get("calls_candidates") or 0
         pct = round(100 * report.get("calls_resolved", 0) / total) if total else 0
         resumen = "%d simbolos · %d llamadas resueltas de %d (%d%%)" % (
@@ -471,150 +475,8 @@ def render_graph_cloud(
         "leyenda": leyenda,
         "color_import": _COLOR_IMPORT,
         "color_ciclo": _COLOR_CICLO,
+        "maxit": maxit,
     }
-
-
-def render_symbols_html(report, title="galaxy-brain — simbolos"):
-    """El grafo de símbolos, con su cobertura escrita en la cabecera.
-
-    La cobertura va EN LA IMAGEN a propósito: un grafo parcial que no dice que es
-    parcial se lee como completo, y entonces la parte que falta parece que no existe
-    en vez de parecer que no se pudo resolver.
-    """
-    llamadas = [(a, b) for a, b, tipo in report.get("edges", []) if tipo == "CALLS"]
-    implicados = {x for par in llamadas for x in par}
-    kinds = {n["qual"]: n["kind"] for n in report.get("nodes", [])}
-    nodes = sorted(implicados)
-    edges = {}
-    for a, b in llamadas:
-        edges.setdefault(a, []).append(b)
-
-    capas = _layers(nodes, edges, [])
-    pos, ancho, alto = _posiciones(nodes, capas, ancho_nodo=210)
-
-    entrantes = {}
-    for _a, b in llamadas:
-        entrantes[b] = entrantes.get(b, 0) + 1
-
-    lineas = [
-        '<path class="arista" data-a="%s" data-b="%s" d="M%d %d C%d %d %d %d %d %d"/>'
-        % (_html.escape(a), _html.escape(b),
-           pos[a][0] + 80, pos[a][1] + 26, pos[a][0] + 80, pos[a][1] + 60,
-           pos[b][0] + 80, pos[b][1] - 20, pos[b][0], pos[b][1])
-        for a, b in llamadas if a in pos and b in pos
-    ]
-    cajas = [
-        '<g class="nodo %s" data-mod="%s" transform="translate(%d,%d)">'
-        '<rect width="180" height="26" rx="4"/><text x="8" y="17">%s</text>'
-        '<text class="peso" x="172" y="17" text-anchor="end">%s</text></g>'
-        % (kinds.get(mod, ""), _html.escape(mod), pos[mod][0], pos[mod][1],
-           _html.escape(_corto(mod, 30)), entrantes.get(mod, "") or "")
-        for mod in nodes
-    ]
-
-    total = report.get("calls_candidates") or 0
-    pct = round(100 * report.get("calls_resolved", 0) / total) if total else 0
-    resumen = "%d simbolos · %d llamadas resueltas de %d candidatas (%d%%)" % (
-        len(nodes), report.get("calls_resolved", 0), total, pct,
-    )
-    return _PAGINA % {
-        "title": _html.escape(title),
-        "resumen": _html.escape(resumen),
-        "raiz": _html.escape(
-            "sin resolver: " + ", ".join(
-                "%s %d" % (k, v) for k, v in sorted((report.get("unresolved") or {}).items())
-            )
-        ),
-        "ancho": ancho,
-        "alto": alto,
-        "aristas": "\n".join(lineas),
-        "nodos": "\n".join(cajas),
-    }
-
-
-_PAGINA = """<!doctype html>
-<meta charset="utf-8">
-<title>%(title)s</title>
-<style>
-  :root{--fondo:#eef1f4;--tinta:#131c24;--suave:#5b6b78;--linea:#c3cdd6;
-        --caja:#fff;--borde:#b9c5cf;--ciclo:#a8480f;--nueva:#1f6068;--mala:#96262b}
-  @media (prefers-color-scheme:dark){
-    :root{--fondo:#0e151b;--tinta:#e4eaef;--suave:#93a4b2;--linea:#2c3c49;
-          --caja:#16202a;--borde:#31434f;--ciclo:#e0a05a;--nueva:#59b2b8;--mala:#e0736f}}
-  body{margin:0;background:var(--fondo);color:var(--tinta);
-       font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
-  header{padding:14px 18px;border-bottom:1px solid var(--linea);
-         display:flex;gap:18px;align-items:baseline;flex-wrap:wrap}
-  h1{font:600 15px/1.2 ui-monospace,Consolas,monospace;margin:0;letter-spacing:-.02em}
-  .meta{font:12px/1.4 ui-monospace,Consolas,monospace;color:var(--suave)}
-  .leyenda{margin-left:auto;display:flex;gap:14px;font:11px ui-monospace,Consolas,monospace}
-  .leyenda span{display:flex;align-items:center;gap:5px;color:var(--suave)}
-  .muestra{width:16px;height:2px;display:inline-block}
-  svg{display:block;width:100%%;height:calc(100vh - 58px);cursor:grab}
-  svg.arrastrando{cursor:grabbing}
-  .arista{fill:none;stroke:var(--linea);stroke-width:1.2}
-  .arista.ciclica{stroke:var(--ciclo);stroke-width:1.8}
-  .arista.nueva{stroke:var(--nueva);stroke-width:2.2}
-  .arista.prohibida{stroke:var(--mala);stroke-width:2.2;stroke-dasharray:4 3}
-  .nodo rect{fill:var(--caja);stroke:var(--borde)}
-  .nodo.ciclo rect{stroke:var(--ciclo);stroke-width:1.6}
-  .nodo text{font:12px ui-monospace,Consolas,monospace;fill:var(--tinta)}
-  .nodo .peso{fill:var(--suave);font-size:10px}
-  .nodo{cursor:default}
-  .apagado{opacity:.13}
-  .resaltado rect{stroke-width:2}
-</style>
-<header>
-  <h1>%(title)s</h1>
-  <span class="meta">%(resumen)s</span>
-  <span class="meta">%(raiz)s</span>
-  <span class="leyenda">
-    <span><i class="muestra" style="background:var(--ciclo)"></i>ciclo</span>
-    <span><i class="muestra" style="background:var(--nueva)"></i>nuevo</span>
-    <span><i class="muestra" style="background:var(--mala)"></i>frontera</span>
-  </span>
-</header>
-<svg id="lienzo" viewBox="0 0 %(ancho)d %(alto)d">
-  <g id="camara">
-%(aristas)s
-%(nodos)s
-  </g>
-</svg>
-<script>
-// Pasar el raton por un modulo apaga lo que no le toca. Es lo unico interactivo:
-// la pregunta que se hace uno mirando un mapa es "de que depende ESTE".
-const svg = document.getElementById('lienzo'), camara = document.getElementById('camara');
-const nodos = [...document.querySelectorAll('.nodo')], aristas = [...document.querySelectorAll('.arista')];
-function limpia(){ [...nodos,...aristas].forEach(e=>e.classList.remove('apagado','resaltado')); }
-nodos.forEach(n=>{
-  const mod = n.dataset.mod;
-  n.addEventListener('mouseenter', ()=>{
-    const tocados = new Set([mod]);
-    aristas.forEach(a=>{ if(a.dataset.a===mod||a.dataset.b===mod){tocados.add(a.dataset.a);tocados.add(a.dataset.b);} });
-    nodos.forEach(o=>o.classList.toggle('apagado', !tocados.has(o.dataset.mod)));
-    nodos.forEach(o=>o.classList.toggle('resaltado', tocados.has(o.dataset.mod)));
-    aristas.forEach(a=>a.classList.toggle('apagado', a.dataset.a!==mod && a.dataset.b!==mod));
-  });
-  n.addEventListener('mouseleave', limpia);
-});
-// Pan y zoom sobre el viewBox: sin libreria, y el fichero sigue siendo uno.
-let vb = svg.viewBox.baseVal, arrastrando = false, ox = 0, oy = 0;
-svg.addEventListener('mousedown', e=>{ arrastrando = true; ox = e.clientX; oy = e.clientY; svg.classList.add('arrastrando'); });
-addEventListener('mouseup', ()=>{ arrastrando = false; svg.classList.remove('arrastrando'); });
-addEventListener('mousemove', e=>{
-  if(!arrastrando) return;
-  const k = vb.width / svg.clientWidth;
-  vb.x -= (e.clientX - ox) * k; vb.y -= (e.clientY - oy) * k;
-  ox = e.clientX; oy = e.clientY;
-});
-svg.addEventListener('wheel', e=>{
-  e.preventDefault();
-  const k = e.deltaY > 0 ? 1.1 : 0.9;
-  vb.x += vb.width * (1 - k) / 2; vb.y += vb.height * (1 - k) / 2;
-  vb.width *= k; vb.height *= k;
-}, {passive:false});
-</script>
-"""
 
 
 _NUBE = """<!doctype html>
@@ -680,7 +542,7 @@ const M = NODOS.map(n=>Math.max(0.5, n.m||1));
 const mediaM = M.reduce((a,b)=>a+b,0)/Math.max(N,1);
 for(let i=0;i<N;i++) M[i] /= mediaM;
 const K = Math.sqrt(LADO*LADO/Math.max(N,1));
-const MAXIT = 300, GRAV = 0.06;
+const MAXIT = %(maxit)s, GRAV = 0.06;
 let temp = LADO/10, iter = 0, corriendo = true;
 let agarrado = null, cola = 0;   // nodo en arrastre + enfriamiento tras soltar
 

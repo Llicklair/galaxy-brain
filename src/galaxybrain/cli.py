@@ -382,11 +382,11 @@ def cmd_symbols(args):
         try:
             with open(destino, "w", encoding="utf-8") as handle:
                 handle.write(
-                    viz.render_symbols_html(report, title="capas · %s" % os.path.basename(root))
-                    if args.capas
-                    else viz.render_graph_cloud(
+                    viz.render_graph_cloud(
                         report,
-                        title="mapa · %s" % os.path.basename(root),
+                        title="%s · %s"
+                        % ("capas" if args.capas else "mapa", os.path.basename(root)),
+                        capas=args.capas,
                         # Un solo grafo: modulos, simbolos, imports y llamadas en
                         # el mismo lienzo. Antes salian dos ficheros que habia que
                         # juntar de cabeza, y eso era el fallo de diseno.

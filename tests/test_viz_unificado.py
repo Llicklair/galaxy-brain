@@ -181,6 +181,50 @@ def test_un_proyecto_vacio_no_revienta(tmp_path):
     assert "<canvas" in html
 
 
+def _maxit(html):
+    return int(re.search(r"const MAXIT = (\d+)", html).group(1))
+
+
+def test_capas_es_otra_siembra_del_MISMO_lienzo(tmp_path):
+    """`--capas` dejo de ser otra pagina. Mismos nodos, misma plantilla, mismas
+    interacciones — lo unico que cambia es de donde salen las posiciones."""
+    raiz = _proyecto(tmp_path)
+    informe = symbols.analyze(raiz)
+    nube = viz.render_graph_cloud(informe)
+    capas = viz.render_graph_cloud(informe, capas=True)
+
+    n_nube, _ = _capas(nube)
+    n_capas, _ = _capas(capas)
+    assert {n["id"] for n in n_nube} == {n["id"] for n in n_capas}
+    assert "<canvas" in nube and "<canvas" in capas
+
+
+def test_en_capas_la_fisica_NO_corre(tmp_path):
+    """La simulacion desharia justo el orden que esta vista existe para ensenar,
+    asi que las posiciones sembradas son las definitivas."""
+    raiz = _proyecto(tmp_path)
+    informe = symbols.analyze(raiz)
+    assert _maxit(viz.render_graph_cloud(informe, capas=True)) == 0
+    assert _maxit(viz.render_graph_cloud(informe)) > 0
+
+
+def test_en_capas_la_altura_codifica_la_profundidad(tmp_path):
+    """Si todo cayera a la misma altura, la vista no diria nada: lo que aporta es
+    justo que quien depende de quien se lea de arriba abajo."""
+    raiz = _proyecto(tmp_path)
+    nodos, _ = _capas(viz.render_graph_cloud(symbols.analyze(raiz), capas=True))
+    alturas = {round(n["y"], 1) for n in nodos}
+    assert len(alturas) > 1, "todos los nodos a la misma altura: no hay capas"
+
+
+def test_capas_sigue_siendo_determinista(tmp_path):
+    raiz = _proyecto(tmp_path)
+    informe = symbols.analyze(raiz)
+    assert viz.render_graph_cloud(informe, capas=True) == viz.render_graph_cloud(
+        informe, capas=True
+    )
+
+
 def test_sigue_siendo_autocontenido(tmp_path):
     """Sin CDN ni dependencias: se abre sin red y se puede mover de sitio."""
     raiz = _proyecto(tmp_path)
