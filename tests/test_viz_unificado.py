@@ -289,8 +289,10 @@ def test_los_nombres_se_escapan_antes_de_innerHTML(tmp_path):
     nombres vienen del disco. Un fichero llamado `<img onerror=...>.py` se
     ejecutaba al pulsarlo. El escapado del JSON protege la cadena, no el HTML."""
     html = viz.render_graph_cloud(symbols.analyze(_proyecto(tmp_path)))
-    assert "const esc = s => String(s).replace" in html
-    assert "esc(n.id)" in html
+    # Se llama `escapa` y NO `esc` por un fallo que costo la pagina entera:
+    # `esc` ya era la escala del zoom, y un const duplicado es un SyntaxError.
+    assert "const escapa = s => String(s).replace" in html
+    assert "escapa(n.id)" in html
     assert "'<b>'+n.id+'</b>'" not in html  # la version cruda, fuera
 
 
@@ -339,7 +341,7 @@ def test_solo_la_primera_linea(tmp_path):
 def test_la_descripcion_tambien_va_escapada(tmp_path):
     """Un docstring puede contener cualquier cosa: tambien entra por innerHTML."""
     html = viz.render_graph_cloud(symbols.analyze(_con_docs(tmp_path)))
-    assert "esc(n.d)" in html
+    assert "escapa(n.d)" in html
 
 
 def test_sigue_siendo_autocontenido(tmp_path):

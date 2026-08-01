@@ -644,13 +644,17 @@ for(const par of ARISTAS){
 }
 // Los nombres vienen del disco: un modulo puede llamarse como a alguien se le
 // ocurra. Van escapados antes de tocar innerHTML.
-const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+// OJO con el nombre: `esc` ya existe y es la ESCALA del zoom. Llamar a esto `esc`
+// fue un `const` duplicado en el mismo ambito, o sea un SyntaxError, o sea la
+// pagina entera en blanco. Y 358 tests en verde, porque comprobaban que las
+// cadenas estuvieran, nunca que el script parseara.
+const escapa = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
 function _lista(pares, clase, tope){
   const nombres = pares.filter(p => p[1]===clase).map(p => NODOS[p[0]].l);
   if(!nombres.length) return '';
   const unicos = [...new Set(nombres)].sort();
-  const cabeza = unicos.slice(0, tope).map(esc).join(', ');
+  const cabeza = unicos.slice(0, tope).map(escapa).join(', ');
   return cabeza + (unicos.length > tope ? ' <span>+' + (unicos.length - tope) + '</span>' : '');
 }
 
@@ -664,9 +668,9 @@ function muestraFicha(i){
   const filas = [];
   // La descripcion primero: es lo que contesta "que es esto" antes de "con quien
   // habla". Sale del docstring, o sea de quien escribio el codigo — no generada.
-  if(n.d) filas.push('<i>'+esc(n.d)+'</i>');
+  if(n.d) filas.push('<i>'+escapa(n.d)+'</i>');
   else filas.push('<span>sin describir</span>');
-  const meta = [n.k||'', n.g && n.g!==n.id ? 'en ' + esc(n.g) : ''].filter(Boolean).join(' &middot; ');
+  const meta = [n.k||'', n.g && n.g!==n.id ? 'en ' + escapa(n.g) : ''].filter(Boolean).join(' &middot; ');
   if(meta) filas.push('<span>'+meta+'</span>');
   const bloques = [
     ['llamado por', _lista(entran[i], 1, 4) || _lista(entran[i], 2, 4)],
@@ -687,7 +691,7 @@ function muestraFicha(i){
   if(n.nu) marcas.push('<span style="color:#22d3ee">nuevo</span>');
   if(marcas.length) filas.push(marcas.join(' &middot; '));
 
-  ficha.innerHTML = '<b>'+esc(n.id)+'</b><br>' + filas.join('<br>');
+  ficha.innerHTML = '<b>'+escapa(n.id)+'</b><br>' + filas.join('<br>');
   ficha.style.display='block';
 }
 
