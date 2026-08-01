@@ -196,6 +196,17 @@ def render_floor(report, style):
             BOLD,
         )
     )
+    # Va pegado al titular a proposito: si esto se fuera al pie, el numero de
+    # arriba ya se habria leido como el diagnostico del proyecto entero.
+    if report.get("subdir_de"):
+        lines.append(
+            style(
+                "OJO: esto es un SUBDIRECTORIO de %s. El suelo del proyecto se mide en su "
+                "raiz — lo que aqui sale ausente (tests, CI, git) puede estar arriba."
+                % report["subdir_de"],
+                YELLOW,
+            )
+        )
     lines.append("")
 
     for level in levels:

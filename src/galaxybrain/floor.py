@@ -171,6 +171,25 @@ def detect_boundaries(root, max_depth=2):
     return os.path.relpath(path, root).replace("\\", "/"), len(info["rules"])
 
 
+def _raiz_del_repo_por_encima(root):
+    """La raiz del repo git que CONTIENE a `root`, si `root` no es esa raiz.
+
+    None cuando `root` ya es la raiz, o cuando no hay repo. No se sube a mirar
+    nada: solo se averigua si lo que estas midiendo es una parte de un todo, para
+    poder decirlo. Cambiar el numero seria peor — `floor src` tiene que seguir
+    respondiendo por `src`.
+    """
+    from . import graph
+
+    salida = graph._git(root, "rev-parse", "--show-toplevel")
+    if not salida:
+        return None
+    repo = os.path.abspath(salida.strip())
+    if os.path.normcase(repo) == os.path.normcase(os.path.abspath(root)):
+        return None
+    return repo
+
+
 def detect_adrs(root):
     """Registros de decision. Sin ellos, el porque se convierte en folklore y el
     siguiente que pase por aqui —humano o agente— 'arregla' lo que era deliberado."""
@@ -413,11 +432,25 @@ def analyze(root, run_tests=False):
     nivel 1 solo puede decir si HAY comando, no si es rapido — y se dice asi, en
     vez de dar por bueno lo que no se ha medido.
     """
-    report = {"root": root, "root_error": None, "levels": [], "not_covered": [], "delegated": []}
+    report = {
+        "root": root,
+        "root_error": None,
+        "levels": [],
+        "not_covered": [],
+        "delegated": [],
+        "subdir_de": None,
+    }
 
     if not os.path.isdir(root):
         report["root_error"] = "la raiz no existe o no es un directorio: %s" % root
         return report
+
+    # El suelo se mide donde se lo pides, y eso esta bien: `floor src` responde por
+    # `src`. Lo que NO puede pasar es callar que `src` esta dentro de un proyecto
+    # cuya raiz tiene los tests, la CI y el git que aqui salen como ausentes. El
+    # numero no cambia; cambia lo que significa, y sin decirlo se lee como un
+    # diagnostico del proyecto. Reportado usando gb de verdad (1-ago-2026).
+    report["subdir_de"] = _raiz_del_repo_por_encima(root)
 
     # 1 — el bucle de feedback. El primero por impacto, y el unico con numero.
     command, source = detect_test_command(root)
