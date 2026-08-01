@@ -252,6 +252,48 @@ def test_guardar_la_camara_nunca_puede_romper_la_pagina(tmp_path):
     assert trozo.count("try{") >= 2 and trozo.count("catch(_)") >= 2
 
 
+def test_la_ficha_separa_quien_te_llama_de_a_quien_llamas(tmp_path):
+    """"A quien llamo" y "quien me llama" son preguntas distintas. Confundirlas
+    es lo que hace inutil a la mayoria de visores de grafos: te dan un numero de
+    vecinos y te dejan igual que estabas."""
+    html = viz.render_graph_cloud(symbols.analyze(_proyecto(tmp_path)))
+    assert "llamado por" in html and "llama a" in html
+    assert "const entran" in html and "salen[par[0]].push" in html
+
+
+def test_la_ficha_distingue_el_import_de_la_llamada(tmp_path):
+    """Misma separacion que en el dibujo: el import es exacto, la llamada es
+    inferencia. Si la ficha los mezclara, el color no serviria de nada."""
+    html = viz.render_graph_cloud(
+        symbols.analyze(_proyecto(tmp_path)), graph_report=graph.analyze(_proyecto(tmp_path))
+    )
+    assert "importado por" in html and "importa" in html
+
+
+def test_la_jerarquia_no_cuenta_como_flujo(tmp_path):
+    """Que un modulo CONTENGA una funcion no es que la llame. Contarlo como
+    conexion inflaria la ficha de todos los modulos con sus propios hijos."""
+    html = viz.render_graph_cloud(symbols.analyze(_proyecto(tmp_path)))
+    assert "if(tp===0) continue" in html
+
+
+def test_un_simbolo_sin_llamadas_lo_DICE(tmp_path):
+    """"No llamado desde ninguna parte" es informacion, y una ficha vacia se lee
+    como un fallo de la pagina en vez de como un dato."""
+    html = viz.render_graph_cloud(symbols.analyze(_proyecto(tmp_path)))
+    assert "sin llamadas resueltas ni imports" in html
+
+
+def test_los_nombres_se_escapan_antes_de_innerHTML(tmp_path):
+    """Agujero real que habia: la ficha metia `n.id` crudo en innerHTML, y los
+    nombres vienen del disco. Un fichero llamado `<img onerror=...>.py` se
+    ejecutaba al pulsarlo. El escapado del JSON protege la cadena, no el HTML."""
+    html = viz.render_graph_cloud(symbols.analyze(_proyecto(tmp_path)))
+    assert "const esc = s => String(s).replace" in html
+    assert "esc(n.id)" in html
+    assert "'<b>'+n.id+'</b>'" not in html  # la version cruda, fuera
+
+
 def test_sigue_siendo_autocontenido(tmp_path):
     """Sin CDN ni dependencias: se abre sin red y se puede mover de sitio."""
     raiz = _proyecto(tmp_path)

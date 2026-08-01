@@ -626,11 +626,59 @@ const ficha = document.getElementById('ficha'), buscar = document.getElementById
 const estado = document.getElementById('estado');
 let activo=null, fijado=null, filtro='';
 
+// Vecindario DIRIGIDO. `vecinos` sirve para atenuar el dibujo, pero para leer un
+// nodo hace falta saber en que direccion va cada arista: "a quien llamo" y "quien
+// me llama" son preguntas distintas, y confundirlas es lo que hace inutil a la
+// mayoria de visores de grafos.
+const entran = NODOS.map(()=>[]), salen = NODOS.map(()=>[]);
+for(const par of ARISTAS){
+  const tp = par[2]|0;
+  if(tp===0) continue;               // jerarquia = pertenencia, no flujo
+  salen[par[0]].push([par[1], tp]);
+  entran[par[1]].push([par[0], tp]);
+}
+// Los nombres vienen del disco: un modulo puede llamarse como a alguien se le
+// ocurra. Van escapados antes de tocar innerHTML.
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+function _lista(pares, clase, tope){
+  const nombres = pares.filter(p => p[1]===clase).map(p => NODOS[p[0]].l);
+  if(!nombres.length) return '';
+  const unicos = [...new Set(nombres)].sort();
+  const cabeza = unicos.slice(0, tope).map(esc).join(', ');
+  return cabeza + (unicos.length > tope ? ' <span>+' + (unicos.length - tope) + '</span>' : '');
+}
+
 function muestraFicha(i){
   if(i===null){ ficha.style.display='none'; return; }
   const n=NODOS[i];
-  ficha.innerHTML='<b>'+n.id+'</b><br><span>'+(n.k||'')+' &middot; '+vecinos[i].size+
-    ' conexiones &middot; '+(n.g||'')+'</span>';
+  // Hechos, no prosa: quien lo llama, a quien llama, donde vive y si esta en un
+  // ciclo. Una explicacion generada exigiria un modelo, y una explicacion
+  // sutilmente falsa aqui llegaria con la misma autoridad que el resto del mapa,
+  // que es determinista de punta a punta.
+  const filas = [];
+  const meta = [n.k||'', n.g && n.g!==n.id ? 'en ' + esc(n.g) : ''].filter(Boolean).join(' &middot; ');
+  if(meta) filas.push('<span>'+meta+'</span>');
+  const bloques = [
+    ['llamado por', _lista(entran[i], 1, 4) || _lista(entran[i], 2, 4)],
+    ['llama a',     _lista(salen[i], 1, 4)  || _lista(salen[i], 2, 4)],
+    ['importado por', _lista(entran[i], 3, 4)],
+    ['importa',       _lista(salen[i], 3, 4)],
+  ];
+  for(const [rotulo, contenido] of bloques){
+    if(contenido) filas.push('<span>'+rotulo+':</span> '+contenido);
+  }
+  if(!filas.length || (entran[i].length+salen[i].length)===0){
+    // Decirlo es el dato: un simbolo que nadie llama es precisamente algo que se
+    // quiere VER, no una ficha vacia que parezca un fallo de la pagina.
+    filas.push('<span>sin llamadas resueltas ni imports</span>');
+  }
+  const marcas = [];
+  if(n.ci) marcas.push('<span style="color:'+CICLO_COLOR+'">en un ciclo</span>');
+  if(n.nu) marcas.push('<span style="color:#22d3ee">nuevo</span>');
+  if(marcas.length) filas.push(marcas.join(' &middot; '));
+
+  ficha.innerHTML = '<b>'+esc(n.id)+'</b><br>' + filas.join('<br>');
   ficha.style.display='block';
 }
 
