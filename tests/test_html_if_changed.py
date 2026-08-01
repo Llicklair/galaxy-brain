@@ -31,17 +31,34 @@ def _mtime(path):
     return os.path.getmtime(path)
 
 
-def test_primera_vez_escribe(tmp_path, gb_home):
+def test_if_changed_NO_crea_si_no_existe(tmp_path, gb_home):
+    """Modo mantenimiento: refresca el mapa que ya hay, no genera uno nuevo. Es
+    lo que hace seguro un hook GLOBAL: en un repo donde nunca generaste el mapa,
+    el hook no ensucia nada. La presencia del fichero es el opt-in."""
     raiz = _proyecto(tmp_path)
     destino = str(tmp_path / "mapa.html")
     assert cli.main(["symbols", raiz, "--html", destino, "--if-changed", "--color", "never"]) == 0
+    assert not os.path.exists(destino), "no debia crear el mapa en modo mantenimiento"
+
+
+def test_sin_if_changed_si_crea_la_primera_vez(tmp_path, gb_home):
+    """La generacion manual —la que hace el usuario— crea el fichero. Ese es el
+    opt-in que luego el hook mantiene."""
+    raiz = _proyecto(tmp_path)
+    destino = str(tmp_path / "mapa.html")
+    assert cli.main(["symbols", raiz, "--html", destino, "--color", "never"]) == 0
     assert os.path.exists(destino)
+
+
+def _generar(raiz, destino):
+    """La generacion manual que crea el mapa: sin --if-changed."""
+    cli.main(["symbols", raiz, "--html", destino, "--color", "never"])
 
 
 def test_sin_cambios_no_reescribe(tmp_path, gb_home):
     raiz = _proyecto(tmp_path)
     destino = str(tmp_path / "mapa.html")
-    cli.main(["symbols", raiz, "--html", destino, "--if-changed", "--color", "never"])
+    _generar(raiz, destino)
     antes = _mtime(destino)
 
     import time
@@ -54,7 +71,7 @@ def test_sin_cambios_no_reescribe(tmp_path, gb_home):
 def test_un_modulo_nuevo_si_reescribe(tmp_path, gb_home):
     raiz = _proyecto(tmp_path)
     destino = str(tmp_path / "mapa.html")
-    cli.main(["symbols", raiz, "--html", destino, "--if-changed", "--color", "never"])
+    _generar(raiz, destino)
     antes = _mtime(destino)
 
     import time
@@ -71,7 +88,7 @@ def test_reformatear_el_cuerpo_no_reescribe(tmp_path, gb_home):
     tocar imports ni firmas no mueve el mapa."""
     raiz = _proyecto(tmp_path)
     destino = str(tmp_path / "mapa.html")
-    cli.main(["symbols", raiz, "--html", destino, "--if-changed", "--color", "never"])
+    _generar(raiz, destino)
     antes = _mtime(destino)
 
     import time
@@ -83,15 +100,16 @@ def test_reformatear_el_cuerpo_no_reescribe(tmp_path, gb_home):
     assert _mtime(destino) == antes
 
 
-def test_si_borran_el_fichero_se_regenera(tmp_path, gb_home):
-    """Aunque la forma no haya cambiado: un mapa que ya no esta en disco tiene
-    que volver. La memoria de forma no puede fingir que el fichero sigue ahi."""
+def test_si_borran_el_fichero_el_mantenimiento_no_lo_resucita(tmp_path, gb_home):
+    """Borrar el mapa es dejar de quererlo. El modo mantenimiento respeta esa
+    decision: no lo vuelve a crear. Para tenerlo otra vez, se genera a mano —
+    justo el mismo opt-in que la primera vez."""
     raiz = _proyecto(tmp_path)
     destino = str(tmp_path / "mapa.html")
-    cli.main(["symbols", raiz, "--html", destino, "--if-changed", "--color", "never"])
+    _generar(raiz, destino)
     os.remove(destino)
     cli.main(["symbols", raiz, "--html", destino, "--if-changed", "--color", "never"])
-    assert os.path.exists(destino)
+    assert not os.path.exists(destino)
 
 
 def test_sin_if_changed_reescribe_siempre(tmp_path, gb_home):
@@ -114,6 +132,10 @@ def test_dos_mapas_distintos_del_mismo_repo_no_se_pisan(tmp_path, gb_home):
     raiz = _proyecto(tmp_path)
     nube = str(tmp_path / "nube.html")
     capas = str(tmp_path / "capas.html")
+    # Generacion manual de los dos, y luego mantenimiento: que uno no cambie no
+    # puede impedir que el otro se refresque.
+    cli.main(["symbols", raiz, "--html", nube, "--color", "never"])
+    cli.main(["symbols", raiz, "--html", capas, "--capas", "--color", "never"])
     cli.main(["symbols", raiz, "--html", nube, "--if-changed", "--color", "never"])
     cli.main(["symbols", raiz, "--html", capas, "--capas", "--if-changed", "--color", "never"])
     assert os.path.exists(nube) and os.path.exists(capas)

@@ -132,14 +132,11 @@ def _procedencia(root):
     return "generado el %s (sin repo git)" % momento
 
 
-def _html_sin_cambios(root, destino, report, graph_report):
-    """True si el fichero HTML ya existe y la forma NO ha cambiado desde que se
-    escribio la ultima vez. Sirve para que un hook que corre en cada edicion no
-    reescriba 325 ms de mapa cuando solo cambio el cuerpo de una funcion.
+def _html_shape(root, destino, report, graph_report):
+    """La forma del mapa (simbolos + grafo) y donde se recuerda.
 
     Cache aparte del de `--context` (clave por root+destino): dos mapas del mismo
-    proyecto a ficheros distintos no deben pisarse la memoria, y `--context` y
-    `--html` miran lo mismo pero cada uno lleva su cuenta.
+    proyecto a ficheros distintos no deben pisarse la memoria.
     """
     import hashlib
 
@@ -151,25 +148,31 @@ def _html_sin_cambios(root, destino, report, graph_report):
     clave = hashlib.sha256(
         (os.path.normcase(os.path.abspath(root)) + "|" + os.path.normcase(destino)).encode("utf-8")
     ).hexdigest()[:16]
-    cache = config.home() / "html-shape" / (clave + ".json")
+    return forma, config.home() / "html-shape" / (clave + ".json")
+
+
+def _html_forma_igual(root, destino, report, graph_report):
+    """True si el mapa ya esta en disco y su forma coincide con la ultima escrita.
+    Solo LEE — no siembra el cache; de eso se encarga _html_registrar_forma tras
+    escribir, para que la generacion manual y el mantenimiento compartan memoria."""
+    forma, cache = _html_shape(root, destino, report, graph_report)
     try:
         previa = json.loads(cache.read_text(encoding="utf-8"))
     except (OSError, ValueError):
-        previa = None
-
-    # La forma se registra SIEMPRE, aunque el fichero no exista aun: si no, la
-    # primera escritura no dejaria contra que comparar y la segunda reescribiria
-    # de mas. Se escribe antes de decidir para que el proximo cotejo tenga base.
-    if previa != forma:
-        try:
-            cache.parent.mkdir(parents=True, exist_ok=True)
-            cache.write_text(json.dumps(forma, ensure_ascii=False), encoding="utf-8")
-        except OSError:
-            pass
-
-    # Solo se salta si el mapa YA esta en disco y la forma coincide. Un fichero
-    # borrado a mano tiene que regenerarse aunque la forma no haya cambiado.
+        return False
     return os.path.exists(destino) and previa == forma
+
+
+def _html_registrar_forma(root, destino, report, graph_report):
+    """Apunta la forma recien escrita, para que el proximo --if-changed la compare.
+    Se llama SIEMPRE que se escribe el HTML, tambien en la generacion manual: si
+    no, el primer mantenimiento reescribiria de mas por no tener contra que medir."""
+    forma, cache = _html_shape(root, destino, report, graph_report)
+    try:
+        cache.parent.mkdir(parents=True, exist_ok=True)
+        cache.write_text(json.dumps(forma, ensure_ascii=False), encoding="utf-8")
+    except OSError:
+        pass
 
 
 def _shape_cache(root):
@@ -420,10 +423,12 @@ def cmd_graph(args):
         # dos ficheros del mismo sujeto que habia que juntar de cabeza.
         destino = os.path.abspath(args.html)
         simbolos = symbols_mod.analyze(root)
-        # Mismo --if-changed que ya usa --context: si el mapa esta y la forma no
-        # se movio, no se reescribe. Aqui `report` es el grafo y `simbolos` el otro.
-        if args.if_changed and _html_sin_cambios(root, destino, simbolos, report):
-            return 0
+        # Modo mantenimiento (ver cmd_symbols): no crea, solo refresca lo que hay.
+        if args.if_changed:
+            if not os.path.exists(destino):
+                return 0
+            if _html_forma_igual(root, destino, simbolos, report):
+                return 0
         try:
             with open(destino, "w", encoding="utf-8") as handle:
                 handle.write(
@@ -438,6 +443,7 @@ def cmd_graph(args):
         except OSError as error:
             sys.stderr.write("[gb graph] no pude escribir %s (%s)\n" % (destino, error))
             return 2
+        _html_registrar_forma(root, destino, simbolos, report)
         emit("mapa escrito en %s" % destino)
         if args.open:
             _abrir(destino)
@@ -468,10 +474,16 @@ def cmd_symbols(args):
 
         destino = os.path.abspath(args.html)
         grafo = graph_mod.analyze(root)
-        # --if-changed: si el mapa ya esta y la forma no se movio, no se reescribe.
-        # Es lo que hace barato engancharlo a un hook por-edicion (regla 3).
-        if getattr(args, "if_changed", False) and _html_sin_cambios(root, destino, report, grafo):
-            return 0
+        if getattr(args, "if_changed", False):
+            # --if-changed es modo MANTENIMIENTO: refresca el mapa que ya hay, no
+            # crea uno nuevo. Si el fichero no existe, no se toca — asi un hook
+            # global puede correr en cada repo y solo actua donde TU ya generaste
+            # el mapa a mano. La presencia del fichero es el opt-in, y no depende
+            # del shell del hook.
+            if not os.path.exists(destino):
+                return 0
+            if _html_forma_igual(root, destino, report, grafo):
+                return 0
         try:
             with open(destino, "w", encoding="utf-8") as handle:
                 handle.write(
@@ -491,6 +503,7 @@ def cmd_symbols(args):
         except OSError as error:
             sys.stderr.write("[gb symbols] no pude escribir %s (%s)\n" % (destino, error))
             return 2
+        _html_registrar_forma(root, destino, report, grafo)
         emit("mapa de simbolos en %s" % destino)
         if args.open:
             _abrir(destino)
