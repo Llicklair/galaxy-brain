@@ -21,13 +21,13 @@ import ast
 import builtins
 import os
 
+from .graph import _BOM, DEFAULT_SKIP, _iter_py_files, _resolve_base, module_name
+
 #: `len()`, `open()`, `isinstance()`… NO son simbolos de este proyecto, asi que no
 #: resolverlas no es un fallo: es lo correcto. Meterlas en el denominador hundia la
 #: cobertura y hacia parecer inutil una tecnica que no lo es — el primer numero que
 #: dio este modulo fue 17%, y era una mezcla de peras con manzanas.
 _BUILTINS = frozenset(dir(builtins))
-
-from .graph import _BOM, DEFAULT_SKIP, _iter_py_files, _resolve_base, module_name
 
 #: Motivos por los que una llamada no se resuelve. Se cuentan por separado porque
 #: dicen cosas distintas: mucho `atributo-de-variable` es codigo orientado a objetos
@@ -230,9 +230,9 @@ def analyze(root, skip=DEFAULT_SKIP, include_nested=False, since=None):
     aristas = set()
     motivos = {}
     for mod, info in modulos.items():
-        for nombre, qual in info["functions"].items():
+        for qual in info["functions"].values():
             aristas.add((mod, qual, "DEFINES"))
-        for nombre, clase in info["classes"].items():
+        for clase in info["classes"].values():
             aristas.add((mod, clase["qual"], "DEFINES"))
             for mqual in clase["methods"].values():
                 aristas.add((mqual, clase["qual"], "MEMBER_OF"))
@@ -245,8 +245,7 @@ def analyze(root, skip=DEFAULT_SKIP, include_nested=False, since=None):
         for node in _def_nodes(info["tree"].body):
             _llamadas_en(node, info["functions"][node.name], info, None, tabla, modulos,
                          aristas, motivos)
-        for nombre, clase in info["classes"].items():
-            origen_clase = info["classes"][nombre]
+        for nombre, origen_clase in info["classes"].items():
             for m in _def_nodes(
                 next(c for c in info["tree"].body
                      if isinstance(c, ast.ClassDef) and c.name == nombre).body
@@ -367,7 +366,7 @@ def baseline(root, ref):
     tabla_dict = {q: {} for q in tabla}
     aristas = set()
     motivos = {}
-    for mod, info in modulos.items():
+    for info in modulos.values():
         for node in _def_nodes(info["tree"].body):
             _llamadas_en(node, info["functions"][node.name], info, None, tabla_dict,
                          modulos, aristas, motivos)

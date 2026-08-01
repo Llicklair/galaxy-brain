@@ -15,7 +15,6 @@ import shutil
 
 from galaxybrain import companions
 
-
 # --- cuanto de un fichero lo escribio una herramienta ------------------------
 
 

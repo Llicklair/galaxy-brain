@@ -15,6 +15,16 @@ if ! python -c "import galaxybrain" 2>/dev/null; then
     exit 0
 fi
 
+# Lint PRIMERO: tarda 130 ms y caza nombres sin definir e imports muertos. Ponerlo
+# despues de una suite de 20 s seria pagar veinte segundos para que te digan que
+# te faltaba un import. Si ruff no esta, no bloquea — como con el paquete.
+if python -m ruff --version >/dev/null 2>&1; then
+    echo "[galaxy-brain] pre-commit: lint (ruff)..."
+    python -m ruff check src tests || exit 1
+else
+    echo "[galaxy-brain] ruff no instalado (pip install -e .[dev]); salto el lint." >&2
+fi
+
 echo "[galaxy-brain] pre-commit: tests..."
 python -m pytest tests/ -q || exit 1
 

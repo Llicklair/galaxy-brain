@@ -8,7 +8,7 @@ Un layout de fuerzas queda mejor y no cumple esto.
 
 import os
 
-from galaxybrain import cli, graph, viz
+from galaxybrain import cli, viz
 
 
 def _write(root, rel, content):
@@ -56,9 +56,10 @@ def test_el_layout_no_amontona_nodos_en_el_borde(tmp_path):
     rectangulo; (2) al portar las masas de GitNexus, la repulsion 20x20 vencia a
     la gravedad y el layout explotaba (nodos en x=-6969 sobre un lienzo de 1000).
     El contrato: todo dentro del lienzo y sin pila en el borde."""
-    from galaxybrain import symbols
     import json as _json
     import re
+
+    from galaxybrain import symbols
 
     root = _proyecto(tmp_path)
     salida = viz.render_graph_cloud(symbols.analyze(root))
@@ -74,10 +75,11 @@ def test_el_layout_no_amontona_nodos_en_el_borde(tmp_path):
 def test_cada_simbolo_queda_cerca_de_su_modulo(tmp_path):
     """La siembra jerarquica portada de GitNexus: una funcion orbita su modulo.
     Se mide, no se mira: distancia media al modulo < distancia media al centro."""
-    from galaxybrain import symbols
     import json as _json
     import math
     import re
+
+    from galaxybrain import symbols
 
     root = _proyecto(tmp_path)
     salida = viz.render_graph_cloud(symbols.analyze(root))

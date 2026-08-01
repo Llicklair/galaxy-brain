@@ -17,7 +17,9 @@ keywords = ["debugging", "exceptions", "traceback", "post-mortem"]
 dependencies = []
 
 [project.optional-dependencies]
-dev = ["pytest>=8"]
+# Solo de desarrollo. El runtime sigue en cero dependencias: nada de esto viaja
+# al venv de quien instala gb.
+dev = ["pytest>=8", "ruff>=0.7"]
 
 [project.scripts]
 gb = "galaxybrain.cli:main"
@@ -27,3 +29,25 @@ packages = ["src/galaxybrain"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+# Lint. La linea de 110 sale de MEDIR el codigo que ya hay (maximo real 128, y
+# solo 9 lineas por encima de 110), no de un gusto: una regla de estilo que
+# obliga a reescribir medio repo el dia que se activa no es una gate, es una
+# mudanza.
+[tool.ruff]
+line-length = 110
+target-version = "py39"
+src = ["src"]
+
+[tool.ruff.lint]
+# Se eligen las que cazan DEFECTOS, no las que opinan sobre el estilo. La regla 11
+# dice que solo se bloquea sobre hechos: un nombre sin definir o un import muerto
+# son hechos; el orden de los argumentos es una opinion. E501 fuera a proposito —
+# una linea larga no rompe nada y aqui hay comentarios que explican el porque.
+select = ["E4", "E7", "E9", "F", "B", "I"]
+ignore = ["E741"]  # nombres de una letra: `l` y `n` son legibles en un bucle corto
+
+[tool.ruff.lint.per-file-ignores]
+# Los tests importan cosas dentro de la funcion a proposito, para que cada test
+# se lea entero sin subir a la cabecera.
+"tests/*" = ["E402"]

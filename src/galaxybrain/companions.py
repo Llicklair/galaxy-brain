@@ -15,7 +15,6 @@ contesta *"qué tiene este proyecto"*; el pre-commit tiene un presupuesto de 10 
 no puede pagar un arranque de proceso ajeno.
 """
 
-import os
 import re
 import shutil
 import subprocess

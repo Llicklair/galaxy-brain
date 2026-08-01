@@ -13,8 +13,6 @@ Ninguna de las dos blinda nada. Apuntar que dejaste de mirar es lo contrario de
 impedir que dejes de mirar.
 """
 
-import json
-import os
 
 from galaxybrain import store, viz
 

@@ -7,7 +7,6 @@ aunque haya capturado todo correctamente.
 
 import subprocess
 import sys
-import textwrap
 
 from galaxybrain import store
 

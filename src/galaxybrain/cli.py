@@ -190,7 +190,9 @@ def _duration(text):
     try:
         value = float(raw)
     except ValueError:
-        raise ValueError("no entiendo --since %r; usa por ejemplo 90s, 5m, 2h" % text)
+        # `from None`: el ValueError de float() no aporta nada a quien escribio mal
+        # el flag, y encadenarlo enterraria el mensaje util bajo una traza interna.
+        raise ValueError("no entiendo --since %r; usa por ejemplo 90s, 5m, 2h" % text) from None
     if value <= 0:
         raise ValueError("--since tiene que ser positivo (recibido %r)" % text)
     return value * unit
