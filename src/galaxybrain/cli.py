@@ -157,22 +157,39 @@ def _html_forma_igual(root, destino, report, graph_report):
     escribir, para que la generacion manual y el mantenimiento compartan memoria."""
     forma, cache = _html_shape(root, destino, report, graph_report)
     try:
-        previa = json.loads(cache.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+        previa = json.loads(cache.read_text(encoding="utf-8")).get("forma")
+    except (OSError, ValueError, AttributeError):
         return False
     return os.path.exists(destino) and previa == forma
 
 
-def _html_registrar_forma(root, destino, report, graph_report):
-    """Apunta la forma recien escrita, para que el proximo --if-changed la compare.
-    Se llama SIEMPRE que se escribe el HTML, tambien en la generacion manual: si
-    no, el primer mantenimiento reescribiria de mas por no tener contra que medir."""
+def _html_registrar_forma(root, destino, report, graph_report, refresco=0):
+    """Apunta la forma y el refresco de la generacion recien hecha.
+
+    El refresco se guarda porque el hook regenera con --if-changed y SIN
+    --refresco: si no lo recordara, cada regeneracion le arrancaria al fichero su
+    propio auto-refresh y la pagina se congelaria tras la primera recarga. Se
+    recuerda en la generacion MANUAL (donde el usuario puso --refresco 300) y el
+    mantenimiento lo conserva."""
     forma, cache = _html_shape(root, destino, report, graph_report)
     try:
         cache.parent.mkdir(parents=True, exist_ok=True)
-        cache.write_text(json.dumps(forma, ensure_ascii=False), encoding="utf-8")
+        cache.write_text(
+            json.dumps({"forma": forma, "refresco": refresco}, ensure_ascii=False),
+            encoding="utf-8",
+        )
     except OSError:
         pass
+
+
+def _html_refresco_recordado(root, destino, report, graph_report):
+    """El --refresco de la ultima generacion manual, para que el mantenimiento no
+    lo pierda. 0 si no hay registro."""
+    _forma, cache = _html_shape(root, destino, report, graph_report)
+    try:
+        return int(json.loads(cache.read_text(encoding="utf-8")).get("refresco", 0))
+    except (OSError, ValueError, TypeError):
+        return 0
 
 
 def _shape_cache(root):
@@ -424,11 +441,14 @@ def cmd_graph(args):
         destino = os.path.abspath(args.html)
         simbolos = symbols_mod.analyze(root)
         # Modo mantenimiento (ver cmd_symbols): no crea, solo refresca lo que hay.
+        refresco = args.refresco
         if args.if_changed:
             if not os.path.exists(destino):
                 return 0
             if _html_forma_igual(root, destino, simbolos, report):
                 return 0
+            if not refresco:
+                refresco = _html_refresco_recordado(root, destino, simbolos, report)
         try:
             with open(destino, "w", encoding="utf-8") as handle:
                 handle.write(
@@ -437,13 +457,13 @@ def cmd_graph(args):
                         title="mapa · %s" % os.path.basename(root),
                         graph_report=report,
                         procedencia=_procedencia(root),
-                        refresco=args.refresco,
+                        refresco=refresco,
                     )
                 )
         except OSError as error:
             sys.stderr.write("[gb graph] no pude escribir %s (%s)\n" % (destino, error))
             return 2
-        _html_registrar_forma(root, destino, simbolos, report)
+        _html_registrar_forma(root, destino, simbolos, report, refresco)
         emit("mapa escrito en %s" % destino)
         if args.open:
             _abrir(destino)
@@ -474,6 +494,7 @@ def cmd_symbols(args):
 
         destino = os.path.abspath(args.html)
         grafo = graph_mod.analyze(root)
+        refresco = args.refresco
         if getattr(args, "if_changed", False):
             # --if-changed es modo MANTENIMIENTO: refresca el mapa que ya hay, no
             # crea uno nuevo. Si el fichero no existe, no se toca — asi un hook
@@ -484,6 +505,10 @@ def cmd_symbols(args):
                 return 0
             if _html_forma_igual(root, destino, report, grafo):
                 return 0
+            # El hook no pasa --refresco; se recupera el de la generacion manual
+            # para no arrancarle a la pagina su auto-refresh al regenerar.
+            if not refresco:
+                refresco = _html_refresco_recordado(root, destino, report, grafo)
         try:
             with open(destino, "w", encoding="utf-8") as handle:
                 handle.write(
@@ -497,13 +522,13 @@ def cmd_symbols(args):
                         # juntar de cabeza, y eso era el fallo de diseno.
                         graph_report=grafo,
                         procedencia=_procedencia(root),
-                        refresco=args.refresco,
+                        refresco=refresco,
                     )
                 )
         except OSError as error:
             sys.stderr.write("[gb symbols] no pude escribir %s (%s)\n" % (destino, error))
             return 2
-        _html_registrar_forma(root, destino, report, grafo)
+        _html_registrar_forma(root, destino, report, grafo, refresco)
         emit("mapa de simbolos en %s" % destino)
         if args.open:
             _abrir(destino)
