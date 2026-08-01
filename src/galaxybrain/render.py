@@ -451,6 +451,61 @@ def render_graph(report, style):
     return "\n".join(lines).rstrip()
 
 
+def render_coverage(resultados, style):
+    """Que dispara una captura y que no — ejecutado, no documentado.
+
+    Se enumeran los dos lados. Ensenar solo lo que SI captura dejaria creer que
+    lo demas tambien, que es exactamente como un fallo desaparece sin que nadie
+    lo eche de menos.
+    """
+    fallos = [r for r in resultados if not r["ok"]]
+    lines = [
+        style(
+            "Cobertura de la consola — %d caso(s) ejecutados, %s"
+            % (len(resultados), "todo como se dice" if not fallos else "%d DISCREPAN" % len(fallos)),
+            BOLD,
+        ),
+        "",
+    ]
+    for grupo, titulo in ((True, "LO QUE SI deja registro"), (False, "LO QUE NO (y es correcto)")):
+        casos = [r for r in resultados if r["esperado"] is grupo]
+        if not casos:
+            continue
+        lines.append(style(titulo, BOLD))
+        for r in casos:
+            if r["ok"]:
+                marca, color = ("+", None) if grupo else ("-", DIM)
+            else:
+                marca, color = "!", RED
+            extra = ""
+            if not r["ok"]:
+                extra = "  <- esperaba %s y %s" % (
+                    "capturar" if r["esperado"] else "no capturar",
+                    "capturo" if r["observado"] else "no capturo",
+                )
+            lines.append(
+                "  %s %s%s" % (style(marca, color) if color else marca, r["caso"], style(extra, RED))
+            )
+        lines.append("")
+    if fallos:
+        lines.append(
+            style(
+                "La frontera NO es la que dice ser. Un fallo que se cree cubierto y no lo esta "
+                "desaparece sin que nadie lo eche de menos.",
+                RED,
+            )
+        )
+    else:
+        lines.append(
+            style(
+                "Lo de arriba esta EJECUTADO, no documentado: cada caso corrio de verdad en un "
+                "proceso aparte y se miro si dejo registro.",
+                DIM,
+            )
+        )
+    return "\n".join(lines).rstrip()
+
+
 def render_self_test(report, style):
     """El resultado de romper el gate a proposito.
 

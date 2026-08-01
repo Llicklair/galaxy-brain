@@ -77,6 +77,106 @@ def verify(executable=None):
     )
 
 
+#: Que dispara una captura y que no. Cada caso se EJECUTA de verdad en un
+#: subproceso con su propio historico, y se mira si dejo registro.
+#:
+#: Documentar la frontera no basta: un documento envejece y nadie sabe si sigue
+#: siendo cierto. Esto la demuestra cada vez que se lanza. Y las dos mitades
+#: pesan igual — un "no captura" que en realidad captura llenaria el historico de
+#: ruido, y un "captura" que no captura es un fallo que desaparece sin rastro.
+_CASOS = (
+    ("excepcion no capturada", True, "raise ValueError('x')"),
+    (
+        "excepcion en un hilo",
+        True,
+        "import threading\n"
+        "def t():\n    raise RuntimeError('en el hilo')\n"
+        "h = threading.Thread(target=t); h.start(); h.join()",
+    ),
+    (
+        "excepcion en __del__ (no propagable)",
+        True,
+        "class X:\n    def __del__(self):\n        raise ValueError('finalizador')\n"
+        "x = X()\ndel x",
+    ),
+    (
+        "asyncio: propaga fuera de run()",
+        True,
+        "import asyncio\nasync def m():\n    raise ValueError('propaga')\nasyncio.run(m())",
+    ),
+    (
+        "asyncio: tarea suelta que nadie espera",
+        False,
+        "import asyncio\n"
+        "async def rota():\n    raise ValueError('suelta')\n"
+        "async def m():\n    asyncio.ensure_future(rota())\n    await asyncio.sleep(0.2)\n"
+        "asyncio.run(m())",
+    ),
+    ("sys.exit(1)", False, "import sys; sys.exit(1)"),
+    ("KeyboardInterrupt", False, "raise KeyboardInterrupt()"),
+    (
+        "excepcion atrapada por try/except",
+        False,
+        "try:\n    raise ValueError('la maneje yo')\nexcept ValueError:\n    pass",
+    ),
+)
+
+
+def coverage():
+    """Ejecuta cada modo de fallo y comprueba si dejo registro.
+
+    La lectura util es la DISCREPANCIA: algo que deberia capturarse y no aparece
+    es un agujero; algo que no deberia y aparece es ruido futuro.
+    """
+    import json as _json
+    import shutil
+    import tempfile
+
+    resultados = []
+    for nombre, esperado, codigo in _CASOS:
+        casa = tempfile.mkdtemp(prefix="gb-cobertura-")
+        entorno = dict(os.environ)
+        entorno.pop("GB_DISABLE", None)
+        entorno["GB_HOME"] = casa  # historico aparte: esto no ensucia el tuyo
+        entorno["GB_QUIET"] = "1"  # aqui se mide, no se avisa
+        observado, detalle = None, ""
+        try:
+            subprocess.run(
+                [sys.executable, "-c", codigo],
+                capture_output=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=30,
+                env=entorno,
+            )
+            indice = os.path.join(casa, "index.jsonl")
+            lineas = []
+            if os.path.exists(indice):
+                with open(indice, "r", encoding="utf-8") as handle:
+                    lineas = [linea for linea in handle if linea.strip()]
+            observado = bool(lineas)
+            if lineas:
+                try:
+                    detalle = _json.loads(lineas[-1]).get("type", "")
+                except ValueError:
+                    detalle = ""
+        except (OSError, subprocess.SubprocessError) as error:
+            detalle = "no se pudo ejecutar: %s" % error
+        finally:
+            shutil.rmtree(casa, ignore_errors=True)
+
+        resultados.append(
+            {
+                "caso": nombre,
+                "esperado": esperado,
+                "observado": observado,
+                "detalle": detalle,
+                "ok": observado == esperado,
+            }
+        )
+    return resultados
+
+
 def enable():
     """Escribe el .pth y COMPRUEBA que el entorno sigue sano. (ok, mensaje)."""
     path = pth_path()

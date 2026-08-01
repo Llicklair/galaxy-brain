@@ -582,6 +582,17 @@ def _graph_gate(report):
 
 
 def cmd_status(args):
+    if args.cobertura:
+        # La pregunta que no tenia respuesta comprobable: que dispara una captura
+        # y que no. Se ejecutan los dos lados de verdad, en procesos aparte y con
+        # su propio historico, y se mira quien dejo registro.
+        resultados = bootstrap.coverage()
+        if args.json:
+            emit(json.dumps(resultados, ensure_ascii=False, indent=2))
+        else:
+            emit(render.render_coverage(resultados, _style(args)))
+        return 1 if any(not r["ok"] for r in resultados) else 0
+
     entries = store.read_index(limit=1)
     emit("galaxy-brain %s" % __version__)
     emit("  captura automatica : %s" % ("activa" if bootstrap.is_enabled() else "APAGADA"))
@@ -652,6 +663,13 @@ def build_parser():
     off.set_defaults(func=cmd_off)
 
     status = subparsers.add_parser("status", help="que hay activo ahora mismo")
+    status.add_argument(
+        "--cobertura",
+        action="store_true",
+        help="ejecuta cada modo de fallo y ensena cual deja registro y cual no",
+    )
+    status.add_argument("--json", action="store_true", help="salida cruda")
+    status.add_argument("--color", choices=("auto", "always", "never"), default="auto")
     status.set_defaults(func=cmd_status)
 
     graph_p = subparsers.add_parser("graph", help="mapa de acoplamiento: imports, ciclos, hotspots")
