@@ -274,7 +274,9 @@ _COLORES = [
 ]
 
 
-def render_graph_cloud(report, title="galaxy-brain — grafo", modo="simbolos", graph_report=None):
+def render_graph_cloud(
+    report, title="galaxy-brain — grafo", modo="simbolos", graph_report=None, procedencia=None
+):
     """La nube: nodos repartidos por fuerzas, coloreados por módulo, navegable.
 
     Mismo dato que el informe, otro modo de mirarlo — este responde *"¿qué forma
@@ -452,6 +454,13 @@ def render_graph_cloud(report, title="galaxy-brain — grafo", modo="simbolos", 
         [indice[a], indice[b], 3, 1 if (a, b) in pasos_ciclicos else 0]
         for a, b in importaciones if a in indice and b in indice
     ]
+
+    # La procedencia la inyecta quien llama, NO se lee del reloj aqui: si este
+    # renderizador mirara la hora dejaria de ser determinista, y dos capturas del
+    # mismo proyecto no se podrian comparar byte a byte. Mismo dato de entrada,
+    # mismo fichero — el que cambia es el dato, no la funcion.
+    if procedencia:
+        pie = "%s  ·  %s" % (procedencia, pie) if pie else procedencia
 
     return _NUBE % {
         "title": _html.escape(title),

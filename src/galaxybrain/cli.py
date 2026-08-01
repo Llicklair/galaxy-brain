@@ -61,6 +61,35 @@ def _style(args):
     return render.Style(sys.stdout.isatty())
 
 
+def _procedencia(root):
+    """De que commit y de cuando es un artefacto exportado.
+
+    Un HTML sin esto es indistinguible de otro generado hace cinco horas, y eso
+    paso de verdad: se estuvo mirando un mapa viejo y nada lo dijo. Un artefacto
+    DERIVADO que no sabe decir de que version viene miente por omision en cuanto
+    el repo se mueve.
+
+    Va aqui y no en el renderizador a proposito: leer el reloj dentro de `viz`
+    lo volveria no determinista, y entonces dos capturas del mismo proyecto
+    dejarian de poder compararse.
+    """
+    import datetime
+
+    from . import graph
+
+    momento = datetime.datetime.now().astimezone().strftime("%Y-%m-%d %H:%M")
+    commit = graph._git(root, "rev-parse", "--short", "HEAD")
+    sucio = graph._git(root, "status", "--porcelain")
+    if commit:
+        marca = commit.strip()
+        if sucio and sucio.strip():
+            # Sin esto, un mapa de un arbol con cambios sin commitear se atribuye
+            # a un commit que NO es lo que estas viendo.
+            marca += "+sin-commitear"
+        return "generado el %s desde %s" % (momento, marca)
+    return "generado el %s (sin repo git)" % momento
+
+
 def _shape_cache(root):
     """Donde se recuerda la ultima forma vista de un proyecto.
 
@@ -187,6 +216,9 @@ def cmd_last(args):
         else:
             emit("(sin capturas para este proyecto - prueba: gb list --all)")
         return 1
+    # Ensenar el estado ES leerlo, tambien en --json: quien automatiza tambien
+    # esta consumiendo el fallo. Regla 10 — esto mide el abandono, no lo impide.
+    store.mark_read(record.get("id"), project=record.get("process", {}).get("project"))
     if args.json:
         emit(json.dumps(record, ensure_ascii=False, indent=2))
         return 0
@@ -240,6 +272,7 @@ def cmd_show(args):
     if record is None:
         emit("no encuentro ninguna captura con id '%s'" % args.id)
         return 1
+    store.mark_read(record.get("id"), project=record.get("process", {}).get("project"))
     if args.json:
         emit(json.dumps(record, ensure_ascii=False, indent=2))
         return 0
@@ -309,6 +342,7 @@ def cmd_graph(args):
                         symbols_mod.analyze(root),
                         title="mapa · %s" % os.path.basename(root),
                         graph_report=report,
+                        procedencia=_procedencia(root),
                     )
                 )
         except OSError as error:
@@ -357,6 +391,7 @@ def cmd_symbols(args):
                         # el mismo lienzo. Antes salian dos ficheros que habia que
                         # juntar de cabeza, y eso era el fallo de diseno.
                         graph_report=graph_mod.analyze(root),
+                        procedencia=_procedencia(root),
                     )
                 )
         except OSError as error:
@@ -553,6 +588,18 @@ def cmd_status(args):
     emit("  historico          : %s" % config.home())
     emit("  desactivada por env: %s" % ("si (GB_DISABLE)" if config.disabled() else "no"))
     emit("  ultima captura     : %s" % (entries[0]["ts"] if entries else "ninguna"))
+
+    # El unico numero que dice si esto SIRVE, y hasta hoy no existia. Capturar
+    # mil fallos que nadie abre no es una consola de errores: es un vertedero con
+    # indice. Regla 10 — se mide el abandono, no se impide.
+    capturas, leidas, aperturas = store.read_stats()
+    if capturas:
+        detalle = "%d de %d leidas" % (leidas, capturas)
+        if aperturas > leidas:
+            detalle += " (%d aperturas)" % aperturas
+        if not leidas:
+            detalle += " — ninguna se ha mirado todavia"
+        emit("  capturas leidas    : %s" % detalle)
     return 0
 
 

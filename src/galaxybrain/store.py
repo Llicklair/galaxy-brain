@@ -17,6 +17,18 @@ from . import config
 
 INDEX_NAME = "index.jsonl"
 
+#: Las capturas que alguien ha MIRADO de verdad. Append-only, igual que el indice.
+#:
+#: Existe por la regla 10: el abandono es dato, no un bug a blindar. Este proyecto
+#: mide su latencia, su overhead y su recall, y no medía lo unico que decide si
+#: sirve — si lo que captura llega a leerse. Guardar mil fallos que nadie abre no
+#: es una consola de errores, es un vertedero con indice.
+#:
+#: NO es telemetria: no sale de tu maquina, vive junto al historico y se borra
+#: borrandolo. Y no blinda nada — apuntar que dejaste de mirar es justo lo
+#: contrario de impedir que dejes de mirar.
+READS_NAME = "leidas.jsonl"
+
 
 def root():
     return config.home()
@@ -83,6 +95,58 @@ def _append_index(record, path):
     index.parent.mkdir(parents=True, exist_ok=True)
     with open(index, "a", encoding="utf-8") as handle:
         handle.write(json.dumps(entry, ensure_ascii=False) + "\n")
+
+
+def mark_read(record_id, project=None):
+    """Apunta que una captura se ha mirado. Silencioso y a prueba de fallos.
+
+    Se llama cuando el estado se ENSEÑA entero (`show`, `last`), no cuando se
+    lista: `gb list` es la libreta de que se rompe, no la lectura de un fallo.
+    """
+    if not record_id:
+        return
+    try:
+        destino = root() / READS_NAME
+        destino.parent.mkdir(parents=True, exist_ok=True)
+        entrada = {
+            "id": record_id,
+            "ts": datetime.datetime.now().astimezone().isoformat(timespec="seconds"),
+        }
+        if project:
+            entrada["project"] = project
+        with open(destino, "a", encoding="utf-8") as handle:
+            handle.write(json.dumps(entrada, ensure_ascii=False) + "\n")
+    except BaseException:  # noqa: BLE001 - regla 9: leer un fallo nunca puede fallar
+        pass
+
+
+def read_stats(project=None):
+    """(capturas, capturas distintas leidas, veces que se han abierto).
+
+    Distintas y no totales: abrir tres veces el mismo fallo no son tres fallos
+    aprovechados. La tercera cifra se guarda aparte porque volver a un registro
+    viejo tambien dice algo, pero no es lo mismo.
+    """
+    capturas = {e.get("id") for e in read_index(project=project) if e.get("id")}
+    leidas, aperturas = set(), 0
+    destino = root() / READS_NAME
+    if destino.exists():
+        try:
+            with open(destino, "r", encoding="utf-8") as handle:
+                for linea in handle:
+                    linea = linea.strip()
+                    if not linea:
+                        continue
+                    try:
+                        ident = json.loads(linea).get("id")
+                    except ValueError:
+                        continue  # una linea corrupta no invalida el recuento
+                    if ident in capturas:
+                        aperturas += 1
+                        leidas.add(ident)
+        except OSError:
+            pass
+    return len(capturas), len(leidas), aperturas
 
 
 def _headline_frame(record):
