@@ -1,13 +1,24 @@
+<p align="center">
+  <img src="assets/galaxia.svg" alt="galaxy-brain" width="100%">
+</p>
+
 # galaxy-brain
 
 > **Cuando algo peta, te dice dónde y con qué estado, sin que tengas que reproducirlo a mano.**
 
-Eso es todo lo que hace. Un lenguaje (Python), un runtime (local), un tipo de fallo (excepciones no
-capturadas). El alcance está cerrado a propósito y la lista de lo que **no** hace está escrita en
-[SCOPE.md](SCOPE.md).
+Esa es la columna: una consola de errores. Alrededor, la misma disciplina aplicada a otros hechos
+deterministas sobre tu código — qué forma tiene (`graph`/`symbols`), qué le hizo cada cambio
+(`check`), qué le falta de base (`floor`), qué se aprendió entre repos (`memory`).
 
-Cero llamadas a modelo. Cero dependencias. Una excepción es un hecho; el estado en el momento del
-fallo es un hecho. Reportar hechos no necesita juicio.
+**Una sola herramienta, `gb`.** Un paquete Python, **cero llamadas a modelo** en el camino caliente,
+**cero dependencias** fuera de la librería estándar. Una excepción es un hecho; el estado en el
+momento del fallo es un hecho; la forma del grafo de imports es un hecho. Reportar hechos no necesita
+juicio, y por eso puede ser instantáneo y no equivocarse de forma cara.
+
+El alcance está cerrado a propósito, y la lista de lo que **no** hace —que es la que sostiene peso—
+está escrita en [SCOPE.md](SCOPE.md). La ley de diseño, en [ARCHITECTURE.md](ARCHITECTURE.md).
+
+<sub>386 tests · gate limpio · ruff · Python ≥ 3.9 · sin dependencias de runtime</sub>
 
 ---
 
@@ -17,12 +28,12 @@ Un traceback te dice **dónde**. Esto te dice además **con qué**:
 
 ```
 KeyError: 'empresa'
-hace 1min - facturacion/precios.py:6 - mi-api
+hace 1min · facturacion/precios.py:6 · mi-api
 
   facturacion/precios.py:6  in precio_total
          4 |
          5 | def precio_total(cliente, cupon=None):
-   >     6 |     base = TARIFAS[cliente["plan"]]
+   →     6 |     base = TARIFAS[cliente["plan"]]
          7 |     unidades = cliente["asientos"]
          8 |     return base * unidades
 
@@ -30,7 +41,8 @@ hace 1min - facturacion/precios.py:6 - mi-api
       cupon   = None
 ```
 
-El paso que desaparece es volver a lanzar el programa con un `print` puesto.
+El paso que desaparece es volver a lanzar el programa con un `print` puesto. El fallo ocurre una vez,
+a menudo cuando no estás delante; la reproducción es el trabajo caro que esto elimina.
 
 ---
 
@@ -55,80 +67,115 @@ pip install -e <ruta-a-este-repo> && gb on && gb status
 powershell -ExecutionPolicy Bypass -File <ruta-a-este-repo>\instala.ps1
 ```
 
-Se lleva la herramienta entera (consola, mapa, gate, floor, memoria): es un solo paquete, no hay
-versiones que elegir. La cobertura es **por entorno Python, no por repo** — si el otro proyecto usa un entorno
-donde `gb` ya está activa, no hay nada que ejecutar. Y al ser editable (`-e`), un `git pull` aquí
-actualiza todos los entornos sin reinstalar.
+La cobertura es **por entorno Python, no por repo**. Y al ser editable (`-e`), un `git pull` aquí
+actualiza todos los entornos sin reinstalar. Para quitarlo: `gb off` — una línea, sin rastro. Que
+apagarlo sea barato es deliberado (regla 10: el abandono es un dato, no algo que blindar).
 
-Para quitarlo: `gb off`. Es una línea y no deja rastro — que apagarlo sea barato es deliberado
-(ARCHITECTURE, regla 10: el abandono es un dato, no algo que blindar).
+---
 
-### Opcional — con qué se abre el mapa
-
-`--open` usa tu navegador. Nada más que hacer: el HTML es autocontenido y no necesita servidor.
-
-Para mandarlo a otro sitio hay `GB_OPEN_CMD`, que recibe la ruta como último argumento:
+## La consola de errores
 
 ```bash
-GB_OPEN_CMD="firefox --new-window"   gb symbols src --html mapa.html --open
-```
-
-gb **no conoce ningún editor** y no va a mantener una lista de ellos: la regla 6 dice que un comando
-cableado es un bug. Esa variable es todo lo que hace falta para apuntarlo donde quieras.
-
-**Verlo dentro de VS Code / Cursor** necesita una extensión, porque ninguno de los dos sabe renderizar
-HTML de serie — abrirlo con `code fichero.html` te enseña el código, no el mapa:
-
-```bash
-code --install-extension ms-vscode.live-server
-```
-
-Y el aviso honesto, comprobado: esa extensión **solo expone comandos del editor**, sin entrada por
-línea de órdenes. O sea que `GB_OPEN_CMD` **no** puede lanzarla, y el flujo queda manual — generas el
-fichero sin `--open` y haces clic derecho → *Show Preview*. Si eso te resulta más incómodo que
-cambiar de ventana, no la instales: el navegador da más sitio para un mapa que se arrastra y se
-amplía.
-
-## Uso
-
-```bash
-gb last              # el último fallo de este proyecto
+gb last              # el último fallo de este proyecto, con su estado
 gb last --full       # con todos los frames
 gb list -n 20        # el histórico: qué se rompe y cuántas veces
-gb show <id>         # uno concreto
-gb status            # qué hay activo
+gb list --chrono     # el timeline crudo, más reciente primero
+gb show <id>         # un fallo concreto — el id lo trae el propio aviso
+gb status            # qué hay activo, y cuántas capturas se han leído
 ```
 
 Sin argumentos, `gb last` y `gb list` filtran por el repo en el que estás.
 
-## El mapa y las gates
+**Un tipo de fallo, tres puertas de salida.** "Excepción no capturada" no es sinónimo de
+`sys.excepthook`: el intérprete la deja salir por tres sitios, y los tres se cubren.
 
-La otra mitad de la superficie: qué forma tiene el proyecto y qué le hizo cada cambio.
-Todo determinista, cero modelos, cero dependencias — mismos hechos, distintas vistas.
+| Puerta | Cuándo | Estado |
+|---|---|---|
+| `sys.excepthook` | La excepción mata el hilo principal y el proceso | cubierto |
+| `threading.excepthook` | Mata un hilo de `threading`, el proceso sigue | cubierto (`GB_NO_THREADS=1` lo quita) |
+| `sys.unraisablehook` | Python **no pudo** propagarla: `__del__`, weakref, GC | cubierto |
+
+La tercera era la única que desaparecía **sin dejar rastro**: el intérprete la imprime, el proceso no
+muere, y no quedaba nada que enseñar. Ninguna de las tres cuesta nada mientras el programa funciona.
+
+**Qué dispara una captura y qué no — ejecutado, no documentado:**
 
 ```bash
-gb graph src --gate        # ciclos de imports + fronteras (.gb-boundaries); para pre-commit
-gb graph src --html m.html # el mapa de módulos, dibujado
-gb symbols src             # el grafo de símbolos: quién llama a quién, con su cobertura
-gb symbols src --html n.html --open   # la nube interactiva (física en vivo, buscar, arrastrar)
-gb symbols src --since HEAD~50        # lo que creció desde esa ref: la película, baseline en git
-gb check --staged          # qué le hace este cambio a los tests y al acoplamiento (informa, no bloquea)
-gb floor --init            # el suelo: qué falta antes de construir, y deja los documentos base
+gb status --cobertura   # corre 8 modos de fallo de verdad y enseña cuál deja registro
 ```
 
-Dos números honestos que van siempre en la salida: `gb symbols` **declara cuánto no pudo
-resolver** (las llamadas `objeto.metodo()` exigen inferencia de tipos y aquí no se adivina:
-una arista falsa se cree, una ausente se nota), y medido contra un índice con inferencia
-(GitNexus) da **93% de recall** con cero dependencias. Los detalles y los negativos, en
-[docs/pruebas-de-uso.md](docs/pruebas-de-uso.md).
+```
+LO QUE SI deja registro          LO QUE NO (y es correcto)
+  + excepcion no capturada          - asyncio: tarea suelta que nadie espera
+  + excepcion en un hilo            - sys.exit(1)
+  + excepcion en __del__            - KeyboardInterrupt
+  + asyncio fuera de run()          - excepcion atrapada por try/except
+```
+
+La frontera no se documenta —un documento envejece—: se **demuestra** cada vez que lo lanzas.
+
+---
+
+## El mapa
+
+<p align="center">
+  <img src="assets/grafo.svg" alt="El grafo de módulos de galaxy-brain" width="100%">
+</p>
+
+La otra mitad de la superficie: qué forma tiene el proyecto y quién llama a quién. Todo determinista,
+cero modelos, cero dependencias — mismos hechos, distintas vistas. **`graph --html` y `symbols --html`
+llevan a la misma página**: módulos, símbolos, imports y llamadas en un solo lienzo navegable.
+
+```bash
+gb graph src --gate         # ciclos de imports + fronteras (.gb-boundaries); para pre-commit
+gb graph src --gate --since HEAD   # trinquete: solo falla con lo NUEVO, no con la deuda heredada
+gb symbols src              # el grafo de símbolos: quién llama a quién, con su cobertura
+gb symbols src --html m.html --open        # la nube interactiva (buscar, arrastrar, foco)
+gb symbols src --html m.html --watch       # el mapa VIVO: se regenera al cambiar cualquier .py
+gb symbols src --since HEAD~50             # lo que creció desde esa ref, marcado aparte
+gb check --staged           # qué le hizo un diff a los tests y al acoplamiento (informa, no bloquea)
+gb floor --init             # el suelo: qué falta antes de construir, y deja los documentos base
+```
+
+Al pulsar un nodo, la ficha responde con **hechos**: su descripción (sacada del docstring, no de un
+modelo), quién lo llama, a quién llama, qué importa, y si está en un ciclo. El import se pinta distinto
+de la llamada porque **el import es exacto y la llamada es inferida** — mezclarlos en un número dejaría
+gatear sobre un proxy (regla 11).
+
+Dos números honestos que van siempre en la salida: `gb symbols` **declara cuánto no pudo resolver**
+(las llamadas `objeto.metodo()` exigen inferencia de tipos y aquí no se adivina: una arista falsa se
+cree, una ausente se nota), y medido contra un índice con inferencia (GitNexus) da **93% de recall**
+con cero dependencias. Los detalles y los negativos, en [docs/pruebas-de-uso.md](docs/pruebas-de-uso.md).
+
+**El mapa siempre presente.** Enganchado a un hook de `SessionStart`, `gb graph --context` inyecta el
+mapa comprimido (~110 tokens) al arrancar; con `--if-changed`, tras cada edición dice **qué** cambió
+en vez de repetir el mapa. Y `gb symbols … --watch` lo mantiene actualizado en el navegador sin
+depender de nada más que del sistema de ficheros.
+
+---
+
+## El gate se verifica rompiéndolo
+
+Un gate se degrada en silencio: sigue devolviendo cero y ya no mira nada. Los tests fijan lo que ya
+sabías comprobar; esto fija que el detector sigue detectando cuando le pones el defecto delante.
+
+```bash
+gb graph --self-test        # inyecta 6 defectos conocidos y falla si el gate NO los ve
+gb graph src --self-test    # además: relaciones que deben cumplirse sobre TU código
+```
+
+Las **relaciones metamórficas** son "estas dos formas de preguntar tienen que coincidir", evaluadas
+sobre tu repo real: la misma carpeta escrita `c:` o `C:` da la misma forma; los imports de un ciclo son
+aristas que existen; `graph` y `symbols` ven los mismos módulos. Ahí vivían la mayoría de los defectos
+reales que se han cazado.
 
 ---
 
 ## Memoria cross-repo
 
-Un hecho aprendido en un repo no debería morir ahí. `gb memory` es un vault de notas markdown
-durables (en `~/.claude/memory-global`, editables a mano, con `[[wikilinks]]` para abrir el grafo en
-Obsidian) que afloran en **cualquier** proyecto vía un hook de `SessionStart`.
+Un hecho aprendido en un repo no debería morir ahí. `gb memory` es un vault de notas markdown durables
+(en `~/.claude/memory-global`, editables a mano, con `[[wikilinks]]` para abrir el grafo en Obsidian)
+que afloran en **cualquier** proyecto vía un hook de `SessionStart`.
 
 ```bash
 gb memory index              # el índice compacto, una línea por nota
@@ -137,34 +184,29 @@ gb memory context            # el payload de arranque (lo llama el hook de Sessi
 gb memory add --name x --description "..." --scope always
 ```
 
-Magro por diseño (H6): el arranque inyecta el índice de **todas** las notas pero el texto completo
-solo de las `always` y las del proyecto actual; el resto se trae a demanda con `recall`. Nunca se
-vuelca el vault entero.
-
-Para engancharlo, añade a `~/.claude/settings.json` un hook de `SessionStart` que ejecute
-`gb memory context` (ver la nota de instalación al final).
+Magro por diseño (H6): el arranque inyecta el índice de **todas** las notas pero el texto completo solo
+de las `always` y las del proyecto actual; el resto se trae a demanda con `recall`. Nunca se vuelca el
+vault entero.
 
 ---
 
 ## Coste, medido
 
-Regla 4 de [ARCHITECTURE.md](ARCHITECTURE.md): el presupuesto se mide, no se estima.
-Python 3.11, Windows 10, mediana de 20 arranques:
+Regla 4 de [ARCHITECTURE.md](ARCHITECTURE.md): el presupuesto se mide, no se estima. Python 3.11,
+Windows 10, mediana de 20 arranques:
 
 | | |
 |---|---|
 | Arranque limpio del intérprete | 21,2 ms |
 | Con el hook instalado | 27,7 ms |
-| **Coste del hook** | **6,4 ms** |
+| **Coste del hook** | **6,4 ms** (medido A/B: 5,2 ms) |
 | — de los cuales, `import threading` | 5,2 ms |
-| — de los cuales, código propio | 0,5 ms |
 
-**Mientras el programa funciona, el coste es cero.** No "bajo": cero. `sys.excepthook` solo se
-ejecuta cuando el proceso ya se está muriendo. Por eso la consola empieza por excepciones no
-capturadas y no por instrumentación continua.
+**Mientras el programa funciona, el coste es cero.** No "bajo": cero. Los hooks solo se ejecutan cuando
+el proceso ya ha fallado. Para un CLI diminuto que jamás toca hilos: `GB_NO_THREADS=1`.
 
-Los 5,2 ms de `threading` la mayoría de programas los pagan igual (logging, asyncio, requests lo
-importan). Para un CLI diminuto que jamás toca hilos: `GB_NO_THREADS=1`.
+Otros números medidos: mapa de sesión ~110 tokens en 162 ms · `symbols` 93% de recall · lint (ruff)
+130 ms · la suite en ~28 s, muy por debajo del umbral DORA de 600 s.
 
 ---
 
@@ -180,10 +222,12 @@ Todo por variable de entorno; no hay fichero de configuración que mantener.
 | `GB_NO_THREADS` | off | No captura excepciones de hilos (ahorra 5,2 ms de arranque) |
 | `GB_ALL_FRAMES` | off | Guarda también las locales de frames de librería |
 | `GB_MAX_FRAMES` | 20 | Frames guardados (se conservan los más internos) |
-| `GB_MAX_LOCALS` | 40 | Variables por frame |
-| `GB_MAX_VALUE_CHARS` | 240 | Longitud máxima del repr de un valor |
-| `GB_MAX_ITEMS` | 10 | Elementos de una colección antes de resumirla |
 | `GB_CONTEXT_LINES` | 2 | Líneas de código alrededor de la que falló |
+| `GB_OPEN_CMD` | navegador | Con qué se abre el mapa (`--open`); recibe la ruta como último argumento |
+
+`GB_OPEN_CMD` existe porque gb **no conoce ningún editor** y no va a mantener una lista: la regla 6 dice
+que un comando cableado es un bug. Esa variable apunta el mapa donde quieras (`GB_OPEN_CMD="firefox
+--new-window"`).
 
 ---
 
@@ -192,53 +236,44 @@ Todo por variable de entorno; no hay fichero de configuración que mantener.
 El estado alrededor de un fallo es exactamente donde viven las credenciales. La consola **redacta por
 nombre** (`password`, `token`, `api_key`, `secret`, `auth`, `credential`, `session`, `cookie`…). El
 disparador es siempre el **nombre**, no el contenido: adivinar si una cadena es un secreto es caro y
-falible; el nombre lo escribió un humano a propósito. Se redacta cuando el nombre sensible aparece como:
+falible; el nombre lo escribió un humano a propósito.
 
-- variable **local** o **clave de diccionario**, a cualquier profundidad de anidamiento;
-- **atributo** de un objeto (`dataclass`/pydantic con un campo `password`);
-- una asignación `nombre = valor` o `nombre: valor` en **texto libre** — líneas de código fuente,
-  mensajes de excepción y el traceback (`token=abc`, `password = "x"`, `"api_key": "..."`);
-- y `sys.argv` no se guarda entero: solo el programa y la cuenta (`mytool --password X` no llega).
-
-**El residuo, dicho claro:** un secreto **sin nombre sensible adyacente** no se puede redactar por
-nombre y llega a disco — un literal posicional (`connect("hunter2")`), prosa sin separador
-(`"password hunter2"`), una contraseña embebida en una URL (`user:pass@host`), o un valor secreto bajo
-un nombre de variable inocuo. Cerrar eso exigiría heurísticas de contenido (olfatear "lo que parece un
-secreto"), que este proyecto rechaza a propósito porque fallan y dan falsa seguridad.
-
-Por eso la regla de oro no depende de la redacción: **el histórico vive en tu `$HOME` en texto plano;
-trátalo como sensible y no lo subas a ningún sitio.** `GB_CONTEXT_LINES=0` desactiva del todo la captura
-de líneas fuente si prefieres no arriesgar ahí. Detalle: [docs/review-2026-07-29.md](docs/review-2026-07-29.md).
+**El residuo, dicho claro:** un secreto **sin nombre sensible adyacente** llega a disco — un literal
+posicional (`connect("hunter2")`), una contraseña en una URL (`user:pass@host`), o un valor secreto
+bajo un nombre inocuo. Cerrar eso exigiría heurísticas de contenido, que este proyecto rechaza a
+propósito porque fallan y dan falsa seguridad. Por eso la regla de oro no depende de la redacción: **el
+histórico vive en tu `$HOME` en texto plano; trátalo como sensible y no lo subas a ningún sitio.**
 
 ---
 
 ## Límites conocidos, dichos de frente
 
-- **Solo excepciones no capturadas.** Un `except: pass` que se traga el fallo es invisible aquí.
-- **Hilo principal e hilos de `threading`.** `asyncio` y `multiprocessing` no están cubiertos.
+- **Solo excepciones no capturadas.** Un `except: pass` que se traga el fallo es invisible aquí — y con
+  razón: una excepción manejada es, por definición, una que el autor decidió que no era un fallo.
+- **Hilo principal, hilos de `threading` y finalizadores** (`__del__`, weakref, GC). **`asyncio` con
+  tareas sueltas** que nadie espera queda fuera: si la excepción propaga fuera de `asyncio.run()`, sí se
+  captura.
 - **Sin fichero fuente, no hay contexto de código.** `python -c`, `exec()` y el REPL guardan tipo,
-  mensaje, frames y estado, pero no las líneas de alrededor.
-- **El estado es el del momento en que muere el proceso**, no el de cada paso previo. Esto no es un
-  depurador con viaje en el tiempo y no pretende serlo.
+  mensaje, frames y estado, pero no las líneas de alrededor (y `gb list` los aparta como efímeros).
+- **El estado es el del momento en que muere el proceso**, no un depurador con viaje en el tiempo.
 - **Objetos irrepresentables se describen, no se reconstruyen.** Un `__repr__` que revienta deja
   `<Tipo: repr() falló con X>` y no se lleva por delante el resto del frame.
+- **Las muertes que no son Python** —un segfault, un OOM, un `kill`— no producen excepción, así que
+  ningún hook las ve.
+
+---
 
 ## Desarrollo
 
 ```bash
-python -m pytest tests/ -q
+python -m pytest tests/ -q          # la suite
+python -m ruff check src tests      # lint (caza defectos, no opina de estilo)
 ```
 
-### Gate de acoplamiento — sobre la propia herramienta
+El pre-commit ([.githooks/pre-commit](.githooks/pre-commit)) corre lint + suite + gate en < 10 s;
+engánchalo una vez con `git config core.hooksPath .githooks`. `git commit --no-verify` lo salta — y ese
+salto es un dato, no una norma (regla 10: el abandono se investiga, no se blinda).
 
-Un segundo determinista, cero modelos, cero dependencias (solo `ast`):
-
-```bash
-gb graph src --smells        # el mapa: modulos, ciclos, fan-in/out, sobreingenieria (advisory)
-gb graph src --gate          # falla si hay un ciclo de imports NUEVO o un cruce de frontera prohibido
-git config core.hooksPath .githooks   # engancha el pre-commit (tests + gate) — una vez
-```
-
-Las reglas de capas de la consola viven en [src/.gb-boundaries](src/.gb-boundaries) (el nucleo no
-importa la presentacion). El pre-commit corre en < 10 s; `git commit --no-verify` lo salta — y ese
-salto es un dato, no una norma (ARCHITECTURE regla 10: el abandono se investiga, no se blinda).
+Las reglas de capas de la consola viven en [src/.gb-boundaries](src/.gb-boundaries): el núcleo (captura,
+almacén, análisis) no importa la presentación (`cli`, `render`, `viz`). Un cruce nuevo detiene el
+commit; una señal de ablandamiento de tests solo informa.
