@@ -492,10 +492,87 @@ def cmd_graph(args):
     return 1 if report.get("root_error") else 0
 
 
+def _firma_py(root):
+    """Nombre + tamano + mtime de cada .py del arbol. Barato, y cualquier edicion
+    lo mueve — es lo que usa --watch para saber cuando reanalizar."""
+    marcas = []
+    for base, _dirs, ficheros in os.walk(root):
+        if any(p in base for p in (".git", "__pycache__", ".venv", "node_modules")):
+            continue
+        for f in ficheros:
+            if f.endswith(".py"):
+                try:
+                    st = os.stat(os.path.join(base, f))
+                    marcas.append((f, st.st_size, int(st.st_mtime)))
+                except OSError:
+                    pass
+    return sorted(marcas)
+
+
+def _vigilar(root, args):
+    """Regenera el HTML mientras algun .py del arbol cambie. Un proceso vivo, no
+    un hook.
+
+    El hook PostToolUse fallaba por demasiados sitios: solo ve las ediciones de
+    CLAUDE (no las tuyas a mano), depende de reiniciar la sesion para cargarse, y
+    del shell y del PATH del hook. Esto no depende de nada de eso — mira el
+    sistema de ficheros directamente. Lo lanzas en una terminal y lo dejas; el
+    mapa vive mientras el proceso viva. Es lo que hace un live-server.
+    """
+    import time
+
+    from . import graph as graph_mod
+    from . import symbols as symbols_mod
+    from . import viz
+
+    destino = os.path.abspath(args.html)
+    intervalo = max(1, args.intervalo)
+    refresco = args.refresco or 5  # en watch el auto-refresh tiene sentido por defecto
+    anterior = None
+
+    emit("vigilando %s — el mapa se regenera al cambiar cualquier .py (Ctrl+C para parar)" % root)
+    try:
+        while True:
+            actual = _firma_py(root)
+            if actual != anterior:
+                anterior = actual
+                report = symbols_mod.analyze(root, since=args.since)
+                if not report["root_error"]:
+                    grafo = graph_mod.analyze(root)
+                    if not _html_forma_igual(root, destino, report, grafo):
+                        try:
+                            with open(destino, "w", encoding="utf-8") as handle:
+                                handle.write(
+                                    viz.render_graph_cloud(
+                                        report,
+                                        title="mapa · %s" % os.path.basename(root),
+                                        capas=args.capas,
+                                        graph_report=grafo,
+                                        procedencia=_procedencia(root),
+                                        refresco=refresco,
+                                    )
+                                )
+                            _html_registrar_forma(root, destino, report, grafo, refresco)
+                            emit("  actualizado %s" % _procedencia(root).split(" desde ")[0])
+                        except OSError as error:
+                            sys.stderr.write("[gb symbols] no pude escribir %s (%s)\n" % (destino, error))
+            time.sleep(intervalo)
+    except KeyboardInterrupt:
+        emit("\nlisto.")
+        return 0
+
+
 def cmd_symbols(args):
     from . import symbols
 
     root = os.path.abspath(args.path or ".")
+
+    if getattr(args, "watch", False):
+        if not args.html:
+            sys.stderr.write("[gb symbols] --watch necesita --html <fichero>\n")
+            return 2
+        return _vigilar(root, args)
+
     report = symbols.analyze(root, since=args.since)
     if report["root_error"]:
         sys.stderr.write("[gb symbols] %s\n" % report["root_error"])
@@ -885,6 +962,18 @@ def build_parser():
         "--if-changed",
         action="store_true",
         help="con --html: no reescribir si la forma no cambio (barato para un hook)",
+    )
+    syms.add_argument(
+        "--watch",
+        action="store_true",
+        help="con --html: proceso vivo que regenera el mapa cuando cambie cualquier .py",
+    )
+    syms.add_argument(
+        "--intervalo",
+        type=int,
+        default=2,
+        metavar="SEGUNDOS",
+        help="cada cuanto mira el disco en --watch (por defecto 2)",
     )
     syms.add_argument(
         "--refresco",

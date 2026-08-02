@@ -196,6 +196,42 @@ def test_sin_refresco_el_mantenimiento_no_lo_inventa(tmp_path, gb_home):
     assert 'http-equiv="refresh"' not in open(destino, encoding="utf-8").read()
 
 
+def test_watch_necesita_html(tmp_path):
+    """Vigilar sin decir que fichero escribir no tiene sentido: se avisa, no se
+    ignora en silencio."""
+    raiz = _proyecto(tmp_path)
+    assert cli.main(["symbols", raiz, "--watch", "--color", "never"]) == 2
+
+
+def test_la_firma_del_arbol_detecta_una_edicion(tmp_path):
+    """El corazon de --watch: si un .py cambia de tamano o de mtime, la firma se
+    mueve y el watcher reanaliza. Si no lo detectara, el mapa no se actualizaria
+    aunque el proceso estuviera vivo — que es justo lo que fallaba con el hook."""
+    raiz = _proyecto(tmp_path)
+    antes = cli._firma_py(raiz)
+
+    import time
+
+    time.sleep(0.02)
+    with open(os.path.join(raiz, "pkg", "a.py"), "a", encoding="utf-8") as handle:
+        handle.write("\n\ndef otra():\n    return 2\n")
+    assert cli._firma_py(raiz) != antes, "una edicion no movio la firma del arbol"
+
+
+def test_la_firma_ignora_lo_que_no_es_codigo(tmp_path):
+    """Un .html regenerado (el propio mapa) o un __pycache__ no deben disparar el
+    watcher: si no, se realimentaria solo. Solo cuentan los .py, y no los de
+    directorios ignorados."""
+    raiz = _proyecto(tmp_path)
+    antes = cli._firma_py(raiz)
+    with open(os.path.join(raiz, "mapa.html"), "w", encoding="utf-8") as handle:
+        handle.write("<html></html>")
+    os.makedirs(os.path.join(raiz, "__pycache__"), exist_ok=True)
+    with open(os.path.join(raiz, "__pycache__", "x.py"), "w", encoding="utf-8") as handle:
+        handle.write("basura\n")
+    assert cli._firma_py(raiz) == antes
+
+
 def test_dos_mapas_distintos_del_mismo_repo_no_se_pisan(tmp_path, gb_home):
     """Nube y capas a ficheros distintos llevan su propia cuenta de forma: que uno
     no cambie no puede impedir que el otro se escriba la primera vez."""
