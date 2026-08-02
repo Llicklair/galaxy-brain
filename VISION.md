@@ -1,0 +1,109 @@
+# galaxy-brain — La visión
+
+> **Estado: destino, no realidad.** Lo que gb hace HOY está en [SCOPE.md](SCOPE.md); la ley vigente,
+> en [ARCHITECTURE.md](ARCHITECTURE.md); la evidencia, en [docs/research-report.md](docs/research-report.md).
+> Esta visión se refinó adversarialmente (2-ago-2026): cada "oráculo" propuesto pasó por un evaluador
+> independiente que intentó demostrar que era teatro. Cinco de ocho lo eran. Lo que queda abajo es lo
+> que **sobrevivió** a esa refutación — por eso la tabla ya no promete la misma cosa en las ocho fases.
+
+---
+
+## La tesis
+
+**La corrección de un proyecto se construye desde su concepción, no se inspecciona al final.**
+
+Para cuando una consola de errores captura un fallo, el error ya se cometió tres fases antes —en una
+idea sin acotar, en una decisión sin registrar, en un código escrito sin verificar—. Verificar solo el
+resultado llega tarde por diseño. Un código nace correcto o se corrige caro.
+
+De ahí el giro: galaxy-brain no es una consola de errores con herramientas alrededor. Es **el arnés que
+acompaña las ocho fases de un proyecto**, con la disciplina de H1 (feedback determinista antes que el
+modelo) y H2 (generador ≠ evaluador) aplicada a todo el ciclo, no solo al código.
+
+Pero hay un límite duro, y fingir que no existe fue lo que hizo teatro a la primera versión de esta
+visión:
+
+---
+
+## El patrón que decide — dónde hay oráculo y dónde no
+
+> **Un hecho puede GATEAR (bloquear el paso) solo cuando lo produce algo EXTERNO al modelo: git, el
+> intérprete, el AST, una ejecución real. Cuando el hecho lo escribe el mismo modelo que se gatea, no
+> es verificación — es auto-reporte, y el modelo ajusta la superficie hasta pasar el contador (H2).**
+
+Esa línea parte "oráculo" en tres cosas que no son la misma, y que VISION fundía:
+
+- **GATEA** — un hecho de *retirada, existencia o ejecución* que el modelo no puede fingir. "Esta
+  frontera desapareció del diff", "este símbolo no resuelve en el AST", "este proceso corrió y petó",
+  "estos ciclos son nuevos". Ungameable, porque la fuente no es el modelo.
+- **INFORMA** — un proxy: correlaciona con lo que importa, pero **un cambio legítimo lo levanta**
+  (regla 11). Contar cláusulas de una idea, contar asserts de un diff, exigir un test en rojo. Sale
+  siempre, delante de quien decide, pero **no bloquea** — gatearlo fabrica los falsos positivos que
+  acaban en `--no-verify`.
+- **SE PIDE al humano** — el juicio irreducible: ¿es de verdad *un* trabajo? ¿es el criterio correcto?
+  ¿la razón del ADR es buena o folklore plausible? ¿este test prueba lo que querías? Ninguna máquina lo
+  comprueba. Se pide y se dice que se pide —como ya hace `floor` con el criterio de terminado—.
+
+La corrección emerge de las fases que **gatean**; las que **informan** hacen visible el riesgo sin
+bloquear; y las que **piden** son honestas sobre su propio límite. Vender las tres como "la misma idea"
+sería el teatro que este proyecto existe para no hacer.
+
+---
+
+## Las ocho fases
+
+Cada fila separa lo que un hecho externo puede **bloquear**, lo que solo **informa**, y lo que se
+**pide** al humano. La columna "tipo" dice qué es la fase en su núcleo.
+
+| # | Fase | GATEA (hecho externo, ungameable) | INFORMA (proxy, regla 11) | SE PIDE al humano | Tipo |
+|---|------|-----------------------------------|---------------------------|-------------------|------|
+| 1 | **Idea** | `idea.lock` = hash congelado; las citas en floor/boundaries/tests deben igualarlo → caza **drift descoordinado** entre artefactos | Contar cláusulas / denylist de scope: un monstruo de una sola frase (*"diagnosticar cualquier fallo del backend en prod"*) pasa; un JOB compuesto legítimo se bloquea | ¿Es de verdad **un** trabajo? ¿El usuario y el problema son reales? ¿Merece hacerse? | detección + juicio |
+| 2 | **Acotar** | El criterio de SCOPE cita artefactos que **existen** (nodos que `pytest --collect-only` colecciona, binarios en PATH): cero referencias fantasma | Exigir un test en rojo — burlable con `sys.exit(1)`, y **rechaza criterios verdes legítimos** (la SCOPE.md de este repo fallaría) | ¿Es el criterio **correcto** y **completo**? ¿"Qué NO entra" es honesto o se dejó vacío por miedo? | detección + juicio |
+| 3 | **Arquitectura** | **Retirada de frontera**: una regla que estaba en HEAD ya no está en el working tree y no se añadió un ADR sustituto — diferencia de conjuntos sobre blobs de git | El binding ADR↔invariante por igualdad de cabecera (el modelo escribe las dos cadenas → se verifica a sí mismo). "Regla nueva sin ADR" = papeleo | ¿La razón del ADR es buena o folklore? ¿La frontera es la correcta o un espantapájaros? | **gate** + juicio |
+| 4 | **Construir** | **Recibo de ejecución**: una corrida real (la consola, fase 5) con hash-de-código == el actual y timestamp posterior a la última edición → mata "dije listo sin ejecutar". Símbolos fantasma resolubles estáticamente (== `graph --gate`) | Rojo/verde como prueba de corrección (gameable: verde tautológico `assert x is not None`). No-ablandamiento de tests (`check`, ya PROXY) | ¿Es **este** test el correcto? ¿Prueba lo que querías? ¿La cobertura basta? | **gate** + juicio |
+| 5 | **Comprobar** | El estado real de un fallo que **ocurrió**: frames, locales, traza que puso el intérprete. Auto-verificado por `bootstrap.coverage` (8 subprocesos reales) | — (la **ausencia** de captura no prueba nada: es indistinguible de "no corrió") | ¿El programa hace lo que querías, más allá de no petar? | **instrumento** (devuelve, no bloquea) |
+| 6 | **Entender** | El grafo desde el AST (ciclos por Tarjan, resuelve solo lo resoluble y declara lo que no); `recall` reproducible | La memoria: contenido **auto-escrito por el modelo, sin verificar** — es una libreta, no un oráculo | ¿El modelo entendió el código? ¿La nota de memoria es cierta? | **instrumento** (devuelve, no bloquea) |
+| 7 | **Cambiar** | **El gate**: ciclo de imports NUEVO o cruce de frontera NUEVO en `.gb-boundaries`. Se niega al falso verde (reglas ilegibles / 0 módulos → exit 1) | `check` (`TEST_REMOVED`, `ASSERT_WEAKENED`): regex sobre el diff, PROXY que informa | La honestidad del `.gb-boundaries` (opt-in: sin fichero, cero enforce) | **gate** |
+| 8 | **¿Se usa?** | Capturas leídas, comandos corridos: contadores deterministas | Tasa de adopción como señal de valor | ¿Por qué se abandonó? (regla 5: se investiga, no se blinda) | contador |
+
+**Solo tres fases gatean de verdad: la 3, la 4 y la 7.** Y no por casualidad —son las tres cuyo hecho
+lo produce git, el AST o una ejecución, no el modelo—.
+
+---
+
+## Qué se integra y qué es propio
+
+La primera mitad del ciclo **no se construye desde cero** (H7: integrar Spec Kit, no reinventar). Spec
+Kit ya hace `specify → clarify → plan`, que son las fases 1-3 como *conversación guiada*.
+
+Lo que galaxy-brain aporta —y nadie más— es **el suelo determinista de cada fase, en la forma que de
+verdad tenga**: un **gate** donde el hecho es externo (3, 4, 7), un **instrumento** que devuelve sin
+bloquear donde solo hay un mapa (5, 6), y una **detección de drift o de referencias fantasma** donde el
+resto es juicio humano (1, 2). gb no reimplementa la guía; le pone el único suelo que un hecho puede
+sostener, y **dice cuándo ese suelo se acaba y empieza el humano**. La disciplina, no las tools.
+
+---
+
+## Lo que esto cambia respecto a hoy
+
+- **`floor` deja de detectar pasivamente** y pasa a **guiar por fases** — pero solo bloquea donde hay un
+  hecho externo que lo justifique; en el resto, informa y pide.
+- **La fase 4 vuelve.** El loop generar → verificar → reparar (la forja, hoy en forja-kit) es el corazón.
+  Su gate real es el **recibo de ejecución** (hash + timestamp), no el verde de los tests —que es
+  gameable—.
+- **El éxito se mide distinto.** No por latencia ni por número de comandos, sino por la premisa: **¿el
+  código nace con menos errores conocidos de LLM?** La métrica que hoy no existe y que esta visión
+  obliga a crear.
+
+---
+
+## Lo que sigue sin resolver
+
+- **El orden es real, pero los proyectos no son lineales.** Se vuelve de la 6 a la 3. ¿Cómo se maneja el
+  retroceso sin que el arnés estorbe?
+- **¿Dónde acaba gb y empieza Spec Kit / la forja?** Integrar por referencia (regla 7) o absorber.
+- **El auto-reporte es el enemigo estructural.** Todo hecho que el modelo escribe y luego se comprueba
+  contra sí mismo es fingible. La única defensa es anclar en fuentes externas (git, AST, ejecución) —y
+  aceptar que las fases 1, 2 y la memoria nunca tendrán un gate genuino, solo detección de drift—.
+- **El riesgo de ceremonia.** Un arnés de ocho fases que estorba acaba en `--no-verify`. La regla 11 es
+  la que lo vigila: gatear solo sobre hechos externos, nunca sobre proxies.
