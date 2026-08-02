@@ -83,6 +83,44 @@ def test_un_modulo_nuevo_si_reescribe(tmp_path, gb_home):
     assert _mtime(destino) > antes, "no reescribio pese al modulo nuevo"
 
 
+def test_una_funcion_nueva_en_un_modulo_existente_SI_reescribe(tmp_path, gb_home):
+    """El bug que congelaba el mapa 5 horas: --if-changed comparaba la forma a
+    nivel de MODULO (imports, ciclos), pero el mapa dibuja SIMBOLOS. Anadir una
+    funcion a un modulo que ya existe no crea ningun import nuevo, asi que la forma
+    de modulos no se movia y el mapa se quedaba con 274 simbolos mostrando 275."""
+    raiz = _proyecto(tmp_path)
+    destino = str(tmp_path / "mapa.html")
+    _generar(raiz, destino)
+    antes = _mtime(destino)
+
+    import time
+
+    time.sleep(0.02)
+    # NO es un modulo nuevo ni un import nuevo: una funcion mas en pkg/a.py.
+    with open(os.path.join(raiz, "pkg", "a.py"), "a", encoding="utf-8") as handle:
+        handle.write("\n\ndef nueva_funcion():\n    return 99\n")
+    cli.main(["symbols", raiz, "--html", destino, "--if-changed", "--color", "never"])
+    assert _mtime(destino) > antes, "un simbolo nuevo no disparo la regeneracion"
+
+
+def test_cambiar_un_docstring_SI_reescribe(tmp_path, gb_home):
+    """La ficha muestra el docstring, asi que cambiarlo cambia lo que se ve."""
+    raiz = _proyecto(tmp_path)
+    with open(os.path.join(raiz, "pkg", "a.py"), "w", encoding="utf-8") as handle:
+        handle.write('def f():\n    """Antes."""\n    return 1\n')
+    destino = str(tmp_path / "mapa.html")
+    _generar(raiz, destino)
+    antes = _mtime(destino)
+
+    import time
+
+    time.sleep(0.02)
+    with open(os.path.join(raiz, "pkg", "a.py"), "w", encoding="utf-8") as handle:
+        handle.write('def f():\n    """Despues, distinto."""\n    return 1\n')
+    cli.main(["symbols", raiz, "--html", destino, "--if-changed", "--color", "never"])
+    assert _mtime(destino) > antes, "cambiar el docstring no regenero el mapa"
+
+
 def test_reformatear_el_cuerpo_no_reescribe(tmp_path, gb_home):
     """La forma es estructura, no texto: cambiar el interior de una funcion sin
     tocar imports ni firmas no mueve el mapa."""

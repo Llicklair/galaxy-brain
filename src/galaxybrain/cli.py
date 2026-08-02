@@ -133,16 +133,29 @@ def _procedencia(root):
 
 
 def _html_shape(root, destino, report, graph_report):
-    """La forma del mapa (simbolos + grafo) y donde se recuerda.
+    """La forma de lo que el mapa DIBUJA, y donde se recuerda.
 
-    Cache aparte del de `--context` (clave por root+destino): dos mapas del mismo
-    proyecto a ficheros distintos no deben pisarse la memoria.
+    Aqui `report` es el de simbolos. La primera version comparaba `graph.shape`,
+    que es la forma a nivel de MODULO (imports, ciclos) — pero el mapa dibuja
+    SIMBOLOS, asi que anadir una funcion a un modulo existente no movia la forma y
+    el mapa se quedaba congelado con contenido viejo. La huella tiene que incluir
+    lo que se ve: cada simbolo (con su tipo y su docstring, que salen en la ficha),
+    cada llamada, y ademas el grafo de imports/ciclos.
+
+    Todo listas —no tuplas— para que sobreviva al viaje por JSON: una tupla vuelve
+    lista al releer, y la comparacion diria "cambio" siempre.
     """
     import hashlib
 
     from . import graph
 
-    forma = {"s": graph.shape(report)}
+    forma = {
+        "sim": sorted(
+            [n.get("qual", ""), n.get("kind", ""), n.get("doc", "")]
+            for n in report.get("nodes", [])
+        ),
+        "llam": sorted([a, b, t] for a, b, t in report.get("edges", [])),
+    }
     if graph_report is not None:
         forma["g"] = graph.shape(graph_report)
     clave = hashlib.sha256(
