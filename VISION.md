@@ -60,7 +60,7 @@ Cada fila separa lo que un hecho externo puede **bloquear**, lo que solo **infor
 | 1 | **Idea** | `idea.lock` = hash congelado; las citas en floor/boundaries/tests deben igualarlo → caza **drift descoordinado** entre artefactos | Contar cláusulas / denylist de scope: un monstruo de una sola frase (*"diagnosticar cualquier fallo del backend en prod"*) pasa; un JOB compuesto legítimo se bloquea | ¿Es de verdad **un** trabajo? ¿El usuario y el problema son reales? ¿Merece hacerse? | detección + juicio |
 | 2 | **Acotar** | El criterio de SCOPE cita artefactos que **existen** (nodos que `pytest --collect-only` colecciona, binarios en PATH): cero referencias fantasma | Exigir un test en rojo — burlable con `sys.exit(1)`, y **rechaza criterios verdes legítimos** (la SCOPE.md de este repo fallaría) | ¿Es el criterio **correcto** y **completo**? ¿"Qué NO entra" es honesto o se dejó vacío por miedo? | detección + juicio |
 | 3 | **Arquitectura** | **Retirada de frontera**: una regla que estaba en HEAD ya no está en el working tree y no se añadió un ADR sustituto — diferencia de conjuntos sobre blobs de git | El binding ADR↔invariante por igualdad de cabecera (el modelo escribe las dos cadenas → se verifica a sí mismo). "Regla nueva sin ADR" = papeleo | ¿La razón del ADR es buena o folklore? ¿La frontera es la correcta o un espantapájaros? | **gate** + juicio |
-| 4 | **Construir** | **Símbolos fantasma resolubles estáticamente** (== `graph --gate`) — hecho AST, **único gate**. *El "recibo de ejecución" quedó **descartado** (decisión, 3-ago): es auto-reporte —el modelo elige qué correr— y exigiría un segundo tipo de evento en la consola (regla 5). El "dije listo sin ejecutar" se acepta como **no-gateable** y se pide al humano.* | Rojo/verde como prueba de corrección (gameable: verde tautológico `assert x is not None`). No-ablandamiento de tests (`check`, ya PROXY) | ¿Es **este** test el correcto? ¿Prueba lo que querías? ¿La cobertura basta? ¿Se **ejecutó** de verdad? | **gate** + juicio |
+| 4 | **Construir** | **El gate de acoplamiento** (`graph --gate`): ciclo de imports o cruce de frontera — hecho AST, el mismo que la fase 7, aquí en absoluto. *El "recibo de ejecución" quedó **descartado** (decisión, 3-ago): es auto-reporte —el modelo elige qué correr— y exigiría un segundo tipo de evento en la consola (regla 5). El "dije listo sin ejecutar" se acepta como **no-gateable** y se pide al humano.* | **Símbolos fantasma**: `symbols` los cuenta con su motivo sin distinguir "no existe" de "no resoluble" — cuentan, no adivinan, así que **no gatean** (verificado, 3-ago). Rojo/verde como prueba de corrección (gameable: verde tautológico `assert x is not None`). No-ablandamiento de tests (`check`, ya PROXY) | ¿Es **este** test el correcto? ¿Prueba lo que querías? ¿La cobertura basta? ¿Se **ejecutó** de verdad? | **gate** + juicio |
 | 5 | **Comprobar** | El estado real de un fallo que **ocurrió**: frames, locales, traza que puso el intérprete. Auto-verificado por `bootstrap.coverage` (8 subprocesos reales) | — (la **ausencia** de captura no prueba nada: es indistinguible de "no corrió") | ¿El programa hace lo que querías, más allá de no petar? | **instrumento** (devuelve, no bloquea) |
 | 6 | **Entender** | El grafo desde el AST (ciclos por Tarjan, resuelve solo lo resoluble y declara lo que no); `recall` reproducible | La memoria: contenido **auto-escrito por el modelo, sin verificar** — es una libreta, no un oráculo | ¿El modelo entendió el código? ¿La nota de memoria es cierta? | **instrumento** (devuelve, no bloquea) |
 | 7 | **Cambiar** | **El gate**: ciclo de imports NUEVO o cruce de frontera NUEVO en `.gb-boundaries`. Se niega al falso verde (reglas ilegibles / 0 módulos → exit 1) | `check` (`TEST_REMOVED`, `ASSERT_WEAKENED`): regex sobre el diff, PROXY que informa | La honestidad del `.gb-boundaries` (opt-in: sin fichero, cero enforce) | **gate** |
@@ -94,11 +94,17 @@ sostener, y **dice cuándo ese suelo se acaba y empieza el humano**. La discipli
 
 - **`floor` deja de detectar pasivamente** y pasa a **guiar por fases** — pero solo bloquea donde hay un
   hecho externo que lo justifique; en el resto, informa y pide.
-- **La fase 4 vuelve.** El loop generar → verificar → reparar (la forja, hoy en forja-kit) es el corazón.
-  Su único gate son los **símbolos fantasma** (`graph --gate`, hecho AST). El **recibo de ejecución**
-  (capturar corridas verdes + hash de código) se **descartó** (3-ago): es auto-reporte y tensaría la
-  regla 5. Consecuencia asumida: **"dije listo sin ejecutar" no tiene gate** — se pide al humano, no se
-  comprueba. Es el precio honesto de no meter un segundo tipo de evento en la consola.
+- **La fase 4 no resucita la forja: la consume.** El motor (generar → verificar → reparar, con modelo
+  dentro) sigue **descartado** dentro de gb (regla 1); si algún día existe, vive fuera y consume los
+  oráculos por exit-code/JSON. Lo que gb le da, verificado contra el código (interrogatorio, 3-ago): el
+  **gate de acoplamiento** (ciclos + cruces, hecho AST — los símbolos fantasma **no** gatean: se cuentan
+  con su motivo, no adivinan), la **consola de crashes** y un **mapa fiel al arrancar**. El abaratamiento
+  real no está en verificar más barato —gb no tiene oráculo de correctitud: la consola atrapa crashes,
+  justo lo que el LLM menos rompe— sino en que el modelo dé **menos vueltas del loop** porque construye
+  sobre un mapa cierto: menos errores de nacimiento, que es la premisa. Y las `.gb-boundaries` las
+  declara el **humano**: si el loop escribiera sus propias reglas, el gate mediría contra el generador
+  (regla 11). El **recibo de ejecución** sigue **descartado** (3-ago) y **"dije listo sin ejecutar" no
+  tiene gate** — se pide al humano, no se comprueba.
 - **El éxito se mide distinto.** No por latencia ni por número de comandos, sino por la premisa: **¿el
   código nace con menos errores conocidos de LLM?** La métrica que hoy no existe y que esta visión
   obliga a crear.
