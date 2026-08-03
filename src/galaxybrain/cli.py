@@ -1079,6 +1079,9 @@ def _uso_label(args):
     etiqueta = args.command or ""
     if getattr(args, "context", False):
         etiqueta += " --context"
+    elif getattr(args, "gate", False):
+        # El pre-commit tambien es invocacion automatica, no eleccion.
+        etiqueta += " --gate"
     elif etiqueta == "memory":
         etiqueta += " " + (getattr(args, "mem_command", None) or "index")
     return etiqueta

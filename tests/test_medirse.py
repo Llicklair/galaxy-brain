@@ -186,3 +186,11 @@ def test_status_ensena_el_desglose_de_uso(gb_home, capsys):
     assert "uso (7 dias)" in out
     assert "show 2" in out
     assert "status 1" in out  # el propio status tambien cuenta: transparente
+
+
+def test_el_gate_del_precommit_se_apunta_con_apellido(gb_home, capsys, tmp_path):
+    """`graph --gate` en el pre-commit es maquinaria, no eleccion: sin apellido,
+    cada commit inflaria la cifra de uso deliberado."""
+    cli.main(["graph", str(tmp_path), "--gate"])
+    capsys.readouterr()
+    assert store.uso_stats() == {"graph --gate": 1}
