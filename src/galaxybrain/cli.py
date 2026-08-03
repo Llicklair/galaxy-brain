@@ -132,6 +132,111 @@ def _procedencia(root):
     return "generado el %s (sin repo git)" % momento
 
 
+def _embudo_ciclo(embudo):
+    """El embudo del ciclo del error en una linea. Hechos con su recuento, sin
+    veredicto: "sin reaparecer" es lo maximo que se puede afirmar sin re-ejecutar."""
+    return "%d capturadas · %d leidas · %d intervenidas · %d sin reaparecer" % (
+        embudo["capturadas"],
+        embudo["leidas"],
+        embudo["intervenidas"],
+        embudo["sin_reaparecer"],
+    )
+
+
+def _ciclo_proyecto(root):
+    """El ciclo del error del proyecto que contiene a `root`, o None si no hay capturas.
+
+    Se DERIVA en cada llamada de tres fuentes que ya existian —historico,
+    leidas.jsonl y git— sin ningun fichero de estado nuevo. Los efimeros
+    (`python -c`, stdin) quedan fuera: no son ficheros del proyecto y no tienen
+    ciclo posible.
+    """
+    from . import changes
+    from .capture import _project_root
+
+    proyecto = _project_root(root) or os.path.abspath(root)
+    entradas = [e for e in store.read_index(project=proyecto) if not store.is_ephemeral(e)]
+    if not entradas:
+        return None
+    return changes.ciclo_errores(proyecto, entradas, store.read_ids())
+
+
+def _linea_firma(firma):
+    """La cadena de una firma como hechos encadenados, para la ficha del mapa:
+    "ValueError en a.py:42 — 3 veces, ultima hace 6d · leida · tocado despues
+    (abc123) · sin reaparecer desde hace 2 d"."""
+    sitio = firma["where"] or "?"
+    if firma["file"]:
+        _resto, _sep, linea = sitio.rpartition(":")
+        sitio = "%s:%s" % (os.path.basename(firma["file"]), linea)
+    veces = "1 vez" if firma["count"] == 1 else "%d veces" % firma["count"]
+    partes = [
+        "%s en %s — %s, ultima %s"
+        % (firma["type"] or "?", sitio, veces, render.relative_time(firma["last_ts"]))
+    ]
+    partes.append("leida" if firma["leida"] else "sin leer")
+    if firma["intervencion"]:
+        partes.append("tocado despues (%s)" % firma["intervencion"]["commit"])
+        if firma["estado"] == "en-silencio":
+            # La ventana SIEMPRE explicita: "sin reaparecer" a secas se leeria
+            # como un veredicto, y es indistinguible de "no corrio". Por debajo
+            # de 1 dia los dias degeneran en un "0 d" que no informa: ahi se usa
+            # la granularidad de relative_time sobre la fecha del commit ("hace
+            # 3h"). El formateo vive AQUI y no en changes: changes no importa
+            # render (frontera declarada), solo devuelve la fecha del commit.
+            if (firma["silencio_dias"] or 0) >= 1:
+                partes.append("sin reaparecer desde hace %d d" % firma["silencio_dias"])
+            else:
+                ventana = render.relative_time(firma["intervencion"]["ts"])
+                partes.append("sin reaparecer desde %s" % ventana)
+        elif firma["reapariciones"]:
+            partes.append("reaparecida %d vez/veces despues" % firma["reapariciones"])
+    return " · ".join(partes)
+
+
+#: Orden de los eslabones, del mas pendiente al mas avanzado.
+_ESTADOS_CICLO = ("capturada", "leida", "intervenida", "en-silencio")
+
+
+def _ciclo_para_mapa(root, informe_simbolos):
+    """El ciclo del error como viaja al mapa HTML: embudo + estado por nodo modulo.
+
+    El join ruta-de-frame -> nodo es el punto delicado en Windows ('c:' vs 'C:',
+    separadores mezclados — ya hubo un bug de cache por eso): los dos lados se
+    comparan por normcase, nunca por igualdad literal. En POSIX normcase no toca
+    nada y dos rutas con distinta caja siguen siendo distintas.
+    """
+    from . import graph as graph_mod
+
+    ciclo = _ciclo_proyecto(root)
+    if not ciclo:
+        return None
+    modulos = {
+        os.path.normcase(n.get("qual") or ""): n.get("qual")
+        for n in informe_simbolos.get("nodes", [])
+        if n.get("kind") == "module"
+    }
+    nodos = {}
+    for firma in ciclo["firmas"]:
+        if not firma["file"]:
+            continue
+        try:
+            mod = graph_mod.module_name(firma["file"], root)
+        except ValueError:  # otra unidad de disco en Windows
+            continue
+        qual = modulos.get(os.path.normcase(mod))
+        if not qual:
+            continue
+        nodo = nodos.setdefault(qual, {"estado": firma["estado"], "lineas": []})
+        # El estado del nodo es el MENOS avanzado de sus firmas: un fichero con
+        # una captura sin leer se ensena pendiente aunque otra firma suya este
+        # en silencio.
+        if _ESTADOS_CICLO.index(firma["estado"]) < _ESTADOS_CICLO.index(nodo["estado"]):
+            nodo["estado"] = firma["estado"]
+        nodo["lineas"].append(_linea_firma(firma))
+    return {"embudo": _embudo_ciclo(ciclo["embudo"]), "nodos": nodos}
+
+
 def _html_shape(root, destino, report, graph_report):
     """La forma de lo que el mapa DIBUJA, y donde se recuerda.
 
@@ -158,6 +263,26 @@ def _html_shape(root, destino, report, graph_report):
     }
     if graph_report is not None:
         forma["g"] = graph.shape(graph_report)
+    # El mapa tambien pinta el CICLO DEL ERROR (anillos, ficha, cabecera), asi
+    # que su forma registrada tiene que moverse cuando se muevan sus fuentes:
+    # una captura nueva, una lectura o un commit que solo cambiara el codigo ya
+    # dibujado dejaban --if-changed y el mantenimiento sin regenerar, y el ciclo
+    # pintado mentia por omision toda una sesion. Huella barata y DERIVADA
+    # (mtime+tamano de los dos jsonl + HEAD), ningun fichero de estado nuevo.
+    # index.jsonl es global al home: una captura de OTRO proyecto tambien
+    # regenera este mapa — regeneracion de mas, barata e inofensiva. Esto es
+    # SOLO la forma del mapa; la del payload --context no lo lleva, su silencio
+    # es sagrado.
+    huella = []
+    for nombre in (store.INDEX_NAME, store.READS_NAME):
+        try:
+            st = os.stat(str(config.home() / nombre))
+            huella.append([nombre, st.st_mtime_ns, st.st_size])
+        except OSError:
+            huella.append([nombre, 0, 0])
+    head = graph._git(root, "rev-parse", "HEAD")
+    huella.append(["HEAD", (head or "").strip()])
+    forma["ciclo"] = huella
     clave = hashlib.sha256(
         (os.path.normcase(os.path.abspath(root)) + "|" + os.path.normcase(destino)).encode("utf-8")
     ).hexdigest()[:16]
@@ -488,6 +613,10 @@ def cmd_graph(args):
                         graph_report=report,
                         procedencia=_procedencia(root),
                         refresco=refresco,
+                        # El ciclo del error viaja como los demas extras: el cli
+                        # lo computa (aqui, no en cada frame del navegador) y el
+                        # renderizador solo dibuja. Informa, no bloquea.
+                        ciclo=_ciclo_para_mapa(root, simbolos),
                     )
                 )
         except OSError as error:
@@ -567,6 +696,7 @@ def _vigilar(root, args):
                                         graph_report=grafo,
                                         procedencia=_procedencia(root),
                                         refresco=refresco,
+                                        ciclo=_ciclo_para_mapa(root, report),
                                     )
                                 )
                             _html_registrar_forma(root, destino, report, grafo, refresco)
@@ -630,6 +760,7 @@ def cmd_symbols(args):
                         graph_report=grafo,
                         procedencia=_procedencia(root),
                         refresco=refresco,
+                        ciclo=_ciclo_para_mapa(root, report),
                     )
                 )
         except OSError as error:
@@ -860,6 +991,13 @@ def cmd_status(args):
             "%s %d" % (cmd, n) for cmd, n in sorted(usos.items(), key=lambda kv: (-kv[1], kv[0]))
         )
         emit("  uso (7 dias)       : %d invocacion(es) — %s" % (total, desglose))
+
+    # El ciclo del error, visible: cuantas firmas llegaron a cada eslabon. Solo
+    # si hay capturas de ESTE proyecto — un embudo de ceros seria ruido. Cada
+    # cifra es un hecho (historico, leidas.jsonl, git); ninguna es un veredicto.
+    ciclo = _ciclo_proyecto(os.getcwd())
+    if ciclo:
+        emit("  ciclo              : %s" % _embudo_ciclo(ciclo["embudo"]))
     return 0
 
 

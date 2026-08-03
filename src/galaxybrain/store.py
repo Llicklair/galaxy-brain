@@ -149,6 +149,36 @@ def read_stats(project=None):
     return len(capturas), len(leidas), aperturas
 
 
+def read_ids():
+    """El conjunto de ids apuntados en la libreta de lecturas.
+
+    Es la materia prima del eslabon "leida" del ciclo del error: read_stats()
+    devuelve recuentos, pero para cruzar lecturas con firmas hacen falta los ids.
+    Se devuelve crudo, sin filtrar por proyecto — quien cruza ya tiene los ids
+    del proyecto en su indice. Regla 9: una libreta ilegible es un conjunto
+    vacio, no una excepcion.
+    """
+    destino = root() / READS_NAME
+    ids = set()
+    if not destino.exists():
+        return ids
+    try:
+        with open(destino, "r", encoding="utf-8") as handle:
+            for linea in handle:
+                linea = linea.strip()
+                if not linea:
+                    continue
+                try:
+                    ident = json.loads(linea).get("id")
+                except ValueError:
+                    continue  # una linea corrupta no invalida la libreta
+                if ident:
+                    ids.add(ident)
+    except OSError:
+        pass
+    return ids
+
+
 #: La otra mitad del termometro de adopcion (regla 10): READS_NAME dice si lo
 #: capturado se LEE; esta libreta dice si gb se INVOCA siquiera. "¿El agente tiene
 #: la herramienta en cuenta?" era la unica pregunta del proyecto sin instrumento.

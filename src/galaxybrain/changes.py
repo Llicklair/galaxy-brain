@@ -18,12 +18,14 @@ tests BORRADO ENTERO produce `+++ /dev/null` y el parser antiguo lo saltaba,
 justo el amaño más descarado de todos.
 """
 
+import datetime
 import os
 import re
 
 # Se reutiliza el runner de git del grafo en vez de duplicarlo: la disciplina de
 # codificacion que lleva dentro (utf-8 + errors=replace, core.quotePath=false) se
 # aprendio a base de fallos reales y tiene que ser la misma en los dos sitios.
+from . import store
 from .graph import _git as _git_output
 
 TEST_FILE = re.compile(
@@ -397,3 +399,240 @@ def analyze(root, rev_range=None, skip=None, include_nested=False, staged=False)
             "working tree — si tienes cosas a medias, las dos mitades no miran lo mismo"
         )
     return report
+
+
+# ---------------------------------------------------------------------------
+# El ciclo del error: capturado -> leida -> intervenido -> sin reaparecer.
+# Vive aqui porque este modulo es el que ya habla con git sobre cambios, y el
+# eslabon "intervenido" es exactamente eso: un commit posterior al fallo.
+# ---------------------------------------------------------------------------
+
+
+def _fichero_de_firma(where):
+    """La ruta de fichero de un `where` del indice ("C:\\x\\a.py:42" -> "C:\\x\\a.py").
+
+    Se parte por la DERECHA: en Windows la ruta lleva el ':' de la unidad, y
+    partir por la izquierda devolveria "C" como fichero. None si no hay ':' o si
+    la fuente no es un fichero real (`<string>`, `<stdin>`, `?`).
+    """
+    texto = (where or "").strip()
+    if not texto or texto.startswith("<"):
+        return None
+    fichero, sep, _linea = texto.rpartition(":")
+    if not sep:
+        return None
+    return fichero or None
+
+
+def _ruta_para_git(root, fichero):
+    """La ruta relativa a `root` que git entiende, o None si no se puede.
+
+    normpath + relpath: en Windows relpath compara componente a componente con
+    normcase, asi que 'c:/x/A.PY' y 'C:\\x\\a.py' acaban en la misma relativa
+    (el bug de cache por 'c:' vs 'C:' ya costo un arreglo en este repo). En
+    POSIX la caja se respeta: ahi dos rutas con distinta caja SON distintas.
+    """
+    try:
+        rel = os.path.relpath(os.path.normpath(fichero), os.path.normpath(root))
+    except ValueError:  # otra unidad de disco en Windows: no hay relativa posible
+        return None
+    return rel.replace(os.sep, "/")
+
+
+def _ultimo_commit(root, fichero, cache):
+    """(hash, datetime) del ultimo commit que toco `fichero`, o None.
+
+    Hecho de git, no un juicio: que el fichero se tocara despues del fallo no
+    dice que el cambio lo arreglara. Por eso el vocabulario del ciclo se queda
+    en "intervenido" — devolver, no dictaminar.
+    """
+    clave = os.path.normcase(os.path.normpath(fichero))
+    if clave in cache:
+        return cache[clave]
+    resultado = None
+    rel = _ruta_para_git(root, fichero)
+    if rel:
+        salida = _git_output(root, "log", "-1", "--format=%h %cI", "--", rel)
+        if salida and salida.strip():
+            hash_, _sep, fecha = salida.strip().split("\n")[0].partition(" ")
+            cuando = store.parse_ts(fecha.strip())
+            if hash_ and cuando is not None and cuando.tzinfo is not None:
+                resultado = (hash_, cuando)
+    cache[clave] = resultado
+    return resultado
+
+
+def _ultimos_commits(root, ficheros, desde):
+    """El ultimo commit de CADA fichero con UN solo `git log`, o None si no se pudo.
+
+    Devuelve {clave normcase: (hash, datetime) | None} cubriendo TODOS los
+    `ficheros` — las mismas claves que usa la cache de `_ultimo_commit`, para
+    poder sembrarla. None entero si el batch no se pudo construir o parsear: el
+    que llama cae en silencio al camino por-fichero (regla 9 — un atajo que
+    falla no puede costar ni un aviso ni un bloqueo).
+
+    Por que un batch: un spawn de git son ~25-40 ms en Windows, y un `git log -1`
+    POR FICHERO con 30+ ficheros con capturas se come el presupuesto de < 1 s
+    por edicion (hard rule 2, esto corre dentro de `_vigilar`). Solo interesan
+    commits desde la ocurrencia mas antigua (`desde`): un commit anterior a
+    TODAS las ocurrencias nunca es una intervencion, asi que un fichero sin
+    commits en la ventana queda en None con la misma semantica aguas abajo que
+    el camino por-fichero.
+    """
+    resultado = {}
+    rutas = []
+    for fichero in ficheros:
+        resultado[os.path.normcase(os.path.normpath(fichero))] = None
+        rel = _ruta_para_git(root, fichero)
+        if rel:
+            rutas.append(rel)
+    if not rutas:
+        return resultado
+    # `--name-only` da las rutas relativas al TOPLEVEL del repo (no a `root`) y
+    # siempre con '/': hay que reconstruir la absoluta desde el toplevel y
+    # comparar por normcase — la misma normalizacion que la cache por-fichero.
+    toplevel = _git_output(root, "rev-parse", "--show-toplevel")
+    if not toplevel or not toplevel.strip():
+        return None
+    toplevel = toplevel.strip().split("\n")[0]
+    salida = _git_output(
+        root,
+        "log",
+        "--format=%x01%h %cI",
+        "--name-only",
+        "--since=" + desde.isoformat(timespec="seconds"),
+        "--",
+        *rutas,
+    )
+    if salida is None:
+        return None
+    actual = None
+    for linea in salida.split("\n"):
+        if linea.startswith("\x01"):
+            hash_, _sep, fecha = linea[1:].partition(" ")
+            cuando = store.parse_ts(fecha.strip())
+            if not hash_ or cuando is None or cuando.tzinfo is None:
+                return None  # cabecera ilegible: mejor por-fichero que adivinar
+            actual = (hash_, cuando)
+            continue
+        nombre = linea.strip()
+        if not nombre or actual is None:
+            continue
+        clave = os.path.normcase(os.path.normpath(os.path.join(toplevel, nombre)))
+        # git lista de lo mas nuevo a lo mas viejo: la primera aparicion de un
+        # fichero es su ultimo commit, las siguientes se ignoran.
+        if clave in resultado and resultado[clave] is None:
+            resultado[clave] = actual
+    return resultado
+
+
+def ciclo_errores(root, entries, leidas=None, ahora=None):
+    """El ciclo del error por firma. Cada eslabon es un hecho externo, no un juicio:
+
+    - capturada: la firma (tipo + sitio) esta en el historico, con sus ocurrencias.
+    - leida: alguna captura de la firma se enseno entera (libreta de lecturas).
+    - intervenida: el fichero del frame cabecera tiene un commit POSTERIOR a
+      ALGUNA ocurrencia (git). Si la firma volvio a petar DESPUES de ese commit
+      el eslabon no se borra: queda 'intervenida' con `reapariciones` > 0 — una
+      intervencion que no aguanto es informacion valiosa, no ruido.
+    - en-silencio: intervenida y cero ocurrencias desde ese commit. SIEMPRE con
+      su ventana (`silencio_dias`): "sin reaparecer desde hace N d" es un hecho;
+      un veredicto seria re-ejecutar, y eso gb no lo hace.
+
+    `entries` viene de store.read_index (ya filtrado por proyecto y sin efimeros);
+    `leidas` de store.read_ids(). `ahora` se inyecta para que los tests no
+    dependan del reloj. Devuelve None si no hay firmas. Informa, no bloquea.
+    """
+    leidas = leidas or set()
+    if ahora is None:
+        ahora = datetime.datetime.now().astimezone()
+
+    grupos, orden = {}, []
+    for entry in entries:
+        key = (entry.get("type"), entry.get("where"))
+        grupo = grupos.get(key)
+        if grupo is None:
+            grupo = {
+                "type": entry.get("type"),
+                "where": entry.get("where"),
+                "count": 0,
+                "ids": [],
+                "ts": [],
+                # entries llega de lo mas reciente a lo mas antiguo: la primera
+                # vez que se ve una firma es su ocurrencia mas nueva.
+                "last_ts": entry.get("ts"),
+                "last_id": entry.get("id"),
+            }
+            grupos[key] = grupo
+            orden.append(key)
+        grupo["count"] += 1
+        if entry.get("id"):
+            grupo["ids"].append(entry["id"])
+        cuando = store.parse_ts(entry.get("ts"))
+        if cuando is not None and cuando.tzinfo is not None:
+            grupo["ts"].append(cuando)
+
+    if not grupos:
+        return None
+
+    # La cache se siembra con UN solo `git log` para todos los ficheros; si el
+    # batch devuelve None, `_ultimo_commit` hace su camino por-fichero de siempre.
+    cache_git = {}
+    ficheros = [f for f in (_fichero_de_firma(grupos[k]["where"]) for k in orden) if f]
+    todos_ts = [t for g in grupos.values() for t in g["ts"]]
+    if ficheros and todos_ts:
+        batch = _ultimos_commits(root, ficheros, min(todos_ts))
+        if batch is not None:
+            cache_git.update(batch)
+
+    firmas = []
+    for key in orden:
+        grupo = grupos[key]
+        fichero = _fichero_de_firma(grupo["where"])
+        commit = _ultimo_commit(root, fichero, cache_git) if fichero else None
+        # Intervenida = commit posterior a ALGUNA ocurrencia: tocar el fichero
+        # despues de un fallo es el hecho "alguien intervino", y no se borra
+        # porque la firma vuelva a petar despues — eso queda como 'intervenida'
+        # con reapariciones > 0, visible como intervencion que no aguanto.
+        # (Exigir commit > TODAS las ocurrencias hacia 'intervenida' inalcanzable:
+        # con reapariciones el commit dejaba de ser posterior y la firma volvia a
+        # capturada, asi que intervenidas == sin_reaparecer siempre.)
+        posterior = bool(commit and grupo["ts"] and commit[1] > min(grupo["ts"]))
+        tras = sum(1 for t in grupo["ts"] if t > commit[1]) if posterior else 0
+        leida = any(ident in leidas for ident in grupo["ids"])
+        estado = "leida" if leida else "capturada"
+        silencio_dias = None
+        if posterior:
+            if tras == 0:
+                estado = "en-silencio"
+                silencio_dias = max(0, int((ahora - commit[1]).total_seconds() // 86400))
+            else:
+                estado = "intervenida"
+        firmas.append(
+            {
+                "type": grupo["type"],
+                "where": grupo["where"],
+                "file": fichero,
+                "count": grupo["count"],
+                "last_ts": grupo["last_ts"],
+                "last_id": grupo["last_id"],
+                "leida": leida,
+                "intervencion": (
+                    {"commit": commit[0], "ts": commit[1].isoformat(timespec="seconds")}
+                    if posterior
+                    else None
+                ),
+                "reapariciones": tras,
+                "estado": estado,
+                "silencio_dias": silencio_dias,
+            }
+        )
+
+    firmas.sort(key=lambda f: (f["count"], f["last_ts"] or ""), reverse=True)
+    embudo = {
+        "capturadas": len(firmas),
+        "leidas": sum(1 for f in firmas if f["leida"]),
+        "intervenidas": sum(1 for f in firmas if f["intervencion"]),
+        "sin_reaparecer": sum(1 for f in firmas if f["estado"] == "en-silencio"),
+    }
+    return {"firmas": firmas, "embudo": embudo}

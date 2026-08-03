@@ -237,6 +237,18 @@ _COLOR_IMPORT = "#fb7185"
 #: igual a igual con el resto de colores.
 _COLOR_CICLO = "#ef4444"
 
+#: El ciclo del error sobre un nodo (borde discontinuo, no relleno: el color del
+#: nodo sigue diciendo su tipo). El rojo queda reservado al ciclo de imports —
+#: lo unico que bloquea—; esto INFORMA (regla 11) con su propia escala. Y el
+#: ultimo eslabon se llama "en-silencio", no otra cosa: gb no re-ejecuta nada,
+#: asi que la ausencia de ocurrencias es solo eso, ausencia con ventana.
+_CICLO_ERROR_COLOR = {
+    "capturada": "#f97316",    # naranja — capturada y sin leer, pendiente
+    "leida": "#facc15",        # amarillo — leida, aun sin commit posterior
+    "intervenida": "#38bdf8",  # azul — tocado despues del fallo
+    "en-silencio": "#4ade80",  # verde — sin reaparecer desde la intervencion
+}
+
 #: Fallback para agrupaciones sin tipo (vista de modulos): paleta ciclica.
 _COLORES = [
     "#7c5cff", "#22d3ee", "#f472b6", "#fb923c", "#4ade80",
@@ -253,6 +265,7 @@ def render_graph_cloud(
     procedencia=None,
     capas=False,
     refresco=0,
+    ciclo=None,
 ):
     """La nube: nodos repartidos por fuerzas, coloreados por módulo, navegable.
 
@@ -424,6 +437,15 @@ def render_graph_cloud(
             for g in grupos[:12]
         )
 
+    # El ciclo del error viene ya computado por quien llama (como la procedencia:
+    # este renderizador no lee historico ni git, solo dibuja datos de entrada).
+    info_ciclo = (ciclo or {}).get("nodos") or {}
+    if info_ciclo:
+        leyenda += "".join(
+            '<span><i style="background:%s"></i>%s</span>' % (_CICLO_ERROR_COLOR[e], e)
+            for e in ("capturada", "leida", "intervenida", "en-silencio")
+        )
+
     grados = {}
     for a, b in llamadas:
         grados[a] = grados.get(a, 0) + 1
@@ -443,6 +465,11 @@ def render_graph_cloud(
             "nu": 1 if n in nuevos_n else 0,
             "ci": 1 if n in en_ciclo else 0,
             "d": (docs.get(n, "") if modo == "simbolos" else "")[:160],
+            # Estado del ciclo del error del nodo: color del borde, etiqueta y la
+            # cadena por firma para la ficha. Vacio si el fichero no tiene capturas.
+            "ec": _CICLO_ERROR_COLOR.get(info_ciclo.get(n, {}).get("estado"), ""),
+            "ee": info_ciclo.get(n, {}).get("estado", ""),
+            "el": info_ciclo.get(n, {}).get("lineas", []),
         }
         for n in implicados
     ]
@@ -479,6 +506,13 @@ def render_graph_cloud(
         "nodos": _json.dumps(datos, ensure_ascii=False),
         "aristas": _json.dumps(lista_aristas),
         "leyenda": leyenda,
+        # El embudo del ciclo del error en la cabecera, ya formateado por quien
+        # llama. Cadena vacia (ni hueco) si el proyecto no tiene capturas.
+        "ciclo": (
+            '\n  <span class="meta">ciclo: %s</span>' % _html.escape(ciclo["embudo"])
+            if ciclo and ciclo.get("embudo")
+            else ""
+        ),
         "color_import": _COLOR_IMPORT,
         "color_ciclo": _COLOR_CICLO,
         "maxit": maxit,
@@ -528,7 +562,7 @@ _NUBE = """<!doctype html>
 </style>
 <header>
   <h1>%(title)s</h1>
-  <span class="meta">%(resumen)s</span>
+  <span class="meta">%(resumen)s</span>%(ciclo)s
   <span id="estado">layout optimizando&hellip;</span>
   <input id="buscar" placeholder="buscar simbolo..." autocomplete="off">
   <button id="btnPausa" title="pausar/reanudar la fisica">&#9208;</button>
@@ -686,6 +720,13 @@ function muestraFicha(i){
     // quiere VER, no una ficha vacia que parezca un fallo de la pagina.
     filas.push('<span>sin llamadas resueltas ni imports</span>');
   }
+  if(n.ee){
+    // La cadena del ciclo del error, por firma: hechos encadenados con su
+    // ventana temporal, nunca un veredicto. Los textos vienen ya montados desde
+    // Python (con datos del historico y de git); aqui solo se escapan y pintan.
+    filas.push('<span>ciclo del error:</span> <span style="color:'+n.ec+'">'+escapa(n.ee)+'</span>');
+    for(const l of (n.el||[])) filas.push('&middot; '+escapa(l));
+  }
   const marcas = [];
   if(n.ci) marcas.push('<span style="color:'+CICLO_COLOR+'">en un ciclo</span>');
   if(n.nu) marcas.push('<span style="color:#22d3ee">nuevo</span>');
@@ -745,6 +786,15 @@ function pinta(t){
       cx.strokeStyle='#fff'; cx.lineWidth=1.5; cx.stroke(); cx.lineWidth=1;
       cx.fillStyle='#e8edf3'; cx.font='11px ui-monospace,Consolas,monospace';
       cx.fillText(n.l, WX[i]+rr+4, WY[i]+3);
+    }
+    if(n.ec){
+      // Anillo discontinuo APARTE del borde del nodo (path nuevo, por eso va al
+      // final: los strokes de arriba reusan el path del circulo). El estado del
+      // ciclo del error no compite con el rojo del ciclo de imports ni con el
+      // cian de lo nuevo — informa, no bloquea.
+      cx.strokeStyle=n.ec; cx.setLineDash([3,2]); cx.lineWidth=1.6;
+      cx.beginPath(); cx.arc(WX[i],WY[i],rr+3,0,6.284); cx.stroke();
+      cx.setLineDash([]); cx.lineWidth=1;
     }
   }
 }
