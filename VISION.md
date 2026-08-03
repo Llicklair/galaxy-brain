@@ -118,10 +118,19 @@ sostener, y **dice cuándo ese suelo se acaba y empieza el humano**. La discipli
 - **Dónde acaba gb — resuelto: gb PROVEE, no orquesta.** Ver "Qué se integra y qué es propio": gb es el
   proveedor de oráculos, el orquestador vive fuera. Lo único nuevo que gb gana es la *retirada de
   frontera* (diff de git, cae en la familia `graph`).
+- **El auto-reporte en 1/2/memoria — resuelto aceptando el límite, no fingiéndolo.** Se sometieron tres
+  mecanismos para hacer *inevitable* el juicio humano sin gatear (escasez por delta, firma atribuida,
+  juicio a lomos de un gate/crash). **Los tres se ignoran igual**, cada uno por un camino: la escasez es
+  constante justo en la fase de edición activa (banner blindness); la firma necesita un revisor que la
+  regla 10 admite que no existe; el coat-tailing produce *falso silencio* en la infra-acotación callada
+  —el caso exacto que la fase 1 existe para cazar—. **Veredicto: no se puede.** Un mecanismo
+  determinista, sin modelo y sin bloquear, solo cambia el *coste* y la *visibilidad* de no juzgar; no
+  mueve la mano del humano. La respuesta honesta —y coherente con la regla 10— es: **estas fases dependen
+  de la disciplina del humano, y esa dependencia se MIDE, no se blinda.** El mínimo defendible: la línea
+  INFORMA sale en el **delta** (no cookie-banner puro); `accept-drift` es una fila atribuida declarada
+  como **termómetro, no cura**; y se **loguea la tasa de accept-drift** — si tiende al sello reflejo, esa
+  métrica es el aviso honesto de que la casilla "SE PIDE al humano" se degradó, no un fallo a parchear.
 
 ## Lo que sigue sin resolver
-- **El auto-reporte es el enemigo estructural.** Todo hecho que el modelo escribe y luego se comprueba
-  contra sí mismo es fingible. La única defensa es anclar en fuentes externas (git, AST, ejecución) —y
-  aceptar que las fases 1, 2 y la memoria nunca tendrán un gate genuino, solo detección de drift—.
 - **El riesgo de ceremonia.** Un arnés de ocho fases que estorba acaba en `--no-verify`. La regla 11 es
   la que lo vigila: gatear solo sobre hechos externos, nunca sobre proxies.
