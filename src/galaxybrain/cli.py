@@ -226,6 +226,23 @@ def _shape_cache(root):
     return config.home() / "shape" / (clave + ".json")
 
 
+def _sellado(payload, root):
+    """La foto de sesion con su procedencia en la cabecera.
+
+    El mismo agujero que ya se pago con el HTML (`_procedencia`): el payload viaja
+    en el contexto del agente y horas despues se sigue leyendo como actual sin que
+    nada diga de cuando es. Solo la foto entera lleva sello — un delta es un
+    incremento puntual, y una linea fija en cada edicion es ruido repetido (H6).
+    Se computa aqui y no antes: en los caminos que callan (proyecto sin modulos,
+    forma identica) no se paga ningun subproceso de git.
+    """
+    titulo, salto, resto = payload.partition("\n")
+    sello = "  " + _procedencia(root)
+    if not salto:
+        return titulo + "\n" + sello
+    return titulo + "\n" + sello + "\n" + resto
+
+
 def _graph_context(report, root, solo_si_cambia):
     """Payload de sesion: la forma del proyecto de una pasada, o silencio.
 
@@ -261,13 +278,13 @@ def _graph_context(report, root, solo_si_cambia):
     # Sin --if-changed (el arranque de sesion) va el mapa entero: es la foto que
     # orienta, y todavia no hay nada leido con lo que comparar.
     if not solo_si_cambia:
-        emit(payload)
+        emit(_sellado(payload, root))
         return 0
 
     delta = graph.shape_delta(previa, forma)
     if delta is None:
         # Primera vez que se ve este proyecto: no hay delta posible, va la foto.
-        emit(payload)
+        emit(_sellado(payload, root))
         return 0
     if not delta:
         return 0

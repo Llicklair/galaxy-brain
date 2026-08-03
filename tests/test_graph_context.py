@@ -115,3 +115,35 @@ def test_un_ciclo_nuevo_cambia_la_forma(tmp_path):
 
     _write(root, "pkg/b.py", "from . import a\n")
     assert graph.fingerprint(graph.analyze(root)) != antes
+
+
+def test_la_foto_entera_lleva_sello_de_procedencia(tmp_path, capsys, gb_home):
+    """El payload viaja en el contexto del agente: horas despues se sigue leyendo
+    como actual. El HTML ya paga este agujero con `_procedencia`; la foto de
+    sesion lo pagaba sin sello. Mismo hecho, misma cura."""
+    root = str(tmp_path)
+    _write(root, "pkg/__init__.py", "")
+    _write(root, "pkg/a.py", "from . import b\n")
+    _write(root, "pkg/b.py", "")
+
+    cli._graph_context(graph.analyze(root), root, False)
+    lineas = capsys.readouterr().out.splitlines()
+    assert lineas[0].startswith("# mapa")
+    assert lineas[1].strip().startswith("generado el")
+    assert "(sin repo git)" in lineas[1]  # tmp_path no es un repo: se dice, no se inventa
+
+
+def test_el_delta_no_repite_el_sello(tmp_path, capsys, gb_home):
+    """El sello va solo en la foto entera. Un delta es un incremento puntual, y
+    una linea fija repetida en cada edicion es justo el ruido que H6 prohibe."""
+    root = str(tmp_path)
+    _write(root, "pkg/__init__.py", "")
+    _write(root, "pkg/a.py", "")
+    cli._graph_context(graph.analyze(root), root, False)  # primera foto: guarda la forma
+    capsys.readouterr()
+
+    _write(root, "pkg/b.py", "")
+    cli._graph_context(graph.analyze(root), root, True)
+    out = capsys.readouterr().out
+    assert "pkg.b" in out  # es un delta con contenido...
+    assert "generado el" not in out  # ...sin la linea fija
