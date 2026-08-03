@@ -149,6 +149,83 @@ def read_stats(project=None):
     return len(capturas), len(leidas), aperturas
 
 
+#: La otra mitad del termometro de adopcion (regla 10): READS_NAME dice si lo
+#: capturado se LEE; esta libreta dice si gb se INVOCA siquiera. "¿El agente tiene
+#: la herramienta en cuenta?" era la unica pregunta del proyecto sin instrumento.
+#: Mide invocacion, no aprovechamiento — un `gb show` corrido e ignorado cuenta
+#: igual: es termometro, no cura. Tampoco es telemetria: no sale de tu maquina.
+USOS_NAME = "usos.jsonl"
+
+#: Al pasar este tamano la libreta se compacta a los ultimos 90 dias. Un
+#: termometro no necesita historia infinita, necesita la ventana reciente.
+_USOS_TOPE = 512 * 1024
+
+
+def mark_uso(comando):
+    """Apunta una invocacion de gb. Silencioso y a prueba de fallos (regla 9)."""
+    if not comando:
+        return
+    try:
+        destino = root() / USOS_NAME
+        destino.parent.mkdir(parents=True, exist_ok=True)
+        entrada = {
+            "cmd": comando,
+            "ts": datetime.datetime.now().astimezone().isoformat(timespec="seconds"),
+        }
+        with open(destino, "a", encoding="utf-8") as handle:
+            handle.write(json.dumps(entrada, ensure_ascii=False) + "\n")
+        if destino.stat().st_size > _USOS_TOPE:
+            _compact_usos(destino)
+    except BaseException:  # noqa: BLE001 - apuntar el uso nunca puede romper el comando
+        pass
+
+
+def _leer_usos(destino):
+    """(comando, cuando) por linea legible; las corruptas no invalidan el recuento."""
+    with open(destino, "r", encoding="utf-8") as handle:
+        for linea in handle:
+            linea = linea.strip()
+            if not linea:
+                continue
+            try:
+                entrada = json.loads(linea)
+            except ValueError:
+                continue
+            cuando = parse_ts(entrada.get("ts"))
+            if cuando is None or cuando.tzinfo is None:
+                # Sin zona no se puede comparar con la ventana sin adivinar.
+                continue
+            yield entrada.get("cmd") or "?", cuando
+
+
+def _compact_usos(destino, dias=90):
+    corte = datetime.datetime.now().astimezone() - datetime.timedelta(days=dias)
+    vivas = [
+        json.dumps({"cmd": cmd, "ts": cuando.isoformat(timespec="seconds")}, ensure_ascii=False)
+        for cmd, cuando in _leer_usos(destino)
+        if cuando >= corte
+    ]
+    tmp = destino.with_suffix(".tmp")
+    tmp.write_text("\n".join(vivas) + ("\n" if vivas else ""), encoding="utf-8")
+    os.replace(tmp, destino)
+
+
+def uso_stats(dias=7):
+    """{comando: invocaciones} de los ultimos `dias` dias. Vacio si no hay libreta."""
+    destino = root() / USOS_NAME
+    if not destino.exists():
+        return {}
+    corte = datetime.datetime.now().astimezone() - datetime.timedelta(days=dias)
+    counts = {}
+    try:
+        for cmd, cuando in _leer_usos(destino):
+            if cuando >= corte:
+                counts[cmd] = counts.get(cmd, 0) + 1
+    except OSError:
+        return {}
+    return counts
+
+
 def _headline_frame(record):
     """El frame que le importa a un humano: el mas interno que sea tuyo."""
     frames = record.get("frames") or []

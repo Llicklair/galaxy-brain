@@ -848,6 +848,18 @@ def cmd_status(args):
         if not leidas:
             detalle += " — ninguna se ha mirado todavia"
         emit("  capturas leidas    : %s" % detalle)
+
+    # La otra mitad del termometro: si gb se invoca siquiera. La adopcion era lo
+    # unico del proyecto sin medir (SCOPE), y sin instrumento se discute con
+    # folklore. El hook se apunta con apellido (`graph --context`): inyectar el
+    # mapa no es lo mismo que pedirlo.
+    usos = store.uso_stats()
+    if usos:
+        total = sum(usos.values())
+        desglose = " · ".join(
+            "%s %d" % (cmd, n) for cmd, n in sorted(usos.items(), key=lambda kv: (-kv[1], kv[0]))
+        )
+        emit("  uso (7 dias)       : %d invocacion(es) — %s" % (total, desglose))
     return 0
 
 
@@ -1057,12 +1069,28 @@ def build_parser():
     return parser
 
 
+def _uso_label(args):
+    """Con que nombre se apunta una invocacion en la libreta de usos.
+
+    `graph --context` y los subcomandos de `memory` se apuntan con apellido:
+    "el mapa se inyecto 40 veces por hook" y "alguien pidio el mapa" son datos
+    opuestos, y el termometro de adopcion (regla 10) vive de esa distincion.
+    """
+    etiqueta = args.command or ""
+    if getattr(args, "context", False):
+        etiqueta += " --context"
+    elif etiqueta == "memory":
+        etiqueta += " " + (getattr(args, "mem_command", None) or "index")
+    return etiqueta
+
+
 def main(argv=None):
     parser = build_parser()
     args = parser.parse_args(argv)
     if not getattr(args, "func", None):
         parser.print_help()
         return 0
+    store.mark_uso(_uso_label(args))
     return args.func(args)
 
 

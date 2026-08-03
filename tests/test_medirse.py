@@ -14,7 +14,9 @@ impedir que dejes de mirar.
 """
 
 
-from galaxybrain import store, viz
+import json
+
+from galaxybrain import cli, store, viz
 
 
 def _captura(gb_home, ident, project="/proyecto"):
@@ -108,3 +110,79 @@ def test_el_sello_no_se_come_lo_que_ya_habia_en_el_pie(tmp_path):
     salida = viz.render_graph_cloud(informe, procedencia="sello")
     assert "sello" in salida
     assert "sin resolver" in salida
+
+
+# --- La libreta de usos: la otra mitad del termometro (regla 10) ---------------
+#
+# read_stats dice si lo capturado se LEE; esto dice si gb se INVOCA siquiera.
+# "¿El agente tiene la herramienta en cuenta?" era la unica pregunta del
+# proyecto sin instrumento. Mide invocacion, no aprovechamiento: termometro,
+# no cura.
+
+def test_cada_invocacion_se_apunta_en_la_libreta(gb_home):
+    store.mark_uso("graph --context")
+    store.mark_uso("show")
+    store.mark_uso("graph --context")
+    assert store.uso_stats() == {"graph --context": 2, "show": 1}
+
+
+def test_los_usos_viejos_caen_fuera_de_la_ventana(gb_home):
+    destino = store.root() / store.USOS_NAME
+    destino.parent.mkdir(parents=True, exist_ok=True)
+    viejo = {"cmd": "show", "ts": "2026-01-01T00:00:00+00:00"}
+    destino.write_text(json.dumps(viejo) + "\n", encoding="utf-8")
+    store.mark_uso("graph")
+    assert store.uso_stats() == {"graph": 1}
+
+
+def test_una_linea_corrupta_no_invalida_el_recuento_de_usos(gb_home):
+    destino = store.root() / store.USOS_NAME
+    destino.parent.mkdir(parents=True, exist_ok=True)
+    destino.write_text("esto no es json\n", encoding="utf-8")
+    store.mark_uso("last")
+    assert store.uso_stats() == {"last": 1}
+
+
+def test_la_libreta_se_compacta_al_pasar_el_tope(gb_home, monkeypatch):
+    """Un termometro no necesita historia infinita: al pasar el tope se queda
+    la ventana reciente y lo de hace anos cae."""
+    monkeypatch.setattr(store, "_USOS_TOPE", 1)  # cualquier append dispara la compactacion
+    destino = store.root() / store.USOS_NAME
+    destino.parent.mkdir(parents=True, exist_ok=True)
+    viejo = {"cmd": "show", "ts": "2020-01-01T00:00:00+00:00"}
+    destino.write_text(json.dumps(viejo) + "\n", encoding="utf-8")
+    store.mark_uso("graph")
+    contenido = destino.read_text(encoding="utf-8")
+    assert "2020-01-01" not in contenido
+    assert "graph" in contenido
+
+
+def test_apuntar_un_uso_nunca_puede_romper_el_comando(gb_home, monkeypatch):
+    """Regla 9: el termometro jamas le cuesta nada al que usa la herramienta."""
+
+    def _revienta(*_a, **_k):
+        raise OSError("disco lleno")
+
+    monkeypatch.setattr(store, "root", _revienta)
+    store.mark_uso("graph")  # si esto lanza, el test falla solo
+
+
+def test_el_cli_apunta_cada_comando_con_su_etiqueta(gb_home, capsys, tmp_path):
+    """La distincion que importa: el empujon del hook (`graph --context`) no se
+    confunde con el uso deliberado (`status`). Sin apellido, 40 inyecciones de
+    SessionStart se leerian como adopcion."""
+    cli.main(["graph", str(tmp_path), "--context"])  # calla (sin modulos), pero corrio
+    cli.main(["status"])
+    capsys.readouterr()
+    stats = store.uso_stats()
+    assert stats == {"graph --context": 1, "status": 1}
+
+
+def test_status_ensena_el_desglose_de_uso(gb_home, capsys):
+    store.mark_uso("show")
+    store.mark_uso("show")
+    cli.main(["status"])
+    out = capsys.readouterr().out
+    assert "uso (7 dias)" in out
+    assert "show 2" in out
+    assert "status 1" in out  # el propio status tambien cuenta: transparente
