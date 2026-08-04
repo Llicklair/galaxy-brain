@@ -11,4 +11,5 @@ __pycache__/
 .pytest_cache/
 mapa*.html
 *.map.html
+*.html.tmp
 nube*.html

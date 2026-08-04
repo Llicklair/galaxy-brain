@@ -840,7 +840,11 @@ def cmd_graph(args):
             if not refresco:
                 refresco = _html_refresco_recordado(root, destino, simbolos, report)
         try:
-            with open(destino, "w", encoding="utf-8") as handle:
+            # Escritura ATOMICA: el navegador con --refresco relee cada N s, y una
+            # recarga que caiga en mitad de un open("w") directo ve el fichero
+            # truncado — pagina en blanco (visto en uso real, 4-ago). Con el
+            # replace se ve el mapa viejo o el nuevo, nunca el hueco.
+            with open(destino + ".tmp", "w", encoding="utf-8") as handle:
                 handle.write(
                     viz.render_graph_cloud(
                         simbolos,
@@ -855,6 +859,7 @@ def cmd_graph(args):
                         tocados=_tocados_para_mapa(root, simbolos),
                     )
                 )
+            os.replace(destino + ".tmp", destino)
         except OSError as error:
             sys.stderr.write("[gb graph] no pude escribir %s (%s)\n" % (destino, error))
             return 2
@@ -1034,7 +1039,9 @@ def _vigilar(root, args):
                     grafo = graph_mod.analyze(root)
                     if not _html_forma_igual(root, destino, report, grafo):
                         try:
-                            with open(destino, "w", encoding="utf-8") as handle:
+                            # Misma escritura atomica que en los one-shot: aqui
+                            # es donde MAS importa, el watch reescribe a menudo.
+                            with open(destino + ".tmp", "w", encoding="utf-8") as handle:
                                 handle.write(
                                     viz.render_graph_cloud(
                                         report,
@@ -1051,6 +1058,7 @@ def _vigilar(root, args):
                                         tocados=_tocados_para_mapa(root, report),
                                     )
                                 )
+                            os.replace(destino + ".tmp", destino)
                             _html_registrar_forma(root, destino, report, grafo, refresco)
                             emit("  actualizado %s" % _procedencia(root).split(" desde ")[0])
                         except OSError as error:
@@ -1226,7 +1234,7 @@ def cmd_symbols(args):
             if not refresco:
                 refresco = _html_refresco_recordado(root, destino, report, grafo)
         try:
-            with open(destino, "w", encoding="utf-8") as handle:
+            with open(destino + ".tmp", "w", encoding="utf-8") as handle:
                 handle.write(
                     viz.render_graph_cloud(
                         report,
@@ -1243,6 +1251,7 @@ def cmd_symbols(args):
                         tocados=_tocados_para_mapa(root, report),
                     )
                 )
+            os.replace(destino + ".tmp", destino)
         except OSError as error:
             sys.stderr.write("[gb symbols] no pude escribir %s (%s)\n" % (destino, error))
             return 2
