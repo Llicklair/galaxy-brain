@@ -4,16 +4,25 @@
 
 # galaxy-brain
 
-> **When something crashes, it tells you where and with what state — without you reproducing it by hand.**
+> **The deterministic harness a coding agent should be standing on.**
+>
+> Facts about your Python code — where it died and with what state, what shape it has, who calls
+> what, what a diff moved — delivered in milliseconds, offline, with no model in the loop. Your
+> agent stops guessing and starts reading.
 
-That is the spine: an error console. Around it, the same discipline applied to other deterministic
-facts about your code — what shape it has (`graph`/`symbols`/`calls`), what each change did to it
-(`check`), what foundation it is missing (`floor`), what was learned across repos (`memory`).
+**Take the model out of your architecture diagram. Everything still visible is the harness.**
+galaxy-brain is that harness for Python code. Not a better prompt, not an autonomous loop: the
+layer underneath both, which supplies the evidence they need and can be trusted because nothing in
+it is inferred by a model.
 
 **One tool, `gb`.** A single Python package, **zero model calls** on the hot path, **zero
 dependencies** beyond the standard library. An exception is a fact; the state at the moment of
 failure is a fact; the shape of the import graph is a fact. Reporting facts requires no judgment,
 which is why it can be instant and cannot fail in expensive ways.
+
+<sub><b>Disambiguation:</b> in the 2026 "harness / loop / graph" vocabulary, *graph* means agent
+orchestration. The graph here is a graph <b>of your code</b> — modules, symbols, call edges, parsed
+from the AST.</sub>
 
 <sub>v0.3.0 · 445 tests · 8.4k LOC source / 6.4k LOC tests · clean gate · ruff · Python ≥ 3.9 · zero runtime dependencies · CLI output is in Spanish today</sub>
 
@@ -21,7 +30,8 @@ which is why it can be instant and cannot fail in expensive ways.
 
 ## Table of contents
 
-- [What this is, and what it is not](#what-this-is-and-what-it-is-not)
+- [The thesis](#the-thesis)
+- [Wired into the agent](#wired-into-the-agent)
 - [What it saves you](#what-it-saves-you)
 - [Installation](#installation)
 - [Day one](#day-one)
@@ -31,7 +41,6 @@ which is why it can be instant and cannot fail in expensive ways.
 - [What a change did](#what-a-change-did)
 - [The floor](#the-floor)
 - [Cross-repo memory](#cross-repo-memory)
-- [Wired into the agent](#wired-into-the-agent)
 - [How it is verified](#how-it-is-verified)
 - [Cost, measured](#cost-measured)
 - [Settings](#settings)
@@ -43,37 +52,104 @@ which is why it can be instant and cannot fail in expensive ways.
 
 ---
 
-## What this is, and what it is not
+## The thesis
 
-**It is a verification harness for people and agents who work on Python code.** Its job is to answer
-questions that have exact answers — where did this die, with what values, who calls this function,
-what did that diff move, is there a new import cycle — and to answer them in milliseconds, offline,
-with no model in the loop and nothing to configure.
+An agent working on your code is limited by one thing: **what it knows about the code it cannot
+see.** Given a 50-module repo, it opens files to find out what is there, greps to guess who calls
+what, and re-runs a crashed program with `print` statements to learn what already happened. Each of
+those is a guess standing in for a fact that a parser could have handed over in 200 ms.
 
-**It is not an autonomous agent, a linter with opinions, or a code reviewer.** It does not decide
-whether your code is good. Almost everything it prints is something you asked for and can act on;
-the two things that can stop a commit are facts, not judgments (a new import cycle, a crossing of a
-boundary you declared yourself). Everything that is merely a *proxy* for quality — coupling
-churn, test-shape signals, over-engineering smells — informs and never blocks. That distinction is
-rule 11, and it exists because gating proxies is what sank the previous version of this project:
-false positives train people to type `--no-verify`, and after that the gate protects nothing.
+So the bet is not a better prompt or a smarter loop. It is this:
 
-Concretely, gb is useful when:
+> **A deterministic ecosystem underneath. The AI as the cherry, not the engine.**
 
-- a script, CLI, worker or server died while you were not watching, and you would otherwise re-run
-  it with `print` statements to find out why;
-- you are about to change a function and need to know who depends on it before you grep;
-- you want a diff's blast radius before review, not after;
-- you are starting a repo and want the scaffolding that makes later work checkable;
-- you (or an agent) keep re-learning the same fact in every session.
+Putting a model on the path that always runs makes that path expensive, slow and optional — and
+optional things get abandoned. Every fact gb serves comes from the AST, from git, or from the
+interpreter's own hooks. No inference, no API key, no network, nothing to be wrong about.
 
-It is **not** useful for failing tests: pytest catches the exception itself, so it never reaches
-`sys.excepthook` and gb records nothing. Use `pytest -l` — it prints the locals of every frame,
-which is the same information. This negative result is written down in
-[docs/pruebas-de-uso.md](docs/pruebas-de-uso.md) rather than hidden.
+**Don't iterate on trust; iterate on evidence.** gb is the evidence supplier. The loop and the
+orchestration belong to whatever is driving — Claude Code, your CI, you. gb provides; it does not
+orchestrate, and [SCOPE.md](SCOPE.md) says so as a limit, not as a roadmap.
 
-The scope is closed on purpose, and the list of what it deliberately refuses — including why it is
-**not** an MCP server — is in [SCOPE.md](SCOPE.md).
+### What it upgrades, concretely
+
+| Without it | With it |
+|---|---|
+| Agent greps for a function, opens 4 files, guesses the call sites | `gb calls <symbol> --depth 2` — callers and callees with `file:line`, exact |
+| Agent re-runs the crashed script with `print` to see the values | The values were already captured at death: `gb show <id>` |
+| Agent starts each session blind to the repo's shape | `SessionStart` hook injects the whole map: ~110 tokens, 162 ms |
+| Agent searches, gets file paths, reads them to learn the signatures | Every search carries the matching symbol cards along |
+| "Did my change break something far away?" | `gb check --staged` — the blast wave, before the commit |
+| A fact learned last week, re-learned today | `gb memory` — durable notes, surfaced in any repo |
+| Quality gate that flags style and gets bypassed | Only facts gate; proxies inform (rule 11) |
+
+The last row is the one that took a rewrite to learn. Gating *proxies* — coupling churn, smells,
+test-shape heuristics — manufactures false positives, false positives train people to type
+`--no-verify`, and after that the gate protects nothing. So the only two things that stop a commit
+here are facts you cannot argue with: a **new** import cycle, or a crossing of a boundary you
+declared yourself.
+
+### What it is not
+
+- **Not an autonomous loop, and not a bundle of skills or agent prompts.** There is no `skills/`
+  directory and there never will be. Prompt scaffolding depends on a model obeying instructions; gb
+  is the half that holds when it doesn't.
+- **Not a code reviewer.** It does not decide whether your code is good. It reports what is there.
+- **Not a model wrapper.** Zero API calls, zero dependencies beyond the standard library. It works
+  on a plane.
+- **Not useful for failing tests** — pytest catches the exception, so it never reaches
+  `sys.excepthook`. Use `pytest -l`, which prints the same locals. That negative result is written
+  down in [docs/pruebas-de-uso.md](docs/pruebas-de-uso.md) rather than hidden.
+- **Not multi-language, not a server, not an MCP server.** [SCOPE.md](SCOPE.md) has the reasoning,
+  including the one condition that would reopen the MCP question.
+
+### The two halves
+
+Both are the same discipline — exact answers about your code — pointed in different directions:
+
+**Backward, at what already happened.** The error console: an uncaught exception anywhere in your
+Python environment is recorded with the state around it, so the failure that happened once while you
+were not looking does not have to be reproduced. `last · list · show · on · off · status`
+
+**Forward, at what you are about to touch.** The shape of the code and what changes do to it: the
+module and symbol graphs, the call query, the diff's blast wave, the project's missing scaffolding,
+and the facts that outlive a session. `graph · symbols · calls · check · floor · memory`
+
+---
+
+## Wired into the agent
+
+The facts are useless if someone has to remember to ask for them. **The norm goes in the default,
+not in the prompt:** a rule that requires typing a flag depends on someone remembering, and sooner
+or later it fails. So three hooks make the harness ambient — the agent gets the facts without asking,
+and without knowing gb exists.
+
+| Hook | What it injects | Measured |
+|---|---|---|
+| `SessionStart` | The compressed map of the repo, plus a count of unread captures when there are any | ~110 tokens, 162 ms |
+| After each edit | Only what **changed** in the shape — or silence | under the 1 s edit budget |
+| On every `Grep`/`Glob` | The matching symbol cards ride along (`gb calls --hook`) | 430 ms here, 330 ms on a 600-module synthetic repo |
+
+A symbol card is what lets an agent **call code it has not read** — signature straight from the AST
+(args, defaults, `*`, `async`, the decorators that change the call), location, first docstring line,
+and who depends on it, with sources split from tests:
+
+```
+galaxybrain.store.parse_ts(value) · function · src\galaxybrain\store.py:270 — El `ts` de una entrada…
+  le llaman (7 — 6 de src, 1 de tests):
+```
+
+The wiring ships **per project** — `gb floor --init` writes it into `.claude/settings.json`, merging
+with each machine's own settings, so a fresh clone gets an aware agent with no global setup. The
+format is the cross-tool one (`AGENTS.md`), read natively by Claude Code, Codex, Cursor, Copilot and
+Aider, so the awareness is not tied to one vendor.
+
+**The model does not know gb exists; its context does.** And because every hook is a CLI command,
+none of this is Claude-specific: point any orchestrator at `gb <command> --json` and you have the
+same evidence.
+
+Meanwhile `gb symbols … --html m.html --watch` keeps the human's map fresh in the browser,
+atomically, using nothing but the filesystem — the same facts, in the form a person reads.
 
 ---
 
@@ -232,6 +308,10 @@ false positives that end in `--no-verify`.
 
 ## The error console
 
+The backward-looking half: **the state at the moment of death, kept so nobody has to reproduce it.**
+An agent handed this does not re-run your program with `print` statements; it reads what already
+happened. That is the single most expensive guess it makes, removed.
+
 With no arguments, `gb last` and `gb list` filter by the repo you are standing in. And the failure
 card ends **in the graph** — the crash anchored to the symbol whose body contains the line, with
 its blast wave one command away:
@@ -285,18 +365,9 @@ dirties the project it is watching (rule 7).
   <img src="assets/grafo.svg" alt="galaxy-brain's own module graph" width="100%">
 </p>
 
-The other half of the surface: what shape the project has and who calls whom. All deterministic,
-zero models, zero dependencies — same facts, different views. **`graph --html` and `symbols --html`
+The forward-looking half: what shape the project has and who calls whom — the questions an agent
+answers today by opening files and grepping. All deterministic, zero models, zero dependencies. **`graph --html` and `symbols --html`
 lead to the same page**: modules, symbols, imports and calls on one navigable canvas.
-
-A symbol card carries everything an agent needs to **call code it has not read** — the signature
-straight from the AST (args, defaults, `*`, `async`, the decorators that change the call), where it
-lives, what it does (first docstring line), and who depends on it, with sources split from tests:
-
-```
-galaxybrain.store.parse_ts(value) · function · src\galaxybrain\store.py:270 — El `ts` de una entrada…
-  le llaman (7 — 6 de src, 1 de tests):
-```
 
 Clicking a node answers with **facts**: its description (taken from the docstring, not from a
 model), who calls it, whom it calls, what it imports, whether it sits in a cycle — plus the layers
@@ -332,9 +403,20 @@ declared in `.gb-boundaries`.
 
 ## The floor
 
-`gb floor` reads a repo and reports what scaffolding is missing before you build — and, for each
-piece, why it matters. It is not a template generator: `--init` never overwrites, and the one thing
-it cannot write for you (the done criterion) it tells you to write yourself.
+`gb floor` reads a repo and reports what a project needs before it can be worked on reliably —
+whether there is a declared test command, a lint or type gate, CI, isolation, an agent context file,
+a record of past decisions. It **detects what you already use rather than prescribing a stack**:
+ruff, flake8, pylint, eslint, biome, golangci-lint, mypy, pyright, tsconfig, prettier, black,
+rustfmt, GitHub Actions, GitLab CI, CircleCI, Jenkins, Docker, devcontainers. Nothing is hardwired
+and nothing is vendored — a project-specific path would be a bug (rule 6), and external tools are
+integrated by reference, never bundled.
+
+Then `--init` writes only what is missing, never overwriting, and the pre-commit it drops is wired in
+**ratchet mode**: inherited debt passes, new debt fails. A gate that fails on day one over debt you
+did not create gets disabled on day two.
+
+The one thing it cannot write for you — the **done criterion** — it tells you to write yourself. Not
+knowing when to stop is the number one cause of over-engineering, and the cure costs one sentence.
 
 ---
 
@@ -348,26 +430,6 @@ Lean by design: session start injects the index of **all** notes but the full te
 notes and this project's; the rest is pulled on demand with `recall`. The vault is never dumped
 whole — context is the scarce resource, and spending it on notes nobody asked for is the failure
 mode this design avoids.
-
----
-
-## Wired into the agent
-
-Three hooks make the graph ambient, so the agent asks the graph instead of opening files:
-
-| Hook | What it injects | Measured |
-|---|---|---|
-| `SessionStart` | The compressed map, plus a count of unread captures when there are any | ~110 tokens, 162 ms |
-| After each edit | Only what **changed** — or silence | under the 1 s edit budget |
-| On every code search | The matching symbol cards ride along (`gb calls --hook`) | 430 ms here, 330 ms on a 600-module synthetic repo |
-
-All of it ships **per project**: `gb floor --init` drops the wiring, so a fresh clone gets an aware
-agent with no global setup. The model does not know gb exists; **its context does.** That is the
-point — a rule that depends on someone remembering a flag eventually fails, so the correct behavior
-has to be what happens when you type nothing.
-
-Meanwhile `gb symbols … --html m.html --watch` keeps the human's map fresh in the browser,
-atomically, using nothing but the filesystem.
 
 ---
 
