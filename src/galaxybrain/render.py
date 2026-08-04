@@ -737,3 +737,62 @@ def render_index(entries, style):
             )
         )
     return "\n".join(lines)
+
+
+def render_impacted(report, style, brief=False):
+    """Qué tests toca correr, y por qué esos. Con el motivo SIEMPRE delante.
+
+    Una lista de ficheros sin su motivo no se puede auditar: el lector no sabe si
+    son pocos porque el cambio es pequeño o porque la selección se dejó algo
+    fuera. Y cuando la respuesta es "todo", eso se dice en voz alta — un fallback
+    silencioso a la suite entera se lee como un ahorro que no hubo.
+    """
+    lines = []
+    if report.get("range_error"):
+        lines.append(style("ERROR: %s" % report["range_error"], RED))
+        return "\n".join(lines)
+
+    ficheros = report.get("tests") or []
+    n = report.get("n_tests") or 0
+    total = report.get("total_tests") or 0
+    motivo = report.get("motivo") or ""
+
+    if not ficheros:
+        return style("Nada que correr: %s" % motivo, DIM)
+
+    pct = (100.0 * n / total) if total else 0.0
+    if report.get("todo"):
+        cabecera = "La suite ENTERA: %d test(s) en %d fichero(s)" % (n, len(ficheros))
+    else:
+        cabecera = "%d de %d test(s) (%.0f%%) en %d fichero(s)" % (
+            n, total, pct, len(ficheros))
+
+    if brief:
+        return style("[gb tests] %s — %s" % (cabecera, motivo), DIM)
+
+    lines.append(style(cabecera, BOLD))
+    lines.append(style(motivo, DIM))
+    lines.append("")
+
+    simbolos = report.get("symbols") or []
+    if simbolos and not report.get("todo"):
+        lines.append("Disparado por %d simbolo(s) del diff:" % len(simbolos))
+        for qual in simbolos[:8]:
+            lines.append("  %s" % qual)
+        if len(simbolos) > 8:
+            lines.append(style("  ... y %d mas" % (len(simbolos) - 8), DIM))
+        lines.append("")
+
+    lines.append("Ficheros:")
+    for ruta in ficheros:
+        lines.append("  %s" % ruta)
+
+    lines.append("")
+    lines.append(style("Lo que esto NO garantiza:", BOLD))
+    lines.append(style(
+        "  - la seleccion sale del grafo de LLAMADAS: lo que se invoca por tabla,\n"
+        "    por getattr o por un fixture que nadie llama no deja arista que seguir",
+        DIM))
+    lines.append(style(
+        "  - no ejecuta nada: pasa estos ficheros a pytest, o usa --run", DIM))
+    return "\n".join(lines)

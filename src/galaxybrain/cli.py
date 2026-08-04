@@ -1334,6 +1334,44 @@ def cmd_check(args):
     return 1 if report["range_error"] else 0
 
 
+def cmd_tests(args):
+    """Qué tests correr por lo que cambió. Sin `--run`, no ejecuta nada.
+
+    El defecto es la lista, no la ejecución: el comando barato y sin sorpresas es
+    el que sale sin escribir banderas, y lanzar una suite es gasto que se pide
+    aparte. Con `--run` el exit code es el de pytest — ahí sí es un oráculo.
+    """
+    import subprocess
+
+    from . import impacted
+
+    root = os.path.abspath(args.path or ".")
+    report = impacted.analyze(root, args.range, staged=args.staged)
+    if args.json:
+        emit(json.dumps(report, ensure_ascii=False, indent=2))
+    else:
+        emit(render.render_impacted(report, _style(args), brief=args.brief))
+
+    if report["range_error"]:
+        return 1
+    if not args.run:
+        return 0
+
+    ficheros = report.get("tests") or []
+    if not ficheros:
+        return 0
+    # `-p no:cacheprovider` no: cambiar el entorno de la suite del usuario para
+    # que nuestro atajo quede mas limpio es exactamente lo que un arnes no hace.
+    cmd = [sys.executable, "-m", "pytest"] + ficheros
+    emit("")
+    emit("$ %s" % " ".join(cmd[1:]))
+    try:
+        return subprocess.call(cmd, cwd=root)
+    except OSError as error:
+        emit("no se pudo lanzar pytest: %s" % error)
+        return 1
+
+
 def cmd_memory(args):
     from . import memory
 
@@ -1669,6 +1707,25 @@ def build_parser():
         help="modo PreToolUse: lee el JSON del hook por stdin y calla si no hay nada",
     )
     calls_p.set_defaults(func=cmd_calls)
+
+    tests_p = subparsers.add_parser(
+        "tests", help="que tests toca correr por lo que cambio (derivado del grafo)"
+    )
+    tests_p.add_argument("range", nargs="?", default=None,
+                         help="rango git (por defecto HEAD~1..HEAD)")
+    tests_p.add_argument("path", nargs="?", default=".", help="raiz del proyecto (por defecto .)")
+    tests_p.add_argument(
+        "--staged", action="store_true",
+        help="mirar el indice en vez de un rango (lo unico correcto en un pre-commit)",
+    )
+    tests_p.add_argument(
+        "--run", action="store_true",
+        help="ejecutar pytest con la seleccion (por defecto solo la lista: decidir es tuyo)",
+    )
+    tests_p.add_argument("--brief", action="store_true", help="una linea, para hooks")
+    tests_p.add_argument("--json", action="store_true", help="salida cruda")
+    tests_p.add_argument("--color", choices=("auto", "always", "never"), default="auto")
+    tests_p.set_defaults(func=cmd_tests)
 
     floor_p = subparsers.add_parser(
         "floor", help="el andamiaje base: que hay y que falta antes de construir"

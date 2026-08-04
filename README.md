@@ -283,6 +283,9 @@ self-reload, `--fondo` to detach `--watch` as an independent process.
 | `gb check` | What a diff did to tests, coupling, and its wave (default range `HEAD~1..HEAD`) |
 | `gb check --staged` | Reviews the index instead of a range — the only correct thing in a pre-commit |
 | `gb check --brief` | One line when there are no signals, for hooks |
+| `gb tests` | Which tests to run for what changed, derived from the call graph |
+| `gb tests --staged` | The same over the index, for a pre-commit |
+| `gb tests --staged --run` | Also executes them — exit code is pytest's |
 
 `check` **informs and never blocks.** Its signals are proxies, and proxies that gate manufacture the
 false positives that end in `--no-verify`.
@@ -398,6 +401,33 @@ It reports what a diff did to the tests, to coupling, and to the blast wave of t
 touched. Its whole output is advisory. The one thing in this area that *can* stop a commit lives in
 `graph --gate`, and only for two facts: a **new** import cycle, or a crossing of a boundary you
 declared in `.gb-boundaries`.
+
+### Which tests to run for what changed
+
+```bash
+gb tests --staged          # the selection and why those
+gb tests --staged --run    # and run them; exit code is pytest's
+```
+
+The call graph already knows who calls whom, so walking up from the symbols a diff touches reaches
+the tests that exercise them. Measured on this repo: 5 symbols, **5 of 5 the same exit code** as the
+full suite, saving between 20% and 97% of the wall clock (32 s → 1–26 s). The saving collapses
+exactly where the symbol is heavily coupled, which is honest information about the design rather
+than a failure of the method.
+
+**The rule that governs it: when in doubt, everything.** A selection that leaves out a test that
+would have failed is not "less coverage", it is a **false green** — so a touched `conftest.py`, a
+change outside every symbol, an unreadable diff, or a symbol no test reaches all return the whole
+suite, with the reason stated out loud. Silence would read as a saving that never happened.
+
+Two details that cost a measurement to learn, and that any implementation of this needs: select
+**files, not test ids** (one non-existent id makes pytest exit 4, *no tests ran*, which in a gate
+reads exactly like "everything passed"), and filter on the **name** starting with `test_` rather than
+on living under `tests/` — a helper called `_generar` lives in a test file, the graph sees it, and
+pytest does not collect it.
+
+This is the one place gb runs code from the observed project, so `--run` is explicitly opt-in: the
+default prints the list and lets you decide.
 
 ---
 

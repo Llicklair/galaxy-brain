@@ -48,7 +48,10 @@ tiene que caer en una de ellas o no entra:
 - **Qué forma tiene** — `graph · symbols · calls`. El mapa de acoplamiento (imports, ciclos, hotspots),
   el grafo de símbolos (quién llama a quién, con su cobertura) y la consulta puntual (`calls`:
   llamantes y llamados de un símbolo con fichero:línea, también como hook de búsqueda).
-- **Qué le hizo cada cambio** — `check`. Qué tocó un diff en los tests y en el acoplamiento.
+- **Qué le hizo cada cambio** — `check · tests`. Qué tocó un diff en los tests y en el acoplamiento
+  (`check`), y qué tests hay que correr por lo que cambió (`tests`: el cierre de llamantes desde los
+  símbolos del diff, con la suite entera como respuesta ante cualquier duda). `tests --run` es la
+  única parte de gb que ejecuta algo del proyecto observado, y por eso es opt-in explícito.
 - **Qué le falta de base** — `floor`. El andamiaje mínimo que un proyecto necesita antes de construir.
 - **Qué se aprendió, cross-repo** — `memory`. La memoria durable entre repos y sesiones.
 

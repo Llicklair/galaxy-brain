@@ -93,6 +93,15 @@ fue el error que no se repite.
 - **`floor`** — sobre stacks distintos, **cero avisos falsos** y **≥ 1 nivel señalado** que acabes
   arreglando.
 - **`graph --gate`** — cero bloqueos espurios: solo bloquea sobre ciclos nuevos o cruces declarados.
+- **`tests`** — sobre un cambio real, la selección derivada del grafo da **el mismo veredicto** que
+  la suite entera (mismo exit code) y **tarda menos**. Criterio de muerte: **un solo falso verde** —
+  la selección pasa y la suite entera falla por algo que el cambio rompió. Eso no es "menos
+  cobertura", es una mentira, y mata el comando. Por eso el fallback ante la duda es correrlo todo:
+  si el diff toca algo que no se resuelve a símbolos (un `conftest.py`, un fichero de datos, un
+  fichero fuera del grafo), la respuesta correcta es la suite completa, dicha en voz alta.
+  Medición previa a la implementación (5-ago-2026, este repo): 5 símbolos, 5/5 mismo exit code,
+  ahorro entre 20% y 97% — y el ahorro cae justo donde el símbolo está muy acoplado, que es
+  información honesta sobre el diseño, no un fallo del método.
 
 ---
 

@@ -36,3 +36,6 @@ galaxybrain.symbols   -/->  galaxybrain.viz
 galaxybrain.memory    -/->  galaxybrain.cli
 galaxybrain.memory    -/->  galaxybrain.render
 galaxybrain.memory    -/->  galaxybrain.viz
+galaxybrain.impacted  -/->  galaxybrain.cli
+galaxybrain.impacted  -/->  galaxybrain.render
+galaxybrain.impacted  -/->  galaxybrain.viz
