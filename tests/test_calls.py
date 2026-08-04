@@ -91,6 +91,56 @@ def test_desconocido_es_lista_vacia_no_error(tmp_path):
     assert symbols.calls(report, "no_existe")["matches"] == []
 
 
+# --- la firma: como se llama, sin abrir el fichero ---------------------------
+
+
+def test_la_firma_dice_como_se_llama(tmp_path):
+    """El hecho que mas ficheros obligaba a abrir: args con defaults, `*`,
+    async y los decoradores que cambian la llamada. Todo del AST."""
+    (tmp_path / "m.py").write_text(textwrap.dedent('''\
+        async def baja(url, timeout=5, *, reintentos=2, **extra):
+            pass
+
+        class Cosa(dict):
+            @property
+            def valor(self):
+                return 1
+        '''), encoding="utf-8")
+
+    report = symbols.analyze(str(tmp_path))
+    nodos = {n["qual"]: n for n in report["nodes"]}
+    assert nodos["m.baja"]["sig"] == "async (url, timeout=5, *, reintentos=2, **extra)"
+    assert nodos["m.Cosa"]["sig"] == "(dict)"
+    assert nodos["m.Cosa.valor"]["sig"] == "@property (self)"
+
+
+def test_la_firma_viaja_en_la_ficha_del_hook(tmp_path, monkeypatch, capsys):
+    _proyecto(tmp_path)
+    monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps(
+        {"tool_input": {"pattern": "ayuda"}, "cwd": str(tmp_path)}
+    )))
+
+    assert cli.main(["calls", "--hook"]) == 0
+    assert "lib.ayuda()" in capsys.readouterr().out
+
+
+def test_las_cuentas_separan_src_de_tests(tmp_path):
+    """Los tests son la red, no la onda: 56 llamantes y "5 de src + 51 de
+    tests" cuentan historias distintas a quien va a tocar el simbolo."""
+    root = _proyecto(tmp_path)
+    (tmp_path / "test_cosa.py").write_text(
+        "from lib import ayuda\n\ndef test_a():\n    ayuda()\n", encoding="utf-8"
+    )
+
+    report = symbols.analyze(root)
+    fichas = symbols.relacionados(report, "ayuda")
+    assert fichas[0]["callers"] == 2
+    assert fichas[0]["callers_tests"] == 1
+    assert symbols.es_de_test("test_cosa.test_a")
+    assert symbols.es_de_test("tests.test_x.helper")
+    assert not symbols.es_de_test("galaxybrain.store.save")
+
+
 # --- relacionados: lo que alimenta el hook -----------------------------------
 
 

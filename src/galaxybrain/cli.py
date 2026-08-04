@@ -617,13 +617,21 @@ def _emit_ancla(record):
             % (ancla["sitio"], ancla["cambiado"])
         )
         return
+    from . import symbols
+
     nodo, llamantes = ancla["nodo"], ancla["llamantes"]
     emit("en el grafo: %s" % _linea_simbolo(nodo))
     if llamantes:
-        vista = " · ".join(llamantes[:6])
-        if len(llamantes) > 6:
-            vista += " y %d mas" % (len(llamantes) - 6)
-        emit("  le llaman (%d): %s" % (len(llamantes), vista))
+        de_tests = sum(1 for q in llamantes if symbols.es_de_test(q))
+        orden = sorted(llamantes, key=lambda q: (symbols.es_de_test(q), q))
+        vista = " · ".join(orden[:6])
+        if len(orden) > 6:
+            vista += " y %d mas" % (len(orden) - 6)
+        cuenta = str(len(llamantes))
+        if de_tests:
+            cuenta = "%d — %d de src, %d de tests" % (
+                len(llamantes), len(llamantes) - de_tests, de_tests)
+        emit("  le llaman (%s): %s" % (cuenta, vista))
         emit("  (la onda entera: gb calls %s --depth 2)" % (nodo.get("name") or nodo["qual"]))
     else:
         emit("  nadie le llama en el grafo (entrada directa o despacho dinamico)")
@@ -1051,14 +1059,27 @@ def cmd_calls(args):
 
 
 def _linea_simbolo(ficha):
+    firma = ficha.get("sig") or ""
+    if firma and not firma.startswith("("):
+        firma = " " + firma  # "async (…)" y "@property (…)" no van pegados al nombre
     sitio = "%s:%s" % (ficha.get("file") or "?", ficha.get("line") or "?")
     doc = (" — " + ficha["doc"]) if ficha.get("doc") else ""
-    return "%s · %s · %s%s" % (ficha["qual"], ficha.get("kind", "?"), sitio, doc)
+    return "%s%s · %s · %s%s" % (ficha["qual"], firma, ficha.get("kind", "?"), sitio, doc)
 
 
 def _emit_onda(titulo, fichas):
-    emit("  %s (%d):" % (titulo, len(fichas)))
-    for ficha in fichas:
+    from . import symbols
+
+    de_tests = sum(1 for f in fichas if symbols.es_de_test(f["qual"]))
+    cuenta = str(len(fichas))
+    if de_tests:
+        # "56 llamantes" y "5 de src + 51 de tests" cuentan historias distintas:
+        # los tests son la red, no la onda.
+        cuenta = "%d — %d de src, %d de tests" % (len(fichas), len(fichas) - de_tests, de_tests)
+    emit("  %s (%s):" % (titulo, cuenta))
+    # src primero dentro de cada nivel: lo que puede romperse antes que la red.
+    orden = sorted(fichas, key=lambda f: (f.get("depth", 1), symbols.es_de_test(f["qual"]), f["qual"]))
+    for ficha in orden:
         sangria = "    " * ficha.get("depth", 1)
         emit("%s%s · %s:%s"
              % (sangria, ficha["qual"], ficha.get("file") or "?", ficha.get("line") or "?"))
@@ -1106,8 +1127,10 @@ def _calls_hook():
         return 0
     emit("[gb] esos nombres estan en el grafo de simbolos:")
     for ficha in fichas:
-        emit("  %s · %d le llaman, llama a %d"
-             % (_linea_simbolo(ficha), ficha["callers"], ficha["callees"]))
+        cuentas = "%d le llaman" % ficha["callers"]
+        if ficha.get("callers_tests"):
+            cuentas += " (%d de tests)" % ficha["callers_tests"]
+        emit("  %s · %s, llama a %d" % (_linea_simbolo(ficha), cuentas, ficha["callees"]))
     emit("  (detalle y onda: gb calls <simbolo> --depth 2)")
     return 0
 

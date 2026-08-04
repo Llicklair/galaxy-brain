@@ -91,6 +91,64 @@ def _resumen(node):
     return ""
 
 
+def _texto_default(node):
+    """El default de un parámetro como texto corto. Best-effort: si no se puede
+    reproducir, un marcador honesto antes que una firma rota."""
+    try:
+        texto = ast.unparse(node)
+    except Exception:  # noqa: BLE001 - unparse puede fallar con nodos raros
+        return "…"
+    return texto if len(texto) <= 25 else texto[:24] + "…"
+
+
+def _firma(node):
+    """La firma de un def como la teclearía quien va a LLAMARLO.
+
+    El hecho sintáctico que más ficheros obligaba a abrir: el grafo decía que
+    `parse_ts` existe y quién la llama, pero no si es `parse_ts(ts)` o
+    `parse_ts(ts, default=None)` (prueba de uso, 4-ago: cinco lecturas de
+    fichero solo para ver parámetros). Args con defaults, `/`, `*`, async y los
+    decoradores que cambian cómo se llama — todo del AST, cero inferencia.
+    """
+    a = node.args
+    partes = []
+    pos = list(a.posonlyargs) + list(a.args)
+    defaults = [None] * (len(pos) - len(a.defaults)) + list(a.defaults)
+    for arg, default in zip(pos, defaults):
+        partes.append(arg.arg if default is None else "%s=%s" % (arg.arg, _texto_default(default)))
+    if a.posonlyargs:
+        partes.insert(len(a.posonlyargs), "/")
+    if a.vararg:
+        partes.append("*" + a.vararg.arg)
+    elif a.kwonlyargs:
+        partes.append("*")
+    for arg, default in zip(a.kwonlyargs, a.kw_defaults):
+        partes.append(arg.arg if default is None else "%s=%s" % (arg.arg, _texto_default(default)))
+    if a.kwarg:
+        partes.append("**" + a.kwarg.arg)
+    firma = "(%s)" % ", ".join(partes)
+    if isinstance(node, ast.AsyncFunctionDef):
+        firma = "async " + firma
+    marcas = [
+        d.id for d in node.decorator_list
+        if isinstance(d, ast.Name) and d.id in ("property", "classmethod", "staticmethod")
+    ]
+    if marcas:
+        firma = "@" + " @".join(marcas) + " " + firma
+    return firma
+
+
+def es_de_test(qual):
+    """Si el símbolo vive en código de test (primer tramo `test*`/`*tests`).
+
+    Se separa en las cuentas porque "56 llamantes" y "5 de src + 51 de tests"
+    cuentan historias distintas a quien va a tocar el símbolo: los tests son
+    la red, no la onda.
+    """
+    primero = (qual or "").split(".", 1)[0].lower()
+    return primero.startswith("test") or primero.endswith("tests")
+
+
 def _scan_module(mod, tree, is_pkg):
     """Los símbolos que este módulo DEFINE. Todo hecho: está escrito en el fichero."""
     info = {
@@ -102,6 +160,7 @@ def _scan_module(mod, tree, is_pkg):
         "docs": {mod: _resumen(tree)},   # cualificado -> primera linea del docstring
         "lines": {mod: 1},               # cualificado -> linea donde se define
         "ends": {},                      # cualificado -> ultima linea del cuerpo
+        "sigs": {},                      # cualificado -> firma tecleable
     }
     for node in _def_nodes(tree.body):
         qual = "%s.%s" % (mod, node.name)
@@ -109,6 +168,7 @@ def _scan_module(mod, tree, is_pkg):
         info["docs"][qual] = _resumen(node)
         info["lines"][qual] = node.lineno
         info["ends"][qual] = getattr(node, "end_lineno", None)
+        info["sigs"][qual] = _firma(node)
     for node in tree.body:
         if not isinstance(node, ast.ClassDef):
             continue
@@ -117,10 +177,13 @@ def _scan_module(mod, tree, is_pkg):
         info["docs"][qual] = _resumen(node)
         info["lines"][qual] = node.lineno
         info["ends"][qual] = getattr(node, "end_lineno", None)
+        bases = [b for b in (_base_name(x) for x in node.bases) if b]
+        info["sigs"][qual] = "(%s)" % ", ".join(bases) if bases else ""
         for m in _def_nodes(node.body):
             info["docs"]["%s.%s" % (qual, m.name)] = _resumen(m)
             info["lines"]["%s.%s" % (qual, m.name)] = m.lineno
             info["ends"]["%s.%s" % (qual, m.name)] = getattr(m, "end_lineno", None)
+            info["sigs"]["%s.%s" % (qual, m.name)] = _firma(m)
         info["classes"][node.name] = {
             "qual": qual,
             "bases": [b for b in (_base_name(x) for x in node.bases) if b],
@@ -227,13 +290,15 @@ def analyze(root, skip=DEFAULT_SKIP, include_nested=False, since=None):
         docs = info.get("docs") or {}
         lineas = info.get("lines") or {}
         finales = info.get("ends") or {}
+        firmas = info.get("sigs") or {}
         ruta = info.get("path", "")
         tabla[mod] = {"kind": "module", "module": mod, "doc": docs.get(mod, ""),
-                      "file": ruta, "line": 1, "end": None}
+                      "file": ruta, "line": 1, "end": None, "sig": ""}
         for nombre, qual in info["functions"].items():
             tabla[qual] = {
                 "kind": "function", "module": mod, "name": nombre, "doc": docs.get(qual, ""),
                 "file": ruta, "line": lineas.get(qual), "end": finales.get(qual),
+                "sig": firmas.get(qual, ""),
             }
         for nombre, clase in info["classes"].items():
             tabla[clase["qual"]] = {
@@ -241,12 +306,14 @@ def analyze(root, skip=DEFAULT_SKIP, include_nested=False, since=None):
                 "doc": docs.get(clase["qual"], ""),
                 "file": ruta, "line": lineas.get(clase["qual"]),
                 "end": finales.get(clase["qual"]),
+                "sig": firmas.get(clase["qual"], ""),
             }
             for mname, mqual in clase["methods"].items():
                 tabla[mqual] = {"kind": "method", "module": mod, "name": mname,
                                 "owner": clase["qual"], "doc": docs.get(mqual, ""),
                                 "file": ruta, "line": lineas.get(mqual),
-                                "end": finales.get(mqual)}
+                                "end": finales.get(mqual),
+                                "sig": firmas.get(mqual, "")}
 
     aristas = set()
     motivos = {}
@@ -371,7 +438,9 @@ def relacionados(report, texto, limite=8):
         if nombre not in palabras:
             continue
         ficha = _ficha(nodo)
-        ficha["callers"] = len(entrantes.get(nodo["qual"], ()))
+        quien = entrantes.get(nodo["qual"], ())
+        ficha["callers"] = len(quien)
+        ficha["callers_tests"] = sum(1 for q in quien if es_de_test(q))
         ficha["callees"] = len(salientes.get(nodo["qual"], ()))
         fichas.append(ficha)
     # Los mas conectados primero: si hay que cortar, que caiga lo periferico.
@@ -418,7 +487,7 @@ def _ficha(nodo):
     return {
         "qual": nodo["qual"], "kind": nodo["kind"],
         "file": nodo.get("file", ""), "line": nodo.get("line"),
-        "doc": nodo.get("doc", ""),
+        "doc": nodo.get("doc", ""), "sig": nodo.get("sig", ""),
     }
 
 
