@@ -101,12 +101,14 @@ def _scan_module(mod, tree, is_pkg):
         "tree": tree,
         "docs": {mod: _resumen(tree)},   # cualificado -> primera linea del docstring
         "lines": {mod: 1},               # cualificado -> linea donde se define
+        "ends": {},                      # cualificado -> ultima linea del cuerpo
     }
     for node in _def_nodes(tree.body):
         qual = "%s.%s" % (mod, node.name)
         info["functions"][node.name] = qual
         info["docs"][qual] = _resumen(node)
         info["lines"][qual] = node.lineno
+        info["ends"][qual] = getattr(node, "end_lineno", None)
     for node in tree.body:
         if not isinstance(node, ast.ClassDef):
             continue
@@ -114,9 +116,11 @@ def _scan_module(mod, tree, is_pkg):
         metodos = {m.name: "%s.%s" % (qual, m.name) for m in _def_nodes(node.body)}
         info["docs"][qual] = _resumen(node)
         info["lines"][qual] = node.lineno
+        info["ends"][qual] = getattr(node, "end_lineno", None)
         for m in _def_nodes(node.body):
             info["docs"]["%s.%s" % (qual, m.name)] = _resumen(m)
             info["lines"]["%s.%s" % (qual, m.name)] = m.lineno
+            info["ends"]["%s.%s" % (qual, m.name)] = getattr(m, "end_lineno", None)
         info["classes"][node.name] = {
             "qual": qual,
             "bases": [b for b in (_base_name(x) for x in node.bases) if b],
@@ -222,24 +226,27 @@ def analyze(root, skip=DEFAULT_SKIP, include_nested=False, since=None):
     for mod, info in modulos.items():
         docs = info.get("docs") or {}
         lineas = info.get("lines") or {}
+        finales = info.get("ends") or {}
         ruta = info.get("path", "")
         tabla[mod] = {"kind": "module", "module": mod, "doc": docs.get(mod, ""),
-                      "file": ruta, "line": 1}
+                      "file": ruta, "line": 1, "end": None}
         for nombre, qual in info["functions"].items():
             tabla[qual] = {
                 "kind": "function", "module": mod, "name": nombre, "doc": docs.get(qual, ""),
-                "file": ruta, "line": lineas.get(qual),
+                "file": ruta, "line": lineas.get(qual), "end": finales.get(qual),
             }
         for nombre, clase in info["classes"].items():
             tabla[clase["qual"]] = {
                 "kind": "class", "module": mod, "name": nombre,
                 "doc": docs.get(clase["qual"], ""),
                 "file": ruta, "line": lineas.get(clase["qual"]),
+                "end": finales.get(clase["qual"]),
             }
             for mname, mqual in clase["methods"].items():
                 tabla[mqual] = {"kind": "method", "module": mod, "name": mname,
                                 "owner": clase["qual"], "doc": docs.get(mqual, ""),
-                                "file": ruta, "line": lineas.get(mqual)}
+                                "file": ruta, "line": lineas.get(mqual),
+                                "end": finales.get(mqual)}
 
     aristas = set()
     motivos = {}
@@ -370,6 +377,30 @@ def relacionados(report, texto, limite=8):
     # Los mas conectados primero: si hay que cortar, que caiga lo periferico.
     fichas.sort(key=lambda f: (-(f["callers"] + f["callees"]), f["qual"]))
     return fichas[:limite]
+
+
+def en_linea(report, fichero, linea):
+    """El símbolo más interno definido en `fichero` cuyo cuerpo CONTIENE `linea`.
+
+    Para anclar un hecho externo con fichero:línea —un crash de la consola, una
+    señal de `check`— a su nodo del grafo. Contención por [line, end] del AST,
+    no "el def más cercano por arriba": esa heurística atribuiría al def anterior
+    el código de nivel de módulo que viene después. Línea fuera de todo def →
+    None, que es la verdad: petó en el cuerpo del módulo, no en un símbolo.
+    """
+    mejor = None
+    objetivo = os.path.normcase(fichero or "")
+    for nodo in report["nodes"]:
+        if nodo["kind"] == "module":
+            continue
+        if os.path.normcase(nodo.get("file") or "") != objetivo:
+            continue
+        inicio, fin = nodo.get("line"), nodo.get("end")
+        if not inicio or not fin or not (inicio <= linea <= fin):
+            continue
+        if mejor is None or inicio > mejor["line"]:
+            mejor = nodo
+    return mejor
 
 
 def _indice_llamadas(report):

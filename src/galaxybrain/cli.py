@@ -455,6 +455,60 @@ def _duration(text):
     return value * unit
 
 
+def _ancla_grafo(record):
+    """El nodo del grafo donde peto y quien le llama, o None si no se puede decir.
+
+    El frame que manda es el MAS INTERNO que pertenece al proyecto: el fallo
+    esta abajo, y los frames de libreria no son nodos de tu grafo. Todo el
+    camino calla hacia el lado seguro (regla 9): sin proyecto, sin frame propio
+    o sin simbolo que contenga la linea, no se anade nada — la ficha del crash
+    ya se enseno entera y este bloque es un extra, no la lectura.
+    """
+    from . import symbols
+
+    proyecto = (record.get("process") or {}).get("project")
+    if not proyecto or not os.path.isdir(proyecto):
+        return None
+    frame = next(
+        (f for f in reversed(record.get("frames") or [])
+         if not f.get("is_library") and f.get("file") and f.get("line")),
+        None,
+    )
+    if frame is None:
+        return None
+    try:
+        rel = os.path.relpath(frame["file"], proyecto)
+    except ValueError:  # otra unidad de disco en Windows
+        return None
+    if rel.startswith(".."):
+        return None  # el frame vive fuera del proyecto: no es nodo de este grafo
+    report = symbols.analyze(proyecto)
+    if report.get("root_error"):
+        return None
+    nodo = symbols.en_linea(report, rel, frame["line"])
+    if nodo is None:
+        return None
+    entrantes, _salientes = symbols._indice_llamadas(report)
+    return nodo, sorted(entrantes.get(nodo["qual"], ()))
+
+
+def _emit_ancla(record):
+    ancla = _ancla_grafo(record)
+    if ancla is None:
+        return
+    nodo, llamantes = ancla
+    emit("")
+    emit("en el grafo: %s" % _linea_simbolo(nodo))
+    if llamantes:
+        vista = " · ".join(llamantes[:6])
+        if len(llamantes) > 6:
+            vista += " y %d mas" % (len(llamantes) - 6)
+        emit("  le llaman (%d): %s" % (len(llamantes), vista))
+        emit("  (la onda entera: gb calls %s --depth 2)" % (nodo.get("name") or nodo["qual"]))
+    else:
+        emit("  nadie le llama en el grafo (entrada directa o despacho dinamico)")
+
+
 def cmd_last(args):
     since = None
     if getattr(args, "since", None):
@@ -482,6 +536,7 @@ def cmd_last(args):
         emit(json.dumps(record, ensure_ascii=False, indent=2))
         return 0
     emit(render.render_record(record, _style(args), full=args.full))
+    _emit_ancla(record)
     return 0
 
 
@@ -536,6 +591,7 @@ def cmd_show(args):
         emit(json.dumps(record, ensure_ascii=False, indent=2))
         return 0
     emit(render.render_record(record, _style(args), full=args.full))
+    _emit_ancla(record)
     return 0
 
 

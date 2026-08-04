@@ -145,6 +145,55 @@ def test_el_hook_no_revienta_con_stdin_roto(monkeypatch, capsys):
     assert capsys.readouterr().out == ""
 
 
+def test_en_linea_da_el_simbolo_que_contiene_la_linea(tmp_path):
+    """Contencion por [line, end] del AST, no "el def mas cercano por arriba":
+    la linea 1 de app.py es un import y NO pertenece a ningun simbolo."""
+    report = symbols.analyze(_proyecto(tmp_path))
+
+    assert symbols.en_linea(report, "lib.py", 3)["qual"] == "lib.ayuda"
+    assert symbols.en_linea(report, "app.py", 1) is None
+
+
+def test_en_linea_prefiere_el_metodo_a_la_clase(tmp_path):
+    (tmp_path / "cosa.py").write_text(
+        "class Cosa:\n    def metodo(self):\n        return 1\n", encoding="utf-8"
+    )
+
+    report = symbols.analyze(str(tmp_path))
+    assert symbols.en_linea(report, "cosa.py", 3)["qual"] == "cosa.Cosa.metodo"
+
+
+# --- el ancla del crash: la consola dice el nodo -----------------------------
+
+
+def _record(root, fichero, linea):
+    return {
+        "process": {"project": root},
+        "frames": [
+            {"file": "/usr/lib/python/x.py", "line": 1, "is_library": True},
+            {"file": fichero, "line": linea, "is_library": False},
+        ],
+    }
+
+
+def test_el_ancla_apunta_al_nodo_y_sus_llamantes(tmp_path):
+    """Criterio 1 de la fase "grafo como columna": el crash con su nodo y su onda."""
+    root = _proyecto(tmp_path)
+
+    nodo, llamantes = cli._ancla_grafo(_record(root, str(tmp_path / "lib.py"), 3))
+    assert nodo["qual"] == "lib.ayuda"
+    assert llamantes == ["app.main"]
+
+
+def test_el_ancla_calla_si_no_puede_decir_nada(tmp_path):
+    """Regla 9: el ancla es un extra sobre la ficha del crash, nunca un fallo."""
+    root = _proyecto(tmp_path)
+
+    assert cli._ancla_grafo(_record(root, "<string>", 1)) is None
+    assert cli._ancla_grafo({"process": {}, "frames": []}) is None
+    assert cli._ancla_grafo(_record(root, str(tmp_path / "app.py"), 1)) is None
+
+
 def test_el_hook_tolera_el_bom_de_powershell(tmp_path, monkeypatch, capsys):
     """PowerShell 5.1 pipa con BOM y `json.loads` lo rechaza. El hook callaba
     "cumpliendo el contrato" — un silencio con causa evitable que se midio como
