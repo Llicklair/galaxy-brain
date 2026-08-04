@@ -48,6 +48,14 @@ Ronda 2, tras el push:
   que leer una captura o commitear regenera el mapa solo (verificado en vivo: 12:21:19), y de paso
   los halos de obra se apagan al commitear sin esperar al siguiente edit.
 
+Y la pregunta de completitud ("¿es esto lo que el LLM necesita?"), respondida por el propio LLM con
+su sesión delante: la estructura y la historia estaban completas; lo que faltaba era **la firma** —
+cinco lecturas de fichero en un día solo para ver parámetros. Añadida (`f671303`): la ficha dice
+`parse_ts(value)` (args, defaults, `/`, `*`, async, decoradores que cambian la llamada — AST puro),
+y todas las cuentas separan src de tests ("7 llamantes" → "6 de src, 1 de tests": los tests son la
+red, no la onda). **Criterio pendiente para la próxima sesión orgánica:** escribir una llamada
+correcta a una función no leída, solo con la ficha delante.
+
 Pista fuerte que deja la sesión: el grafo **ahorra y no miente** cuando se le pregunta — y las dos
 mentiras por omisión que tenía (ancla sin aviso de código movido, mapa con capas viejas) las destapó
 el uso en una tarde y se afinaron en caliente. La consola sigue esperando su caso natural — el
