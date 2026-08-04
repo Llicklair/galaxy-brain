@@ -10,6 +10,24 @@ mismo detalle que los positivos, o más.
 
 ---
 
+## 2026-08-04 · GitNexus fuera; `gb calls` ocupa su sitio — **la consulta puntual, ahora del grafo propio**
+
+Decisión de Marcos: borrar todo rastro de GitNexus (npm global, índices, hook, MCP, skills y el
+companion — `864af90`) y convertir el grafo propio en la columna. La primera pieza es `gb calls`
+(`4b5f8c1`): llamantes y llamados de un símbolo con fichero:línea sobre el índice de `symbols`
+(que ahora guarda fichero y línea por nodo), `--depth N` para la onda, y un modo `--hook` que da el
+mismo servicio que daba el PreToolUse de GitNexus — símbolos relacionados con lo que se busca —
+pero determinista, sin dependencias y callado cuando no hay coincidencias.
+
+- **Medido en este repo** (49 módulos): 526 ms el comando, 180 ms el hook. Dentro del presupuesto
+  de la regla 3 (< 1 s por edición). En repos grandes queda por medir; el hook lleva timeout y su
+  contrato es no romper jamás la búsqueda que lo dispara.
+- Probado sobre un ambiguo real (`gb calls analyze`): devuelve las tres coincidencias con sus 26
+  llamantes, cada uno con su sitio. Ambigüedad como material, no como error.
+- **Pendiente, y es el criterio de la fase**: que en una sesión de trabajo real la inyección del
+  hook ahorre al menos una lectura de fichero. Se anota aquí cuando ocurra — y si no ocurre,
+  también: el abandono es dato (regla 10).
+
 ## 2026-07-31 · Usar `gb` en OTRO repo mientras se construía este — **tres fallos silenciosos que 283 tests no vieron**
 
 Marcos abrió un proyecto distinto (documentación de un sistema de defensa) y trabajó con `gb` de

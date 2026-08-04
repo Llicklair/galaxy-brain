@@ -45,8 +45,9 @@ tiene que caer en una de ellas o no entra:
 
 - **Dónde petó y con qué estado** — `last · list · show · on · off · status`. La consola de errores:
   captura excepciones no capturadas y el estado alrededor, para no reproducir el fallo a mano.
-- **Qué forma tiene** — `graph · symbols`. El mapa de acoplamiento (imports, ciclos, hotspots) y el
-  grafo de símbolos (quién llama a quién, con su cobertura).
+- **Qué forma tiene** — `graph · symbols · calls`. El mapa de acoplamiento (imports, ciclos, hotspots),
+  el grafo de símbolos (quién llama a quién, con su cobertura) y la consulta puntual (`calls`:
+  llamantes y llamados de un símbolo con fichero:línea, también como hook de búsqueda).
 - **Qué le hizo cada cambio** — `check`. Qué tocó un diff en los tests y en el acoplamiento.
 - **Qué le falta de base** — `floor`. El andamiaje mínimo que un proyecto necesita antes de construir.
 - **Qué se aprendió, cross-repo** — `memory`. La memoria durable entre repos y sesiones.
