@@ -19,9 +19,16 @@ companion — `864af90`) y convertir el grafo propio en la columna. La primera p
 mismo servicio que daba el PreToolUse de GitNexus — símbolos relacionados con lo que se busca —
 pero determinista, sin dependencias y callado cuando no hay coincidencias.
 
-- **Medido en este repo** (49 módulos): 526 ms el comando, 180 ms el hook. Dentro del presupuesto
-  de la regla 3 (< 1 s por edición). En repos grandes queda por medir; el hook lleva timeout y su
-  contrato es no romper jamás la búsqueda que lo dispara.
+- **Medido en este repo** (49 módulos): 526 ms el comando. El hook midió "180 ms" que eran **mudez,
+  no velocidad**: PowerShell 5.1 pipa con BOM, `json.loads` lo rechazaba y el hook callaba por
+  contrato — un silencio con causa evitable, indistinguible de "no había nada". Lo delató que 180 ms
+  es menos que el propio analyze; la cifra buena hay que dudarla igual que la mala. Arreglado con el
+  `_BOM` que graph/symbols ya usaban (`95d3ff9`); medición honesta: **430 ms aquí, 330 ms sobre 600
+  módulos sintéticos** (3.000 nodos, 4.199 aristas). El frío de primer toque (AV de Windows) fue
+  7,6 s una sola vez; la consulta sobre un informe ya construido, 2,4 ms — todo el coste es el parse.
+- De regalo, el ciclo del error en vivo durante el propio desarrollo: el crash del debug
+  (JSONDecodeError del BOM) lo capturó la consola sola (`gb show 20260804T035450-e18147`) antes de
+  ningún print. El primer aviso del bug lo dio la herramienta que lo contiene.
 - Probado sobre un ambiguo real (`gb calls analyze`): devuelve las tres coincidencias con sus 26
   llamantes, cada uno con su sitio. Ambigüedad como material, no como error.
 - **Pendiente, y es el criterio de la fase**: que en una sesión de trabajo real la inyección del
