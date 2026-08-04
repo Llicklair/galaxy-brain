@@ -681,7 +681,11 @@ function encaje(){
   return [e, pad+(cv.width-2*pad-w*e)/2 - x0*e, 60+pad+(cv.height-60-2*pad-h*e)/2 - y0*e];
 }
 function medir(){ cv.width=innerWidth; cv.height=innerHeight;
-  const r=encaje(); esc=r[0]; ox=r[1]; oy=r[2]; }
+  // El refit SOLO si la camara no es del usuario: medir() corre al arrancar
+  // DESPUES de restaurar la camara guardada, y sin esta guarda la pisaba en
+  // cada recarga — el bug existio siempre, pero la re-animacion lo enmascaraba;
+  // al heredar las posiciones (mapa quieto) se volvio visible (uso real, 4-ago).
+  if(!camaraLibre){ const r=encaje(); esc=r[0]; ox=r[1]; oy=r[2]; } }
 
 // ================= atenuado con tinte =================
 // El dimColor de GitNexus: mezclar hacia el color del FONDO conservando el
@@ -860,7 +864,8 @@ try{
     else if(usadas > N*0.8) iter = Math.max(0, MAXIT-40);
     if(iter){
       temp = Math.max(0, (LADO/10)*(1 - iter/(MAXIT+1)));
-      if(!camaraLibre){ const r=encaje(); esc=r[0]; ox=r[1]; oy=r[2]; }
+      // El encuadre no se toca aqui: medir() (que corre despues, ya con el
+      // canvas a tamano real) encaja si la camara no es del usuario.
       if(iter>=MAXIT) estado.style.opacity=0;
     }
   }
