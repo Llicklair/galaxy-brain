@@ -4,7 +4,7 @@ Cada comando cae en una familia, una por tipo de hecho determinista sobre el
 codigo. Un comando nuevo tiene que caer en una de ellas, o no entra:
 
   last · list · show · on · off · status   ->  donde peto y con que estado
-  graph · symbols                          ->  que forma tiene
+  graph · symbols · calls                  ->  que forma tiene
   check                                    ->  que le hizo cada cambio
   floor                                    ->  que le falta de base
   memory                                   ->  que se aprendio, cross-repo
