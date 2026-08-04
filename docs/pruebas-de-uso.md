@@ -10,6 +10,31 @@ mismo detalle que los positivos, o más.
 
 ---
 
+## 2026-08-04 · guardia-mvp: el primer producto de fuera sobre el pipeline de gb — **y el embudo honesto de su desarrollo**
+
+Marcos señala que la adopción sí se probó: live code se desarrolló con gb y el resultado es
+[guardia-mvp](https://github.com/Llicklair/guardia-mvp) (público, 42 commits). Verificado contra el
+repo y contra el histórico local — y el dato parte en dos mitades que no se parecen:
+
+- **La familia graph/gate tiene adopción real y estructural.** El About de guardia declara "sobre el
+  pipeline de galaxy-brain"; su `check.sh` corre `gb graph src --gate`, y sus fronteras de seguridad
+  viven en un `src/.gb-boundaries` propio: el evaluador no puede importar crisol/despliegue/aplicador,
+  y el generador de ataques no ve la gramática. **El gate de gb es quien hace cumplir el
+  generador ≠ evaluador (H2) de otro producto**, con 254 tests al otro lado. Esto no es "gb estaba
+  instalado": es gb como pieza estructural del diseño de seguridad de un segundo repo.
+- **La consola capturó, pero nadie leyó.** Embudo de live code (31-jul → 2-ago): 3 firmas / 6
+  capturas (SyntaxError ×2, AttributeError ×2, FileNotFoundError ×2), **0 leídas**, 1 intervenida,
+  1 en silencio. Los fallos se arreglaron sin `gb show`: la promesa central de la consola no se
+  ejercitó, y el criterio de SCOPE (≥3 fallos resueltos leyendo el estado) **sigue en 1/3** — este
+  dato no lo avanza. Se apunta como manda la regla 10: el no-uso es dato, no se maquilla.
+- **La libreta de usos** (existe desde el 3-ago, así que no cubre el desarrollo de live code):
+  113 `graph --context` (auto), 23 `--gate`, 17 `check`, 19 `calls --hook` (casi todo pruebas
+  manuales del propio desarrollo de hoy, aún no uso orgánico), 4 `show`, 3 `calls` elegidos.
+
+Lectura conjunta: la adopción de gb no es un sí/no — el gate ya vive cableado en el CI de otro
+producto, y la consola sigue sin su primera lectura real. El termómetro distingue familias, que es
+exactamente su trabajo.
+
 ## 2026-08-04 · GitNexus fuera; `gb calls` ocupa su sitio — **la consulta puntual, ahora del grafo propio**
 
 Decisión de Marcos: borrar todo rastro de GitNexus (npm global, índices, hook, MCP, skills y el
