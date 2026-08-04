@@ -83,12 +83,14 @@ gb floor --init # drops the base documents — and the pre-commit hook
 ```
 
 On a fresh git repo the session map suggests this path by itself — one line, only in the
-unambiguous case (git present, no code, no floor docs), silence otherwise. `--init` leaves six
+unambiguous case (git present, no code, no floor docs), silence otherwise. `--init` leaves seven
 pieces, never overwriting anything: `AGENTS.md` (executable context in the cross-tool format read
 by Claude Code, Codex, Cursor, Copilot and Aider — including the gb usage contract for agents),
-`SCOPE.md`, `ARCHITECTURE.md`, an ADR folder, an evidence log, and `.githooks/pre-commit` with the
-gate wired in ratchet mode — inherited debt does not block, only what is new does. Hook it once
-with `git config core.hooksPath .githooks`.
+`SCOPE.md`, `ARCHITECTURE.md`, an ADR folder, an evidence log, `.githooks/pre-commit` with the
+gate wired in ratchet mode (inherited debt does not block, only what is new does — hook it once
+with `git config core.hooksPath .githooks`), and `.claude/settings.json` wiring the **agent** at
+project level: the session map, the edit delta and the symbol cards on every search travel with
+the repo, merging with each machine's own settings.
 
 One thing no tool can write for you, and gb says so out loud: the **done criterion** in SCOPE.md.
 You write it before the first line of code.
@@ -200,7 +202,9 @@ scores **93% recall** with zero dependencies. Details and the negative results l
 each edit, only what **changed** — or silence; and on every code search, the matching symbol cards
 ride along (`gb calls --hook`: 430 ms on this repo, 330 ms on a 600-module synthetic one). The
 agent asks the graph before opening files — and `gb symbols … --watch` keeps the human's map fresh
-in the browser, atomically, with nothing but the filesystem.
+in the browser, atomically, with nothing but the filesystem. All of it ships per project:
+`gb floor --init` drops the wiring, so a fresh clone gets an aware agent with no global setup —
+the model does not know gb exists; **its context does**.
 
 ---
 

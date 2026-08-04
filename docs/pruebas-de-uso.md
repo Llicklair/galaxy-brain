@@ -10,6 +10,22 @@ mismo detalle que los positivos, o más.
 
 ---
 
+## 2026-08-04 · La consciencia del LLM deja de ser artesanía — **el arnés viaja con el repo**
+
+Pregunta de Marcos: ¿es el LLM consciente de gb frente a un usuario nuevo? Auditados los canales:
+el aviso de captura (gratis, en el stderr del crash) y el AGENTS.md de `--init` funcionaban para
+cualquiera; **los tres hooks del grafo** (mapa de sesión, delta por edición, fichas en búsqueda)
+eran artesanía del settings global de UNA máquina — el usuario nuevo instalaba, capturaba… y su
+agente nunca veía el mapa. El modelo no sabe que gb existe; lo sabe su contexto, y el contexto no
+se cableaba solo.
+
+Arreglado: `floor --init` deja también `.claude/settings.json` **a nivel de proyecto** — viaja con
+el repo, mergea con lo global de cada máquina, nunca pisa uno existente. Verificado en sandbox
+limpio: las 7 piezas creadas y los tres comandos del arnés respondiendo en frío (el mapa, el delta
+y `motor.suma(a, b=0)` con firma desde el hook piped). **Pendiente, y es el criterio:** la primera
+sesión fresca de agente en un repo scaffoldeado donde los hooks disparen solos — se apunta aquí
+cuando ocurra.
+
 ## 2026-08-04 · El agente usa el grafo sobre este repo — **la primera prueba de uso dirigida, con su negativo afinado en caliente**
 
 Sesión real con Claude usando el grafo como manda CLAUDE.md, a petición de Marcos. Aviso previo de
