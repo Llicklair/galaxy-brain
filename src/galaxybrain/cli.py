@@ -440,6 +440,49 @@ def _sellado(payload, root):
     return titulo + "\n" + sello + "\n" + resto
 
 
+def _sugerencia_primer_dia(root):
+    """Una linea de arranque, SOLO en el caso inequivoco: hay repo git pero ni
+    codigo Python que mapear ni suelo (SCOPE/AGENTS). Un proyecto recien nacido.
+
+    En cualquier otro caso, silencio (H6): una carpeta sin git no ha declarado
+    ser un proyecto, y un repo con suelo ya paso su primer dia.
+    """
+    es_repo = os.path.isdir(os.path.join(root, ".git"))
+    hay_suelo = any(
+        os.path.exists(os.path.join(root, doc)) for doc in ("SCOPE.md", "AGENTS.md")
+    )
+    if not es_repo or hay_suelo:
+        return None
+    return (
+        "[gb] repo sin mapa ni suelo — primer dia: `gb floor` dice que falta · "
+        "`gb floor --init` deja los documentos base y el pre-commit · el criterio "
+        "de terminado lo escribes tu en SCOPE.md"
+    )
+
+
+def _capturas_sin_leer(root):
+    """Cuantas capturas no-efimeras de ESTE proyecto siguen sin leer. Un hecho
+    del historico, para que quien arranca la sesion decida si tirar del hilo."""
+    from .capture import _project_root
+
+    proyecto = _project_root(root) or os.path.abspath(root)
+    leidas = store.read_ids()
+    return sum(
+        1 for e in store.read_index(project=proyecto)
+        if not store.is_ephemeral(e) and e.get("id") not in leidas
+    )
+
+
+def _emit_mapa_sesion(payload, root):
+    emit(_sellado(payload, root))
+    sin_leer = _capturas_sin_leer(root)
+    if sin_leer:
+        emit(
+            "  %d captura(s) sin leer en este proyecto — gb list para el embudo, "
+            "gb show <id> para el estado" % sin_leer
+        )
+
+
 def _graph_context(report, root, solo_si_cambia):
     """Payload de sesion: la forma del proyecto de una pasada, o silencio.
 
@@ -452,6 +495,9 @@ def _graph_context(report, root, solo_si_cambia):
 
     payload = render.render_graph_context(report)
     if not payload:
+        sugerencia = _sugerencia_primer_dia(root)
+        if sugerencia and not solo_si_cambia:
+            emit(sugerencia)
         return 0
 
     forma = graph.shape(report)
@@ -475,13 +521,13 @@ def _graph_context(report, root, solo_si_cambia):
     # Sin --if-changed (el arranque de sesion) va el mapa entero: es la foto que
     # orienta, y todavia no hay nada leido con lo que comparar.
     if not solo_si_cambia:
-        emit(_sellado(payload, root))
+        _emit_mapa_sesion(payload, root)
         return 0
 
     delta = graph.shape_delta(previa, forma)
     if delta is None:
         # Primera vez que se ve este proyecto: no hay delta posible, va la foto.
-        emit(_sellado(payload, root))
+        _emit_mapa_sesion(payload, root)
         return 0
     if not delta:
         return 0
@@ -1251,6 +1297,8 @@ def cmd_floor(args):
             return 1
         for hecho in floor.scaffold(root):
             emit("  %-9s %s" % (hecho["action"], hecho["path"]))
+            if hecho["path"].endswith("pre-commit") and hecho["action"] == "creado":
+                emit("            enganchalo una vez: git config core.hooksPath .githooks")
         emit("")
     report = floor.analyze(root, run_tests=args.time)
     if args.json:

@@ -51,7 +51,7 @@ PENDING_MARK = "<!-- gb:pendiente -->"
 #: donde va a parar lo que se aprende. Se escriben pre-rellenados con lo DETECTADO;
 #: lo que exige criterio se deja marcado con PENDING_MARK y una razon, nunca con un
 #: hueco mudo: un encabezado vacio no se rellena, una pregunta si.
-SCAFFOLD_FILES = ["AGENTS.md", "SCOPE.md", "ARCHITECTURE.md", "docs/adr/README.md", "docs/evidencia.md"]
+SCAFFOLD_FILES = ["AGENTS.md", "SCOPE.md", "ARCHITECTURE.md", "docs/adr/README.md", "docs/evidencia.md", ".githooks/pre-commit"]
 
 
 def _exists(root, *rel):
@@ -255,6 +255,16 @@ Lo de esta seccion se EJECUTA, asi que no puede pudrirse en silencio: si miente,
 
 %s
 
+## Cuando algo pete (contrato con gb)
+
+- Si muere un script, CLI o servidor: lee el estado YA capturado — `gb show <id>` (el aviso
+  trae el id) o `gb last` — antes de re-ejecutar con prints. La ficha llega con su nodo del
+  grafo y quien le llama.
+- Para saber quien llama a un simbolo o que rompes al tocarlo: `gb calls <simbolo> [--depth 2]`
+  antes de grepear o abrir ficheros a mano.
+- De vez en cuando, `gb list`: el embudo capturada→leida→intervenida→en-silencio es el
+  termometro del proyecto. No usar gb tambien es dato: se investiga, no se esconde.
+
 ## Arquitectura
 
 %s
@@ -358,6 +368,28 @@ libreta: es si estas midiendo algo.
 """ % PENDING_MARK
 
 
+def _plantilla_precommit(comando):
+    """El gate enganchable del día uno — antes había que cablearlo a mano, que es
+    exactamente lo contrario de "la norma va en el defecto" (prueba de uso, 4-ago).
+
+    Solo bloquea hechos: un ciclo de imports NUEVO o un cruce de frontera
+    declarada; `check` informa y sigue. El trinquete (`--since HEAD`) deja pasar
+    la deuda heredada — así el mismo hook sirve en un repo recién nacido y en
+    uno ya empezado sin fabricar falsos positivos.
+    """
+    tests = (
+        "%s || exit 1" % comando
+        if comando
+        else "# %s declara aqui tu comando de tests (y quita esta linea)" % PENDING_MARK
+    )
+    return """#!/bin/sh
+# Enganchado UNA vez con: git config core.hooksPath .githooks
+%s
+gb graph . --gate --since HEAD || exit 1
+gb check --staged --brief
+""" % tests
+
+
 def _level(key, title, status, detail, evidence=None, source=None):
     return {
         "key": key,
@@ -393,6 +425,7 @@ def scaffold(root):
         "ARCHITECTURE.md": _plantilla_architecture(nombre),
         "docs/adr/README.md": _plantilla_adr(),
         "docs/evidencia.md": _plantilla_evidencia(),
+        ".githooks/pre-commit": _plantilla_precommit(comando),
     }
 
     hechos = []
@@ -405,6 +438,11 @@ def scaffold(root):
             os.makedirs(os.path.dirname(destino), exist_ok=True)
             with open(destino, "w", encoding="utf-8") as handle:
                 handle.write(contenidos[rel])
+            if rel.endswith("pre-commit"):
+                try:
+                    os.chmod(destino, 0o755)  # en POSIX un hook sin +x no corre
+                except OSError:
+                    pass
             hechos.append({"path": rel, "action": "creado"})
         except OSError as error:
             hechos.append({"path": rel, "action": "error: %s" % error})
