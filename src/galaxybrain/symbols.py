@@ -20,6 +20,7 @@ Cero dependencias: `ast` y nada más. No hay LSP, ni índice, ni servidor.
 import ast
 import builtins
 import os
+import re
 
 from .graph import _BOM, DEFAULT_SKIP, _iter_py_files, _resolve_base, module_name
 
@@ -99,19 +100,23 @@ def _scan_module(mod, tree, is_pkg):
         "imports": _imports(tree, mod, is_pkg),
         "tree": tree,
         "docs": {mod: _resumen(tree)},   # cualificado -> primera linea del docstring
+        "lines": {mod: 1},               # cualificado -> linea donde se define
     }
     for node in _def_nodes(tree.body):
         qual = "%s.%s" % (mod, node.name)
         info["functions"][node.name] = qual
         info["docs"][qual] = _resumen(node)
+        info["lines"][qual] = node.lineno
     for node in tree.body:
         if not isinstance(node, ast.ClassDef):
             continue
         qual = "%s.%s" % (mod, node.name)
         metodos = {m.name: "%s.%s" % (qual, m.name) for m in _def_nodes(node.body)}
         info["docs"][qual] = _resumen(node)
+        info["lines"][qual] = node.lineno
         for m in _def_nodes(node.body):
             info["docs"]["%s.%s" % (qual, m.name)] = _resumen(m)
+            info["lines"]["%s.%s" % (qual, m.name)] = m.lineno
         info["classes"][node.name] = {
             "qual": qual,
             "bases": [b for b in (_base_name(x) for x in node.bases) if b],
@@ -208,24 +213,33 @@ def analyze(root, skip=DEFAULT_SKIP, include_nested=False, since=None):
             report["errors"][path] = "%s: %s" % (type(error).__name__, error)
             continue
         modulos[mod] = _scan_module(mod, tree, os.path.basename(path) == "__init__.py")
+        # La ruta RELATIVA a la raiz analizada: lo que un lector (o un agente)
+        # puede abrir tal cual desde donde se lanzo el comando.
+        modulos[mod]["path"] = os.path.relpath(path, root)
 
     # Tabla global de simbolos: modulos, clases, funciones y metodos.
     tabla = {}
     for mod, info in modulos.items():
         docs = info.get("docs") or {}
-        tabla[mod] = {"kind": "module", "module": mod, "doc": docs.get(mod, "")}
+        lineas = info.get("lines") or {}
+        ruta = info.get("path", "")
+        tabla[mod] = {"kind": "module", "module": mod, "doc": docs.get(mod, ""),
+                      "file": ruta, "line": 1}
         for nombre, qual in info["functions"].items():
             tabla[qual] = {
-                "kind": "function", "module": mod, "name": nombre, "doc": docs.get(qual, "")
+                "kind": "function", "module": mod, "name": nombre, "doc": docs.get(qual, ""),
+                "file": ruta, "line": lineas.get(qual),
             }
         for nombre, clase in info["classes"].items():
             tabla[clase["qual"]] = {
                 "kind": "class", "module": mod, "name": nombre,
                 "doc": docs.get(clase["qual"], ""),
+                "file": ruta, "line": lineas.get(clase["qual"]),
             }
             for mname, mqual in clase["methods"].items():
                 tabla[mqual] = {"kind": "method", "module": mod, "name": mname,
-                                "owner": clase["qual"], "doc": docs.get(mqual, "")}
+                                "owner": clase["qual"], "doc": docs.get(mqual, ""),
+                                "file": ruta, "line": lineas.get(mqual)}
 
     aristas = set()
     motivos = {}
@@ -301,6 +315,100 @@ def analyze(root, skip=DEFAULT_SKIP, include_nested=False, since=None):
             report["new_calls"] = sorted([a, b] for a, b in calls_ahora - base_calls)
             report["gone_nodes"] = len(base_nodes - ahora)
     return report
+
+
+def calls(report, simbolo, depth=1):
+    """Quién llama a un símbolo y a quién llama él, con fichero:línea.
+
+    Devuelve material, no veredictos: un nombre ambiguo no es un error, son
+    varias coincidencias, y se devuelven todas con sus relaciones. `depth`
+    extiende llamantes hacia arriba y llamados hacia abajo siguiendo CALLS —
+    el radio de la onda de un cambio. Solo aristas resueltas: lo que el grafo
+    no ve (atributos de variable, despacho dinámico) ya lo declara el informe.
+    """
+    nodos = {n["qual"]: n for n in report["nodes"]}
+    entrantes, salientes = _indice_llamadas(report)
+    exacto = simbolo in nodos
+    objetivos = [simbolo] if exacto else sorted(
+        q for q in nodos if q.endswith("." + simbolo)
+    )
+    matches = []
+    for qual in objetivos:
+        matches.append({
+            "symbol": _ficha(nodos[qual]),
+            "callers": _onda(qual, entrantes, nodos, depth),
+            "callees": _onda(qual, salientes, nodos, depth),
+        })
+    return {"query": simbolo, "depth": depth, "matches": matches}
+
+
+def relacionados(report, texto, limite=8):
+    """Los símbolos del proyecto cuyo nombre aparece en un texto de búsqueda.
+
+    Para el hook de PreToolUse: `texto` es un patrón de Grep/Glob, no Python,
+    así que se tokeniza a palabras y se casa contra el nombre pelado de cada
+    símbolo. Sin coincidencias, lista vacía — y el hook calla: una línea fija
+    de "0 resultados" en cada búsqueda es ruido repetido (H6). Cada ficha lleva
+    sus cuentas de llamantes/llamados para que el lector decida si le importa
+    sin abrir nada.
+    """
+    palabras = {
+        p.lower() for p in re.findall(r"[A-Za-z_][A-Za-z0-9_]{2,}", texto or "")
+    }
+    if not palabras:
+        return []
+    entrantes, salientes = _indice_llamadas(report)
+    fichas = []
+    for nodo in report["nodes"]:
+        nombre = (nodo.get("name") or nodo["qual"].rsplit(".", 1)[-1]).lower()
+        if nombre not in palabras:
+            continue
+        ficha = _ficha(nodo)
+        ficha["callers"] = len(entrantes.get(nodo["qual"], ()))
+        ficha["callees"] = len(salientes.get(nodo["qual"], ()))
+        fichas.append(ficha)
+    # Los mas conectados primero: si hay que cortar, que caiga lo periferico.
+    fichas.sort(key=lambda f: (-(f["callers"] + f["callees"]), f["qual"]))
+    return fichas[:limite]
+
+
+def _indice_llamadas(report):
+    """Las aristas CALLS del informe como dos diccionarios: entrantes y salientes."""
+    entrantes = {}
+    salientes = {}
+    for a, b, tipo in report["edges"]:
+        if tipo == "CALLS":
+            salientes.setdefault(a, set()).add(b)
+            entrantes.setdefault(b, set()).add(a)
+    return entrantes, salientes
+
+
+def _ficha(nodo):
+    return {
+        "qual": nodo["qual"], "kind": nodo["kind"],
+        "file": nodo.get("file", ""), "line": nodo.get("line"),
+        "doc": nodo.get("doc", ""),
+    }
+
+
+def _onda(qual, aristas, nodos, depth):
+    """BFS sobre CALLS hasta `depth` niveles, sin repetir y sin volver al origen."""
+    vistos = {qual}
+    frente = [qual]
+    resultado = []
+    for nivel in range(1, max(depth, 1) + 1):
+        siguiente = []
+        for actual in frente:
+            for vecino in sorted(aristas.get(actual, ())):
+                if vecino in vistos:
+                    continue
+                vistos.add(vecino)
+                ficha = _ficha(nodos[vecino]) if vecino in nodos else {"qual": vecino}
+                ficha["depth"] = nivel
+                resultado.append(ficha)
+                siguiente.append(vecino)
+        frente = siguiente
+    return resultado
 
 
 def _scan_items(items):

@@ -709,6 +709,98 @@ def _vigilar(root, args):
         return 0
 
 
+def cmd_calls(args):
+    """Quien llama a un simbolo y a quien llama el, con fichero:linea.
+
+    La pregunta puntual que antes respondia una herramienta externa (GitNexus),
+    ahora sobre el indice propio de `symbols`: cero procesos ajenos, cero deps.
+    """
+    from . import symbols
+
+    if args.hook:
+        return _calls_hook()
+
+    if not args.simbolo:
+        sys.stderr.write("[gb calls] dime un simbolo (nombre pelado o cualificado)\n")
+        return 2
+    root = os.path.abspath(args.path or ".")
+    report = symbols.analyze(root)
+    if report["root_error"]:
+        sys.stderr.write("[gb calls] %s\n" % report["root_error"])
+        return 1
+    resultado = symbols.calls(report, args.simbolo, depth=args.depth)
+    if args.json:
+        emit(json.dumps(resultado, ensure_ascii=False, indent=2))
+        return 0
+    if not resultado["matches"]:
+        emit("nada llamado '%s' en %s" % (args.simbolo, root))
+        # Devolver material tambien al fallar: los cualificados que CONTIENEN el
+        # texto son casi siempre lo que se buscaba con el nombre a medias.
+        parecidos = sorted(
+            n["qual"] for n in report["nodes"]
+            if args.simbolo.lower() in n["qual"].lower()
+        )[:5]
+        if parecidos:
+            emit("parecidos: %s" % ", ".join(parecidos))
+        return 1
+    for m in resultado["matches"]:
+        emit(_linea_simbolo(m["symbol"]))
+        _emit_onda("le llaman", m["callers"])
+        _emit_onda("llama a", m["callees"])
+    return 0
+
+
+def _linea_simbolo(ficha):
+    sitio = "%s:%s" % (ficha.get("file") or "?", ficha.get("line") or "?")
+    doc = (" — " + ficha["doc"]) if ficha.get("doc") else ""
+    return "%s · %s · %s%s" % (ficha["qual"], ficha.get("kind", "?"), sitio, doc)
+
+
+def _emit_onda(titulo, fichas):
+    emit("  %s (%d):" % (titulo, len(fichas)))
+    for ficha in fichas:
+        sangria = "    " * ficha.get("depth", 1)
+        emit("%s%s · %s:%s"
+             % (sangria, ficha["qual"], ficha.get("file") or "?", ficha.get("line") or "?"))
+
+
+def _calls_hook():
+    """Modo PreToolUse (Grep/Glob): simbolos del proyecto relacionados con lo buscado.
+
+    Lee el JSON del hook por stdin, casa el patron contra los nombres del grafo y
+    devuelve fichas con fichero:linea y cuentas de llamadas — lo que hacia el hook
+    de GitNexus, ahora determinista y propio. Contrato: NUNCA romper la busqueda
+    que lo dispara — cualquier cosa rara (sin stdin, sin patron, raiz sin Python)
+    es salir 0 en silencio.
+    """
+    from . import symbols
+
+    try:
+        datos = json.load(sys.stdin)
+    except (ValueError, OSError):
+        return 0
+    if not isinstance(datos, dict):
+        return 0
+    entrada = datos.get("tool_input") or {}
+    # `path` queda fuera a proposito: sus tramos ("src", el nombre del paquete)
+    # casarian con modulos del grafo en CADA busqueda, y eso es ruido fijo.
+    texto = " ".join(
+        str(entrada.get(clave) or "") for clave in ("pattern", "query", "glob")
+    )
+    report = symbols.analyze(os.path.abspath(datos.get("cwd") or "."))
+    if report.get("root_error") or not report["nodes"]:
+        return 0
+    fichas = symbols.relacionados(report, texto)
+    if not fichas:
+        return 0
+    emit("[gb] esos nombres estan en el grafo de simbolos:")
+    for ficha in fichas:
+        emit("  %s · %d le llaman, llama a %d"
+             % (_linea_simbolo(ficha), ficha["callers"], ficha["callees"]))
+    emit("  (detalle y onda: gb calls <simbolo> --depth 2)")
+    return 0
+
+
 def cmd_symbols(args):
     from . import symbols
 
@@ -1155,6 +1247,25 @@ def build_parser():
     syms.add_argument("--color", choices=["auto", "always", "never"], default="auto")
     syms.set_defaults(func=cmd_symbols)
 
+    calls_p = subparsers.add_parser(
+        "calls", help="quien llama a un simbolo y a quien llama el, con fichero:linea"
+    )
+    calls_p.add_argument(
+        "simbolo", nargs="?", default="",
+        help="nombre pelado o cualificado (p.ej. save o galaxybrain.store.save)",
+    )
+    calls_p.add_argument("path", nargs="?", default=".", help="raiz del proyecto (por defecto .)")
+    calls_p.add_argument(
+        "--depth", type=int, default=1, metavar="N",
+        help="niveles de onda: 2 = tambien quien llama al que llama",
+    )
+    calls_p.add_argument("--json", action="store_true", help="salida cruda")
+    calls_p.add_argument(
+        "--hook", action="store_true",
+        help="modo PreToolUse: lee el JSON del hook por stdin y calla si no hay nada",
+    )
+    calls_p.set_defaults(func=cmd_calls)
+
     floor_p = subparsers.add_parser(
         "floor", help="el andamiaje base: que hay y que falta antes de construir"
     )
@@ -1220,6 +1331,9 @@ def _uso_label(args):
     elif getattr(args, "gate", False):
         # El pre-commit tambien es invocacion automatica, no eleccion.
         etiqueta += " --gate"
+    elif getattr(args, "hook", False):
+        # El PreToolUse de busqueda tambien se dispara solo, no es eleccion.
+        etiqueta += " --hook"
     elif etiqueta == "memory":
         etiqueta += " " + (getattr(args, "mem_command", None) or "index")
     return etiqueta
