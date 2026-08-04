@@ -59,6 +59,10 @@ a publicarse. Hoy no se publica nada.
 - Antes de commitear: la suite en verde (`python -m pytest tests/ -q`) y el gate limpio
   (`gb graph src --gate`). El pre-commit ([.githooks/pre-commit](.githooks/pre-commit)) corre ambos
   más `gb check --staged`; engánchalo una vez con `git config core.hooksPath .githooks`.
+- Para saber **quién llama a un símbolo** — o qué rompes al tocarlo — `gb calls <símbolo> [--depth 2]`
+  antes de grepear o abrir ficheros a mano. Al buscar con Grep/Glob el hook ya inyecta las fichas de
+  los símbolos que casan (fichero:línea + cuentas); el detalle se pide al grafo, no se re-descubre
+  leyendo. Lo mismo al leer un fallo: la ficha de `gb show` ya trae el nodo y sus llamantes.
 - Cuando falle un **test**: repetir con `pytest -l` (locales de todos los frames) antes de añadir
   ningún `print`. Casi siempre el `-l` ya trae la respuesta, y galaxy-brain **no** cubre este caso —
   pytest atrapa la excepción y no llega a `sys.excepthook`
