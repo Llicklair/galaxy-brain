@@ -10,6 +10,33 @@ mismo detalle que los positivos, o más.
 
 ---
 
+## 2026-08-04 · El agente usa el grafo sobre este repo — **la primera prueba de uso dirigida, con su negativo afinado en caliente**
+
+Sesión real con Claude usando el grafo como manda CLAUDE.md, a petición de Marcos. Aviso previo de
+honestidad: uso **dirigido**, no espontáneo — así que la pista fuerte no es "lo usó" sino si ahorró
+pasos y si mintió. Tres pruebas:
+
+- **Consulta elegida con pregunta desconocida** ("¿quién usa `store.read_index`?"): `gb calls
+  read_index --depth 2` → 56 llamantes (5 de src, 51 de tests) con fichero:línea, onda de nivel 2 y
+  los 3 llamados, en un comando. **Verificado contra grep en vivo: 5/5 llamantes de src exactos —
+  el grafo no mintió.** El camino de siempre habría sido ~6 búsquedas más mapear a mano cada línea a
+  su función; grep además no da ni el nivel 2 ni distingue src de tests. Ahorro real y medible.
+- **El ancla sobre una captura real de hace 3 días** (`NameError` en `graph.py:967`,
+  `20260731T222603-1225ce`): **CALLÓ** — y ese silencio era mentira por omisión: la línea ya no cae
+  en ningún símbolo porque el fichero cambió después de la captura. El ancla resolvía contra el
+  código de HOY sin decirlo; en el peor caso habría podido apuntar al def equivocado que hoy ocupa
+  esa línea. **Afinado en la misma sesión** (`05bab0d`): con el mismo hecho de git del ciclo del
+  error, ahora avisa ("el fichero cambió después de la captura, commit X — el ancla apunta al código
+  de HOY") o explica su silencio con el commit exacto. El negativo valió más que los positivos.
+- **Primera lectura real de la consola en este repo**: la captura se leyó de verdad (el embudo
+  avanza), pero el fallo original ya estaba arreglado hace días — la lectura sirvió para afinar la
+  herramienta, no para resolver el fallo. El criterio de SCOPE (resolver fallos leyendo) **sigue
+  1/3**: no se infla con esto.
+
+Pista fuerte que deja la sesión: el grafo **ahorra y no miente** cuando se le pregunta, y la
+consola sigue esperando su caso natural — el crash asíncrono o lejano, donde leer el estado gana a
+re-ejecutar. El mapa vivo (watcher con candado) aguantó toda la sesión regenerándose solo.
+
 ## 2026-08-04 · guardia-mvp: el primer producto de fuera sobre el pipeline de gb — **y el embudo honesto de su desarrollo**
 
 Marcos señala que la adopción sí se probó: live code se desarrolló con gb y el resultado es
