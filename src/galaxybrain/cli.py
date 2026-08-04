@@ -837,6 +837,29 @@ def _firma_py(root):
     return sorted(marcas)
 
 
+def _firma_capas(root):
+    """Las fuentes de las capas del mapa que NO son .py, tambien a golpe de stat:
+    el historico y las lecturas de la consola (anillos del ciclo) y el git local
+    (halos de obra, que se apagan al commitear). El tick sigue sin poder pagar
+    subprocesos. Salio en prueba de uso real: leer una captura dejaba los
+    anillos viejos hasta el siguiente edit (docs/pruebas-de-uso.md, 4-ago).
+    """
+    marcas = []
+    rutas = (
+        str(config.home() / store.INDEX_NAME),
+        str(config.home() / store.READS_NAME),
+        os.path.join(root, ".git", "logs", "HEAD"),
+        os.path.join(root, ".git", "index"),
+    )
+    for ruta in rutas:
+        try:
+            st = os.stat(ruta)
+            marcas.append((os.path.basename(ruta), st.st_size, int(st.st_mtime)))
+        except OSError:
+            marcas.append((os.path.basename(ruta), 0, 0))
+    return marcas
+
+
 def _ruta_candado(destino):
     import hashlib
 
@@ -949,7 +972,7 @@ def _vigilar(root, args):
                 emit("el mapa ya no esta — watch apagado")
                 return 0
             _latir(candado)
-            actual = _firma_py(root)
+            actual = (_firma_py(root), _firma_capas(root))
             if actual != anterior:
                 anterior = actual
                 report = symbols_mod.analyze(root, since=args.since)

@@ -92,6 +92,44 @@ def test_borrar_el_mapa_apaga_el_watch(tmp_path, monkeypatch, capsys):
     assert not os.path.exists(cli._ruta_candado(destino))
 
 
+def test_leer_una_captura_regenera_el_mapa_solo(tmp_path, monkeypatch):
+    """La sonda mira tambien las fuentes de los anillos y los halos (historico,
+    lecturas, git local): leer una captura cambia lo que el mapa DIBUJA sin
+    tocar ningun .py. Salio en prueba de uso real: los anillos se quedaban
+    viejos hasta el siguiente edit."""
+    import time
+
+    from galaxybrain import config, store, viz
+
+    root = _proyecto(tmp_path)
+    destino = str(tmp_path / "mapa.html")
+    with open(destino, "w", encoding="utf-8") as handle:
+        handle.write("x")
+
+    llamadas = []
+    original = viz.render_graph_cloud
+
+    def _contando(*args, **kwargs):
+        llamadas.append(1)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(viz, "render_graph_cloud", _contando)
+
+    tics = {"n": 0}
+
+    def _toca_leidas_y_corta(_segundos):
+        tics["n"] += 1
+        if tics["n"] == 1:
+            with open(str(config.home() / store.READS_NAME), "a", encoding="utf-8") as handle:
+                handle.write('{"id": "prueba"}\n')
+            return
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(time, "sleep", _toca_leidas_y_corta)
+    assert cli.main(["symbols", root, "--html", destino, "--watch"]) == 0
+    assert len(llamadas) == 2  # una por el arranque, otra por la LECTURA
+
+
 def test_fondo_relanza_sin_la_bandera_y_vuelve(tmp_path, monkeypatch):
     """--fondo es para hooks: relanza el mismo watch como proceso independiente
     (sin --fondo, o se relanzaría a sí mismo eternamente) y vuelve al instante."""
