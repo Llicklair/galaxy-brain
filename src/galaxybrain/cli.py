@@ -328,6 +328,13 @@ def _html_shape(root, destino, report, graph_report):
     }
     if graph_report is not None:
         forma["g"] = graph.shape(graph_report)
+    # La capa de cambio tambien se DIBUJA (halo, leyenda, cabecera), asi que la
+    # forma tiene que moverse cuando se mueva su fuente: editar un cuerpo sin
+    # cambiar ningun simbolo, o commitear (que apaga los halos), dejaban el mapa
+    # mintiendo por omision — el mismo agujero que ya costo arreglar con el
+    # ciclo del error, una capa mas abajo. Un git status por comparacion
+    # (~30 ms) entra en el presupuesto de la regeneracion.
+    forma["obra"] = sorted(_tocados_para_mapa(root, report))
     # El mapa tambien pinta el CICLO DEL ERROR (anillos, ficha, cabecera), asi
     # que su forma registrada tiene que moverse cuando se muevan sus fuentes:
     # una captura nueva, una lectura o un commit que solo cambiara el codigo ya
@@ -777,6 +784,82 @@ def _firma_py(root):
     return sorted(marcas)
 
 
+def _ruta_candado(destino):
+    import hashlib
+
+    huella = hashlib.sha1(os.path.normcase(destino).encode("utf-8")).hexdigest()[:16]
+    return str(config.home() / "watches" / (huella + ".json"))
+
+
+def _tomar_candado(destino):
+    """El candado del watch, con LATIDO: un fichero en el home de gb (regla 7:
+    nunca en el repo observado) cuyo mtime se refresca en cada tick.
+
+    Vivo = latido de hace menos de 30 s. Dos watchers sobre el mismo mapa se
+    pisarian el fichero a escrituras alternas, asi que el segundo NO arranca.
+    Y un candado huerfano (proceso muerto sin limpiar) caduca solo por mtime:
+    nadie lo borra a mano ni hay que preguntar por PIDs al sistema — todo el
+    ciclo de vida es de ficheros.
+    """
+    import time
+
+    ruta = _ruta_candado(destino)
+    try:
+        if os.path.exists(ruta) and (time.time() - os.path.getmtime(ruta)) < 30:
+            return None
+        os.makedirs(os.path.dirname(ruta), exist_ok=True)
+        with open(ruta, "w", encoding="utf-8") as handle:
+            json.dump({"pid": os.getpid(), "dest": destino}, handle)
+    except OSError:
+        return ""  # sin candado posible: mejor un watch sin candado que ninguno
+    return ruta
+
+
+def _latir(candado):
+    if not candado:
+        return
+    try:
+        os.utime(candado, None)
+    except OSError:
+        pass
+
+
+def _soltar_candado(candado):
+    if not candado:
+        return
+    try:
+        os.remove(candado)
+    except OSError:
+        pass
+
+
+def _watch_en_fondo():
+    """Relanza este mismo watch como proceso independiente y vuelve al instante.
+
+    Para el hook de SessionStart: un hook bloquea el arranque hasta terminar y
+    un watch no termina nunca. El hijo sobrevive a la sesion A PROPOSITO — el
+    candado evita duplicados entre sesiones, y borrar el mapa lo apaga.
+    """
+    import subprocess
+
+    orden = [sys.executable, "-m", "galaxybrain.cli"] + [
+        a for a in sys.argv[1:] if a != "--fondo"
+    ]
+    kwargs = {
+        "stdin": subprocess.DEVNULL,
+        "stdout": subprocess.DEVNULL,
+        "stderr": subprocess.DEVNULL,
+    }
+    if os.name == "nt":
+        # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP: sin consola y sin morir
+        # con el padre. En POSIX, sesion nueva.
+        kwargs["creationflags"] = 0x00000008 | 0x00000200
+    else:
+        kwargs["start_new_session"] = True
+    subprocess.Popen(orden, **kwargs)
+    return 0
+
+
 def _vigilar(root, args):
     """Regenera el HTML mientras algun .py del arbol cambie. Un proceso vivo, no
     un hook.
@@ -798,9 +881,21 @@ def _vigilar(root, args):
     refresco = args.refresco or 5  # en watch el auto-refresh tiene sentido por defecto
     anterior = None
 
+    candado = _tomar_candado(destino)
+    if candado is None:
+        emit("ya hay un watch vivo para %s — este no arranca otro" % destino)
+        return 0
+
     emit("vigilando %s — el mapa se regenera al cambiar cualquier .py (Ctrl+C para parar)" % root)
     try:
         while True:
+            if anterior is not None and not os.path.exists(destino):
+                # Borrar el mapa ES el apagador: el fichero era el opt-in y su
+                # ausencia es el opt-out. Sin esto, un watch lanzado en fondo
+                # no tendria una forma razonable de morir.
+                emit("el mapa ya no esta — watch apagado")
+                return 0
+            _latir(candado)
             actual = _firma_py(root)
             if actual != anterior:
                 anterior = actual
@@ -834,6 +929,8 @@ def _vigilar(root, args):
     except KeyboardInterrupt:
         emit("\nlisto.")
         return 0
+    finally:
+        _soltar_candado(candado)
 
 
 def cmd_calls(args):
@@ -948,6 +1045,13 @@ def cmd_symbols(args):
         if not args.html:
             sys.stderr.write("[gb symbols] --watch necesita --html <fichero>\n")
             return 2
+        if getattr(args, "if_changed", False) and not os.path.exists(os.path.abspath(args.html)):
+            # El fichero es el opt-in (mismo contrato que el mantenimiento): un
+            # hook global puede lanzar esto en CADA repo y solo vigila donde TU
+            # ya generaste el mapa a mano.
+            return 0
+        if getattr(args, "fondo", False):
+            return _watch_en_fondo()
         return _vigilar(root, args)
 
     report = symbols.analyze(root, since=args.since)
@@ -1380,6 +1484,11 @@ def build_parser():
         metavar="SEGUNDOS",
         help="que la pagina se recargue sola cada N s (necesita que algo regenere el fichero)",
     )
+    syms.add_argument(
+        "--fondo",
+        action="store_true",
+        help="con --watch: relanzarlo como proceso independiente y volver (para hooks)",
+    )
     syms.add_argument("--open", action="store_true", help="abrirlo en el navegador")
     syms.add_argument("--since", metavar="REF", help="marcar lo NUEVO respecto a esa ref de git")
     syms.add_argument("--json", action="store_true", help="salida cruda")
@@ -1473,6 +1582,10 @@ def _uso_label(args):
     elif getattr(args, "hook", False):
         # El PreToolUse de busqueda tambien se dispara solo, no es eleccion.
         etiqueta += " --hook"
+    elif getattr(args, "fondo", False) or getattr(args, "if_changed", False):
+        # El watch de SessionStart y el mantenimiento --if-changed tambien: el
+        # termometro solo vale si separa lo elegido de lo que se dispara solo.
+        etiqueta += " --auto"
     elif etiqueta == "memory":
         etiqueta += " " + (getattr(args, "mem_command", None) or "index")
     return etiqueta
