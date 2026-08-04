@@ -176,13 +176,55 @@ def _record(root, fichero, linea):
     }
 
 
+def _repo_git(root):
+    import subprocess
+
+    for orden in (
+        ("init", "-q"),
+        ("config", "user.email", "t@t"),
+        ("config", "user.name", "t"),
+        ("config", "commit.gpgsign", "false"),
+        ("add", "-A"),
+        ("commit", "-q", "-m", "v1"),
+    ):
+        subprocess.run(("git",) + orden, cwd=root, check=True, capture_output=True)
+
+
 def test_el_ancla_apunta_al_nodo_y_sus_llamantes(tmp_path):
     """Criterio 1 de la fase "grafo como columna": el crash con su nodo y su onda."""
     root = _proyecto(tmp_path)
 
-    nodo, llamantes = cli._ancla_grafo(_record(root, str(tmp_path / "lib.py"), 3))
-    assert nodo["qual"] == "lib.ayuda"
-    assert llamantes == ["app.main"]
+    ancla = cli._ancla_grafo(_record(root, str(tmp_path / "lib.py"), 3))
+    assert ancla["nodo"]["qual"] == "lib.ayuda"
+    assert ancla["llamantes"] == ["app.main"]
+    assert ancla["cambiado"] is None  # sin repo git no consta cambio: sin aviso
+
+
+def test_el_ancla_avisa_si_el_fichero_cambio_despues_de_la_captura(tmp_path):
+    """El ancla resuelve contra el codigo de HOY: si el fichero tiene commits
+    posteriores a la captura, apuntar sin avisarlo seria mentir por omision."""
+    root = _proyecto(tmp_path)
+    _repo_git(root)
+
+    registro = _record(root, str(tmp_path / "lib.py"), 3)
+    registro["ts"] = "2020-01-01T00:00:00+00:00"  # muy anterior al commit
+    ancla = cli._ancla_grafo(registro)
+    assert ancla["nodo"]["qual"] == "lib.ayuda"
+    assert ancla["cambiado"]
+
+
+def test_linea_sin_simbolo_con_fichero_cambiado_no_calla(tmp_path):
+    """El caso de la primera prueba de uso real (NameError de hace 3 dias): la
+    linea ya no cae en ningun simbolo Y el fichero cambio despues. Callar ahi
+    esconde el porque; se dice el hecho y de quien es la limitacion."""
+    root = _proyecto(tmp_path)
+    _repo_git(root)
+
+    registro = _record(root, str(tmp_path / "app.py"), 1)  # el import: sin simbolo
+    registro["ts"] = "2020-01-01T00:00:00+00:00"
+    ancla = cli._ancla_grafo(registro)
+    assert ancla["nodo"] is None
+    assert ancla["cambiado"]
 
 
 def test_el_ancla_calla_si_no_puede_decir_nada(tmp_path):

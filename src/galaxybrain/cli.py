@@ -558,18 +558,66 @@ def _ancla_grafo(record):
     if report.get("root_error"):
         return None
     nodo = symbols.en_linea(report, rel, frame["line"])
-    if nodo is None:
+    # El ancla resuelve contra el codigo de HOY, y la captura puede ser de hace
+    # dias: si el fichero cambio despues, callar (o peor: apuntar a otro def que
+    # ahora ocupa esa linea) seria mentir por omision. Salio en la primera
+    # prueba de uso real: un NameError de hace 3 dias caia en una linea que ya
+    # no pertenece a ningun simbolo, y el ancla callaba como si no hubiera nada
+    # que decir (docs/pruebas-de-uso.md, 2026-08-04).
+    cambiado = _fichero_movido_despues(proyecto, rel, record.get("ts"))
+    if nodo is None and not cambiado:
         return None
-    entrantes, _salientes = symbols._indice_llamadas(report)
-    return nodo, sorted(entrantes.get(nodo["qual"], ()))
+    llamantes = []
+    if nodo is not None:
+        entrantes, _salientes = symbols._indice_llamadas(report)
+        llamantes = sorted(entrantes.get(nodo["qual"], ()))
+    return {
+        "nodo": nodo,
+        "llamantes": llamantes,
+        "cambiado": cambiado,
+        "sitio": "%s:%s" % (rel, frame["line"]),
+    }
+
+
+def _fichero_movido_despues(root, rel, ts):
+    """El commit corto si el fichero cambio DESPUES de la captura, "sin-commitear"
+    si esta tocado ahora mismo, None si no consta cambio.
+
+    El mismo hecho de git con el que el ciclo del error decide "intervenida":
+    aqui decide cuanto fiarse del ancla. Sin repo, sin ts o sin commits, None —
+    y el ancla se comporta como siempre.
+    """
+    from . import graph as graph_mod
+
+    momento = store.parse_ts(ts or "")
+    if momento is None:
+        return None
+    sucio = graph_mod._git(root, "status", "--porcelain", "--", rel)
+    if sucio and sucio.strip():
+        return "sin-commitear"
+    linea = graph_mod._git(root, "log", "-1", "--format=%cI %h", "--", rel)
+    if not linea or not linea.strip():
+        return None
+    fecha, _, corto = linea.strip().partition(" ")
+    ultimo = store.parse_ts(fecha)
+    if ultimo is not None and ultimo > momento:
+        return corto or "si"
+    return None
 
 
 def _emit_ancla(record):
     ancla = _ancla_grafo(record)
     if ancla is None:
         return
-    nodo, llamantes = ancla
     emit("")
+    if ancla["nodo"] is None:
+        emit(
+            "en el grafo: %s cambio despues de esta captura (%s) y la linea ya no "
+            "cae en ningun simbolo — el ancla solo sabe leer el codigo de HOY"
+            % (ancla["sitio"], ancla["cambiado"])
+        )
+        return
+    nodo, llamantes = ancla["nodo"], ancla["llamantes"]
     emit("en el grafo: %s" % _linea_simbolo(nodo))
     if llamantes:
         vista = " · ".join(llamantes[:6])
@@ -579,6 +627,11 @@ def _emit_ancla(record):
         emit("  (la onda entera: gb calls %s --depth 2)" % (nodo.get("name") or nodo["qual"]))
     else:
         emit("  nadie le llama en el grafo (entrada directa o despacho dinamico)")
+    if ancla["cambiado"]:
+        emit(
+            "  ojo: el fichero cambio despues de la captura (%s) — el ancla apunta "
+            "al codigo de HOY" % ancla["cambiado"]
+        )
 
 
 def cmd_last(args):
