@@ -781,12 +781,16 @@ function pinta(t){
   const foco = fijado!==null ? fijado : activo;
   const cerca = foco!==null ? vecinos[foco] : null;
   // Respiracion en espacio de DIBUJO, no de fisica: la estructura queda quieta
-  // y el grafo respira. Fase por indice: determinista.
+  // y el grafo respira. Fase por indice: determinista. Y sobre reloj de PARED
+  // (timeOrigin+t), no el de animacion: ese arranca en 0 en cada recarga, y
+  // con --refresco la fase saltaba de golpe cada N segundos — todos los nodos
+  // brincaban un poco en cada recarga (uso real, 4-ago).
+  const reloj = performance.timeOrigin + t;
   const WX=new Float64Array(N), WY=new Float64Array(N);
   const vivo = iter>=MAXIT ? 1 : 0;
   for(let i=0;i<N;i++){
-    WX[i]=X[i]*esc+ox + vivo*2.2*Math.sin(t/1100+i*2.1);
-    WY[i]=Y[i]*esc+oy + vivo*2.2*Math.cos(t/1300+i*1.3);
+    WX[i]=X[i]*esc+ox + vivo*2.2*Math.sin(reloj/1100+i*2.1);
+    WY[i]=Y[i]*esc+oy + vivo*2.2*Math.cos(reloj/1300+i*1.3);
   }
   cx.lineWidth=1;
   // Orden de pintado = orden de lectura. Jerarquia (0) casi invisible debajo,
@@ -805,18 +809,18 @@ function pinta(t){
   }
   cx.lineWidth=1;
   cx.globalAlpha=1;
-  const fase=(Math.sin(t/180)+1)/2;   // pulso de busqueda: formula de GitNexus
+  const fase=(Math.sin(reloj/180)+1)/2;   // pulso de busqueda: formula de GitNexus
   for(let i=0;i<N;i++){
     const n=NODOS[i];
     const coincide = filtro && n.id.toLowerCase().includes(filtro);
     const relacionado = foco===null || i===foco || cerca.has(i);
     let rr = n.r*Math.min(Math.max(esc,0.55),1.6);
-    rr *= 1 + vivo*0.05*Math.sin(t/900+i*2.4);          // respiracion
+    rr *= 1 + vivo*0.05*Math.sin(reloj/900+i*2.4);      // respiracion
     let color = n.c;
     if(filtro && !coincide){ color=n.cd; }
     else if(foco!==null && !relacionado){ color=n.cd; }
     if(coincide){ rr *= 1.2+fase*0.5; if(fase>0.5) color='#06b6d4'; }
-    if(i===foco){ rr *= 1+0.12*Math.sin(t/250); }
+    if(i===foco){ rr *= 1+0.12*Math.sin(reloj/250); }
     if(n.tc){
       // Capa de cambio: halo RELLENO bajo el nodo (path propio, antes del
       // circulo). Todos los demas estados son strokes sobre el borde; esto se
