@@ -29,6 +29,14 @@ pero determinista, sin dependencias y callado cuando no hay coincidencias.
 - De regalo, el ciclo del error en vivo durante el propio desarrollo: el crash del debug
   (JSONDecodeError del BOM) lo capturó la consola sola (`gb show 20260804T035450-e18147`) antes de
   ningún print. El primer aviso del bug lo dio la herramienta que lo contiene.
+- **Criterio 1 de la fase "grafo como columna", cumplido el mismo día** (`233c975`): `gb last`/`gb
+  show` anclan el crash a su nodo — el frame más interno del proyecto → el símbolo que **contiene**
+  la línea (`[line, end]` del AST, no "el def más cercano por arriba") → sus llamantes. Demo real
+  end-to-end: un KeyError capturado en un proyecto aparte salió como `en el grafo: lib.base ·
+  lib.py:5 · le llaman (1): lib.ayuda`. Medido: **158 ms** el `gb show` entero, ancla incluida.
+  Fail-safe: sin proyecto, con frame de librería o en línea de módulo, el bloque calla y la ficha
+  del crash queda como estaba. Pendiente igual que el hook: la sesión real donde el ancla ahorre
+  pasos, apuntada aquí (regla 10).
 - Probado sobre un ambiguo real (`gb calls analyze`): devuelve las tres coincidencias con sus 26
   llamantes, cada uno con su sitio. Ambigüedad como material, no como error.
 - **Pendiente, y es el criterio de la fase**: que en una sesión de trabajo real la inyección del
