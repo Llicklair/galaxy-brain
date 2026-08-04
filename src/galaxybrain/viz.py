@@ -249,6 +249,16 @@ _CICLO_ERROR_COLOR = {
     "en-silencio": "#4ade80",  # verde — sin reaparecer desde la intervencion
 }
 
+#: La capa de cambio: el nodo cuyo fichero esta TOCADO respecto a HEAD (trabajo
+#: en curso sin commitear). Es un HALO RELLENO translucido bajo el nodo, no otro
+#: anillo: todo lo demas son strokes (rojo del ciclo de imports, cian de lo
+#: nuevo, discontinuos del ciclo del error) y un cuarto trazo compitiendo en el
+#: mismo borde seria ilegible — se distingue por FORMA ademas de por color.
+#: Fucsia: no esta en _KIND_COLOR, ni es el rosa del import, ni pisa la escala
+#: naranja/amarillo/azul/verde del ciclo del error. "Tocado" es un hecho de git,
+#: nunca un veredicto (regla 9): informa, no bloquea.
+_COLOR_OBRA = "#e879f9"
+
 #: Fallback para agrupaciones sin tipo (vista de modulos): paleta ciclica.
 _COLORES = [
     "#7c5cff", "#22d3ee", "#f472b6", "#fb923c", "#4ade80",
@@ -266,6 +276,7 @@ def render_graph_cloud(
     capas=False,
     refresco=0,
     ciclo=None,
+    tocados=None,
 ):
     """La nube: nodos repartidos por fuerzas, coloreados por módulo, navegable.
 
@@ -446,6 +457,16 @@ def render_graph_cloud(
             for e in ("capturada", "leida", "intervenida", "en-silencio")
         )
 
+    # La capa de cambio viene, como el ciclo, ya computada por quien llama: este
+    # renderizador no ejecuta git, solo dibuja. Sin repo (o sin nada tocado) el
+    # conjunto llega vacio y la capa calla entera: ni leyenda, ni cabecera.
+    tocados = set(tocados or ())
+    en_obra = sorted(n for n in implicados if n in tocados)
+    if en_obra:
+        leyenda += (
+            '<span><i style="background:%s"></i>en obra (sin commitear)</span>' % _COLOR_OBRA
+        )
+
     grados = {}
     for a, b in llamadas:
         grados[a] = grados.get(a, 0) + 1
@@ -470,6 +491,8 @@ def render_graph_cloud(
             "ec": _CICLO_ERROR_COLOR.get(info_ciclo.get(n, {}).get("estado"), ""),
             "ee": info_ciclo.get(n, {}).get("estado", ""),
             "el": info_ciclo.get(n, {}).get("lineas", []),
+            # Capa de cambio: 1 si el fichero de este nodo esta tocado sin commitear.
+            "tc": 1 if n in tocados else 0,
         }
         for n in implicados
     ]
@@ -513,8 +536,18 @@ def render_graph_cloud(
             if ciclo and ciclo.get("embudo")
             else ""
         ),
+        # La capa de cambio en la cabecera, solo si hay algo: una linea fija de
+        # ceros en cada mapa seria ruido repetido (H6). El recuento es de NODOS
+        # marcados, que es lo que el ojo va a buscar en el lienzo.
+        "obra": (
+            '\n  <span class="meta">en obra: %d modulo(s) tocado(s) sin commitear</span>'
+            % len(en_obra)
+            if en_obra
+            else ""
+        ),
         "color_import": _COLOR_IMPORT,
         "color_ciclo": _COLOR_CICLO,
+        "color_obra": _COLOR_OBRA,
         "maxit": maxit,
         # Recargar la pagina no la actualiza sola: hace falta que ALGO regenere el
         # fichero. Por eso esto es opt-in y no el defecto — un refresco sobre un
@@ -562,7 +595,7 @@ _NUBE = """<!doctype html>
 </style>
 <header>
   <h1>%(title)s</h1>
-  <span class="meta">%(resumen)s</span>%(ciclo)s
+  <span class="meta">%(resumen)s</span>%(ciclo)s%(obra)s
   <span id="estado">layout optimizando&hellip;</span>
   <input id="buscar" placeholder="buscar simbolo..." autocomplete="off">
   <button id="btnPausa" title="pausar/reanudar la fisica">&#9208;</button>
@@ -576,6 +609,7 @@ _NUBE = """<!doctype html>
 // ================= datos =================
 const NODOS = %(nodos)s, ARISTAS = %(aristas)s, LADO = 1000;
 const IMPORT_COLOR = '%(color_import)s', CICLO_COLOR = '%(color_ciclo)s';
+const OBRA_COLOR = '%(color_obra)s';
 const N = NODOS.length;
 
 // ================= simulacion =================
@@ -730,6 +764,7 @@ function muestraFicha(i){
   const marcas = [];
   if(n.ci) marcas.push('<span style="color:'+CICLO_COLOR+'">en un ciclo</span>');
   if(n.nu) marcas.push('<span style="color:#22d3ee">nuevo</span>');
+  if(n.tc) marcas.push('<span style="color:'+OBRA_COLOR+'">tocado sin commitear</span>');
   if(marcas.length) filas.push(marcas.join(' &middot; '));
 
   ficha.innerHTML = '<b>'+escapa(n.id)+'</b><br>' + filas.join('<br>');
@@ -778,6 +813,15 @@ function pinta(t){
     else if(foco!==null && !relacionado){ color=n.cd; }
     if(coincide){ rr *= 1.2+fase*0.5; if(fase>0.5) color='#06b6d4'; }
     if(i===foco){ rr *= 1+0.12*Math.sin(t/250); }
+    if(n.tc){
+      // Capa de cambio: halo RELLENO bajo el nodo (path propio, antes del
+      // circulo). Todos los demas estados son strokes sobre el borde; esto se
+      // distingue por forma, no solo por color, y no pisa rojo/cian ni los
+      // anillos discontinuos del ciclo del error.
+      cx.globalAlpha=0.3; cx.fillStyle=OBRA_COLOR;
+      cx.beginPath(); cx.arc(WX[i],WY[i],rr+6,0,6.284); cx.fill();
+      cx.globalAlpha=1;
+    }
     cx.beginPath(); cx.arc(WX[i],WY[i],rr,0,6.284);
     cx.fillStyle=color; cx.fill();
     if(n.nu){ cx.strokeStyle='#22d3ee'; cx.lineWidth=1.2; cx.stroke(); cx.lineWidth=1; }

@@ -237,6 +237,71 @@ def _ciclo_para_mapa(root, informe_simbolos):
     return {"embudo": _embudo_ciclo(ciclo["embudo"]), "nodos": nodos}
 
 
+def _ficheros_tocados(root):
+    """Los .py tocados respecto a HEAD: modificados, anadidos, renombrados o
+    untracked, esten o no en el indice. Rutas absolutas.
+
+    UNA fuente: `git status --porcelain` trae staged, unstaged y untracked en
+    una pasada. Sin repo git devuelve lista vacia y la capa de cambio calla
+    (regla 9): el mapa funciona igual. Un `git status` por REGENERACION entra
+    en presupuesto (~30 ms << 1 s por edicion); lo que no puede lanzar
+    subprocesos es el tick del watch, que usa _sonda_cambio (solo stat).
+    """
+    from . import graph as graph_mod
+
+    salida = graph_mod._git(root, "status", "--porcelain")
+    if not salida:
+        # None (sin repo) o cadena vacia (arbol limpio): en ambos casos no hay
+        # nada tocado y no hace falta ni preguntar por el toplevel.
+        return []
+    # git da las rutas relativas al TOPLEVEL del repo y con '/', no a root.
+    toplevel = (graph_mod._git(root, "rev-parse", "--show-toplevel") or "").strip()
+    base = toplevel or os.path.abspath(root)
+    ficheros = []
+    for linea in salida.splitlines():
+        if len(linea) < 4:
+            continue
+        estado, ruta = linea[:2], linea[3:]
+        if "D" in estado:
+            continue  # borrado: ya no hay fichero, luego no hay nodo que marcar
+        if " -> " in ruta:
+            # Rename/copia: "R  viejo.py -> nuevo.py". El fichero que EXISTE en
+            # el arbol —y que el mapa dibuja— es el destino.
+            ruta = ruta.split(" -> ")[-1]
+        if not ruta.endswith(".py"):
+            continue
+        ficheros.append(os.path.join(base, *ruta.split("/")))
+    return ficheros
+
+
+def _tocados_para_mapa(root, informe_simbolos):
+    """La capa de cambio como viaja al mapa: el conjunto de nodos modulo cuyo
+    fichero esta tocado sin commitear.
+
+    Mismo join delicado que _ciclo_para_mapa (la trampa 'c:' vs 'C:' de Windows,
+    separadores mezclados): git devuelve el toplevel con su caja canonica y root
+    puede venir escrito de cualquier manera, asi que los dos lados se comparan
+    por normcase, nunca por igualdad literal.
+    """
+    from . import graph as graph_mod
+
+    modulos = {
+        os.path.normcase(n.get("qual") or ""): n.get("qual")
+        for n in informe_simbolos.get("nodes", [])
+        if n.get("kind") == "module"
+    }
+    tocados = set()
+    for fichero in _ficheros_tocados(root):
+        try:
+            mod = graph_mod.module_name(fichero, root)
+        except ValueError:  # otra unidad de disco en Windows
+            continue
+        qual = modulos.get(os.path.normcase(mod))
+        if qual:
+            tocados.add(qual)
+    return tocados
+
+
 def _html_shape(root, destino, report, graph_report):
     """La forma de lo que el mapa DIBUJA, y donde se recuerda.
 
@@ -673,6 +738,7 @@ def cmd_graph(args):
                         # lo computa (aqui, no en cada frame del navegador) y el
                         # renderizador solo dibuja. Informa, no bloquea.
                         ciclo=_ciclo_para_mapa(root, simbolos),
+                        tocados=_tocados_para_mapa(root, simbolos),
                     )
                 )
         except OSError as error:
@@ -752,7 +818,12 @@ def _vigilar(root, args):
                                         graph_report=grafo,
                                         procedencia=_procedencia(root),
                                         refresco=refresco,
+                                        # La capa de cambio se recomputa por
+                                        # REGENERACION, no por tick: un git
+                                        # status (~30 ms) entra en presupuesto
+                                        # aqui; en _sonda_cambio no.
                                         ciclo=_ciclo_para_mapa(root, report),
+                                        tocados=_tocados_para_mapa(root, report),
                                     )
                                 )
                             _html_registrar_forma(root, destino, report, grafo, refresco)
@@ -920,6 +991,7 @@ def cmd_symbols(args):
                         procedencia=_procedencia(root),
                         refresco=refresco,
                         ciclo=_ciclo_para_mapa(root, report),
+                        tocados=_tocados_para_mapa(root, report),
                     )
                 )
         except OSError as error:
