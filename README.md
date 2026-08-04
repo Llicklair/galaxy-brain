@@ -84,7 +84,9 @@ gb show <id>         # un fallo concreto — el id lo trae el propio aviso
 gb status            # qué hay activo, y cuántas capturas se han leído
 ```
 
-Sin argumentos, `gb last` y `gb list` filtran por el repo en el que estás.
+Sin argumentos, `gb last` y `gb list` filtran por el repo en el que estás. Y la ficha del fallo
+termina **en el grafo**: `en el grafo: lib.base · function · lib.py:5 · le llaman (1): lib.ayuda` —
+el crash anclado al símbolo que contiene la línea, con su onda a un comando de distancia.
 
 **Un tipo de fallo, tres puertas de salida.** "Excepción no capturada" no es sinónimo de
 `sys.excepthook`: el intérprete la deja salir por tres sitios, y los tres se cubren.
@@ -133,7 +135,9 @@ gb symbols src              # el grafo de símbolos: quién llama a quién, con 
 gb symbols src --html m.html --open        # la nube interactiva (buscar, arrastrar, foco)
 gb symbols src --html m.html --watch       # el mapa VIVO: se regenera al cambiar cualquier .py
 gb symbols src --since HEAD~50             # lo que creció desde esa ref, marcado aparte
-gb check --staged           # qué le hizo un diff a los tests y al acoplamiento (informa, no bloquea)
+gb calls <simbolo>          # quién llama a un símbolo y a quién llama él, con fichero:línea
+gb calls <simbolo> --depth 2               # la onda: también quién llama al que llama
+gb check --staged           # qué le hizo un diff a los tests, al acoplamiento, y su onda (informa, no bloquea)
 gb floor --init             # el suelo: qué falta antes de construir, y deja los documentos base
 ```
 
