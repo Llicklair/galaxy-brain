@@ -5,6 +5,7 @@ decida cuándo tirar del hilo.
 """
 
 import datetime
+import json
 import os
 import subprocess
 
@@ -40,6 +41,34 @@ def test_init_no_pisa_un_precommit_existente(tmp_path):
     assert hechos[".githooks/pre-commit"] == "ya-existia"
     with open(os.path.join(root, ".githooks", "pre-commit"), encoding="utf-8") as handle:
         assert "mi hook" in handle.read()
+
+
+def test_init_cablea_el_arnes_del_agente(tmp_path):
+    """El modelo no sabe que gb existe; lo sabe su contexto. Los tres hooks del
+    grafo viajan con el repo — sin esto, la consciencia del LLM era artesania
+    del settings global de una sola maquina."""
+    root = _repo(tmp_path)
+
+    hechos = {h["path"]: h["action"] for h in floor.scaffold(root)}
+    assert hechos[".claude/settings.json"] == "creado"
+    with open(os.path.join(root, ".claude", "settings.json"), encoding="utf-8") as handle:
+        settings = json.load(handle)  # JSON valido o este open revienta el test
+    texto = json.dumps(settings)
+    assert "gb graph --context" in texto
+    assert "gb graph --context --if-changed" in texto
+    assert "gb calls --hook" in texto
+
+
+def test_init_no_pisa_un_settings_existente(tmp_path):
+    root = _repo(tmp_path)
+    os.makedirs(os.path.join(root, ".claude"), exist_ok=True)
+    with open(os.path.join(root, ".claude", "settings.json"), "w", encoding="utf-8") as handle:
+        handle.write('{"mio": true}')
+
+    hechos = {h["path"]: h["action"] for h in floor.scaffold(root)}
+    assert hechos[".claude/settings.json"] == "ya-existia"
+    with open(os.path.join(root, ".claude", "settings.json"), encoding="utf-8") as handle:
+        assert json.load(handle) == {"mio": True}
 
 
 def test_agents_lleva_el_contrato_con_gb(tmp_path):

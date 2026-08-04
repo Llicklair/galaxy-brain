@@ -51,7 +51,7 @@ PENDING_MARK = "<!-- gb:pendiente -->"
 #: donde va a parar lo que se aprende. Se escriben pre-rellenados con lo DETECTADO;
 #: lo que exige criterio se deja marcado con PENDING_MARK y una razon, nunca con un
 #: hueco mudo: un encabezado vacio no se rellena, una pregunta si.
-SCAFFOLD_FILES = ["AGENTS.md", "SCOPE.md", "ARCHITECTURE.md", "docs/adr/README.md", "docs/evidencia.md", ".githooks/pre-commit"]
+SCAFFOLD_FILES = ["AGENTS.md", "SCOPE.md", "ARCHITECTURE.md", "docs/adr/README.md", "docs/evidencia.md", ".githooks/pre-commit", ".claude/settings.json"]
 
 
 def _exists(root, *rel):
@@ -390,6 +390,48 @@ gb check --staged --brief
 """ % tests
 
 
+def _plantilla_claude_settings():
+    """El arnés del agente, a nivel de PROYECTO: viaja con el repo, mergea con
+    lo global de cada máquina y no toca la configuración personal de nadie.
+
+    Los tres canales que hacen el grafo ambiental para el LLM: el mapa al
+    arrancar la sesión, el delta tras cada edición (o silencio), y las fichas
+    de símbolos en cada búsqueda. Sin esto, la consciencia de gb era artesanía
+    del settings global de UNA máquina (prueba de uso, 4-ago): el usuario nuevo
+    instalaba, capturaba… y su agente nunca veía el mapa. El modelo no sabe que
+    gb existe; lo sabe su contexto — y el contexto se cablea aquí.
+    """
+    return """{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          { "type": "command", "command": "gb graph --context", "timeout": 15 }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|NotebookEdit",
+        "hooks": [
+          { "type": "command", "command": "gb graph --context --if-changed", "timeout": 15 }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Grep|Glob",
+        "hooks": [
+          { "type": "command", "command": "gb calls --hook", "timeout": 10 }
+        ]
+      }
+    ]
+  }
+}
+"""
+
+
 def _level(key, title, status, detail, evidence=None, source=None):
     return {
         "key": key,
@@ -426,6 +468,7 @@ def scaffold(root):
         "docs/adr/README.md": _plantilla_adr(),
         "docs/evidencia.md": _plantilla_evidencia(),
         ".githooks/pre-commit": _plantilla_precommit(comando),
+        ".claude/settings.json": _plantilla_claude_settings(),
     }
 
     hechos = []
