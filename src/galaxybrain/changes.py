@@ -92,6 +92,10 @@ _STRING = re.compile(r"""(['"])(?:\\.|(?!\1).)*\1""")
 #: (heuristica de git). Es gratis y es lo que permite contar POR FUNCION.
 _HUNK = re.compile(r"^@@ -\d+(?:,\d+)? \+\d+(?:,\d+)? @@\s*(.*)$")
 
+#: El rango `+c,d` de la cabecera: donde CAE el hunk en el fichero nuevo. Es lo
+#: que la onda necesita para cruzar el diff con el [line, end] de cada def.
+_HUNK_RANGO = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@")
+
 
 def _code_only(line):
     """La línea con sus literales de cadena vaciados (`"x"` -> `""`).
@@ -188,6 +192,83 @@ def parse_diff(text):
             if section is not None:
                 section["removed"].append(line[1:])
     return files
+
+
+def _hunks_py(text):
+    """{ruta: [(inicio, fin)]} de los hunks del diff, para TODOS los `.py`.
+
+    `parse_diff` mira solo ficheros de test porque su trabajo son las señales;
+    esto mira el rango `+c,d` de cada hunk en cualquier `.py`, que es lo que la
+    onda necesita. Un hunk de solo borrado (`+c,0`) toca el punto c: el símbolo
+    alrededor sigue afectado aunque no haya líneas nuevas.
+    """
+    rangos = {}
+    actual = None
+    for line in (text or "").split("\n"):
+        if line.startswith("+++ "):
+            target = line[4:].strip()
+            actual = None
+            if target != "/dev/null":
+                ruta = re.sub(r"^b/", "", target)
+                if ruta.endswith(".py"):
+                    actual = rangos.setdefault(ruta, [])
+            continue
+        if actual is None:
+            continue
+        hunk = _HUNK_RANGO.match(line)
+        if hunk is not None:
+            inicio = int(hunk.group(1))
+            cuantas = int(hunk.group(2)) if hunk.group(2) is not None else 1
+            actual.append((inicio, inicio + max(cuantas, 1) - 1))
+    return rangos
+
+
+def _onda_del_diff(root, diff):
+    """Los símbolos que el diff TOCA y cuántos les llaman — la onda del cambio.
+
+    Intersección de los rangos `+c,d` con el `[line, end]` de cada def del grafo
+    de símbolos. INFORMA, nunca gatea (regla 9): "has tocado algo con 26
+    llamantes" es un dato para leer antes del commit, no un veredicto. Si las
+    rutas del diff no casan con la raíz analizada (root distinto del toplevel),
+    sale vacío y calla — el informe del cambio ya se dio entero.
+    """
+    rangos = _hunks_py(diff)
+    if not rangos:
+        return []
+    from . import symbols
+
+    informe = symbols.analyze(root)
+    if informe.get("root_error"):
+        return []
+    entrantes, _salientes = symbols._indice_llamadas(informe)
+    normal = {
+        os.path.normcase(ruta.replace("/", os.sep)): tramos
+        for ruta, tramos in rangos.items()
+    }
+    tocados = []
+    for nodo in informe["nodes"]:
+        if nodo["kind"] == "module":
+            continue
+        tramos = normal.get(os.path.normcase(nodo.get("file") or ""))
+        if not tramos:
+            continue
+        inicio, fin = nodo.get("line"), nodo.get("end")
+        if not inicio or not fin:
+            continue
+        if any(a <= fin and inicio <= b for a, b in tramos):
+            tocados.append({
+                "qual": nodo["qual"],
+                "owner": nodo.get("owner"),
+                "file": nodo.get("file", ""),
+                "line": inicio,
+                "callers": len(entrantes.get(nodo["qual"], ())),
+            })
+    # Tocar un metodo hace interseccion tambien con su CLASE entera; listar las
+    # dos veces seria contar el mismo toque dos veces. Se queda el mas interno.
+    con_metodo_tocado = {t["owner"] for t in tocados if t["owner"]}
+    tocados = [t for t in tocados if t["qual"] not in con_metodo_tocado]
+    tocados.sort(key=lambda t: (-t["callers"], t["qual"]))
+    return tocados
 
 
 def test_signals(files):
@@ -302,6 +383,7 @@ def analyze(root, rev_range=None, skip=None, include_nested=False, staged=False)
         "range_error": None,
         "test_files_changed": 0,
         "flags": [],
+        "onda": [],
         "coupling": None,
         "covered": [],
         "not_covered": [],
@@ -331,6 +413,14 @@ def analyze(root, rev_range=None, skip=None, include_nested=False, staged=False)
     report["test_files_changed"] = len(files)
     report["flags"] = test_signals(files)
     report["covered"].append("ficheros de test tocados en %s" % label)
+
+    report["onda"] = _onda_del_diff(root, diff)
+    if report["onda"]:
+        report["covered"].append("la onda del diff: simbolos tocados y sus llamantes")
+        report["not_covered"].append(
+            "la onda cuenta llamantes RESUELTOS: las llamadas por variable o "
+            "despacho dinamico no suman (gb symbols declara cuanto queda fuera)"
+        )
 
     # Con --staged la baseline es HEAD: se compara lo que va a entrar contra lo
     # ultimo commiteado.

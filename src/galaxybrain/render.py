@@ -263,14 +263,22 @@ def render_changes(report, style, brief=False):
         return "\n".join(lines)
 
     flags = report.get("flags") or []
+    onda = report.get("onda") or []
 
     if brief and not flags:
+        # La onda entra en la unica linea del brief como recuento, no como lista:
+        # el hook no puede volverse el informe largo que el brief existe para evitar.
+        onda_txt = (
+            " · onda: %d simbolo(s), max %d llamante(s)" % (len(onda), onda[0]["callers"])
+            if onda else ""
+        )
         return style(
-            "[gb check] %s: %d fichero(s) de test tocado(s), sin senales "
+            "[gb check] %s: %d fichero(s) de test tocado(s), sin senales%s "
             "(detalle: gb check%s)"
             % (
                 report["range"],
                 report["test_files_changed"],
+                onda_txt,
                 " --staged" if report.get("staged") else "",
             ),
             DIM,
@@ -318,6 +326,19 @@ def render_changes(report, style, brief=False):
             lines.append(
                 style("Sin acoplamiento nuevo vs %s (%d modulos)." % (coupling["base"], coupling["modules"]), DIM)
             )
+        lines.append("")
+
+    if onda:
+        lines.append(style("ONDA del diff (simbolos tocados y quien les llama — informa, no bloquea):", BOLD))
+        for tocado in onda[:8]:
+            lines.append(
+                "  %s %s · %s:%s · %d le llaman"
+                % (style("~", YELLOW), tocado["qual"], tocado["file"], tocado["line"],
+                   tocado["callers"])
+            )
+        if len(onda) > 8:
+            lines.append(style("  ... y %d mas (la lista entera: gb check --json)" % (len(onda) - 8), DIM))
+        lines.append(style("  (quien exactamente: gb calls <simbolo> --depth 2)", DIM))
         lines.append("")
 
     if report.get("not_covered"):
