@@ -15,11 +15,65 @@ dependencies** beyond the standard library. An exception is a fact; the state at
 failure is a fact; the shape of the import graph is a fact. Reporting facts requires no judgment,
 which is why it can be instant and cannot fail in expensive ways.
 
-The scope is closed on purpose, and the list of what it does **not** do — the half that bears
-weight — is written in [SCOPE.md](SCOPE.md). The design law lives in
-[ARCHITECTURE.md](ARCHITECTURE.md).
+<sub>v0.3.0 · 445 tests · 8.4k LOC source / 6.4k LOC tests · clean gate · ruff · Python ≥ 3.9 · zero runtime dependencies · CLI output is in Spanish today</sub>
 
-<sub>443 tests · clean gate · ruff · Python ≥ 3.9 · zero runtime dependencies · CLI output is in Spanish today</sub>
+---
+
+## Table of contents
+
+- [What this is, and what it is not](#what-this-is-and-what-it-is-not)
+- [What it saves you](#what-it-saves-you)
+- [Installation](#installation)
+- [Day one](#day-one)
+- [Command reference](#command-reference)
+- [The error console](#the-error-console)
+- [The map](#the-map)
+- [What a change did](#what-a-change-did)
+- [The floor](#the-floor)
+- [Cross-repo memory](#cross-repo-memory)
+- [Wired into the agent](#wired-into-the-agent)
+- [How it is verified](#how-it-is-verified)
+- [Cost, measured](#cost-measured)
+- [Settings](#settings)
+- [Secrets](#secrets--redaction-by-name-with-an-honest-residue)
+- [Known limits, stated up front](#known-limits-stated-up-front)
+- [The design law](#the-design-law)
+- [Development](#development)
+- [Documents](#documents)
+
+---
+
+## What this is, and what it is not
+
+**It is a verification harness for people and agents who work on Python code.** Its job is to answer
+questions that have exact answers — where did this die, with what values, who calls this function,
+what did that diff move, is there a new import cycle — and to answer them in milliseconds, offline,
+with no model in the loop and nothing to configure.
+
+**It is not an autonomous agent, a linter with opinions, or a code reviewer.** It does not decide
+whether your code is good. Almost everything it prints is something you asked for and can act on;
+the two things that can stop a commit are facts, not judgments (a new import cycle, a crossing of a
+boundary you declared yourself). Everything that is merely a *proxy* for quality — coupling
+churn, test-shape signals, over-engineering smells — informs and never blocks. That distinction is
+rule 11, and it exists because gating proxies is what sank the previous version of this project:
+false positives train people to type `--no-verify`, and after that the gate protects nothing.
+
+Concretely, gb is useful when:
+
+- a script, CLI, worker or server died while you were not watching, and you would otherwise re-run
+  it with `print` statements to find out why;
+- you are about to change a function and need to know who depends on it before you grep;
+- you want a diff's blast radius before review, not after;
+- you are starting a repo and want the scaffolding that makes later work checkable;
+- you (or an agent) keep re-learning the same fact in every session.
+
+It is **not** useful for failing tests: pytest catches the exception itself, so it never reaches
+`sys.excepthook` and gb records nothing. Use `pytest -l` — it prints the locals of every frame,
+which is the same information. This negative result is written down in
+[docs/pruebas-de-uso.md](docs/pruebas-de-uso.md) rather than hidden.
+
+The scope is closed on purpose, and the list of what it deliberately refuses — including why it is
+**not** an MCP server — is in [SCOPE.md](SCOPE.md).
 
 ---
 
@@ -84,29 +138,99 @@ gb floor --init # drops the base documents — and the pre-commit hook
 
 On a fresh git repo the session map suggests this path by itself — one line, only in the
 unambiguous case (git present, no code, no floor docs), silence otherwise. `--init` leaves seven
-pieces, never overwriting anything: `AGENTS.md` (executable context in the cross-tool format read
-by Claude Code, Codex, Cursor, Copilot and Aider — including the gb usage contract for agents),
-`SCOPE.md`, `ARCHITECTURE.md`, an ADR folder, an evidence log, `.githooks/pre-commit` with the
-gate wired in ratchet mode (inherited debt does not block, only what is new does — hook it once
-with `git config core.hooksPath .githooks`), and `.claude/settings.json` wiring the **agent** at
-project level: the session map, the edit delta and the symbol cards on every search travel with
-the repo, merging with each machine's own settings.
+pieces, never overwriting anything:
+
+| Piece | Why it is there |
+|---|---|
+| `AGENTS.md` | Executable context in the cross-tool format read by Claude Code, Codex, Cursor, Copilot and Aider — including the gb usage contract for agents |
+| `SCOPE.md` | What is in, what is out, and the done criterion |
+| `ARCHITECTURE.md` | The design law, so later decisions have something to cite |
+| `docs/adr/README.md` | An ADR folder in [MADR](https://adr.github.io/) form: one file per decision that was expensive to make |
+| `docs/evidencia.md` | The evidence log, so choices cite measured numbers instead of folklore — including the failures, because a project that records only what worked has advertising, not evidence |
+| `.githooks/pre-commit` | The gate wired in **ratchet mode**: inherited debt does not block, only new debt does. Hook it once with `git config core.hooksPath .githooks` |
+| `.claude/settings.json` | Wires the agent at project level — session map, edit delta and symbol cards travel with the repo, merging with each machine's own settings |
 
 One thing no tool can write for you, and gb says so out loud: the **done criterion** in SCOPE.md.
-You write it before the first line of code.
+You write it before the first line of code, because not knowing when to stop is the number one
+cause of over-engineering, and the cure costs one sentence.
+
+---
+
+## Command reference
+
+Twelve subcommands, and every one belongs to a family. A command that does not fit a family does not
+ship — there is no "small exception", because small exceptions are exactly how a monster gets built.
+
+### Where it crashed, and with what state
+
+| Command | What it does |
+|---|---|
+| `gb last` | This project's latest failure, with its state |
+| `gb last --full` | The same, with every frame kept |
+| `gb list -n 20` | The history grouped by signature: what breaks, and how often |
+| `gb list --chrono` | The raw timeline, most recent first |
+| `gb list --all` | Every project, not just this one |
+| `gb list --efimeros` | Include `python -c` / stdin captures (hidden by default, and said so) |
+| `gb show <id>` | One specific failure — the id comes in the capture notice |
+| `gb on` / `gb off` | Enable / disable capture in this environment |
+| `gb status` | What is active right now, and how many captures are unread |
+| `gb status --cobertura` | Runs 8 real failure modes and shows which ones leave a record |
+
+### What shape it has
+
+| Command | What it does |
+|---|---|
+| `gb graph <path>` | Coupling map: imports, cycles, hotspots |
+| `gb graph --gate` | Exit code ≠ 0 on cycles or declared-boundary crossings — for pre-commit |
+| `gb graph --gate --since HEAD` | Ratchet: only **new** debt fails |
+| `gb graph --boundaries FILE` | Layering rules (defaults to `.gb-boundaries` at the root) |
+| `gb graph --smells` | Over-engineering proxies — **advisory, never blocks** |
+| `gb graph --self-test` | Injects known defects and fails if the gate does **not** see them |
+| `gb graph --context` | The compressed map as a session payload; silent when there is nothing to say |
+| `gb graph --html F --open` | The navigable canvas |
+| `gb symbols <path>` | Symbol graph: who calls whom, with its resolution coverage |
+| `gb symbols --html F --watch` | The **live** map: regenerates whenever any `.py` changes |
+| `gb symbols --capas` | Layered view instead of the cloud |
+| `gb symbols --since REF` | What grew since that ref, marked apart |
+| `gb calls <symbol>` | Callers and callees of a symbol, with `file:line` |
+| `gb calls <symbol> --depth 2` | The wave: also who calls the callers |
+| `gb calls --hook` | PreToolUse mode: reads hook JSON from stdin, silent when there is nothing |
+
+Shared flags worth knowing: `--json` on every command for raw output, `--if-changed` to skip
+rewriting HTML when the shape did not move (cheap for a hook), `--refresco N` for browser
+self-reload, `--fondo` to detach `--watch` as an independent process.
+
+### What each change did
+
+| Command | What it does |
+|---|---|
+| `gb check` | What a diff did to tests, coupling, and its wave (default range `HEAD~1..HEAD`) |
+| `gb check --staged` | Reviews the index instead of a range — the only correct thing in a pre-commit |
+| `gb check --brief` | One line when there are no signals, for hooks |
+
+`check` **informs and never blocks.** Its signals are proxies, and proxies that gate manufacture the
+false positives that end in `--no-verify`.
+
+### What it is missing at the base
+
+| Command | What it does |
+|---|---|
+| `gb floor` | The minimum scaffolding a project needs before building |
+| `gb floor --init` | Drops the seven base pieces, never overwriting |
+| `gb floor --time` | Times the suite against the DORA threshold — runs the tests, so it is opt-in |
+
+### What was learned, across repos
+
+| Command | What it does |
+|---|---|
+| `gb memory index` | The compact index, one line per note |
+| `gb memory recall <words>` | Full text of the most relevant notes |
+| `gb memory context` | The session payload (what the `SessionStart` hook calls) |
+| `gb memory add --name x --description "..." --scope always` | Add or overwrite a note (body via `--body` or stdin) |
 
 ---
 
 ## The error console
-
-```bash
-gb last              # this project's latest failure, with its state
-gb last --full       # with every frame
-gb list -n 20        # the history: what breaks, and how often
-gb list --chrono     # the raw timeline, most recent first
-gb show <id>         # one specific failure — the id comes in the capture notice
-gb status            # what is active, and how many captures have been read
-```
 
 With no arguments, `gb last` and `gb list` filter by the repo you are standing in. And the failure
 card ends **in the graph** — the crash anchored to the symbol whose body contains the line, with
@@ -150,6 +274,9 @@ LO QUE SI deja registro          LO QUE NO (y es correcto)
 
 The boundary is not documented — documents age. It is **demonstrated** every time you run it.
 
+The history lives in `~/.galaxy-brain`, append-only, **outside the observed repo**: the harness never
+dirties the project it is watching (rule 7).
+
 ---
 
 ## The map
@@ -161,19 +288,6 @@ The boundary is not documented — documents age. It is **demonstrated** every t
 The other half of the surface: what shape the project has and who calls whom. All deterministic,
 zero models, zero dependencies — same facts, different views. **`graph --html` and `symbols --html`
 lead to the same page**: modules, symbols, imports and calls on one navigable canvas.
-
-```bash
-gb graph src --gate         # import cycles + declared boundaries (.gb-boundaries); for pre-commit
-gb graph src --gate --since HEAD   # ratchet: only NEW debt fails, inherited debt passes
-gb symbols src              # the symbol graph: who calls whom, with its resolution coverage
-gb symbols src --html m.html --open        # the interactive cloud (search, drag, focus)
-gb symbols src --html m.html --watch       # the LIVE map: regenerates when any .py changes
-gb symbols src --since HEAD~50             # what grew since that ref, marked apart
-gb calls <symbol>           # who calls a symbol and whom it calls, with file:line
-gb calls <symbol> --depth 2                # the wave: also who calls the callers
-gb check --staged           # what a diff did to tests, coupling, and its wave (informs, never blocks)
-gb floor                    # the floor: what is missing before you build
-```
 
 A symbol card carries everything an agent needs to **call code it has not read** — the signature
 straight from the AST (args, defaults, `*`, `async`, the decorators that change the call), where it
@@ -189,39 +303,38 @@ model), who calls it, whom it calls, what it imports, whether it sits in a cycle
 of history: the error-cycle rings (captured → read → intervened → silent) and a halo on whatever is
 **in progress**, uncommitted, right now. Imports are drawn differently from calls because **an
 import is exact and a call is inferred** — merging them into one number would mean gating on a
-proxy (rule 11).
+proxy.
 
 Two honest numbers ship with every run: `gb symbols` **declares what it could not resolve**
 (`object.method()` calls require type inference, and here nothing is guessed: a false edge gets
-believed, a missing one gets noticed), and measured against an inference-based index (GitNexus) it
-scores **93% recall** with zero dependencies. Details and the negative results live in
+believed, a missing one gets noticed), and measured against an inference-based index it scores
+**93% recall** with zero dependencies. Details and the negative results live in
 [docs/pruebas-de-uso.md](docs/pruebas-de-uso.md).
 
-**Wired into the agent.** Three hooks make the graph ambient: at session start the compressed map
-(~110 tokens, 162 ms) is injected, along with a count of unread captures when there are any; after
-each edit, only what **changed** — or silence; and on every code search, the matching symbol cards
-ride along (`gb calls --hook`: 430 ms on this repo, 330 ms on a 600-module synthetic one). The
-agent asks the graph before opening files — and `gb symbols … --watch` keeps the human's map fresh
-in the browser, atomically, with nothing but the filesystem. All of it ships per project:
-`gb floor --init` drops the wiring, so a fresh clone gets an aware agent with no global setup —
-the model does not know gb exists; **its context does**.
+The graph is **always derived, never persisted.** A stored map is a map that goes stale and lies;
+recomputation is fast enough that caching would buy milliseconds and cost correctness.
 
 ---
 
-## The gate is verified by breaking it
-
-A gate degrades in silence: it keeps returning zero and stops looking at anything. Tests pin what
-you already knew how to check; this pins that the detector still detects when a defect is put in
-front of it.
+## What a change did
 
 ```bash
-gb graph --self-test        # injects 6 known defects and fails if the gate does NOT see them
-gb graph src --self-test    # additionally: relations that must hold on YOUR code
+gb check --staged      # before committing
+gb check HEAD~5..HEAD  # what the last five commits moved
 ```
 
-The **metamorphic relations** are "these two ways of asking must agree", evaluated on your real
-repo: the same folder spelled `c:` or `C:` yields the same shape; a cycle's imports are edges that
-exist; `graph` and `symbols` see the same modules. That is where most of the real defects lived.
+It reports what a diff did to the tests, to coupling, and to the blast wave of the symbols it
+touched. Its whole output is advisory. The one thing in this area that *can* stop a commit lives in
+`graph --gate`, and only for two facts: a **new** import cycle, or a crossing of a boundary you
+declared in `.gb-boundaries`.
+
+---
+
+## The floor
+
+`gb floor` reads a repo and reports what scaffolding is missing before you build — and, for each
+piece, why it matters. It is not a template generator: `--init` never overwrites, and the one thing
+it cannot write for you (the done criterion) it tells you to write yourself.
 
 ---
 
@@ -231,23 +344,61 @@ A fact learned in one repo should not die there. `gb memory` is a vault of durab
 (in `~/.claude/memory-global`, hand-editable, with `[[wikilinks]]` so Obsidian opens the graph)
 that surface in **any** project via a `SessionStart` hook.
 
+Lean by design: session start injects the index of **all** notes but the full text only of `always`
+notes and this project's; the rest is pulled on demand with `recall`. The vault is never dumped
+whole — context is the scarce resource, and spending it on notes nobody asked for is the failure
+mode this design avoids.
+
+---
+
+## Wired into the agent
+
+Three hooks make the graph ambient, so the agent asks the graph instead of opening files:
+
+| Hook | What it injects | Measured |
+|---|---|---|
+| `SessionStart` | The compressed map, plus a count of unread captures when there are any | ~110 tokens, 162 ms |
+| After each edit | Only what **changed** — or silence | under the 1 s edit budget |
+| On every code search | The matching symbol cards ride along (`gb calls --hook`) | 430 ms here, 330 ms on a 600-module synthetic repo |
+
+All of it ships **per project**: `gb floor --init` drops the wiring, so a fresh clone gets an aware
+agent with no global setup. The model does not know gb exists; **its context does.** That is the
+point — a rule that depends on someone remembering a flag eventually fails, so the correct behavior
+has to be what happens when you type nothing.
+
+Meanwhile `gb symbols … --html m.html --watch` keeps the human's map fresh in the browser,
+atomically, using nothing but the filesystem.
+
+---
+
+## How it is verified
+
+Three layers, because tests alone only pin what you already knew how to check.
+
+**1. The suite — 445 tests, ~30 s.** Runs on every commit via the pre-commit hook, far under the
+600 s DORA threshold.
+
+**2. The gate is verified by breaking it.** A gate degrades in silence: it keeps returning zero and
+stops looking at anything.
+
 ```bash
-gb memory index              # the compact index, one line per note
-gb memory recall <words>     # full text of the most relevant notes
-gb memory context            # the session payload (what the SessionStart hook calls)
-gb memory add --name x --description "..." --scope always
+gb graph --self-test        # injects 6 known defects and fails if the gate does NOT see them
+gb graph src --self-test    # additionally: relations that must hold on YOUR code
 ```
 
-Lean by design (H6): session start injects the index of **all** notes but the full text only of
-`always` notes and this project's; the rest is pulled on demand with `recall`. The vault is never
-dumped whole.
+**3. Metamorphic relations — "these two ways of asking must agree"**, evaluated on your real repo:
+the same folder spelled `c:` or `C:` yields the same shape; a cycle's imports are edges that exist;
+`graph` and `symbols` see the same modules. That is where most of the real defects lived.
+
+**4. Behavior is demonstrated, not asserted.** `gb status --cobertura` executes eight failure modes
+and shows which leave a record. A document claiming the same thing would eventually be wrong without
+anyone noticing.
 
 ---
 
 ## Cost, measured
 
-Rule 4 of [ARCHITECTURE.md](ARCHITECTURE.md): the budget is measured, not estimated. Python 3.11,
-Windows 10, median of 20 cold starts:
+The budget is measured, not estimated (rule 4). Python 3.11, Windows 10, median of 20 cold starts:
 
 | | |
 |---|---|
@@ -261,7 +412,10 @@ process has already failed. For a tiny CLI that never touches threads: `GB_NO_TH
 
 Other measured numbers: session map ~110 tokens in 162 ms · `symbols` 93% recall · search hook
 430 ms (this repo) / 330 ms (600 synthetic modules) · `gb show` with anchor 158 ms · ruff 130 ms ·
-the suite in ~30 s, far under the 600 s DORA threshold.
+the suite in ~30 s.
+
+The budget is architecture, not performance: **< 1 s per edit, < 10 s per commit.** Exceeding it is
+a design violation to be fixed by removing something, not an optimization task for later.
 
 ---
 
@@ -280,8 +434,9 @@ Everything via environment variables; there is no config file to maintain.
 | `GB_CONTEXT_LINES` | 2 | Source lines around the failing one |
 | `GB_OPEN_CMD` | browser | What opens the map (`--open`); receives the path as last argument |
 
-`GB_OPEN_CMD` exists because gb **knows no editor** and will not maintain a list: rule 6 says a
-hardwired command is a bug. Point the map wherever you want (`GB_OPEN_CMD="firefox --new-window"`).
+`GB_OPEN_CMD` exists because gb **knows no editor** and will not maintain a list: a hardwired
+command is a bug (rule 6 — nothing project-specific, everything detected at runtime). Point the map
+wherever you want (`GB_OPEN_CMD="firefox --new-window"`).
 
 ---
 
@@ -305,9 +460,11 @@ upload it nowhere.**
 
 - **Uncaught exceptions only.** An `except: pass` that swallows the failure is invisible here — and
   rightly so: a handled exception is, by definition, one its author decided was not a failure.
+- **Failing tests are not covered.** pytest catches the exception, so no hook ever sees it. Use
+  `pytest -l`.
 - **Main thread, `threading` threads, and finalizers** (`__del__`, weakrefs, GC). **`asyncio` with
-  stray tasks** nobody awaits stays out; if the exception propagates out of `asyncio.run()`, it is
-  captured.
+  stray tasks** nobody awaits stays out, as does `multiprocessing`; if the exception propagates out
+  of `asyncio.run()`, it is captured.
 - **No source file, no code context.** `python -c`, `exec()` and the REPL keep type, message,
   frames and state, but not the surrounding lines (`gb list` sets them apart as ephemeral).
 - **The state is the state at death**, not a time-travel debugger.
@@ -315,20 +472,71 @@ upload it nowhere.**
   `<Type: repr() failed with X>` and does not take the rest of the frame down with it.
 - **Non-Python deaths** — a segfault, an OOM kill, a `kill -9` — raise no exception, so no hook
   ever sees them.
+- **Python only, local only.** No CI, no UI, no server, no MCP server (see [SCOPE.md](SCOPE.md) for
+  why, and for the single condition that would reopen it).
+- **Call edges are inferred.** `object.method()` needs type inference; unresolved calls are
+  declared, not guessed.
+- **Adoption is the one thing not measured.** Latency, overhead, recall and coverage all have
+  numbers behind them. Whether people keep using it does not — and by rule 10, if you stop, that
+  gets investigated, never blocked with a hook that forces you back.
+
+---
+
+## The design law
+
+Eleven rules, in [ARCHITECTURE.md](ARCHITECTURE.md); a change that violates one is rejected in
+review rather than argued about. The load-bearing ones:
+
+1. **Zero models on the hot path.** Capturing, storing, showing and analyzing consult nobody.
+2. **Return, don't rule.** Every run ends by handing over something the user wanted. A function
+   whose only output is a verdict is misplaced — anything that only says *no* is a tax.
+3. **Latency budget, non-negotiable.** < 1 s per edit, < 10 s per commit.
+4. **Overhead on the observed process measured, not estimated.**
+5. **One language, one runtime.** Python, local, one failure type.
+6. **Facts stored raw.** Exception, trace and state persist exactly as captured.
+7. **History local, append-only, outside the observed repo.**
+8. **AI only after the fact, explicit and optional.**
+9. **Fail silently toward the safe side.** If capture breaks, the observed program continues as if
+   gb were not installed.
+10. **Abandonment is data, not a bug to armor against.**
+11. **Proxies inform, they don't block.** Only facts gate.
+
+Two working principles sit above all of them: **subtract before you polish** (maintenance cost does
+not grow with size, it grows worse — every part rubs against every other, so the first question
+about a problem is what to remove), and **evidence over folklore** (a decision cites a measured
+fact; "other frameworks do it" is not a reason).
 
 ---
 
 ## Development
 
 ```bash
-python -m pytest tests/ -q          # the suite
+python -m pytest tests/ -q          # the suite — 445 tests, ~30 s
 python -m ruff check src tests      # lint (catches defects, holds no style opinions)
+gb graph src --gate                 # the gate, clean
 ```
 
-The pre-commit ([.githooks/pre-commit](.githooks/pre-commit)) runs lint + suite + gate in < 10 s;
-hook it once with `git config core.hooksPath .githooks`. `git commit --no-verify` skips it — and
-that skip is a datum, not a rule (rule 10: abandonment gets investigated, not armored against).
+The pre-commit ([.githooks/pre-commit](.githooks/pre-commit)) runs lint + suite + gate + `gb check
+--staged` in < 10 s; hook it once with `git config core.hooksPath .githooks`. `git commit
+--no-verify` skips it — and that skip is a datum, not a rule.
 
 The console's layering rules live in [src/.gb-boundaries](src/.gb-boundaries): the core (capture,
 store, analysis) does not import the presentation (`cli`, `render`, `viz`). A new crossing stops
 the commit; a test-softening signal only informs.
+
+Commits are `type: short description` (`feat`, `fix`, `refactor`, `docs`, `chore`), one logical
+change each, with behavior changes and documentation changes kept apart.
+
+---
+
+## Documents
+
+| Document | What it holds |
+|---|---|
+| [ARCHITECTURE.md](ARCHITECTURE.md) | The design law: the thesis, the command families, the eleven rules |
+| [SCOPE.md](SCOPE.md) | What is in, what is deliberately out, the done criteria per family, and the failure criteria written while they do not hurt yet |
+| [docs/research-report.md](docs/research-report.md) | The measured evidence decisions cite |
+| [docs/pruebas-de-uso.md](docs/pruebas-de-uso.md) | The usage notebook, including the negative results |
+| [CLAUDE.md](CLAUDE.md) | The contract for agents working in this repo |
+
+Decision documents are in Spanish for coherence; anything published is in English.
