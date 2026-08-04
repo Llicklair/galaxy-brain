@@ -776,8 +776,19 @@ def _calls_hook():
     from . import symbols
 
     try:
-        datos = json.load(sys.stdin)
-    except (ValueError, OSError):
+        crudo = sys.stdin.read()
+    except (OSError, ValueError):
+        return 0
+    # El BOM se tolera a proposito: PowerShell 5.1 pipa con BOM (trampa conocida
+    # de esta maquina) y `json.loads` lo rechaza. Sin esto, el hook "cumplia" su
+    # contrato callando — y un silencio con causa evitable es el peor fallo de
+    # un hook, porque es indistinguible de "no habia nada" (se midio 180 ms de
+    # supuesta velocidad que eran mudez; docs/pruebas-de-uso.md, 2026-08-04).
+    try:
+        from .graph import _BOM
+
+        datos = json.loads(crudo.lstrip(_BOM))
+    except ValueError:
         return 0
     if not isinstance(datos, dict):
         return 0

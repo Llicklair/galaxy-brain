@@ -11,6 +11,7 @@ import json
 import textwrap
 
 from galaxybrain import cli, symbols
+from galaxybrain.graph import _BOM
 
 
 def _proyecto(tmp_path):
@@ -142,3 +143,16 @@ def test_el_hook_no_revienta_con_stdin_roto(monkeypatch, capsys):
 
     assert cli.main(["calls", "--hook"]) == 0
     assert capsys.readouterr().out == ""
+
+
+def test_el_hook_tolera_el_bom_de_powershell(tmp_path, monkeypatch, capsys):
+    """PowerShell 5.1 pipa con BOM y `json.loads` lo rechaza. El hook callaba
+    "cumpliendo el contrato" — un silencio con causa evitable que se midio como
+    velocidad (180 ms que eran mudez). El BOM se quita, no se obedece."""
+    _proyecto(tmp_path)
+    monkeypatch.setattr("sys.stdin", io.StringIO(_BOM + json.dumps(
+        {"tool_input": {"pattern": "ayuda"}, "cwd": str(tmp_path)}
+    )))
+
+    assert cli.main(["calls", "--hook"]) == 0
+    assert "lib.ayuda" in capsys.readouterr().out
