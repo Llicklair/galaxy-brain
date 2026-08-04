@@ -33,9 +33,25 @@ pasos y si mintió. Tres pruebas:
   herramienta, no para resolver el fallo. El criterio de SCOPE (resolver fallos leyendo) **sigue
   1/3**: no se infla con esto.
 
-Pista fuerte que deja la sesión: el grafo **ahorra y no miente** cuando se le pregunta, y la
-consola sigue esperando su caso natural — el crash asíncrono o lejano, donde leer el estado gana a
-re-ejecutar. El mapa vivo (watcher con candado) aguantó toda la sesión regenerándose solo.
+Ronda 2, tras el push:
+
+- **El "ojo" era necesario, demostrado con el peor caso posible**: la captura `AttributeError` de
+  hace 3 días (`cli.py:269`) ancla HOY en `_ficheros_tocados` — una función que **nació 3 días
+  después del crash**. Sin el aviso, el ancla habría señalado con toda seguridad a un culpable que
+  no existía cuando ocurrió el fallo; con `ojo: el fichero cambió después de la captura (05bab0d)`,
+  el lector sabe cuánto fiarse.
+- **Ambigüedad sin fantasmas**: `gb calls _run` lista los `_run` de los tests cada uno con lo suyo,
+  y `companions._run` (borrado el día anterior) no aparece: el grafo describe el código de hoy.
+- **Segundo negativo cazado y afinado en la misma sesión**: la sonda del watch solo miraba `.py` —
+  leer capturas dejó los anillos del ciclo viejos en el mapa (regenerado 12:13:56, lecturas
+  12:19:37). Afinado: la sonda hace stat también del histórico, las lecturas y el git local, así
+  que leer una captura o commitear regenera el mapa solo (verificado en vivo: 12:21:19), y de paso
+  los halos de obra se apagan al commitear sin esperar al siguiente edit.
+
+Pista fuerte que deja la sesión: el grafo **ahorra y no miente** cuando se le pregunta — y las dos
+mentiras por omisión que tenía (ancla sin aviso de código movido, mapa con capas viejas) las destapó
+el uso en una tarde y se afinaron en caliente. La consola sigue esperando su caso natural — el
+crash asíncrono o lejano, donde leer el estado gana a re-ejecutar.
 
 ## 2026-08-04 · guardia-mvp: el primer producto de fuera sobre el pipeline de gb — **y el embudo honesto de su desarrollo**
 
