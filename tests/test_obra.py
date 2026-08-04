@@ -71,6 +71,17 @@ def test_los_tocados_llegan_al_mapa_como_nodos_modulo(tmp_path):
     assert cli._tocados_para_mapa(root, informe) == {"sucio"}
 
 
+def test_las_posiciones_heredadas_viajan_en_el_html(tmp_path):
+    """El auto-refresco reiniciaba la fisica y el mapa bailaba cada N segundos:
+    las posiciones sobreviven a la recarga por el mismo canal que la camara."""
+    root = _repo(tmp_path)
+    _write(root, "solo.py")
+    _commit(root, "base")
+
+    html = viz.render_graph_cloud(symbols.analyze(root))
+    assert "gb-pos:" in html
+
+
 def test_el_mapa_pinta_la_obra_y_calla_sin_ella(tmp_path):
     root = _repo(tmp_path)
     _write(root, "solo.py")

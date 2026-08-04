@@ -843,6 +843,36 @@ function pinta(t){
   }
 }
 
+// ============ posiciones heredadas ============
+// Las posiciones sobreviven a la recarga, como la camara. Sin esto, cada
+// auto-refresco reiniciaba la fisica desde la siembra y el mapa BAILABA cada
+// N segundos (salio en prueba de uso, 4-ago). Al volver, cada nodo hereda su
+// sitio ya convergido y pinta quieto; con pocos nodos nuevos se deja un
+// asentamiento corto y frio para colocarlos sin sacudir al resto; con muchos
+// (>20 por ciento) la forma cambio de verdad y la convergencia se re-anima.
+const POSICIONES = 'gb-pos:' + document.title;
+try{
+  const previas = JSON.parse(sessionStorage.getItem(POSICIONES) || 'null');
+  if(previas && MAXIT && N>1){
+    let usadas = 0;
+    for(let i=0;i<N;i++){ const p = previas[NODOS[i].id]; if(p){ X[i]=p[0]; Y[i]=p[1]; usadas++; } }
+    if(usadas === N) iter = MAXIT;
+    else if(usadas > N*0.8) iter = Math.max(0, MAXIT-40);
+    if(iter){
+      temp = Math.max(0, (LADO/10)*(1 - iter/(MAXIT+1)));
+      if(!camaraLibre){ const r=encaje(); esc=r[0]; ox=r[1]; oy=r[2]; }
+      if(iter>=MAXIT) estado.style.opacity=0;
+    }
+  }
+}catch(_){}
+addEventListener('beforeunload', ()=>{
+  try{
+    const sitio = {};
+    for(let i=0;i<N;i++) sitio[NODOS[i].id] = [Math.round(X[i]*10)/10, Math.round(Y[i]*10)/10];
+    sessionStorage.setItem(POSICIONES, JSON.stringify(sitio));
+  }catch(_){}
+});
+
 // ================= bucle =================
 function bucle(t){
   if(N>1){
