@@ -111,6 +111,41 @@ sostener, y **dice cuándo ese suelo se acaba y empieza el humano**. La discipli
 
 ---
 
+## El grafo como columna (directiva de Marcos, 4-ago-2026)
+
+**Todo gb se apoya en el grafo — "un grafo inteligente y persistente".** Traducida a las reglas de
+esta casa, la frase significa tres cosas y prohíbe una:
+
+- **Sustrato, no familia.** El grafo (módulos + símbolos + llamadas, del AST) es donde los demás
+  hechos se **anclan**: cada captura de la consola tiene fichero:línea → tiene nodo; cada señal de
+  `check` toca ficheros → toca nodos; la capa de cambio ya pinta lo tocado sobre el mapa; `floor` ya
+  lo consume. Las familias no cambian (regla 4): cambia el punto de encuentro. GitNexus se borró el
+  4-ago precisamente por esto — la columna no se delega.
+- **"Inteligente" = derivado, no adivinado.** Cruzar hechos deterministas que ya se tienen: la onda
+  de un cambio (`calls --depth`), el ciclo del error sobre nodos, la prosa recogida de docstrings
+  (la primera línea, que ya se recoge — no se genera). La IA entra después del hecho, a mano y
+  visible (regla 8); **nunca en la construcción del grafo**.
+- **"Persistente" = dos cosas distintas, y la distinción es la doctrina.**
+  *(a) Cache derivable*: por hash de contenido, fuera del repo observado (regla 7), descartable
+  entera sin perder nada. Entra cuando un repo real saque la derivación del presupuesto de la regla
+  3 — medido el 4-ago: 430 ms end-to-end en este repo, 330 ms con 600 módulos; **hoy cabe sin
+  cache**, y construirlo antes de que la evidencia lo pida sería pulir en vez de restar.
+  *(b) Anotación no derivable*: lo que no se puede recomputar —el histórico de errores, lo leído,
+  lo intervenido— ya persiste en la consola; lo nuevo es proyectarlo sobre nodos.
+- **Lo prohibido: el grafo como fuente de verdad guardada.** Un grafo persistido que se consulta sin
+  recomputar es el índice desfasado de GitNexus: *se presenta como el mapa del proyecto y describe
+  un proyecto que ya no existe* (quedó 6 commits atrás el mismo día que se midió contra él). El
+  grafo **se deriva siempre**; lo persistente es cache que se invalida sola por hash, o anotación
+  histórica anclada a él. Nunca el mapa mismo.
+
+**Criterio de terminado de la fase** (escrito antes de empezar): (1) `gb last`/`gb show` dicen el
+**nodo** donde petó y su onda —quién llama a ese símbolo— dentro del presupuesto de la consola;
+(2) el hook de búsqueda sobrevive a un repo real grande, y si alguno lo saca de <1 s entra el cache
+por hash con el antes/después apuntado en la libreta; (3) una sesión real donde el ancla error→nodo
+ahorre pasos, apuntada — y si no ocurre, también (regla 10).
+
+---
+
 ## Nudos resueltos (refinados adversarialmente, 2/3-ago)
 
 - **Retroceso entre fases — resuelto: no se prohíbe, se detecta.** En 3/4/7 sale gratis: `graph --gate`
