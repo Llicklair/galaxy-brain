@@ -99,6 +99,16 @@ store.append: (entry) → (entry, *, flush=False)
 Que sea estrecho no es estética: es lo que evita que 4 agentes compartiendo se coman el contexto
 entre ellos. Cada agente recibe el fan-in de sus nodos, no la cháchara de los otros tres.
 
+> **Experimento en curso (5-ago-2026, tarde):** el enrutador sigue sin evidencia tras dos tiradas
+> (cero firmas incompatibles espontáneas), así que la evidencia se fabrica. Dos brazos, mismo par
+> de tareas sobre el banco desechable `experimento/`: A rompe la firma de `nucleo.calcula`
+> (parámetro obligatorio, sin default), B escribe código nuevo contra esa función. **Control:** sin
+> señal. **Tratamiento:** B recibe en vuelo el hecho derivado del diff real de A. Criterio, escrito
+> antes de lanzar: enrutador **justificado** si control-unión ROJA y tratamiento-unión VERDE;
+> **refutado-en-contexto** si el tratamiento también sale rojo (la obligación va a la arista — al
+> bucle — no al contexto); **inconcluso** si el control sale verde (el par no fabricó la deriva).
+> A corre una vez; su worktree vive durante los dos brazos. El resultado se escribe aquí.
+
 **Piezas que ya existen:** `symbols.py` extrae la firma tecleable de cada `def`
 ([`_firma`](../src/galaxybrain/symbols.py#L104), volcada en `sigs`); `delta.py` sabe leer un
 fichero en un ref arbitrario de git ([`_texto_en`](../src/galaxybrain/delta.py#L101)); `changes.py`
