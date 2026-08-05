@@ -374,6 +374,19 @@ es la que el usuario pidió, así que se construye entera o no se construye.
 > tirada del 5-ago (`calcula(3, 4)` con el hecho delante) es test fijo de la suite. Sin medir
 > aún: si el rechazo con las llamadas exactas corrige a B en vivo — esa tirada cuesta cuota y se
 > propone aparte.
+>
+> **MEDIDO (6-ago-2026, 00:15–00:24) — el rechazo CORRIGE en vivo.** Tirada real A→B sobre el
+> banco, criterio escrito antes de lanzar. B volvió a ignorar la señal (con el hecho en el
+> despacho escribió 5 llamadas `calcula(2 posicionales)` — n=3 de despachos con señal: ignorada
+> 2/3). La v1 las cazó ANTES de la unión, con fichero:línea exactos en el acta, y el rechazo
+> reintentó con esas llamadas como señal: **B₂ salió limpio** — reescribió los tests contra la
+> firma nueva (`calcula(3, 4, base=10)`, incluso variando `base=16`), pagando su rojo local.
+> Unión VERDE a la primera, cero reintentos de unión gastados. Y la desambiguación funcionó en la
+> misma tirada: el checkpoint gritó «RESCATE ACCIDENTAL» (rama B roja sola, unión verde) y el
+> acta, con el registro de entregas, la leyó **coordinada** — que es la verdad. La cadena
+> completa (ignorar → rechazo determinista → corrección → verde leído bien) queda demostrada de
+> punta a punta sin manos humanas. Lo que aún no tiene dato: un B que ignore TAMBIÉN el rechazo
+> (n=1 de rechazos, 1/1 corrigió); si aparece, la unión sigue detrás como red — jamás falso verde.
 
 ## 5. Encaje en las familias (CLAUDE.md, regla dura 4)
 
