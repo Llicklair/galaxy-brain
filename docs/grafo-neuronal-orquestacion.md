@@ -387,6 +387,17 @@ es la que el usuario pidió, así que se construye entera o no se construye.
 > completa (ignorar → rechazo determinista → corrección → verde leído bien) queda demostrada de
 > punta a punta sin manos humanas. Lo que aún no tiene dato: un B que ignore TAMBIÉN el rechazo
 > (n=1 de rechazos, 1/1 corrigió); si aparece, la unión sigue detrás como red — jamás falso verde.
+>
+> **La capa que falta y su orden (decidido el 6-ago-2026): primero el dataset, luego «aprende».**
+> El bucle verifica pero no converge: cada tirada nace con la misma propensión a ignorar la señal
+> (~2/3 medida), porque no hay pesos que ajustar. El análogo honesto del gradiente no está en el
+> modelo (sin acceso, blanco móvil) sino en el HARNESS: el formato del despacho y del rechazo,
+> ajustados leyendo actas — como ya pasó dos veces a mano (la cola cruda, la v1 misma). Para que
+> eso sea aprendizaje y no superstición hace falta volumen, y un dataset que se sobreescribe no
+> es un dataset: desde `48d5c02` las actas se ACUMULAN en `.claude/actas/bucle-<inicio>.json`
+> (la fundacional del 5-ago, pisada por la tirada de las 00:15, se restauró de la lectura de
+> sesión y está marcada `_nota`). Con n=3 no se aprende nada; cuando las actas justifiquen una
+> comparación, el ajuste será post-hoc y visible, nunca en el camino caliente (regla 1).
 
 ## 5. Encaje en las familias (CLAUDE.md, regla dura 4)
 
