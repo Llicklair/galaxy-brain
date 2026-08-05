@@ -55,6 +55,36 @@ def test_defaults_when_frontmatter_missing_fields(vault):
     assert note.tags == []
 
 
+def test_frontmatter_sin_cierre_degrada_a_cuerpo_entero(vault):
+    """Un `---` de apertura sin su `---` de cierre no es frontmatter: es texto.
+
+    Se prefiere degradar (la nota sigue siendo legible y recall la encuentra) a
+    petar leyendo el vault. El precio va escrito aqui a proposito: los campos que
+    el autor creia declarados NO se aplican — `scope: always` incluido — asi que
+    la nota se queda en `general` y nunca se inyecta en SessionStart.
+    """
+    (vault / "rota.md").write_text(
+        "---\nname: otro-nombre\nscope: always\n\ncuerpo suelto\n", encoding="utf-8"
+    )
+    (note,) = memory.all_notes()
+    assert note.name == "rota"  # del fichero, no del `name:` de dentro
+    assert note.scope == "general"  # el `scope: always` declarado se pierde
+    assert "name: otro-nombre" in note.body  # el bloque entero cae al cuerpo
+    assert "cuerpo suelto" in note.body
+    assert "otro-nombre" not in memory.context()  # y por eso no va en full
+
+
+def test_nombres_de_nota_con_caracteres_raros(vault):
+    """El nombre sale del stem tal cual: espacios, acentos y puntos valen.
+
+    Lo que NO entra queda fijado igual de explicito: sin extension y `.MD` en
+    mayusculas se ignoran, porque el filtro es `p.suffix == ".md"` y distingue caja.
+    """
+    for filename in ["con espacios.md", "acentué-ñ.md", "v1.2.3.md", "UPPER.MD", "sin-extension"]:
+        (vault / filename).write_text("cuerpo x\n", encoding="utf-8")
+    assert [n.name for n in memory.all_notes()] == ["acentué-ñ", "con espacios", "v1.2.3"]
+
+
 def test_index_md_is_skipped(vault):
     write_note(vault, "real", description="x")
     (vault / "MEMORY.md").write_text("# index\n", encoding="utf-8")
@@ -76,6 +106,56 @@ def test_empty_vault(vault):
     assert memory.all_notes() == []
     assert memory.context() is None
     assert "empty" in memory.index_lines()[0]
+
+
+def test_vault_inexistente_se_comporta_como_vacio_y_add_lo_crea(vault, monkeypatch):
+    """Que la carpeta no exista todavia es el estado del dia 1, no un error.
+
+    `test_empty_vault` cubre la carpeta creada y sin notas; esto cubre el caso de
+    antes: leer no debe petar con FileNotFoundError, y la primera escritura crea
+    el vault entero (nota + indice) sin pedir un `mkdir` previo.
+    """
+    nuevo = vault / "todavia-no-existe"
+    monkeypatch.setenv("GALAXY_BRAIN_MEMORY_DIR", str(nuevo))
+    assert not nuevo.exists()
+
+    assert memory.all_notes() == []
+    assert memory.context() is None
+    assert "empty" in memory.index_lines()[0]
+    assert "VACIA" in memory.recall("lo que sea")[0]  # y no un stacktrace
+
+    path = memory.add("primera", "la que crea el vault")
+    assert path.is_file()
+    assert (nuevo / "MEMORY.md").is_file()
+
+
+def test_recall_corta_en_top_k(vault):
+    """Recordar sin inflar el contexto es la mitad del diseño: el tope es duro.
+
+    Con mas notas que casan que huecos, recall devuelve TOP_K y punto — si no,
+    una query generica volcaria el vault entero, que es justo lo que el modulo
+    existe para evitar.
+    """
+    for i in range(memory.TOP_K + 3):
+        write_note(vault, "nota-%d" % i, description="harbor")
+    cabeceras = [line for line in memory.recall("harbor") if line.startswith("###")]
+    assert len(cabeceras) == memory.TOP_K
+
+
+def test_recall_multipalabra_ordena_por_terminos_que_casan(vault):
+    """Una query de varias palabras suma por termino, no exige todos.
+
+    Casar 3 de 3 va antes que casar 1 de 3, y 0 de 3 se cae. Es un OR ponderado,
+    no un AND: pedir todos los terminos convertiria cada query larga en cero
+    resultados.
+    """
+    write_note(vault, "tres", description="harbor wsl docker")
+    write_note(vault, "uno", description="harbor solo")
+    write_note(vault, "cero", description="nada que ver")
+    cabeceras = [line for line in memory.recall("harbor wsl docker") if line.startswith("###")]
+    assert len(cabeceras) == 2
+    assert "tres" in cabeceras[0]
+    assert "uno" in cabeceras[1]
 
 
 def test_recall_ranks_by_term_hits(vault):

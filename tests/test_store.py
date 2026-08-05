@@ -2,6 +2,7 @@
 ficheros corruptos (un fallo del disco no puede invalidar la libreta entera)."""
 
 import json
+from pathlib import Path
 
 from galaxybrain import store
 
@@ -116,3 +117,70 @@ def test_summarize_mismo_tipo_distinto_sitio_no_se_mezcla():
     groups = store.summarize(entries)
     assert len(groups) == 2  # misma clase, sitios distintos = dos firmas
     assert all(g["count"] == 1 for g in groups)
+
+
+def test_load_con_la_captura_borrada_a_mano_no_revienta_ni_miente(gb_home):
+    """El indice es append-only pero las capturas son ficheros sueltos: borrar la
+    carpeta `errors/` a mano deja entradas huerfanas. Devolver None es lo unico
+    honesto — dar la ANTERIOR seria ensenar el estado de otro fallo con la
+    confianza del ultimo, que es justo el error que la consola existe para evitar."""
+    store.write(_record(ts="2026-07-29T12:00:00+02:00"))
+    store.write(_record(ts="2026-07-29T13:00:00+02:00", exc_type="KeyError"))
+
+    ultima = store.read_index()[0]
+    Path(ultima["path"]).unlink()
+
+    assert store.load() is None
+    assert len(store.read_index()) == 2  # el indice no se toca: sigue siendo el historico
+    assert store.load(ultima["id"]) is None
+
+
+def test_load_con_el_json_de_la_captura_corrupto_devuelve_none(gb_home):
+    """Un fichero a medio escribir (disco lleno, proceso matado) no puede
+    propagar una excepcion al que viene a LEER un fallo — regla 9."""
+    store.write(_record())
+    entrada = store.read_index()[0]
+    Path(entrada["path"]).write_text("{esto se quedo a medio", encoding="utf-8")
+
+    assert store.load() is None
+    assert store.load(entrada["id"]) is None
+
+
+def test_load_por_prefijo_de_id_y_por_un_id_que_no_existe(gb_home):
+    """`gb show` acepta el id recortado del aviso. Un prefijo que no casa con
+    nada es None, no la ultima captura por descarte."""
+    store.write(_record())
+    ident = store.read_index()[0]["id"]
+
+    assert store.load(ident[:8])["exception"]["type"] == "ValueError"
+    assert store.load("no-existe-este-id") is None
+
+
+def test_con_timestamps_iguales_el_orden_es_el_de_escritura_invertido(gb_home):
+    """Dos capturas del mismo segundo (dos hilos, un bucle rapido) no pueden
+    salir en orden arbitrario: `gb list` seria distinto en cada pasada. El
+    desempate lo pone el indice, que es append-only — la ultima escrita, primera."""
+    mismo = "2026-07-29T12:00:00+02:00"
+    store.write(_record(ts=mismo, exc_type="ValueError"))
+    store.write(_record(ts=mismo, exc_type="KeyError"))
+    store.write(_record(ts=mismo, exc_type="TypeError"))
+
+    assert [e["type"] for e in store.read_index()] == ["TypeError", "KeyError", "ValueError"]
+    assert store.load()["exception"]["type"] == "TypeError"
+
+
+def test_si_el_home_no_se_puede_crear_se_falla_hacia_el_lado_seguro(gb_home, tmp_path, monkeypatch):
+    """Camino caliente: quien llama a write() esta en mitad de la muerte de un
+    proceso ajeno. Un home imposible (aqui, un FICHERO donde deberia ir la
+    carpeta) devuelve None y deja leer vacio; nunca lanza encima del fallo real."""
+    ocupado = tmp_path / "ocupado"
+    ocupado.write_text("no soy una carpeta", encoding="utf-8")
+    monkeypatch.setenv("GB_HOME", str(ocupado / "gb-home"))
+
+    assert store.write(_record()) is None
+    assert store.read_index() == []
+    assert store.read_stats() == (0, 0, 0)
+    assert store.read_ids() == set()
+    assert store.uso_stats() == {}
+    store.mark_read("uno")  # silencioso
+    store.mark_uso("gb list")  # silencioso

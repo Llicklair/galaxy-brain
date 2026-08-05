@@ -127,3 +127,67 @@ def test_objeto_a_medio_construir():
             return "Incompleto(%s)" % self.no_existe  # AttributeError
 
     assert "repr() fallo" in saferepr.safe_repr(Incompleto())
+
+
+def test_lista_que_se_contiene_a_si_misma_no_cuelga():
+    """Estructura ciclica: el cap de profundidad corta el descenso; ni
+    RecursionError ni salida ilimitada."""
+    ciclica = [1, 2]
+    ciclica.append(ciclica)
+
+    text = saferepr.safe_repr(ciclica)
+
+    assert len(text) < 500
+    assert text.startswith("[1, 2, [")
+
+
+def test_dict_ciclico_con_secreto_sigue_redactando():
+    """El ciclo no debe abrir un hueco por el que se cuele el valor sensible."""
+    ciclico = {"password": "hunter2"}
+    ciclico["self"] = ciclico
+
+    text = saferepr.repr_local("cfg", ciclico)
+
+    assert "hunter2" not in text
+    assert saferepr.REDACTED in text
+    assert len(text) < 500
+
+
+def test_repr_que_devuelve_algo_que_no_es_str_se_describe():
+    """repr() exige str: si __repr__ devuelve otra cosa, CPython lanza
+    TypeError y aqui se convierte en descripcion, no en fallo."""
+
+    class ReprNoStr:
+        def __repr__(self):
+            return 42  # no es str
+
+    text = saferepr.safe_repr(ReprNoStr())
+
+    assert text == "<ReprNoStr: repr() fallo con TypeError>"
+    # y tampoco propaga cuando va dentro de un contenedor
+    assert "repr() fallo con TypeError" in saferepr.safe_repr([ReprNoStr()])
+
+
+def test_bytes_y_str_enormes_se_recortan_al_limite():
+    """Atomos gigantes: se recortan, no se vuelcan cinco megas al disco."""
+    for gigante in (b"\x00" * 5_000_000, "y" * 5_000_000):
+        text = saferepr.safe_repr(gigante, limit=240)
+        assert len(text) < 300
+        assert "chars)" in text
+
+
+def test_contenedor_con_len_roto_se_describe_no_propaga():
+    """Un contenedor a medio construir revienta al recorrerlo; ese fallo se
+    describe igual que el de un repr roto."""
+
+    class LenRoto(list):
+        def __len__(self):
+            raise ValueError("len roto")
+
+    assert saferepr.safe_repr(LenRoto([1, 2, 3])) == "<LenRoto: repr() fallo con ValueError>"
+
+    class ItemsRoto(dict):
+        def items(self):
+            raise ValueError("items roto")
+
+    assert saferepr.safe_repr(ItemsRoto(a=1)) == "<ItemsRoto: repr() fallo con ValueError>"
