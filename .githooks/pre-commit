@@ -25,6 +25,14 @@ else
     echo "[galaxy-brain] ruff no instalado (pip install -e .[dev]); salto el lint." >&2
 fi
 
+# La suite ENTERA, no la seleccion de `gb tests`. Medido en este repo el
+# 5-ago-2026 y en contra de lo que se esperaba: con los ficheros opacos dentro
+# (17 de 37 lanzan subprocesos, y sin ellos la seleccion se dejaba fallos reales)
+# la seleccion tarda 27 s frente a 36 s — un 22%, no el 90% del caso bonito.
+# Cambiar el gate de "todo" a "casi todo" por 9 s no vale el riesgo de un falso
+# verde en el unico sitio donde un falso verde deja pasar codigo roto.
+# `gb tests` gana donde el ciclo es corto y se repite: durante la edicion, y en
+# el bucle de un agente. Ahi si (README, seccion "Which tests to run").
 echo "[galaxy-brain] pre-commit: tests..."
 python -m pytest tests/ -q || exit 1
 

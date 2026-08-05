@@ -783,16 +783,79 @@ def render_impacted(report, style, brief=False):
             lines.append(style("  ... y %d mas" % (len(simbolos) - 8), DIM))
         lines.append("")
 
+    opacos = set(report.get("opacos") or [])
     lines.append("Ficheros:")
     for ruta in ficheros:
-        lines.append("  %s" % ruta)
+        marca = style("  (subproceso: va siempre)", DIM) if ruta in opacos else ""
+        lines.append("  %s%s" % (ruta, marca))
+
+    for aviso in report.get("avisos") or []:
+        lines.append("")
+        lines.append(style(aviso, DIM))
 
     lines.append("")
     lines.append(style("Lo que esto NO garantiza:", BOLD))
     lines.append(style(
-        "  - la seleccion sale del grafo de LLAMADAS: lo que se invoca por tabla,\n"
-        "    por getattr o por un fixture que nadie llama no deja arista que seguir",
+        "  - la seleccion sale del grafo de LLAMADAS: lo que se invoca por tabla\n"
+        "    o por getattr no deja arista que seguir (los subprocesos si estan\n"
+        "    cubiertos: sus ficheros entran enteros)",
         DIM))
     lines.append(style(
         "  - no ejecuta nada: pasa estos ficheros a pytest, o usa --run", DIM))
+    return "\n".join(lines)
+
+
+def render_delta(report, style, brief=False):
+    """Los errores clasicos que ANADIO este cambio. Informe, nunca veredicto.
+
+    El encuadre importa tanto como el dato: estas senales son proxies, y un
+    `except Exception: pass` puede ser exactamente lo correcto. Se dice cuantos
+    aparecieron y donde; que hacer con ellos es del que escribio el codigo.
+    """
+    if report.get("range_error"):
+        return style("ERROR: %s" % report["range_error"], RED)
+
+    grupos = (
+        ("silencios", "Errores que se tragan (nuevos)"),
+        ("amplios", "Capturas demasiado anchas (nuevas)"),
+        ("pendientes", "Trabajo declarado sin terminar (nuevo)"),
+    )
+    cuantos = sum(len(report.get(k) or []) for k, _ in grupos) + len(report.get("crecidos") or [])
+
+    if not cuantos:
+        linea = "Sin errores clasicos anadidos en %s (%d fichero(s) .py mirados)" % (
+            report.get("range") or "el cambio", report.get("ficheros") or 0)
+        return style(linea, DIM)
+
+    if brief:
+        partes = ["%d %s" % (len(report[k]), n.split(" (")[0].lower())
+                  for k, n in grupos if report.get(k)]
+        if report.get("crecidos"):
+            partes.append("%d cuerpo(s) crecido(s)" % len(report["crecidos"]))
+        return style("[gb delta] %s (detalle: gb delta)" % ", ".join(partes), DIM)
+
+    lines = [style("%d senal(es) que este cambio ANADIO:" % cuantos, BOLD), ""]
+    for clave, titulo in grupos:
+        items = report.get(clave) or []
+        if not items:
+            continue
+        lines.append(style(titulo, BOLD))
+        for item in items[:10]:
+            lines.append("  %s:%d  %s" % (item["file"], item["line"], item["what"]))
+        if len(items) > 10:
+            lines.append(style("  ... y %d mas" % (len(items) - 10), DIM))
+        lines.append("")
+
+    crecidos = report.get("crecidos") or []
+    if crecidos:
+        lines.append(style("Cuerpos que crecieron de golpe", BOLD))
+        for item in crecidos[:10]:
+            lines.append("  %s:%d  %s  +%d lineas (ahora %d)" % (
+                item["file"], item["line"], item["name"], item["grew"], item["now"]))
+        lines.append("")
+
+    lines.append(style(
+        "Esto INFORMA, no bloquea: son proxies. Un `except Exception: pass` puede\n"
+        "ser lo correcto — lo que se mide es que aparecio AHORA, no que este mal.",
+        DIM))
     return "\n".join(lines)

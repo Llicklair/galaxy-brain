@@ -165,6 +165,80 @@ def test_sin_tests_que_lo_alcancen_corre_todo_y_lo_dice(repo):
     assert "ningun test alcanza" in report["motivo"]
 
 
+def test_un_test_que_lanza_subprocesos_entra_siempre(repo):
+    """El agujero que casi deja pasar un falso verde.
+
+    Un test que ejercita el codigo lanzando un subproceso no deja NINGUNA arista
+    de llamada: para el AST es una llamada a `subprocess.run` y se acabo. Medido
+    en el repo de gb: 17 de 37 ficheros entran por ahi, y romper
+    `saferepr.repr_local` hacia fallar `test_end_to_end.py` sin que la seleccion
+    lo viera. Van siempre, y el informe dice por que.
+    """
+    (repo / "tests" / "test_e2e.py").write_text(
+        "import subprocess\n"
+        "import sys\n"
+        "\n"
+        "\n"
+        "def test_por_subproceso():\n"
+        "    r = subprocess.run([sys.executable, '-c', 'print(1)'], capture_output=True)\n"
+        "    assert r.returncode == 0\n",
+        encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "e2e")
+
+    _tocar(repo, "lib/nucleo.py", "return a + b", "return b + a")
+    _git(repo, "add", "-A")
+    report = impacted.analyze(str(repo), staged=True)
+
+    assert report["todo"] is False, "sigue siendo una seleccion, no la suite entera"
+    assert "tests/test_e2e.py" in report["tests"]
+    assert "tests/test_e2e.py" in report["opacos"]
+    assert "tests/test_resta.py" not in report["tests"], (
+        "el que ni alcanza ni es opaco sigue fuera: si no, esto no selecciona nada")
+    assert report["avisos"], "un fichero incluido por otra razon se dice en voz alta"
+
+
+def test_los_opacos_no_se_cuentan_como_alcanzados(repo):
+    """`n_tests` cuenta lo que el grafo alcanza; los opacos son ficheros extra.
+
+    Mezclarlos inflaria el porcentaje y haria creer que la seleccion es mas
+    precisa de lo que es.
+    """
+    (repo / "tests" / "test_e2e.py").write_text(
+        "import subprocess\n"
+        "\n"
+        "\n"
+        "def test_algo():\n"
+        "    assert subprocess is not None\n",
+        encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "e2e")
+
+    _tocar(repo, "lib/nucleo.py", "return a + b", "return b + a")
+    _git(repo, "add", "-A")
+    report = impacted.analyze(str(repo), staged=True)
+
+    assert report["n_tests"] == 1, "solo test_suma_va alcanza el simbolo por el grafo"
+    assert len(report["tests"]) == 2, "y ademas entra el opaco"
+
+
+def test_worktree_ve_lo_que_no_esta_en_el_indice(repo):
+    """El caso de en medio de una edicion: escrito en disco, sin `git add`.
+
+    Es el modo que sirve dentro del bucle de un agente, que edita y quiere saber
+    que romper ANTES de preparar nada. Con `--staged` ese cambio es invisible.
+    """
+    _tocar(repo, "lib/nucleo.py", "return a + b", "return b + a")
+
+    staged = impacted.analyze(str(repo), staged=True)
+    assert staged["tests"] == [], "sin `git add` no hay nada en el indice"
+
+    worktree = impacted.analyze(str(repo), worktree=True)
+    assert worktree["range"] == "worktree"
+    assert "tests/test_suma.py" in worktree["tests"]
+    assert worktree["todo"] is False
+
+
 def test_una_raiz_que_no_existe_es_error_de_uso(tmp_path):
     report = impacted.analyze(str(tmp_path / "no-existe"))
     assert report["range_error"]
