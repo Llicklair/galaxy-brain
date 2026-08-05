@@ -398,6 +398,16 @@ es la que el usuario pidió, así que se construye entera o no se construye.
 > (la fundacional del 5-ago, pisada por la tirada de las 00:15, se restauró de la lectura de
 > sesión y está marcada `_nota`). Con n=3 no se aprende nada; cuando las actas justifiquen una
 > comparación, el ajuste será post-hoc y visible, nunca en el camino caliente (regla 1).
+>
+> **Las tres rebanadas del dataset, construidas (6-ago-2026):** (1) las actas se acumulan;
+> (2) cada acta registra el TEXTO COMPLETO de cada despacho lanzado (`despachos`) — la variante
+> es el texto, no una etiqueta de versión que alguien olvida subir (derivado sobre declarado);
+> (3) `bucle.py --resumen` lee el dataset y devuelve las frecuencias (tiradas · con señal ·
+> adopción ignorada · rechazo corrigió), derivadas solo de lo que hay: las actas v0 sin campo
+> `adopcion` dicen «sin dato», no se rellena con memoria. La cuarta rebanada — girar un tornillo
+> del despacho — no se construye: se hará cuando el resumen muestre una comparación con n
+> suficiente, y la hará quien lea el resumen. Hoy dice: 2 tiradas, ignorada 1/1 con dato,
+> rechazo corrigió 1/1.
 
 ## 5. Encaje en las familias (CLAUDE.md, regla dura 4)
 
