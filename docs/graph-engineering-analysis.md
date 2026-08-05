@@ -1,7 +1,8 @@
 # Graph Engineering — Transcripción y Análisis de Compatibilidad con galaxy-brain
 
 > **Fecha:** 5 de agosto de 2026
-> **Fuente:** Diagrama "Graph Engineering" (cheat sheet)
+> **Fuente:** Diagrama "Graph Engineering" (cheat sheet) — [el original](graph-engineering-diagrama.jpg);
+> la sección I es su transcripción
 > **Contexto:** Análisis de relevancia para [galaxy-brain](../README.md)
 
 ---
