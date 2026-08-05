@@ -314,6 +314,7 @@ def correr(tirada, dir_parches=None, max_reintentos=1, timeout_agente=900):
         "modo": "simulado" if dir_parches else "real",
         "tareas": [t["id"] for t in tirada["tareas"]],
         "entregas": {},          # id_tarea -> [hechos que recibio en el despacho]
+        "despachos": {},         # id_tarea -> [texto COMPLETO de cada lanzamiento]
         "adopcion": {},          # id_tarea -> [llamadas contra la firma vieja]
         "reintentos": 0,
         "veredicto": None,
@@ -333,6 +334,11 @@ def correr(tirada, dir_parches=None, max_reintentos=1, timeout_agente=900):
             if enrutados:
                 acta["entregas"][tarea["id"]] = list(enrutados)
             prompt = componer_prompt(tarea, enrutados)
+            # El despacho entero al acta ANTES de lanzar: la variante del
+            # despacho ES su texto (derivado sobre declarado — una etiqueta de
+            # version se olvida de subir; el texto no puede mentir), y es la
+            # columna del dataset que permitira comparar formatos de despacho.
+            acta["despachos"].setdefault(tarea["id"], []).append(prompt)
             acta["pasos"].append("lanzada %s (%d hecho(s) enrutado(s))"
                                  % (tarea["id"], len(enrutados)))
             if dir_parches:
@@ -358,8 +364,9 @@ def correr(tirada, dir_parches=None, max_reintentos=1, timeout_agente=900):
                                  "exactas:\n" + "\n".join(infracciones))
                         acta["entregas"].setdefault(tarea["id"], []).append(
                             "(rechazo por adopcion)")
-                        ejecutar_real(tarea, wt, componer_prompt(tarea, enrutados, extra),
-                                      timeout_agente)
+                        prompt_rechazo = componer_prompt(tarea, enrutados, extra)
+                        acta["despachos"].setdefault(tarea["id"], []).append(prompt_rechazo)
+                        ejecutar_real(tarea, wt, prompt_rechazo, timeout_agente)
                         nuevos = derivar_hechos(wt, firmas_base)
                         restantes = llamadas_contra_firma_vieja(wt, enrutados)
                         acta["pasos"].append(
@@ -392,8 +399,9 @@ def correr(tirada, dir_parches=None, max_reintentos=1, timeout_agente=900):
             acta["entregas"].setdefault(ultima["id"], []).append("(cola del fallo de union)")
             if dir_parches:
                 break  # en simulado no hay reintento distinto que aplicar
-            ejecutar_real(ultima, wt, componer_prompt(ultima, hechos_acumulados, extra),
-                          timeout_agente)
+            prompt_union = componer_prompt(ultima, hechos_acumulados, extra)
+            acta["despachos"].setdefault(ultima["id"], []).append(prompt_union)
+            ejecutar_real(ultima, wt, prompt_union, timeout_agente)
             acta["pasos"].append("reintento de %s" % ultima["id"])
         # Los diffs se conservan como evidencia; el merge NUNCA es del bucle.
         acta["diffs"] = {}
@@ -414,13 +422,70 @@ def correr(tirada, dir_parches=None, max_reintentos=1, timeout_agente=900):
     return acta
 
 
+def resumen_actas(dir_actas=None):
+    """La lectura del dataset: una linea por tirada y las frecuencias que
+    justifican (o no) girar un tornillo del harness. Solo deriva de lo que hay:
+    las actas v0 no tienen campo `adopcion` y se dice `sin dato`, no se inventa.
+    Post-hoc y determinista: este es el unico sitio desde el que algun dia se
+    'aprende', y nunca esta en el camino de una tirada."""
+    dir_actas = dir_actas or os.path.join(RAIZ, ".claude", "actas")
+    nombres = sorted(os.listdir(dir_actas)) if os.path.isdir(dir_actas) else []
+    lineas, n, con_senal, ignoradas, con_dato, corrigio, rechazos = [], 0, 0, 0, 0, 0, 0
+    for nombre in nombres:
+        if not nombre.endswith(".json"):
+            continue
+        try:
+            with io.open(os.path.join(dir_actas, nombre), encoding="utf-8") as fh:
+                acta = json.load(fh)
+        except (OSError, ValueError):
+            lineas.append("  %s: ilegible" % nombre)
+            continue
+        n += 1
+        senal = any(not h.startswith("(")
+                    for hs in acta.get("entregas", {}).values() for h in hs)
+        con_senal += 1 if senal else 0
+        adopcion = acta.get("adopcion")
+        if adopcion is None:
+            estado = "adopcion: sin dato (acta v0)"
+        else:
+            con_dato += 1
+            total = sum(len(v) for v in adopcion.values())
+            if total:
+                ignoradas += 1
+                hubo_rechazo = any("por adopcion" in p for p in acta.get("pasos", []))
+                rechazos += 1 if hubo_rechazo else 0
+                limpio = any("por adopcion: limpio" in p for p in acta.get("pasos", []))
+                corrigio += 1 if limpio else 0
+                estado = "adopcion: %d infraccion(es)%s" % (
+                    total, ", rechazo corrigio" if limpio else
+                    (", rechazo NO corrigio" if hubo_rechazo else ""))
+            else:
+                estado = "adopcion: limpia"
+        lineas.append("  %s · %s · %s · señal: %s · %s · reintentos: %d%s"
+                      % (acta.get("inicio", "?"), acta.get("modo", "?"),
+                         acta.get("veredicto", "?"), "si" if senal else "no", estado,
+                         acta.get("reintentos", 0),
+                         " · restaurada" if "_nota" in acta else ""))
+    cabecera = "%d tirada(s) · %d con señal · adopcion ignorada %d/%d (con dato) · " \
+               "rechazo corrigio %d/%d" % (n, con_senal, ignoradas, con_dato,
+                                           corrigio, rechazos)
+    return "\n".join([cabecera] + lineas)
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description="el bucle: orquestador determinista sobre gb")
-    parser.add_argument("tirada", help="JSON con las tareas de la tirada")
+    parser.add_argument("tirada", nargs="?", help="JSON con las tareas de la tirada")
     parser.add_argument("--simula", metavar="DIR",
                         help="ejecutor simulado: DIR con <id>.diff por tarea (sin cuota)")
+    parser.add_argument("--resumen", action="store_true",
+                        help="leer el dataset de actas: frecuencias y una linea por tirada")
     parser.add_argument("--timeout-agente", type=int, default=900)
     args = parser.parse_args(argv)
+    if args.resumen:
+        print(resumen_actas())
+        return 0
+    if not args.tirada:
+        parser.error("hace falta la tirada (o --resumen)")
     with io.open(args.tirada, encoding="utf-8") as fh:
         tirada = json.load(fh)
     acta = correr(tirada, dir_parches=args.simula, timeout_agente=args.timeout_agente)

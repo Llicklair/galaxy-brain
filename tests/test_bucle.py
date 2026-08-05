@@ -207,3 +207,71 @@ def test_cada_inicio_da_un_acta_distinta_y_ninguna_pisa_a_otra():
     assert a != b
     assert a.endswith(os.path.join(".claude", "actas", "bucle-20260805-224012.json"))
     assert b.endswith(os.path.join(".claude", "actas", "bucle-20260806-001534.json"))
+
+
+def test_el_acta_registra_el_despacho_entero_de_cada_lanzamiento(monkeypatch, tmp_path):
+    """La variante del despacho ES su texto (derivado sobre declarado: una
+    etiqueta de version se olvida de subir; el texto no miente). Sin esta
+    columna, el dataset de actas no puede comparar formatos de despacho."""
+    monkeypatch.setattr(bucle, "RAIZ", str(tmp_path))
+    monkeypatch.setattr(bucle, "preparar_worktree", lambda i: str(tmp_path / i))
+    monkeypatch.setattr(bucle, "quitar_worktree", lambda r: None)
+    firmas = iter([{"m.f": "(a)"}, {"m.f": "(a, b)"}, {"m.f": "(a, b)"}])
+    monkeypatch.setattr(bucle, "firmas_de", lambda r: next(firmas))
+    monkeypatch.setattr(bucle, "ejecutar_simulado", lambda t, w, d: None)
+    monkeypatch.setattr(bucle, "llamadas_contra_firma_vieja", lambda w, h: [])
+    monkeypatch.setattr(bucle, "veredicto_union", lambda: (0, True, [], "ok"))
+    monkeypatch.setattr(bucle, "_corre", lambda *a, **k: (0, b"", b""))
+    tirada = {"tareas": [{"id": "A", "prompt": "rompe la firma"},
+                         {"id": "B", "prompt": "haz tests", "depende_de": ["A"]}]}
+
+    acta = bucle.correr(tirada, dir_parches="da-igual")
+
+    assert acta["despachos"]["A"] and "rompe la firma" in acta["despachos"]["A"][0]
+    assert "SEÑAL DEL ENRUTADOR" in acta["despachos"]["B"][0]
+    assert "m.f: (a) -> (a, b)" in acta["despachos"]["B"][0]
+
+
+# --- resumen: la lectura del dataset, derivada de lo que hay ------------------
+
+def _acta_minima(**extra):
+    base = {"inicio": "2026-08-05 22:40:12", "modo": "real", "veredicto": "roja",
+            "reintentos": 1, "entregas": {"B": ["m.f: (a) -> (a, b)"]}, "pasos": []}
+    base.update(extra)
+    return base
+
+
+def test_el_resumen_dice_sin_dato_para_actas_v0_y_no_inventa(tmp_path):
+    import json
+    (tmp_path / "bucle-1.json").write_text(json.dumps(_acta_minima()), encoding="utf-8")
+    texto = bucle.resumen_actas(str(tmp_path))
+    assert "sin dato (acta v0)" in texto
+    assert "adopcion ignorada 0/0" in texto
+
+
+def test_el_resumen_cuenta_el_rechazo_que_corrige(tmp_path):
+    import json
+    acta = _acta_minima(
+        veredicto="verde",
+        adopcion={"B": ["t.py:20: f(2 posicional(es)) no encaja en la firma nueva (a, b)"]},
+        pasos=["adopcion de B: 1 llamada(s) contra la señal",
+               "reintento de B por adopcion: limpio"])
+    (tmp_path / "bucle-2.json").write_text(json.dumps(acta, ensure_ascii=False),
+                                           encoding="utf-8")
+    texto = bucle.resumen_actas(str(tmp_path))
+    assert "adopcion ignorada 1/1" in texto
+    assert "rechazo corrigio 1/1" in texto
+
+
+def test_el_resumen_no_confunde_la_senal_con_las_marcas_del_bucle(tmp_path):
+    """'(cola del fallo de union)' y '(rechazo por adopcion)' son marcas del
+    propio bucle, no hechos enrutados: un acta que solo tenga esas no cuenta
+    como despacho con señal."""
+    import json
+    acta = _acta_minima(entregas={"B": ["(cola del fallo de union)"]})
+    (tmp_path / "bucle-3.json").write_text(json.dumps(acta), encoding="utf-8")
+    assert "1 tirada(s) · 0 con señal" in bucle.resumen_actas(str(tmp_path))
+
+
+def test_el_resumen_de_un_directorio_vacio_no_peta(tmp_path):
+    assert "0 tirada(s)" in bucle.resumen_actas(str(tmp_path / "no-existe"))
