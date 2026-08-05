@@ -1590,6 +1590,19 @@ def _graph_gate(report):
             % (report.get("boundaries_path"), report["boundaries_elsewhere"])
         )
         return 1
+    # Y la variante con reglas cargadas: DOS fuentes de reglas en el mismo
+    # proyecto. La segunda no se esta aplicando, y tragarsela en silencio es el
+    # mismo verde mudo con mejor disfraz — crees que TODAS tus fronteras estan
+    # comprobadas y la mitad no lo esta. Config rota = falla siempre, como las
+    # reglas malformadas. (Un subproyecto anidado con su fichero NO entra aqui:
+    # _boundaries_elsewhere lo salta — sus fronteras son suyas.)
+    if report.get("boundaries_elsewhere"):
+        sys.stderr.write(
+            "[gb graph] hay DOS ficheros de reglas: se aplica %s pero tambien existe "
+            "%s, que NO se esta aplicando. Fusionalos o borra uno.\n"
+            % (report.get("boundaries_path"), report["boundaries_elsewhere"])
+        )
+        return 1
     # Mismo motivo, un escalon antes: si la raiz no esta, o no quedo NI UN modulo
     # que analizar, esta gate no comprueba nada. Verde aqui seria falsa cobertura
     # permanente — un typo en la ruta del hook y no vuelve a mirar jamas.

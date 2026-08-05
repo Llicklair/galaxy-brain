@@ -435,6 +435,16 @@ def render_graph(report, style):
                         YELLOW,
                     )
                 )
+        if report.get("boundaries") and report.get("boundaries_elsewhere"):
+            # Antes este aviso solo salia en la rama de cero reglas: con reglas
+            # cargadas, el segundo fichero se tragaba en silencio.
+            lines.append(
+                style(
+                    "  AVISO: tambien existe %s y NO se esta aplicando — dos fuentes "
+                    "de reglas; fusionalas o borra una" % report["boundaries_elsewhere"],
+                    YELLOW,
+                )
+            )
         for m in report.get("malformed_boundaries", []):
             lines.append(style("  AVISO: linea de regla no valida (ignorada): `%s`" % m, YELLOW))
         for u in report.get("unmatched_rules", []):

@@ -389,3 +389,58 @@ def test_cli_gate_falla_con_cruce_y_pasa_sin_el(tmp_path):
     assert cli.main(["graph", root, "--gate", "--color", "never"]) == 1
     _write(root, "app/web.py", "X = 1\n")  # respeta la regla
     assert cli.main(["graph", root, "--gate", "--color", "never"]) == 0
+
+
+# --- los dos verdes mudos del gate, cerrados (5-ago-2026) --------------------
+
+def test_un_fichero_hondo_ya_no_deja_el_gate_en_verde_mudo(tmp_path):
+    """A profundidad >=3 el fichero no se carga (fuera del alcance declarado de
+    find_boundaries), pero ahora SE DENUNCIA: elsewhere lo localiza y el gate
+    falla. Antes: boundaries 0, elsewhere None, exit 0 — dfbe9ab un nivel mas
+    abajo."""
+    root = str(tmp_path)
+    _write(root, "a/b/c/.gb-boundaries", "pkg.x -/-> pkg.y\n")
+    _write(root, "a/b/c/pkg/__init__.py", "")
+    _write(root, "a/b/c/pkg/x.py", "from pkg import y\n")
+    _write(root, "a/b/c/pkg/y.py", "")
+
+    report = graph.analyze(root)
+    assert report["boundaries"] == 0
+    assert report["boundaries_elsewhere"] == os.path.join(
+        root, "a", "b", "c", graph.BOUNDARIES_FILE)
+    assert cli._graph_gate(report) == 1
+
+
+def test_dos_fuentes_de_reglas_tumban_el_gate_aunque_no_haya_cruce(tmp_path):
+    """Con reglas cargadas Y un segundo fichero sin aplicar, el verde decia
+    "todas tus fronteras comprobadas" con la mitad sin mirar. Config rota =
+    falla siempre, como las reglas malformadas; y el texto lo dice."""
+    root = str(tmp_path)
+    _write(root, ".gb-boundaries", "modA -/-> modB\n")
+    _write(root, "src/.gb-boundaries", "src.pkg.a -/-> src.pkg.b\n")
+    _write(root, "modA.py", "")   # sin import: ningun cruce
+    _write(root, "modB.py", "")
+
+    report = graph.analyze(root)
+    assert report["violations"] == []
+    assert report["boundaries"] == 1
+    assert report["boundaries_elsewhere"] == os.path.join(root, "src", graph.BOUNDARIES_FILE)
+    assert cli._graph_gate(report) == 1
+    assert "NO se esta aplicando" in _plain(report)
+
+
+def test_las_fronteras_de_un_subproyecto_anidado_no_son_asunto_nuestro(tmp_path):
+    """El guardia del falso positivo: un subproyecto anidado con su propio
+    fichero de reglas NO se denuncia — sus fronteras son suyas. Denunciarlo
+    tumbaria el gate del padre por un fichero que jamas debio aplicar, y ese
+    falso positivo es el camino directo a --no-verify."""
+    root = str(tmp_path)
+    _write(root, ".gb-boundaries", "modA -/-> modB\n")
+    _write(root, "modA.py", "")
+    _write(root, "modB.py", "")
+    _write(root, "vendorizado/pyproject.toml", "[project]\nname='otro'\n")
+    _write(root, "vendorizado/.gb-boundaries", "x -/-> y\n")
+
+    report = graph.analyze(root)
+    assert report["boundaries_elsewhere"] is None
+    assert cli._graph_gate(report) == 0

@@ -517,12 +517,22 @@ def _boundaries_elsewhere(root, consultado, max_arriba=3):
             break
         actual = padre
 
+    # Hacia abajo: el arbol PROPIO entero (podado), no un solo nivel. Un fichero
+    # a profundidad >=3 ni se encontraba ni se denunciaba: gate a 0 con un
+    # fichero de reglas entero sin aplicar — el modo de fallo de dfbe9ab
+    # sobreviviendo un nivel mas abajo (hallado por la tirada de agentes del
+    # 5-ago-2026). Los subproyectos anidados se SALTAN: sus fronteras son suyas,
+    # y denunciarlas aqui fabricaria el falso positivo que acaba en --no-verify.
     try:
-        for nombre in sorted(os.listdir(root)):
-            sub = os.path.join(root, nombre)
-            if nombre.startswith(".") or nombre in DEFAULT_SKIP or not os.path.isdir(sub):
-                continue
-            candidatos.append(os.path.join(sub, BOUNDARIES_FILE))
+        for dirpath, dirs, files in os.walk(root):
+            dirs[:] = sorted(
+                d for d in dirs
+                if d not in DEFAULT_SKIP
+                and not d.startswith(".")
+                and not _is_nested_project(os.path.join(dirpath, d))
+            )
+            if BOUNDARIES_FILE in files:
+                candidatos.append(os.path.join(dirpath, BOUNDARIES_FILE))
     except OSError:
         pass
 
