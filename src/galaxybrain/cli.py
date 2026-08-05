@@ -1346,7 +1346,19 @@ def cmd_tests(args):
     from . import impacted
 
     root = os.path.abspath(args.path or ".")
-    report = impacted.analyze(root, args.range, staged=args.staged)
+
+    if getattr(args, "union", False):
+        if not args.run:
+            sys.stderr.write("[gb tests] --union ejecuta suites: pide --run explicitamente\n")
+            return 2
+        if args.staged or args.range:
+            sys.stderr.write("[gb tests] --union mira los worktrees registrados, "
+                             "no un rango ni el indice\n")
+            return 2
+        return _corre_union(root)
+
+    report = impacted.analyze(root, args.range, staged=args.staged,
+                              worktree=args.worktree)
     if args.json:
         emit(json.dumps(report, ensure_ascii=False, indent=2))
     else:
@@ -1360,6 +1372,10 @@ def cmd_tests(args):
     ficheros = report.get("tests") or []
     if not ficheros:
         return 0
+
+    if getattr(args, "isolated", False):
+        return _corre_aislado(root, ficheros, staged=args.staged)
+
     # `-p no:cacheprovider` no: cambiar el entorno de la suite del usuario para
     # que nuestro atajo quede mas limpio es exactamente lo que un arnes no hace.
     cmd = [sys.executable, "-m", "pytest"] + ficheros
@@ -1370,6 +1386,109 @@ def cmd_tests(args):
     except OSError as error:
         emit("no se pudo lanzar pytest: %s" % error)
         return 1
+
+
+def _corre_union(root):
+    """`tests --run --union`: N ramas en paralelo, cada una sola y luego juntas.
+
+    Lo que se lee primero no es el verde: es quien NO se sostiene solo. Un merge
+    verde con una rama rota debajo es el fallo que se midio y que nadie ve mirando
+    solo el resultado del merge.
+    """
+    from . import aislado
+
+    informe = aislado.converge(root, traza=emit)
+
+    if not informe["monto"]:
+        emit(informe["motivo"] or "no se pudo verificar")
+        return informe["veredicto"]
+
+    emit("")
+    for rama in informe["ramas"]:
+        marca = "ok" if rama["veredicto"] == 0 else "ROJA"
+        extra = ""
+        if rama["ausentes"]:
+            extra = " (%d test(s) no viajan)" % len(rama["ausentes"])
+        elif rama["motivo"]:
+            extra = " (%s)" % rama["motivo"]
+        emit("  %-6s %s%s" % (marca, rama["nombre"], extra))
+
+    union = informe["union"]
+    if union is None:
+        emit("")
+        emit(informe["motivo"])
+    else:
+        marca = "ok" if union["veredicto"] == 0 else "ROJA"
+        emit("  %-6s union%s" % (marca, (" (%s)" % union["motivo"]) if union["motivo"] else ""))
+
+    if informe["rescatados"]:
+        emit("")
+        emit("RESCATE ACCIDENTAL: la union pasa, pero estas ramas no se sostienen solas:")
+        for nombre in informe["rescatados"]:
+            emit("  %s" % nombre)
+        emit("su verde lo puso otra rama, no su propio trabajo.")
+
+    return informe["veredicto"]
+
+
+def _corre_aislado(root, ficheros, staged=False):
+    """`tests --run --isolated`: el verde vale sobre el diff, no sobre tu copia.
+
+    Si no se pudo montar el arbol limpio NO se cae al modo normal: un verde de
+    consolacion sobre el arbol sucio es justo el falso positivo que este modo
+    existe para matar. Se dice por que y se sale distinto de cero.
+    """
+    from . import aislado
+
+    emit("")
+    informe = aislado.verifica(root, ficheros, staged=staged, traza=emit)
+
+    if not informe["monto"]:
+        emit("no se pudo verificar en limpio: %s" % informe["motivo"])
+        return 1
+
+    fuera = informe["sin_trackear"]
+    if fuera:
+        emit("")
+        emit("%d fichero(s) sin trackear NO viajan en el diff:" % len(fuera))
+        for rel in fuera[:10]:
+            emit("  %s" % rel)
+        if len(fuera) > 10:
+            emit("  ... y %d mas" % (len(fuera) - 10))
+
+    if informe["ausentes"]:
+        emit("")
+        emit("%d fichero(s) de test no existen en el arbol limpio (git add?):"
+             % len(informe["ausentes"]))
+        for rel in informe["ausentes"]:
+            emit("  %s" % rel)
+        emit("verificacion INCOMPLETA: lo que si corrio no cubre el cambio entero")
+
+    if informe["motivo"]:
+        emit(informe["motivo"])
+    return informe["veredicto"]
+
+
+def cmd_delta(args):
+    """Los errores clásicos que añadió el cambio. Sale 0 SIEMPRE si pudo mirar.
+
+    Son proxies, y gatear proxies fabrica los falsos positivos que acaban en
+    `--no-verify` (regla 11). Lo que las hace inevitables no es bloquear: es que
+    salgan delante de quien decide sin tener que acordarse de pedirlas.
+    """
+    from . import delta as delta_mod
+
+    root = os.path.abspath(args.path or ".")
+    report = delta_mod.analyze(root, args.range, staged=args.staged, worktree=args.worktree)
+    if args.json:
+        emit(json.dumps(report, ensure_ascii=False, indent=2))
+    else:
+        salida = render.render_delta(report, _style(args), brief=args.brief)
+        # En modo hook, callar cuando no hay nada: una linea que siempre dice
+        # "nada" deja de leerse, y con ella las que si traen algo.
+        if salida and not (args.brief and not delta_mod.total(report)):
+            emit(salida)
+    return 1 if report["range_error"] else 0
 
 
 def cmd_memory(args):
@@ -1719,13 +1838,39 @@ def build_parser():
         help="mirar el indice en vez de un rango (lo unico correcto en un pre-commit)",
     )
     tests_p.add_argument(
+        "--worktree", action="store_true",
+        help="lo que hay escrito en disco vs HEAD (el estado de en medio de una edicion)",
+    )
+    tests_p.add_argument(
         "--run", action="store_true",
         help="ejecutar pytest con la seleccion (por defecto solo la lista: decidir es tuyo)",
+    )
+    tests_p.add_argument(
+        "--isolated", action="store_true",
+        help="con --run: correrlos sobre un arbol limpio de HEAD + tu diff, no sobre tu copia",
+    )
+    tests_p.add_argument(
+        "--union", action="store_true",
+        help="con --run: verifica cada worktree con cambios por separado y luego su union",
     )
     tests_p.add_argument("--brief", action="store_true", help="una linea, para hooks")
     tests_p.add_argument("--json", action="store_true", help="salida cruda")
     tests_p.add_argument("--color", choices=("auto", "always", "never"), default="auto")
     tests_p.set_defaults(func=cmd_tests)
+
+    delta_p = subparsers.add_parser(
+        "delta", help="que errores clasicos ANADIO este cambio (informa, no bloquea)"
+    )
+    delta_p.add_argument("range", nargs="?", default=None,
+                         help="rango git (por defecto HEAD~1..HEAD)")
+    delta_p.add_argument("path", nargs="?", default=".", help="raiz del proyecto (por defecto .)")
+    delta_p.add_argument("--staged", action="store_true", help="el indice en vez de un rango")
+    delta_p.add_argument("--worktree", action="store_true",
+                         help="lo escrito en disco vs HEAD (en medio de una edicion)")
+    delta_p.add_argument("--brief", action="store_true", help="una linea, para hooks")
+    delta_p.add_argument("--json", action="store_true", help="salida cruda")
+    delta_p.add_argument("--color", choices=("auto", "always", "never"), default="auto")
+    delta_p.set_defaults(func=cmd_delta)
 
     floor_p = subparsers.add_parser(
         "floor", help="el andamiaje base: que hay y que falta antes de construir"

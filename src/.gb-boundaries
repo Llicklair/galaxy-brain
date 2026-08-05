@@ -42,3 +42,6 @@ galaxybrain.impacted  -/->  galaxybrain.viz
 galaxybrain.delta     -/->  galaxybrain.cli
 galaxybrain.delta     -/->  galaxybrain.render
 galaxybrain.delta     -/->  galaxybrain.viz
+galaxybrain.aislado   -/->  galaxybrain.cli
+galaxybrain.aislado   -/->  galaxybrain.render
+galaxybrain.aislado   -/->  galaxybrain.viz
