@@ -649,3 +649,42 @@ def test_un_diff_de_solo_borrado_no_se_confunde_con_el_fichero_entero(tmp_path):
     assert "TEST_FILE_DELETED" not in senales
     assert {"TEST_REMOVED", "ASSERT_REMOVED"} <= senales
     assert report["test_files_changed"] == 1
+
+def test_el_rename_puro_fuera_del_patron_de_tests_sale():
+    """Un rename sin cambio de contenido no emite ---/+++ (git solo escribe
+    rename from/to): renombrar un fichero de tests fuera del patron era la via
+    silenciosa de perder la suite entera sin borrar una linea."""
+    diff = (
+        "diff --git a/tests/test_util.py b/galaxybrain/util_probado.py\n"
+        "similarity index 100%\n"
+        "rename from tests/test_util.py\n"
+        "rename to galaxybrain/util_probado.py\n"
+    )
+    senales = changes.test_signals(changes.parse_diff(diff))
+    assert [s["signal"] for s in senales] == ["TEST_FILE_RENAMED_OUT"]
+    assert "galaxybrain/util_probado.py" in senales[0]["detail"]
+
+
+def test_el_rename_dentro_del_patron_de_tests_no_levanta_nada():
+    diff = (
+        "diff --git a/tests/test_a.py b/tests/test_b.py\n"
+        "similarity index 100%\n"
+        "rename from tests/test_a.py\n"
+        "rename to tests/test_b.py\n"
+    )
+    assert changes.test_signals(changes.parse_diff(diff)) == []
+
+
+def test_la_linea_borrada_que_empieza_por_dos_guiones_se_cuenta():
+    """El contenido "-- ..." borrado sale en el diff como "---...": el filtro
+    antiguo lo confundia con la cabecera y lo infracontaba."""
+    diff = (
+        "diff --git a/tests/test_sql.py b/tests/test_sql.py\n"
+        "--- a/tests/test_sql.py\n"
+        "+++ b/tests/test_sql.py\n"
+        "@@ -1,2 +1,1 @@\n"
+        "-consulta = 1\n"
+        "--- comentario sql borrado\n"
+    )
+    removed = changes.parse_diff(diff)["tests/test_sql.py"]["removed"]
+    assert "-- comentario sql borrado" in removed

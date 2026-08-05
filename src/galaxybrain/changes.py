@@ -149,11 +149,17 @@ def parse_diff(text):
     Solo ficheros de test. Se siguen las DOS cabeceras (`--- a/` y `+++ b/`) porque
     un fichero borrado entero sale como `+++ /dev/null`: mirando solo la `+++` se
     perdia el caso mas grave, que es justamente eliminar el fichero de pruebas.
+
+    Un rename PURO no emite cabeceras `---`/`+++` (git solo escribe `rename
+    from/to`): sin leerlas, renombrar un fichero de tests fuera del patron de
+    tests era una via silenciosa de perder la suite entera. Sale como
+    `renamed_to` y test_signals lo señala.
     """
     files = {}
     current = None
     section = None
     old_path = None
+    rename_from = None
     for line in (text or "").split("\n"):
         hunk = _HUNK.match(line)
         if hunk is not None:
@@ -161,11 +167,26 @@ def parse_diff(text):
                 section = {"func": hunk.group(1).strip(), "added": [], "removed": []}
                 current["sections"].append(section)
             continue
-        if line.startswith("--- "):
+        if line.startswith("diff --git "):
+            # Frontera entre ficheros: lo que siga es cabecera, no contenido.
+            section = None
+            continue
+        if line.startswith("rename from "):
+            rename_from = line[len("rename from "):].strip()
+            continue
+        if line.startswith("rename to ") and rename_from:
+            destino = line[len("rename to "):].strip()
+            if TEST_FILE.search(rename_from) and not TEST_FILE.search(destino):
+                files.setdefault(rename_from, {
+                    "added": [], "removed": [], "deleted": False, "sections": []
+                })["renamed_to"] = destino
+            rename_from = None
+            continue
+        if line.startswith("--- ") and _es_cabecera(line, section):
             target = line[4:].strip()
             old_path = None if target == "/dev/null" else re.sub(r"^a/", "", target)
             continue
-        if line.startswith("+++ "):
+        if line.startswith("+++ ") and _es_cabecera(line, section):
             target = line[4:].strip()
             if target == "/dev/null":
                 path, deleted = old_path, True
@@ -182,16 +203,27 @@ def parse_diff(text):
             continue
         if current is None:
             continue
-        # Se descartan los marcadores del propio diff (+++/---), ya tratados arriba.
-        if line.startswith("+") and not line.startswith("+++"):
+        # Las cabeceras reales ya se consumieron arriba: un "+++"/"---" que
+        # llega aqui es contenido cuyo texto empieza por "++"/"--" (antes se
+        # infracontaba, p. ej. un comentario SQL borrado).
+        if line.startswith("+"):
             current["added"].append(line[1:])
             if section is not None:
                 section["added"].append(line[1:])
-        elif line.startswith("-") and not line.startswith("---"):
+        elif line.startswith("-"):
             current["removed"].append(line[1:])
             if section is not None:
                 section["removed"].append(line[1:])
     return files
+
+
+def _es_cabecera(line, section):
+    """¿Este `--- `/`+++ ` es cabecera de fichero o contenido que empieza por
+    `--`/`++`? Fuera de un hunk siempre es cabecera; dentro, solo si el objetivo
+    tiene forma de ruta de diff (`a/…`, `b/…`, `/dev/null`)."""
+    target = line[4:].strip()
+    return (section is None or target == "/dev/null"
+            or re.match(r"^[ab]/", target) is not None)
 
 
 def _hunks_py(text):
@@ -282,7 +314,17 @@ def test_signals(files):
         removed_defs = [l for l in removed if _matches(TEST_DEF, l)]
         added_defs = [l for l in added if _matches(TEST_DEF, l)]
 
-        if data.get("deleted"):
+        if data.get("renamed_to"):
+            flags.append(
+                {
+                    "file": path,
+                    "signal": "TEST_FILE_RENAMED_OUT",
+                    "detail": "renombrado a %s, fuera del patron de tests: "
+                              "el runner deja de recogerlo" % data["renamed_to"],
+                    "evidence": [],
+                }
+            )
+        elif data.get("deleted"):
             flags.append(
                 {
                     "file": path,
