@@ -11,8 +11,11 @@ un LLM, pero si obliga a un bucle. Los nodos (agentes) son estocasticos; el
 determinismo va en las aristas:
 
     preparar -> lanzar A -> DERIVAR hechos de su diff -> ENRUTAR en el despacho
-    de B -> aterrizar con `gb tests --run --union` -> decidir (verde: acta y
-    parar; roja: UN reintento con el fallo como hecho) -> acta SIEMPRE.
+    de B -> VERIFICAR la adopcion en el diff de B (v1: estatico, antes de la
+    union; si escribio contra la firma vieja, el bucle RECHAZA y reintenta con
+    las llamadas exactas) -> aterrizar con `gb tests --run --union` -> decidir
+    (verde: acta y parar; roja: UN reintento con el fallo como hecho) -> acta
+    SIEMPRE.
 
 Nunca mergea (regla de trabajo: los bucles no mergean; el merge lo dirige un
 humano). El acta registra que hecho se entrego a quien: con ese registro, una
@@ -28,6 +31,8 @@ Ejecutores de agente:
 """
 
 import argparse
+import ast
+import inspect
 import io
 import json
 import os
@@ -100,6 +105,119 @@ def derivar_hechos(worktree, firmas_base):
     que son del orquestador. Lo cazo el primer test del bucle.
     """
     return hechos_entre(firmas_base, firmas_de(worktree))
+
+
+def _signature_de(sig_texto):
+    """`inspect.Signature` desde el texto de firma de gb, o None si no se puede.
+    Los valores por defecto se sustituyen por None antes de compilar: solo
+    importa la forma (aridad, nombres), nunca evaluar expresiones ajenas."""
+    try:
+        arbol = ast.parse("def _f%s: pass" % sig_texto)
+        argumentos = arbol.body[0].args
+        for lista in (argumentos.defaults, argumentos.kw_defaults):
+            for i, valor in enumerate(lista):
+                if valor is not None:
+                    lista[i] = ast.copy_location(ast.Constant(None), valor)
+        espacio = {}
+        exec(compile(ast.fix_missing_locations(arbol), "<firma>", "exec"), {}, espacio)
+        return inspect.signature(espacio["_f"])
+    except Exception:
+        return None
+
+
+def firma_admite(sig_texto, n_posicionales, nombres_kw, posible_metodo=False):
+    """True si una llamada con esos argumentos encaja en la firma. Conservadora:
+    firma ilegible admite (no se acusa sobre lo que no se puede verificar,
+    CLAUDE.md regla 9). `posible_metodo` prueba tambien con un self implicito."""
+    firma = _signature_de(sig_texto)
+    if firma is None:
+        return True
+    kwargs = {nombre: None for nombre in nombres_kw}
+    for extra in ((0, 1) if posible_metodo else (0,)):
+        try:
+            firma.bind(*([None] * (n_posicionales + extra)), **kwargs)
+            return True
+        except TypeError:
+            continue
+    return False
+
+
+def lineas_anadidas(worktree):
+    """fichero -> lineas nuevas segun `git diff HEAD -U0` del worktree. El
+    `add -N` mete los ficheros recien creados en el diff sin stagearlos."""
+    _corre(["git", "add", "-N", "."], cwd=worktree)
+    rc, salida, _ = _corre(["git", "diff", "HEAD", "-U0"], cwd=worktree)
+    mapa, fichero = {}, None
+    for linea in _texto(salida).splitlines():
+        if linea.startswith("+++ b/"):
+            fichero = linea[6:].strip()
+        elif linea.startswith("+++ "):
+            fichero = None
+        elif linea.startswith("@@ ") and fichero:
+            m = re.search(r"\+(\d+)(?:,(\d+))?", linea)
+            if m:
+                inicio, cuantas = int(m.group(1)), int(m.group(2) or "1")
+                mapa.setdefault(fichero, set()).update(range(inicio, inicio + cuantas))
+    return mapa
+
+
+def llamadas_contra_firma_vieja(worktree, hechos):
+    """Las llamadas AÑADIDAS por el agente que no encajan en la firma nueva del
+    hecho entregado — la verificacion de adopcion de v1: estatica, sin modelo,
+    antes de la union. Devuelve las infracciones (fichero:linea y por que), no
+    un veredicto: son la señal exacta del rechazo. `*args`/`**kw` no se acusan."""
+    objetivos = {}
+    for hecho in hechos:
+        try:
+            qual, resto = hecho.split(": ", 1)
+            _, nueva = resto.split(" -> ", 1)
+        except ValueError:
+            continue
+        objetivos[qual.rsplit(".", 1)[-1]] = (qual, nueva)
+    if not objetivos:
+        return []
+    infracciones = []
+    for fichero, lineas in sorted(lineas_anadidas(worktree).items()):
+        if not fichero.endswith(".py"):
+            continue
+        try:
+            with io.open(os.path.join(worktree, fichero), encoding="utf-8",
+                         errors="replace") as fh:
+                arbol = ast.parse(fh.read())
+        except (OSError, SyntaxError):
+            continue
+        for nodo in ast.walk(arbol):
+            if not isinstance(nodo, ast.Call):
+                continue
+            fn = nodo.func
+            nombre = fn.id if isinstance(fn, ast.Name) else (
+                fn.attr if isinstance(fn, ast.Attribute) else None)
+            if nombre not in objetivos or nodo.lineno not in lineas:
+                continue
+            if any(isinstance(a, ast.Starred) for a in nodo.args) or \
+               any(k.arg is None for k in nodo.keywords):
+                continue
+            qual, nueva = objetivos[nombre]
+            if nueva == "(borrada)":
+                infracciones.append("%s:%d: llama a %s, que la señal da por borrado"
+                                    % (fichero, nodo.lineno, qual))
+                continue
+            nombres_kw = [k.arg for k in nodo.keywords]
+            if not firma_admite(nueva, len(nodo.args), nombres_kw,
+                                posible_metodo=isinstance(fn, ast.Attribute)):
+                infracciones.append(
+                    "%s:%d: %s(%d posicional(es)%s) no encaja en la firma nueva %s"
+                    % (fichero, nodo.lineno, nombre, len(nodo.args),
+                       ", kw: " + ",".join(nombres_kw) if nombres_kw else "", nueva))
+    return infracciones
+
+
+def _reset_worktree(worktree):
+    """Un reintento parte de la base, no del intento fallido: fuera cambios,
+    fuera stage (incluidos los add -N de la verificacion) y fuera ficheros nuevos."""
+    _corre(["git", "reset", "-q", "--"], cwd=worktree)
+    _corre(["git", "checkout", "--", "."], cwd=worktree)
+    _corre(["git", "clean", "-fd"], cwd=worktree)
 
 
 def ejecutar_simulado(tarea, worktree, dir_parches):
@@ -185,6 +303,7 @@ def correr(tirada, dir_parches=None, max_reintentos=1, timeout_agente=900):
         "modo": "simulado" if dir_parches else "real",
         "tareas": [t["id"] for t in tirada["tareas"]],
         "entregas": {},          # id_tarea -> [hechos que recibio en el despacho]
+        "adopcion": {},          # id_tarea -> [llamadas contra la firma vieja]
         "reintentos": 0,
         "veredicto": None,
         "lectura_ramas": {},
@@ -211,9 +330,37 @@ def correr(tirada, dir_parches=None, max_reintentos=1, timeout_agente=900):
                 ejecutar_real(tarea, wt, prompt, timeout_agente)
             nuevos = derivar_hechos(wt, firmas_base)
             acta["pasos"].append("derivados de %s: %s" % (tarea["id"], nuevos or "nada"))
+            # v1: verificar la adopcion ANTES de la union. El bucle ya conoce el
+            # hecho entregado; si el diff del receptor llama contra la firma
+            # vieja, el rechazo es del bucle — la señal que si obliga.
+            if enrutados:
+                infracciones = llamadas_contra_firma_vieja(wt, enrutados)
+                if infracciones:
+                    acta["adopcion"][tarea["id"]] = list(infracciones)
+                    acta["pasos"].append("adopcion de %s: %d llamada(s) contra la señal"
+                                         % (tarea["id"], len(infracciones)))
+                    if not dir_parches and acta["reintentos"] < max_reintentos:
+                        acta["reintentos"] += 1
+                        _reset_worktree(wt)
+                        extra = ("RECHAZO DEL BUCLE: tu diff llama contra la firma "
+                                 "VIEJA teniendo la señal delante. Las llamadas "
+                                 "exactas:\n" + "\n".join(infracciones))
+                        acta["entregas"].setdefault(tarea["id"], []).append(
+                            "(rechazo por adopcion)")
+                        ejecutar_real(tarea, wt, componer_prompt(tarea, enrutados, extra),
+                                      timeout_agente)
+                        nuevos = derivar_hechos(wt, firmas_base)
+                        restantes = llamadas_contra_firma_vieja(wt, enrutados)
+                        acta["pasos"].append(
+                            "reintento de %s por adopcion: %s"
+                            % (tarea["id"], "%d infraccion(es) aun" % len(restantes)
+                               if restantes else "limpio"))
+                        if restantes:
+                            acta["adopcion"][tarea["id"]] += \
+                                ["-- tras el reintento --"] + restantes
             hechos_acumulados.extend(h for h in nuevos if h not in hechos_acumulados)
 
-        intento = 0
+        intento = acta["reintentos"]
         while True:
             rc, union_verde, ramas_rojas, cola = veredicto_union()
             acta["pasos"].append("union: %s (exit %d; ramas rojas: %s)"
@@ -228,7 +375,7 @@ def correr(tirada, dir_parches=None, max_reintentos=1, timeout_agente=900):
             acta["reintentos"] = intento
             ultima = tirada["tareas"][-1]
             wt = worktrees[ultima["id"]]
-            _corre(["git", "checkout", "--", "."], cwd=wt)
+            _reset_worktree(wt)
             extra = ("REINTENTO: la union de todos los diffs fallo. Los fallos exactos:\n"
                      + extracto_fallo(cola))
             acta["entregas"].setdefault(ultima["id"], []).append("(cola del fallo de union)")
@@ -242,6 +389,7 @@ def correr(tirada, dir_parches=None, max_reintentos=1, timeout_agente=900):
         for id_tarea, wt in worktrees.items():
             if id_tarea == "base":
                 continue
+            _corre(["git", "add", "-N", "."], cwd=wt)
             rc, diff, _ = _corre(["git", "diff", "HEAD"], cwd=wt)
             acta["diffs"][id_tarea] = _texto(diff)
     finally:

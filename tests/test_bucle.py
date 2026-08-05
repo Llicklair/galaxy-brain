@@ -117,3 +117,80 @@ def test_el_extracto_del_fallo_trae_el_error_no_la_lista_de_ficheros():
 
 def test_sin_lineas_de_error_cae_a_la_cola_y_no_a_vacio():
     assert bucle.extracto_fallo("nada de interes aqui") != ""
+
+
+# --- adopcion (v1): el bucle rechaza el trabajo que ignoro la señal -----------
+
+HECHO_VIVO = "experimento.nucleo.calcula: (a, b) -> (a, b, base)"
+
+
+def test_firma_admite_cuenta_los_argumentos():
+    assert not bucle.firma_admite("(a, b, base)", 2, [])
+    assert bucle.firma_admite("(a, b, base)", 3, [])
+    assert bucle.firma_admite("(a, b, base=10)", 2, [])
+    assert bucle.firma_admite("(a, b, base)", 2, ["base"])
+    assert not bucle.firma_admite("(a, b)", 2, ["inventado"])
+
+
+def test_firma_ilegible_no_acusa():
+    """Regla 9: solo se bloquea sobre hechos. Lo que no se puede verificar, admite."""
+    assert bucle.firma_admite("(esto no es una firma", 5, [])
+
+
+def test_posible_metodo_prueba_el_self_implicito():
+    assert bucle.firma_admite("(self, x)", 1, [], posible_metodo=True)
+    assert not bucle.firma_admite("(self, x)", 1, [])
+
+
+def test_caza_la_llamada_de_la_primera_tirada_en_vivo(worktree_real):
+    """El caso medido el 5-ago: B escribio `calcula(3, 4)` con el hecho
+    (a, b) -> (a, b, base) delante. La verificacion lo encuentra en el diff,
+    estatica y sin modelo, ANTES de la union."""
+    f = worktree_real / "tests" / "test_experimento_uso.py"
+    f.write_text(f.read_text(encoding="utf-8")
+                 + "\nfrom experimento.nucleo import calcula\n\n\n"
+                   "def test_directa():\n    assert calcula(3, 4) == 34\n",
+                 encoding="utf-8")
+    infracciones = bucle.llamadas_contra_firma_vieja(str(worktree_real), [HECHO_VIVO])
+    assert len(infracciones) == 1
+    assert "test_experimento_uso.py" in infracciones[0]
+    assert "(a, b, base)" in infracciones[0]
+
+
+def test_la_llamada_que_adopta_la_firma_nueva_no_se_acusa(worktree_real):
+    f = worktree_real / "tests" / "test_experimento_uso.py"
+    f.write_text(f.read_text(encoding="utf-8")
+                 + "\nfrom experimento.nucleo import calcula\n\n\n"
+                   "def test_directa():\n    assert calcula(3, 4, 10) == 34\n",
+                 encoding="utf-8")
+    assert bucle.llamadas_contra_firma_vieja(str(worktree_real), [HECHO_VIVO]) == []
+
+
+def test_el_fichero_nuevo_tambien_entra_en_el_diff(worktree_real):
+    """Los agentes no commitean: un fichero recien creado solo aparece en el
+    diff gracias al add -N. Sin el, la infraccion escaparia."""
+    nuevo = worktree_real / "tests" / "test_nuevo_del_agente.py"
+    nuevo.write_text("from experimento.nucleo import calcula\n\n\n"
+                     "def test_x():\n    assert calcula(1, 2) == 12\n",
+                     encoding="utf-8")
+    infracciones = bucle.llamadas_contra_firma_vieja(str(worktree_real), [HECHO_VIVO])
+    assert len(infracciones) == 1
+    assert "test_nuevo_del_agente.py" in infracciones[0]
+
+
+def test_llamar_a_lo_borrado_es_infraccion(worktree_real):
+    hecho = "experimento.nucleo.calcula: (a, b) -> (borrada)"
+    f = worktree_real / "tests" / "test_experimento_uso.py"
+    f.write_text(f.read_text(encoding="utf-8")
+                 + "\nfrom experimento.nucleo import calcula\n\n\n"
+                   "def test_directa():\n    assert calcula(3, 4, 10) == 34\n",
+                 encoding="utf-8")
+    infracciones = bucle.llamadas_contra_firma_vieja(str(worktree_real), [hecho])
+    assert len(infracciones) == 1
+    assert "borrado" in infracciones[0]
+
+
+def test_las_llamadas_viejas_no_tocadas_no_se_acusan(worktree_real):
+    """experimento/capa.py llama a calcula con la firma vieja en la base — pero
+    el agente no lo toco, asi que no es suyo y no se acusa."""
+    assert bucle.llamadas_contra_firma_vieja(str(worktree_real), [HECHO_VIVO]) == []
