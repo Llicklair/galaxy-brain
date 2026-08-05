@@ -45,3 +45,6 @@ galaxybrain.delta     -/->  galaxybrain.viz
 galaxybrain.aislado   -/->  galaxybrain.cli
 galaxybrain.aislado   -/->  galaxybrain.render
 galaxybrain.aislado   -/->  galaxybrain.viz
+galaxybrain.actividad -/->  galaxybrain.cli
+galaxybrain.actividad -/->  galaxybrain.render
+galaxybrain.actividad -/->  galaxybrain.viz

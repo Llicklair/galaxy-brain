@@ -221,9 +221,34 @@ _KIND_COLOR = {
     "module": "#7c3aed",    # violeta — contenedor
     "class": "#f59e0b",     # ambar — destaca
     "function": "#10b981",  # esmeralda
-    "method": "#14b8a6",    # teal
+    # Azul, no teal. El teal (#14b8a6) estaba a ΔE 5,4 del esmeralda en vision
+    # NORMAL — el suelo son 15 — y function+method son la inmensa mayoria de los
+    # nodos, o sea que la nube entera era una mancha verde indistinguible. Medido
+    # el 5-ago-2026 con el validador de paleta; con azul el par sube a ΔE 21,1
+    # (8,9 en protanopia, sobre el suelo de 8).
+    "method": "#60a5fa",    # azul
 }
 _KIND_SIZE = {"module": 13.0, "class": 8.0, "function": 4.0, "method": 3.0}
+
+
+def _en_script(json_texto):
+    """JSON apto para vivir DENTRO de un <script>: '<' viaja como \\u003c.
+
+    Un nombre de worktree o un docstring que contenga '</script>' cerraria la
+    etiqueta y ejecutaria lo que venga detras como HTML. Cazado el 5-ago-2026
+    por el test de inyeccion de la leyenda de agentes; el payload de nodos tenia
+    la MISMA exposicion desde antes (los docstrings viajan en el campo 'd').
+    El reemplazo es JSON valido — \\u003c es el mismo caracter, solo que inerte.
+    """
+    return json_texto.replace("<", "\\u003c")
+
+
+def _rgba(hexa, alfa):
+    """'#e879f9' -> 'rgba(232,121,249,.3)'. Para que la leyenda pueda dibujar el
+    halo con la MISMA transparencia con la que lo pinta el lienzo."""
+    h = hexa.lstrip("#")
+    r, g, b = (int(h[i:i + 2], 16) for i in (0, 2, 4))
+    return "rgba(%d,%d,%d,%s)" % (r, g, b, ("%.2f" % alfa).rstrip("0").rstrip("."))
 
 #: La arista de import. Rosa a proposito: tiene que ser un color que NO esté en
 #: _KIND_COLOR. En la primera version reusé el ámbar de las clases y en la
@@ -259,6 +284,16 @@ _CICLO_ERROR_COLOR = {
 #: nunca un veredicto (regla 9): informa, no bloquea.
 _COLOR_OBRA = "#e879f9"
 
+#: Un color POR AGENTE. "En obra" (fucsia) es un estado del arbol —tocado sin
+#: commitear— y "un agente trabajando aqui" es otra cosa: pintarlas igual daba el
+#: protagonismo a la señal equivocada. Validados a todos los pares el 5-ago-2026:
+#: ΔE 20,6 en vision normal y 8,6 en deuteranopia (suelos 15 y 8).
+_COLOR_AGENTE = ["#ff4d9d", "#a3e635", "#22d3ee", "#fb923c"]
+#: A partir del quinto no se generan tonos nuevos: se comparte uno neutro y la
+#: consola sigue diciendo el nombre. Inventar el color 9 es como se fabrica una
+#: paleta que ya no distingue nada.
+_COLOR_AGENTE_EXTRA = "#94a3b8"
+
 #: Fallback para agrupaciones sin tipo (vista de modulos): paleta ciclica.
 _COLORES = [
     "#7c5cff", "#22d3ee", "#f472b6", "#fb923c", "#4ade80",
@@ -277,6 +312,7 @@ def render_graph_cloud(
     refresco=0,
     ciclo=None,
     tocados=None,
+    actividad=None,
 ):
     """La nube: nodos repartidos por fuerzas, coloreados por módulo, navegable.
 
@@ -418,9 +454,10 @@ def render_graph_cloud(
             # se resolvieron— y en la leyenda se leia como fiabilidad, o sea justo
             # al reves: las aristas dibujadas son las que SI se resolvieron. El
             # numero exacto ya va en la cabecera, con su denominador.
+            # Aristas: se dibujan como LINEA, no como punto.
             leyenda += (
-                '<span><i style="background:%s"></i>import (exacto)</span>'
-                '<span><i style="background:#94a3b8"></i>llamada (inferida)</span>'
+                '<span><i class="linea" style="color:%s"></i>import (exacto)</span>'
+                '<span><i class="linea" style="color:#94a3b8"></i>llamada (inferida)</span>'
             ) % _COLOR_IMPORT
     else:
         llamadas = [(a, b) for a, b in (report.get("edge_list") or [])]
@@ -452,8 +489,9 @@ def render_graph_cloud(
     # este renderizador no lee historico ni git, solo dibuja datos de entrada).
     info_ciclo = (ciclo or {}).get("nodos") or {}
     if info_ciclo:
+        # Aro discontinuo, que es como se dibuja en el lienzo (no punto relleno).
         leyenda += "".join(
-            '<span><i style="background:%s"></i>%s</span>' % (_CICLO_ERROR_COLOR[e], e)
+            '<span><i class="aro" style="color:%s"></i>%s</span>' % (_CICLO_ERROR_COLOR[e], e)
             for e in ("capturada", "leida", "intervenida", "en-silencio")
         )
 
@@ -461,10 +499,62 @@ def render_graph_cloud(
     # renderizador no ejecuta git, solo dibuja. Sin repo (o sin nada tocado) el
     # conjunto llega vacio y la capa calla entera: ni leyenda, ni cabecera.
     tocados = set(tocados or ())
+
+    # La actividad viene ya derivada por quien llama (como el ciclo y la capa de
+    # cambio): este renderizador no ejecuta git ni recorre worktrees, solo dibuja.
+    # Sin agentes vivos, el diccionario llega vacio y la consola no existe.
+    _act = actividad or {}
+    _por_nodo = {q: d.get("agentes", []) for q, d in (_act.get("por_nodo") or {}).items()
+                 if d.get("agentes")}
+    _orden_agentes = sorted(a["nombre"] for a in (_act.get("agentes") or []))
+    _color_agente = {
+        nombre: (_COLOR_AGENTE[i] if i < len(_COLOR_AGENTE) else _COLOR_AGENTE_EXTRA)
+        for i, nombre in enumerate(_orden_agentes)
+    }
+    _agentes_js = {
+        a["nombre"]: {
+            "c": _color_agente.get(a["nombre"], _COLOR_AGENTE_EXTRA),
+            "nodos": len(a.get("nodos") or []),
+            "vecinos": len(a.get("vecinos") or []),
+            "hace": a.get("hace_seg"),
+            "fuera": a.get("fuera_del_mapa", 0),
+            "base": a.get("base", ""),
+            "misma": 1 if a.get("misma_base") else 0,
+        }
+        for a in (_act.get("agentes") or [])
+    }
     en_obra = sorted(n for n in implicados if n in tocados)
     if en_obra:
+        # Halo por detras al 30%%, igual que en el lienzo: el nodo conserva su
+        # color de tipo y el fucsia solo lo rodea.
         leyenda += (
-            '<span><i style="background:%s"></i>en obra (sin commitear)</span>' % _COLOR_OBRA
+            '<span><i style="background:#64748b;box-shadow:0 0 0 3px %s"></i>'
+            'en obra (sin commitear)</span>' % _rgba(_COLOR_OBRA, 0.3)
+        )
+
+    if _agentes_js:
+        # Cada agente vivo, con SU color y la marca del lienzo (aro solido).
+        # Sin esta entrada, un aro lima pulsante es ruido: la marca mas nueva
+        # del mapa seria la unica sin explicar. Tope 4, como la paleta; los
+        # nombres se escapan porque vienen del sistema de ficheros.
+        vivos = sorted(_agentes_js)
+        esc_html = lambda s: s.replace("&", "&amp;").replace("<", "&lt;")  # noqa: E731
+        leyenda += "".join(
+            '<span><i class="agente" style="color:%s"></i>%s</span>'
+            % (_agentes_js[n]["c"], esc_html(n)) for n in vivos[:4]
+        )
+        if len(vivos) > 4:
+            leyenda += "<span>+%d agente(s) mas</span>" % (len(vivos) - 4)
+        if len(vivos) > 1:
+            # El aro blanco solo puede aparecer con dos o mas agentes vivos, asi
+            # que la entrada solo existe entonces (una leyenda que explica marcas
+            # imposibles tambien miente).
+            leyenda += '<span><i class="agente" style="color:#fff"></i>2+ a la vez</span>'
+        # La sinapsis: cada arista que sale de un nodo tocado fluye con el color
+        # de su agente. La entrada es una (la forma explica; el color varia).
+        leyenda += (
+            '<span><i class="linea" style="color:#94a3b8"></i>'
+            "se&ntilde;al fluyendo hacia su onda</span>"
         )
 
     grados = {}
@@ -493,6 +583,9 @@ def render_graph_cloud(
             "el": info_ciclo.get(n, {}).get("lineas", []),
             # Capa de cambio: 1 si el fichero de este nodo esta tocado sin commitear.
             "tc": 1 if n in tocados else 0,
+            # Que agentes (worktrees) estan tocando este nodo AHORA. Derivado del
+            # disco, nadie lo declara. Vacio cuando no hay nadie trabajando.
+            "ag": _por_nodo.get(n, []),
         }
         for n in implicados
     ]
@@ -526,8 +619,8 @@ def render_graph_cloud(
         "title": _html.escape(title),
         "resumen": _html.escape(resumen),
         "pie": _html.escape(pie),
-        "nodos": _json.dumps(datos, ensure_ascii=False),
-        "aristas": _json.dumps(lista_aristas),
+        "nodos": _en_script(_json.dumps(datos, ensure_ascii=False)),
+        "aristas": _en_script(_json.dumps(lista_aristas)),
         "leyenda": leyenda,
         # El embudo del ciclo del error en la cabecera, ya formateado por quien
         # llama. Cadena vacia (ni hueco) si el proyecto no tiene capturas.
@@ -548,6 +641,7 @@ def render_graph_cloud(
         "color_import": _COLOR_IMPORT,
         "color_ciclo": _COLOR_CICLO,
         "color_obra": _COLOR_OBRA,
+        "agentes": _en_script(_json.dumps(_agentes_js, ensure_ascii=False)),
         "maxit": maxit,
         # Recargar la pagina no la actualiza sola: hace falta que ALGO regenere el
         # fichero. Por eso esto es opt-in y no el defecto — un refresco sobre un
@@ -584,12 +678,63 @@ _NUBE = """<!doctype html>
            font:10px ui-monospace,Consolas,monospace;color:var(--suave)}
   .leyenda span{display:flex;align-items:center;gap:4px}
   .leyenda i{width:8px;height:8px;border-radius:50%%;display:inline-block}
+  /* Cada entrada se dibuja CON LA MARCA QUE USA EL LIENZO. Con todas como punto
+     relleno, la leyenda prometia un nodo naranja solido para "capturada" y lo que
+     hay en el mapa es un aro discontinuo: buscabas algo que no existe. */
+  .leyenda i.aro{background:transparent;border:1.6px dashed currentColor;
+                 width:9px;height:9px}
+  .leyenda i.linea{width:14px;height:0;border-radius:0;border-top:2px solid currentColor}
+  /* Agente: aro SOLIDO del color del agente alrededor del nodo — la marca del
+     lienzo. Distinto del aro discontinuo (ciclo del error) y del halo difuso
+     (capa de cambio). */
+  .leyenda i.agente{background:#64748b;border:2px solid currentColor;width:7px;height:7px}
   canvas{display:block;cursor:grab}
   canvas.arrastrando{cursor:grabbing}
-  #ficha{position:fixed;bottom:12px;left:12px;z-index:5;background:var(--panel);
-         border:1px solid var(--linea);border-radius:5px;padding:9px 12px;max-width:460px;
+  /* A la DERECHA y alto: en hover es una vista de paso; al hacer clic queda
+     fijado y el hover deja de cambiarlo, para poder leerlo con calma mientras
+     se mira otra cosa del mapa. */
+  #ficha{position:fixed;top:92px;right:12px;z-index:5;background:var(--panel);
+         border:1px solid var(--linea);border-radius:6px;padding:10px 13px;width:340px;
+         max-height:calc(100vh - 120px);overflow-y:auto;opacity:.93;
          font:12px ui-monospace,Consolas,monospace;display:none}
+  #ficha.fijado{opacity:1;border-color:#7c5cff;box-shadow:0 8px 28px rgba(0,0,0,.55)}
   #ficha b{color:var(--tinta)} #ficha span{color:var(--suave)}
+  #ficha .cerrar{float:right;margin-left:8px;cursor:pointer;color:var(--suave);
+                 font-weight:700;line-height:1}
+  #ficha .cerrar:hover{color:var(--tinta)}
+  #ficha .pista{display:block;margin-top:7px;padding-top:6px;
+                border-top:1px solid var(--linea);color:var(--suave);font-size:10px}
+  /* El panel de agentes: el roster de la sala de control. Un clic en un agente
+     atenua todo el mapa menos su onda (sus nodos + un salto por las aristas). */
+  #agentes{position:fixed;top:92px;right:12px;z-index:6;background:var(--panel);
+           border:1px solid var(--linea);border-radius:6px;min-width:215px;max-width:300px;
+           font:11px ui-monospace,Consolas,monospace;display:none;padding:4px 0}
+  #agentes .cab{padding:3px 10px 5px;color:var(--suave);border-bottom:1px solid var(--linea)}
+  #agentes .ag{display:flex;gap:7px;align-items:center;padding:4px 10px;cursor:pointer}
+  #agentes .ag:hover{background:rgba(124,92,255,.09)}
+  #agentes .ag.foco{background:rgba(124,92,255,.18)}
+  #agentes .punto{width:8px;height:8px;border-radius:50%%;flex:none}
+  #agentes .nom{font-weight:700;color:var(--tinta);flex:1;overflow:hidden;
+                text-overflow:ellipsis;white-space:nowrap}
+  #agentes .datos{color:var(--suave);flex:none}
+  #agentes .aviso{padding:0 10px 3px 25px;color:#f59e0b}
+  /* La consola de actividad: el VIDEO, donde el mapa es la foto. Cada recarga
+     deriva eventos comparando la instantanea actual con la anterior (guardada
+     en el navegador): toco, solto, creo, se cruzo. Hechos con hora. */
+  #consola{position:fixed;bottom:12px;left:12px;z-index:5;background:var(--panel);
+           border:1px solid var(--linea);border-radius:6px;width:410px;max-height:38vh;
+           overflow-y:auto;font:11px ui-monospace,Consolas,monospace;display:none;
+           padding:5px 0}
+  #consola .cab{position:sticky;top:0;display:flex;justify-content:space-between;
+           align-items:center;padding:3px 10px;background:var(--panel);
+           border-bottom:1px solid var(--linea);color:var(--suave)}
+  #consola .cab b{cursor:pointer;padding:0 5px;font-weight:700;user-select:none}
+  #consola .cab b:hover{color:var(--tinta)}
+  #consola .fila{padding:2px 10px;display:flex;gap:7px;align-items:baseline}
+  #consola .hora{color:var(--suave);flex:none}
+  #consola .quien{font-weight:700;flex:none}
+  #consola .que{color:var(--tinta);flex:none}
+  #consola .detalle{color:var(--suave);word-break:break-all}
   #pie{position:fixed;bottom:12px;right:12px;z-index:5;
        font:10px ui-monospace,Consolas,monospace;color:var(--suave);max-width:40vw;text-align:right}
 </style>
@@ -600,16 +745,20 @@ _NUBE = """<!doctype html>
   <input id="buscar" placeholder="buscar simbolo..." autocomplete="off">
   <button id="btnPausa" title="pausar/reanudar la fisica">&#9208;</button>
   <button id="btnEncaja" title="reencuadrar">&#8862;</button>
+  <button id="btnConsola" title="consola de actividad de los agentes">&#8801;</button>
   <span class="leyenda">%(leyenda)s</span>
 </header>
 <canvas id="lienzo"></canvas>
 <div id="ficha"></div>
+<div id="consola"></div>
+<div id="agentes"></div>
 <div id="pie">%(pie)s</div>
 <script>
 // ================= datos =================
 const NODOS = %(nodos)s, ARISTAS = %(aristas)s, LADO = 1000;
 const IMPORT_COLOR = '%(color_import)s', CICLO_COLOR = '%(color_ciclo)s';
 const OBRA_COLOR = '%(color_obra)s';
+const AGENTES = %(agentes)s;
 const N = NODOS.length;
 
 // ================= simulacion =================
@@ -701,7 +850,7 @@ const vecinos = NODOS.map(()=>new Set());
 ARISTAS.forEach(par=>{ vecinos[par[0]].add(par[1]); vecinos[par[1]].add(par[0]); });
 const ficha = document.getElementById('ficha'), buscar = document.getElementById('buscar');
 const estado = document.getElementById('estado');
-let activo=null, fijado=null, filtro='';
+let activo=null, fijado=null, filtro='', agenteFoco=null, cercaAg=new Set();
 
 // Vecindario DIRIGIDO. `vecinos` sirve para atenuar el dibujo, pero para leer un
 // nodo hace falta saber en que direccion va cada arista: "a quien llamo" y "quien
@@ -771,8 +920,19 @@ function muestraFicha(i){
   if(n.tc) marcas.push('<span style="color:'+OBRA_COLOR+'">tocado sin commitear</span>');
   if(marcas.length) filas.push(marcas.join(' &middot; '));
 
-  ficha.innerHTML = '<b>'+escapa(n.id)+'</b><br>' + filas.join('<br>');
+  // Fijado (clic) vs de paso (hover): el borde y la X lo dicen. Sin esa
+  // diferencia, un clic que no llego a fijar es invisible y parece que la pagina
+  // no responde — que es justo lo que pasaba.
+  const esFijado = (fijado!==null && fijado===i);
+  const cierre = esFijado ? '<span class="cerrar" id="cerrarFicha">&#10005;</span>' : '';
+  const pista = esFijado
+    ? '<span class="pista">fijado &middot; clic otra vez (o la X) para soltarlo</span>'
+    : '<span class="pista">clic para fijarlo aqui</span>';
+  ficha.className = esFijado ? 'fijado' : '';
+  ficha.innerHTML = cierre + '<b>'+escapa(n.id)+'</b><br>' + filas.join('<br>') + pista;
   ficha.style.display='block';
+  const x = document.getElementById('cerrarFicha');
+  if(x) x.addEventListener('click', ()=>{ fijado=null; muestraFicha(activo); recuerda(); });
 }
 
 // ================= dibujo =================
@@ -800,12 +960,37 @@ function pinta(t){
     const a=par[0], b=par[1], tp=par[2]|0;
     if(tp!==capa) continue;
     const tocada = foco!==null && (a===foco || b===foco);
-    if(foco!==null && !tocada){ cx.globalAlpha=0.02; }
+    if(agenteFoco!==null && !cercaAg.has(a) && !cercaAg.has(b)){ cx.globalAlpha=0.015; }
+    else if(foco!==null && !tocada){ cx.globalAlpha=0.02; }
     else { cx.globalAlpha = tocada ? 0.9 : (par[3] ? 0.95 : (capa===0 ? 0.09 : capa===3 ? 0.5 : (capa===2 ? 0.7 : 0.3))); }
     // El tramo ciclico manda sobre su capa: es el unico hecho que detiene un commit.
     cx.strokeStyle = par[3] ? CICLO_COLOR : (capa===2 ? '#22d3ee' : capa===3 ? IMPORT_COLOR : NODOS[a].c);
     cx.lineWidth = par[3] ? 2.4 : (capa===3 ? 1.8 : 1);
     cx.beginPath(); cx.moveTo(WX[a],WY[a]); cx.lineTo(WX[b],WY[b]); cx.stroke();
+  }
+  // ---- sinapsis: la señal del agente fluyendo por su onda --------------------
+  // Cada arista que sale de un nodo tocado se enciende con el color de SU agente
+  // y un paquete viaja del nodo tocado hacia el vecino: el cambio propagandose
+  // hacia quien le llama. La jerarquia (capa 0) no es comunicacion y no fluye.
+  // Fase distinta por arista (si no, todas palpitarian a la vez); sin modulo de
+  // JS a proposito — este script vive en un template %%-formateado de Python.
+  for(const par of ARISTAS){
+    const a=par[0], b=par[1], tp=par[2]|0;
+    if(tp===0) continue;
+    const na=NODOS[a], nb=NODOS[b];
+    const agA=(na.ag&&na.ag.length)?1:0, agB=(nb.ag&&nb.ag.length)?1:0;
+    if(!agA && !agB) continue;
+    const desde = agA ? a : b, hasta = agA ? b : a;
+    const quien = agA ? na.ag : nb.ag;
+    if(agenteFoco!==null && quien.indexOf(agenteFoco)<0) continue;
+    const c = quien.length>1 ? '#ffffff' : ((AGENTES[quien[0]]||{}).c||OBRA_COLOR);
+    cx.globalAlpha=0.3; cx.strokeStyle=c; cx.lineWidth=1.2;
+    cx.beginPath(); cx.moveTo(WX[desde],WY[desde]); cx.lineTo(WX[hasta],WY[hasta]); cx.stroke();
+    let fase = reloj/1300 + (a*31+b*17)*0.013;
+    fase = fase - Math.floor(fase);
+    const sx=WX[desde]+(WX[hasta]-WX[desde])*fase, sy=WY[desde]+(WY[hasta]-WY[desde])*fase;
+    cx.globalAlpha=0.9; cx.fillStyle=c;
+    cx.beginPath(); cx.arc(sx,sy,1.7*Math.min(Math.max(esc,0.6),1.5),0,6.284); cx.fill();
   }
   cx.lineWidth=1;
   cx.globalAlpha=1;
@@ -819,6 +1004,7 @@ function pinta(t){
     let color = n.c;
     if(filtro && !coincide){ color=n.cd; }
     else if(foco!==null && !relacionado){ color=n.cd; }
+    if(agenteFoco!==null && !cercaAg.has(i)){ color=n.cd; }
     if(coincide){ rr *= 1.2+fase*0.5; if(fase>0.5) color='#06b6d4'; }
     if(i===foco){ rr *= 1+0.12*Math.sin(reloj/250); }
     if(n.tc){
@@ -826,9 +1012,26 @@ function pinta(t){
       // circulo). Todos los demas estados son strokes sobre el borde; esto se
       // distingue por forma, no solo por color, y no pisa rojo/cian ni los
       // anillos discontinuos del ciclo del error.
-      cx.globalAlpha=0.3; cx.fillStyle=OBRA_COLOR;
+      // QUIETO y suave: tocado-sin-commitear es un estado del ARBOL, o sea
+      // contexto, no la noticia. Lo que pulsa es el agente, mas abajo.
+      cx.globalAlpha=0.28; cx.fillStyle=OBRA_COLOR;
       cx.beginPath(); cx.arc(WX[i],WY[i],rr+6,0,6.284); cx.fill();
       cx.globalAlpha=1;
+    }
+    if(n.ag && n.ag.length){
+      // ESTO si es un agente trabajando aqui AHORA, y lleva SU color, no el de
+      // la capa de cambio. Pulsa porque el movimiento es lo unico que el ojo
+      // coge sin buscar entre 900 nodos. Dos o mas agentes en el mismo nodo:
+      // aro blanco y grueso, que es el caso que hay que mirar.
+      const ca = (AGENTES[n.ag[0]]||{}).c || OBRA_COLOR;
+      const propio = agenteFoco===null || n.ag.indexOf(agenteFoco)>=0;
+      const pu = 0.5 + 0.5*Math.sin(reloj/380 + i*0.7);
+      cx.globalAlpha=(0.22+0.5*pu)*(propio?1:0.12); cx.fillStyle=ca;
+      cx.beginPath(); cx.arc(WX[i],WY[i],rr+8+5*pu,0,6.284); cx.fill();
+      cx.globalAlpha=propio?1:0.15; cx.strokeStyle = n.ag.length>1 ? '#ffffff' : ca;
+      cx.lineWidth = n.ag.length>1 ? 3 : 2.4;
+      cx.beginPath(); cx.arc(WX[i],WY[i],rr+4,0,6.284); cx.stroke();
+      cx.globalAlpha=1; cx.lineWidth=1;
     }
     cx.beginPath(); cx.arc(WX[i],WY[i],rr,0,6.284);
     cx.fillStyle=color; cx.fill();
@@ -848,6 +1051,44 @@ function pinta(t){
       cx.beginPath(); cx.arc(WX[i],WY[i],rr+3,0,6.284); cx.stroke();
       cx.setLineDash([]); cx.lineWidth=1;
     }
+  }
+  // La consola del agente, ENCIMA del nodo que esta tocando. Va en su propia
+  // pasada, despues de todos los nodos, para que ninguna quede tapada.
+  //
+  // Lo que dice son HECHOS derivados del disco: que toca, con cuantos nodos
+  // habla, hace cuanto. Su narrativa ("estoy refactorizando el store") solo la
+  // tiene el agente, y pedirsela seria volver al registro declarado que se
+  // descarto: en cuanto uno se olvida de declarar, el panel miente con cara de
+  // hecho.
+  if(esc>0.45) for(let i=0;i<N;i++){
+    const n=NODOS[i];
+    if(!n.ag || !n.ag.length) continue;
+    if(agenteFoco!==null && n.ag.indexOf(agenteFoco)<0) continue;
+    const varios = n.ag.length>1;
+    const a = AGENTES[n.ag[0]] || {};
+    const l1 = varios ? (n.ag.length+' agentes a la vez') : n.ag[0];
+    let l2 = (a.nodos||0)+' nodo(s) - habla con '+(a.vecinos||0);
+    if(a.hace!=null) l2 += ' - hace '+(a.hace<90 ? a.hace+'s' : Math.round(a.hace/60)+'m');
+    const l3 = varios ? n.ag.join(' + ')
+                      : ((a.fuera ? a.fuera+' fichero(s) aun sin sitio en el mapa' : '')
+                         || (a.misma ? '' : 'OJO: parte de otra base ('+a.base+')'));
+    const lineas = l3 ? [l1,l2,l3] : [l1,l2];
+    cx.font='10px ui-monospace,Consolas,monospace';
+    let an=0; for(const t of lineas) an=Math.max(an, cx.measureText(t).width);
+    const pw=an+14, ph=lineas.length*13+9;
+    const px=WX[i]-pw/2, py=WY[i]-n.r*Math.min(Math.max(esc,0.55),1.6)-ph-11;
+    // Tallo hasta el nodo: sin el, la caja flota y no se sabe de quien habla.
+    const cc = varios ? '#ffffff' : ((AGENTES[n.ag[0]]||{}).c || OBRA_COLOR);
+    cx.strokeStyle = cc; cx.globalAlpha=0.8;
+    cx.beginPath(); cx.moveTo(WX[i],py+ph); cx.lineTo(WX[i],WY[i]); cx.stroke();
+    cx.globalAlpha=0.94; cx.fillStyle='#111722';
+    cx.beginPath(); cx.rect(px,py,pw,ph); cx.fill();
+    cx.globalAlpha=1; cx.lineWidth = varios ? 2.2 : 1.4;
+    cx.strokeStyle = cc; cx.stroke(); cx.lineWidth=1;
+    cx.fillStyle = cc;
+    cx.fillText(lineas[0], px+7, py+14);
+    cx.fillStyle='#7d8b9c';
+    for(let k=1;k<lineas.length;k++) cx.fillText(lineas[k], px+7, py+14+k*13);
   }
 }
 
@@ -916,7 +1157,9 @@ cv.addEventListener('mousedown', e=>{
   else { panning=true; cv.classList.add('arrastrando'); }
 });
 addEventListener('mousemove', e=>{
-  if(Math.hypot(e.clientX-lx,e.clientY-ly)>3) movido=true;
+  // 6 px, no 3: con 3 el temblor normal de la mano al hacer clic contaba como
+  // arrastre y el nodo no llegaba a fijarse nunca.
+  if(Math.hypot(e.clientX-lx,e.clientY-ly)>6) movido=true;
   if(agarrado!==null){
     X[agarrado]=(e.clientX-ox)/esc; Y[agarrado]=(e.clientY-oy)/esc;
     return;
@@ -927,16 +1170,16 @@ addEventListener('mousemove', e=>{
 });
 addEventListener('mouseup', e=>{
   if(agarrado!==null){
-    if(!movido){ fijado = (fijado===agarrado) ? null : agarrado; muestraFicha(fijado); }
+    if(!movido){ fijado = (fijado===agarrado) ? null : agarrado; muestraFicha(fijado); recuerda(); }
     else cola=90;
     agarrado=null;
-  } else if(panning && !movido){ fijado=null; muestraFicha(null); }
+  } else if(panning && !movido){ fijado=null; muestraFicha(null); recuerda(); }
   panning=false; cv.classList.remove('arrastrando');
 });
 cv.addEventListener('wheel', e=>{
   e.preventDefault(); camaraLibre=true;
   const k = e.deltaY>0 ? 0.9 : 1.1;
-  ox = e.clientX-(e.clientX-ox)*k; oy = e.clientY-(e.clientY-oy)*k; esc*=k;
+  ox = e.clientX-(e.clientX-ox)*k; oy = e.clientY-(e.clientY-oy)*k; esc*=k; recuerda();
 }, {passive:false});
 buscar.addEventListener('input', e=>{ filtro=e.target.value.trim().toLowerCase(); });
 document.getElementById('btnPausa').addEventListener('click', ev=>{
@@ -946,6 +1189,171 @@ document.getElementById('btnEncaja').addEventListener('click', ()=>{
   const r=encaje(); esc=r[0]; ox=r[1]; oy=r[2];
 });
 addEventListener('resize', ()=>{ if(!camaraLibre) medir(); else { cv.width=innerWidth; cv.height=innerHeight; } });
-medir(); requestAnimationFrame(bucle);
+// La pagina se recarga sola cada pocos segundos, y una recarga destruye TODO el
+// estado: el nodo fijado, el zoom y el encuadre. Sin esto, fijar una ficha es
+// imposible en un mapa vivo — se borraba antes de poder leerla.
+//
+// El nodo se guarda por ID, nunca por indice: entre dos regeneraciones el grafo
+// cambia y el indice 412 pasa a ser otro simbolo. Guardar el indice habria
+// devuelto la ficha equivocada con toda la autoridad del resto del mapa.
+const MEM='gb-mapa-estado';
+function recuerda(){
+  try{
+    sessionStorage.setItem(MEM, JSON.stringify({
+      f: fijado===null ? null : NODOS[fijado].id,
+      e: esc, x: ox, y: oy, lib: camaraLibre ? 1 : 0, af: agenteFoco
+    }));
+  }catch(_){}
+}
+function recupera(){
+  let s; try{ s=JSON.parse(sessionStorage.getItem(MEM)||'null'); }catch(_){ return; }
+  if(!s) return;
+  if(s.lib && isFinite(s.e) && isFinite(s.x) && isFinite(s.y)){
+    esc=s.e; ox=s.x; oy=s.y; camaraLibre=true;
+  }
+  if(s.f){
+    const i = NODOS.findIndex(n => n.id === s.f);
+    // Si el simbolo ya no existe, se suelta y se calla: mejor sin ficha que una
+    // ficha de algo que se borro.
+    if(i>=0){ fijado=i; muestraFicha(i); }
+  }
+  // El foco por agente tambien sobrevive al refresco — y si el agente ya no
+  // esta (commiteo, o su worktree se fue), se suelta sin decir nada.
+  if(s.af && AGENTES[s.af]){ agenteFoco=s.af; calculaCercaAg(); pintaPanel(); }
+}
+addEventListener('beforeunload', recuerda);
+
+// ---- panel de agentes -------------------------------------------------------
+// El roster de la sala de control. La onda de un agente son sus nodos mas un
+// salto por las aristas: lo mismo que su consola dice que "habla", pero visible
+// de golpe al hacer clic. Todo derivado; el panel no existe sin agentes.
+function calculaCercaAg(){
+  cercaAg=new Set();
+  if(agenteFoco===null) return;
+  NODOS.forEach((n,i)=>{ if(n.ag && n.ag.indexOf(agenteFoco)>=0) cercaAg.add(i); });
+  const base=new Set(cercaAg);
+  for(const par of ARISTAS){
+    if(base.has(par[0])) cercaAg.add(par[1]);
+    if(base.has(par[1])) cercaAg.add(par[0]);
+  }
+}
+const panelAg=document.getElementById('agentes');
+function fmtHace(s){ return s==null ? '' : (s<90 ? s+'s' : Math.round(s/60)+'m'); }
+function pintaPanel(){
+  const nombres=Object.keys(AGENTES).sort();
+  const fichaEl=document.getElementById('ficha');
+  if(!nombres.length){ panelAg.style.display='none'; fichaEl.style.top='92px'; return; }
+  let h='<div class="cab">agentes ('+nombres.length+')'+(agenteFoco?' &middot; foco: clic para soltar':'')+'</div>';
+  for(const nom of nombres){
+    const a=AGENTES[nom];
+    h+='<div class="ag'+(agenteFoco===nom?' foco':'')+'" data-ag="'+escapa(nom)+'">'+
+       '<span class="punto" style="background:'+a.c+'"></span>'+
+       '<span class="nom">'+escapa(nom)+'</span>'+
+       '<span class="datos">'+(a.nodos||0)+'n'+(a.hace!=null?' &middot; '+fmtHace(a.hace):'')+'</span></div>';
+    if(!a.misma) h+='<div class="aviso">&#9888; parte de otra base ('+escapa(a.base)+')</div>';
+    else if(a.fuera) h+='<div class="aviso" style="color:var(--suave)">'+a.fuera+' fichero(s) sin sitio en el mapa</div>';
+  }
+  panelAg.innerHTML=h;
+  panelAg.style.display='block';
+  // La ficha se recoloca debajo del panel para no taparse mutuamente.
+  fichaEl.style.top=(92+panelAg.offsetHeight+8)+'px';
+}
+panelAg.addEventListener('click', ev=>{
+  let el=ev.target;
+  while(el && el!==panelAg && !(el.dataset && el.dataset.ag)) el=el.parentNode;
+  const nom=(el && el.dataset) ? el.dataset.ag : null;
+  if(!nom) return;
+  agenteFoco = (agenteFoco===nom) ? null : nom;
+  calculaCercaAg(); recuerda(); pintaPanel();
+});
+pintaPanel();
+
+// ---- consola de actividad ---------------------------------------------------
+// "Lo que van haciendo" en lo que se puede saber sin que nadie lo declare: cada
+// recarga compara la instantanea actual (AGENTES + que nodo toca quien) con la
+// anterior, guardada en el navegador, y LOS EVENTOS SON LA DIFERENCIA. La
+// narrativa del agente ("estoy refactorizando el store") solo la tiene el; esto
+// es el registro de sus huellas, con la cadencia de la regeneracion.
+function eventosEntre(prev, ahora){
+  const ev=[];
+  const antes=prev||{ag:{},nodos:{}};
+  for(const nombre of Object.keys(ahora.ag)){
+    const a=ahora.ag[nombre], pa=antes.ag[nombre];
+    if(!pa){ ev.push({a:nombre,t:'aparece',d:(a.nodos||0)+' nodo(s) en su onda'}); continue; }
+    if(a.hace!=null && pa.hace!=null && a.hace<pa.hace)
+      ev.push({a:nombre,t:'escribe',d:'ultima actividad hace '+a.hace+'s'});
+    if((a.fuera||0)>(pa.fuera||0))
+      ev.push({a:nombre,t:'crea',d:(a.fuera-(pa.fuera||0))+' fichero(s) aun sin sitio en el mapa'});
+  }
+  for(const nombre of Object.keys(antes.ag))
+    if(!ahora.ag[nombre]) ev.push({a:nombre,t:'se va',d:'sin cambios pendientes (commit o descarte)'});
+  const na=ahora.nodos||{}, np=antes.nodos||{};
+  for(const q of Object.keys(na)){
+    const ags=na[q], pags=np[q]||[];
+    for(const nombre of ags) if(pags.indexOf(nombre)<0) ev.push({a:nombre,t:'toca',d:q});
+    if(ags.length>1 && pags.length<2) ev.push({a:ags.join(' + '),t:'CRUCE',d:q});
+  }
+  for(const q of Object.keys(np)) for(const nombre of np[q])
+    if((na[q]||[]).indexOf(nombre)<0 && ahora.ag[nombre]) ev.push({a:nombre,t:'suelta',d:q});
+  return ev;
+}
+const consolaEl=document.getElementById('consola');
+const CMEM='gb-mapa-consola';
+(function(){
+  const nodosAg={};
+  NODOS.forEach(n=>{ if(n.ag && n.ag.length) nodosAg[n.id]=n.ag; });
+  const ahora={ag:AGENTES, nodos:nodosAg};
+  let est=null; try{ est=JSON.parse(sessionStorage.getItem(CMEM)||'null'); }catch(_){}
+  const log=(est && est.log)||[];
+  const hora=new Date().toLocaleTimeString();
+  for(const e of eventosEntre(est && est.snap, ahora))
+    log.push({h:hora, c: e.t==='CRUCE' ? '#ffffff' : ((AGENTES[e.a]||{}).c||'#94a3b8'),
+              a:e.a, t:e.t, d:e.d});
+  while(log.length>200) log.shift();
+  let abierto = est ? est.abierto!==0 : true;
+  // Tres tallas, no un resize libre: anclada abajo-izquierda, el asa nativa de
+  // CSS crece hacia abajo-derecha y se sale de la pantalla. La talla se
+  // recuerda entre recargas, como todo lo demas.
+  const TAM=[[300,'22vh'],[410,'38vh'],[580,'62vh']];
+  let tam = (est && typeof est.tam==='number') ? est.tam : 1;
+  function guarda(){
+    try{ sessionStorage.setItem(CMEM, JSON.stringify(
+      {snap:ahora, log:log, abierto:abierto?1:0, tam:tam})); }catch(_){}
+  }
+  guarda();
+  function pintaConsola(){
+    if(!log.length || !abierto){ consolaEl.style.display='none'; return; }
+    consolaEl.style.width=TAM[tam][0]+'px';
+    consolaEl.style.maxHeight=TAM[tam][1];
+    consolaEl.innerHTML =
+      '<div class="cab"><span>actividad (hechos derivados)</span>'+
+      '<span><b data-acc="menos" title="mas pequena">&#8722;</b>'+
+      '<b data-acc="mas" title="mas grande">+</b>'+
+      '<b data-acc="cerrar" title="ocultar">&#10005;</b></span></div>'+
+      log.map(e=>
+      '<div class="fila"><span class="hora">'+e.h+'</span>'+
+      '<span class="quien" style="color:'+e.c+'">'+escapa(e.a)+'</span>'+
+      '<span class="que">'+escapa(e.t)+'</span><span class="detalle">'+escapa(e.d)+'</span></div>'
+    ).join('');
+    consolaEl.style.display='block';
+    consolaEl.scrollTop=consolaEl.scrollHeight;
+  }
+  // Delegacion: pintaConsola reconstruye el innerHTML, asi que los botones no
+  // pueden llevar listeners propios — se escucha en el contenedor, que vive.
+  consolaEl.addEventListener('click', ev=>{
+    const acc = ev.target && ev.target.dataset ? ev.target.dataset.acc : null;
+    if(!acc) return;
+    if(acc==='cerrar') abierto=false;
+    else if(acc==='menos') tam=Math.max(0, tam-1);
+    else if(acc==='mas') tam=Math.min(TAM.length-1, tam+1);
+    guarda(); pintaConsola();
+  });
+  document.getElementById('btnConsola').addEventListener('click', ()=>{
+    abierto=!abierto; guarda(); pintaConsola();
+  });
+  pintaConsola();
+})();
+
+medir(); recupera(); requestAnimationFrame(bucle);
 </script>
 """

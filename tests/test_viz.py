@@ -148,3 +148,219 @@ def test_un_destino_imposible_no_pasa_por_bueno(tmp_path):
     destino = os.path.join(root, "no-existe", "sub", "mapa.html")
 
     assert cli.main(["graph", root, "--html", destino, "--color", "never"]) == 2
+
+
+def test_los_cuatro_colores_de_tipo_son_distinguibles():
+    """`function` y `method` son la inmensa mayoria de los nodos.
+
+    Con esmeralda y teal estaban a ΔE 5,4 en vision NORMAL (el suelo son 15) y la
+    nube entera se leia como una mancha verde. Medido el 5-ago-2026 con el
+    validador de paleta; el azul sube el par a ΔE 21,1 (8,9 en protanopia).
+    """
+    colores = [viz._KIND_COLOR[k] for k in ("module", "class", "function", "method")]
+    assert len(set(colores)) == 4
+    # El par que fallaba, fijado explicitamente para que no vuelva por descuido.
+    assert viz._KIND_COLOR["function"] != viz._KIND_COLOR["method"]
+    assert viz._KIND_COLOR["method"] == "#60a5fa"
+
+
+def test_la_leyenda_dibuja_cada_entrada_con_su_marca_real(tmp_path):
+    """Una leyenda que pinta todo como punto relleno miente sobre el lienzo.
+
+    Los estados del ciclo son ARO discontinuo y las aristas son LINEA. Con todas
+    como punto, se buscaba en el mapa un nodo naranja solido que no existe.
+    """
+    from galaxybrain import graph, symbols
+
+    root = _proyecto(tmp_path)
+    informe = symbols.analyze(root)
+    ciclo = {"nodos": {"app.store": {"estado": "capturada", "lineas": []}}}
+    # Con el informe de grafo entran los imports, y con ellos las entradas de
+    # arista de la leyenda (sin imports no hay aristas que explicar, y calla).
+    salida = viz.render_graph_cloud(
+        informe, graph_report=graph.analyze(root), ciclo=ciclo, tocados={"app.store"})
+
+    assert 'class="aro" style="color:#f97316"' in salida       # capturada: aro
+    assert 'class="linea"' in salida                            # aristas: linea
+    assert "box-shadow:0 0 0 3px rgba(" in salida               # en obra: halo
+    # Y los tipos siguen siendo punto relleno.
+    assert '<i style="background:%s"></i>module' % viz._KIND_COLOR["module"] in salida
+
+
+def test_rgba_traduce_el_hexadecimal():
+    assert viz._rgba("#e879f9", 0.3) == "rgba(232,121,249,0.3)"
+    assert viz._rgba("#000000", 1) == "rgba(0,0,0,1)"
+
+
+def test_la_actividad_viaja_al_mapa_con_color_por_agente(tmp_path):
+    """Un color POR AGENTE, no un color para "hay agente".
+
+    Tocado-sin-commitear es un estado del arbol; un agente trabajando es otra
+    señal y lleva el color de ESE agente. El nodo lleva la lista `ag` y el
+    payload AGENTES trae el color asignado en orden estable (por nombre), para
+    que el mismo agente no cambie de color entre regeneraciones.
+    """
+    import json as _json
+    import re
+
+    from galaxybrain import symbols
+
+    root = _proyecto(tmp_path)
+    act = {
+        "base": "abc1234",
+        "agentes": [
+            {"nombre": "rama_b", "nodos": ["app.store"], "vecinos": ["app.config"],
+             "hace_seg": 5, "fuera_del_mapa": 0, "base": "abc1234", "misma_base": True},
+            {"nombre": "rama_a", "nodos": ["app.store"], "vecinos": [],
+             "hace_seg": 9, "fuera_del_mapa": 2, "base": "abc1234", "misma_base": True},
+        ],
+        "por_nodo": {"app.store": {"agentes": ["rama_b", "rama_a"], "vecino_de": []}},
+        "cruces": ["app.store"],
+    }
+    salida = viz.render_graph_cloud(symbols.analyze(root), actividad=act)
+
+    agentes = _json.loads(re.search(r"const AGENTES = (\{.*?\});", salida, re.S).group(1))
+    assert set(agentes) == {"rama_a", "rama_b"}
+    # Orden alfabetico estable: rama_a primero, luego rama_b.
+    assert agentes["rama_a"]["c"] == viz._COLOR_AGENTE[0]
+    assert agentes["rama_b"]["c"] == viz._COLOR_AGENTE[1]
+    assert agentes["rama_a"]["fuera"] == 2
+
+    nodos = _json.loads(re.search(r"const NODOS = (\[.*?\]), ARISTAS", salida, re.S).group(1))
+    store = [n for n in nodos if n["id"] == "app.store"][0]
+    assert store["ag"] == ["rama_b", "rama_a"]
+    resto = [n for n in nodos if n["id"] != "app.store"]
+    assert all(n["ag"] == [] for n in resto)
+
+
+def test_sin_actividad_el_mapa_no_inventa_agentes(tmp_path):
+    import json as _json
+    import re
+
+    from galaxybrain import symbols
+
+    root = _proyecto(tmp_path)
+    salida = viz.render_graph_cloud(symbols.analyze(root))
+    agentes = _json.loads(re.search(r"const AGENTES = (\{.*?\});", salida, re.S).group(1))
+    assert agentes == {}
+
+
+def test_del_quinto_agente_en_adelante_comparten_color(tmp_path):
+    """No se genera el color 9: mas alla de la paleta validada, tono neutro y el
+    nombre lo dice la consola."""
+    import json as _json
+    import re
+
+    from galaxybrain import symbols
+
+    root = _proyecto(tmp_path)
+    act = {
+        "base": "abc1234",
+        "agentes": [
+            {"nombre": "r%d" % i, "nodos": [], "vecinos": [], "hace_seg": 1,
+             "fuera_del_mapa": 0, "base": "abc1234", "misma_base": True}
+            for i in range(6)
+        ],
+        "por_nodo": {},
+        "cruces": [],
+    }
+    salida = viz.render_graph_cloud(symbols.analyze(root), actividad=act)
+    agentes = _json.loads(re.search(r"const AGENTES = (\{.*?\});", salida, re.S).group(1))
+    colores = [agentes["r%d" % i]["c"] for i in range(6)]
+    assert colores[:4] == viz._COLOR_AGENTE
+    assert colores[4] == viz._COLOR_AGENTE_EXTRA
+    assert colores[5] == viz._COLOR_AGENTE_EXTRA
+
+
+def test_la_leyenda_lista_cada_agente_vivo_con_su_color(tmp_path):
+    """La marca mas nueva del mapa no puede ser la unica sin explicar.
+
+    Cada agente vivo sale en la leyenda con SU color y la marca del lienzo (aro
+    solido); la entrada del aro blanco (2+ a la vez) solo existe cuando hay dos
+    o mas agentes — una leyenda que explica marcas imposibles tambien miente.
+    """
+    from galaxybrain import symbols
+
+    root = _proyecto(tmp_path)
+    base = {"nodos": [], "vecinos": [], "hace_seg": 1, "fuera_del_mapa": 0,
+            "base": "abc1234", "misma_base": True}
+    act1 = {"base": "abc1234", "agentes": [dict(base, nombre="rama_a")],
+            "por_nodo": {}, "cruces": []}
+    act2 = {"base": "abc1234",
+            "agentes": [dict(base, nombre="rama_a"), dict(base, nombre="rama_b")],
+            "por_nodo": {}, "cruces": []}
+    informe = symbols.analyze(root)
+
+    con_uno = viz.render_graph_cloud(informe, actividad=act1)
+    assert '<i class="agente" style="color:%s"></i>rama_a' % viz._COLOR_AGENTE[0] in con_uno
+    assert "2+ a la vez" not in con_uno          # con un agente no hay cruce posible
+
+    con_dos = viz.render_graph_cloud(informe, actividad=act2)
+    assert '<i class="agente" style="color:%s"></i>rama_b' % viz._COLOR_AGENTE[1] in con_dos
+    assert "2+ a la vez" in con_dos
+
+    sin_agentes = viz.render_graph_cloud(informe)
+    assert 'class="agente"' not in sin_agentes   # sin agentes, la entrada no existe
+
+
+def test_el_nombre_de_un_agente_no_inyecta_html(tmp_path):
+    """El nombre viene del sistema de ficheros: se escapa, no se confia."""
+    from galaxybrain import symbols
+
+    act = {"base": "x", "agentes": [
+        {"nombre": "<img src=x>", "nodos": [], "vecinos": [], "hace_seg": 1,
+         "fuera_del_mapa": 0, "base": "x", "misma_base": True}],
+        "por_nodo": {}, "cruces": []}
+    salida = viz.render_graph_cloud(symbols.analyze(_proyecto(tmp_path)), actividad=act)
+    assert "<img src=x>" not in salida
+    assert "&lt;img src=x>" in salida
+
+
+def test_un_docstring_con_cierre_de_script_no_rompe_la_pagina(tmp_path):
+    """La misma exposicion que el nombre del agente, pero preexistente: los
+    docstrings viajan en el payload de nodos, y uno que contenga '</script>'
+    cerraria la etiqueta y ejecutaria lo que venga detras como HTML."""
+    from galaxybrain import symbols
+
+    root = str(tmp_path)
+    _write(root, "app/__init__.py", "")
+    _write(root, "app/veneno.py",
+           '"""Doc con </script><b>html</b> dentro."""\n\n\ndef f():\n    return 1\n')
+    salida = viz.render_graph_cloud(symbols.analyze(root))
+    cuerpo = salida[salida.index("const NODOS"):]
+    assert "</script><b>" not in cuerpo
+    assert "\u003c/script>" in cuerpo
+
+
+def test_el_panel_de_agentes_existe_y_su_logica_es_condicional(tmp_path):
+    """El contenedor viaja siempre (el JS lo llena solo si hay agentes); el
+    payload sin actividad llega vacio, asi que el panel no puede inventarse
+    un roster."""
+    import json as _json
+    import re
+
+    from galaxybrain import symbols
+
+    salida = viz.render_graph_cloud(symbols.analyze(_proyecto(tmp_path)))
+    assert '<div id="agentes"></div>' in salida
+    agentes = _json.loads(re.search(r"const AGENTES = (\{.*?\});", salida, re.S).group(1))
+    assert agentes == {}
+
+
+def test_la_senal_de_sinapsis_solo_se_explica_cuando_puede_existir(tmp_path):
+    """La entrada de la señal fluye solo aparece con agentes vivos: sin agentes
+    no hay sinapsis que explicar, y una leyenda que explica marcas imposibles
+    tambien miente."""
+    from galaxybrain import symbols
+
+    informe = symbols.analyze(_proyecto(tmp_path))
+    act = {"base": "x", "agentes": [
+        {"nombre": "r1", "nodos": ["app.store"], "vecinos": [], "hace_seg": 1,
+         "fuera_del_mapa": 0, "base": "x", "misma_base": True}],
+        "por_nodo": {"app.store": {"agentes": ["r1"], "vecino_de": []}}, "cruces": []}
+
+    con = viz.render_graph_cloud(informe, actividad=act)
+    assert "fluyendo hacia su onda" in con
+
+    sin = viz.render_graph_cloud(informe)
+    assert "fluyendo hacia su onda" not in sin

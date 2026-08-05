@@ -274,6 +274,22 @@ def _ficheros_tocados(root):
     return ficheros
 
 
+def _actividad_para_mapa(root, informe_simbolos):
+    """La actividad de los agentes como viaja al mapa. Nunca tumba la generacion.
+
+    Recorrer worktrees cuesta subprocesos de git; entra en el presupuesto de una
+    REGENERACION (no del tick del watch, que solo hace stat). Si algo falla, el
+    mapa se dibuja igual sin la capa: un mapa sin consola sigue siendo util, uno
+    que no se genera no (regla 9).
+    """
+    try:
+        from . import actividad as actividad_mod
+
+        return actividad_mod.instantanea(root, informe_simbolos)
+    except Exception:
+        return None
+
+
 def _tocados_para_mapa(root, informe_simbolos):
     """La capa de cambio como viaja al mapa: el conjunto de nodos modulo cuyo
     fichero esta tocado sin commitear.
@@ -857,6 +873,7 @@ def cmd_graph(args):
                         # renderizador solo dibuja. Informa, no bloquea.
                         ciclo=_ciclo_para_mapa(root, simbolos),
                         tocados=_tocados_para_mapa(root, simbolos),
+                        actividad=_actividad_para_mapa(root, simbolos),
                     )
                 )
             os.replace(destino + ".tmp", destino)
@@ -1065,6 +1082,7 @@ def _vigilar(root, args):
                                         # aqui; en _sonda_cambio no.
                                         ciclo=_ciclo_para_mapa(root, report),
                                         tocados=_tocados_para_mapa(root, report),
+                                        actividad=_actividad_para_mapa(root, report),
                                     )
                                 )
                             os.replace(destino + ".tmp", destino)
@@ -1258,6 +1276,7 @@ def cmd_symbols(args):
                         refresco=refresco,
                         ciclo=_ciclo_para_mapa(root, report),
                         tocados=_tocados_para_mapa(root, report),
+                        actividad=_actividad_para_mapa(root, report),
                     )
                 )
             os.replace(destino + ".tmp", destino)

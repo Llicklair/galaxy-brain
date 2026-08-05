@@ -127,3 +127,43 @@ def test_node_parsea_el_script_entero(tmp_path):
         ["node", "--check", str(destino)], capture_output=True, text=True, timeout=60
     )
     assert resultado.returncode == 0, resultado.stderr
+
+
+def test_la_consola_deriva_los_hechos_correctos(tmp_path):
+    """La logica de la consola EJECUTADA con node, no solo parseada.
+
+    La diferencia entre dos instantaneas tiene que producir exactamente los
+    hechos que pasaron: escribio, creo, aparecio, toco, cruce, se fue. Y soltar
+    un nodo solo se dice de quien sigue vivo — el que se fue ya tiene su evento.
+    """
+    if shutil.which("node") is None:
+        pytest.skip("sin node no se puede EJECUTAR el script del mapa")
+    import json
+
+    js = _js(tmp_path)
+    m = re.search(r"function eventosEntre\(prev, ahora\)\{[\s\S]*?\n\}", js)
+    assert m, "la funcion de la consola tiene que estar en el mapa"
+    arnes = m.group(0) + """
+const prev = {ag:{a1:{hace:50,fuera:0,nodos:1}}, nodos:{'m.x':['a1']}};
+const ahora = {ag:{a1:{hace:2,fuera:1,nodos:2}, a2:{hace:1,fuera:0,nodos:1}},
+               nodos:{'m.x':['a1','a2'], 'm.y':['a2']}};
+console.log(JSON.stringify(eventosEntre(prev, ahora)));
+console.log(JSON.stringify(eventosEntre(ahora, {ag:{a2:ahora.ag.a2}, nodos:{'m.y':['a2']}})));
+"""
+    destino = tmp_path / "consola.js"
+    destino.write_text(arnes, encoding="utf-8")
+    r = subprocess.run(["node", str(destino)], capture_output=True, text=True, timeout=60)
+    assert r.returncode == 0, r.stderr
+    linea1, linea2 = r.stdout.strip().splitlines()
+
+    tipos1 = {(e["a"], e["t"]) for e in json.loads(linea1)}
+    assert ("a1", "escribe") in tipos1        # hace bajo de 50s a 2s: escribio
+    assert ("a1", "crea") in tipos1           # fuera subio de 0 a 1
+    assert ("a2", "aparece") in tipos1
+    assert ("a2", "toca") in tipos1           # entro en m.x y m.y
+    assert ("a1 + a2", "CRUCE") in tipos1     # m.x paso de 1 a 2 agentes
+    assert ("a1", "aparece") not in tipos1    # ya estaba: aparecer seria mentir
+
+    tipos2 = {(e["a"], e["t"]) for e in json.loads(linea2)}
+    assert ("a1", "se va") in tipos2
+    assert ("a1", "suelta") not in tipos2
