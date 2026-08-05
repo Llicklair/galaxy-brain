@@ -436,3 +436,216 @@ def test_cambiar_una_comparacion_por_otra_no_chilla(tmp_path):
     _commit(root, "actualiza")
 
     assert changes.analyze(root, "HEAD~1..HEAD")["flags"] == []
+
+
+# --- parse_diff: casos borde ---
+
+
+def test_rename_con_espacios_en_la_ruta_conserva_el_nombre_entero():
+    """La ruta se corta por el prefijo `b/`, no por el primer espacio.
+
+    Un `git mv` a un nombre con espacios sigue siendo un cambio sobre tests: si
+    la ruta se truncara, el fichero dejaria de casar con TEST_FILE y las senales
+    de ese renombrado se perderian enteras.
+    """
+    diff = (
+        "diff --git a/tests/test caja vieja.py b/tests/test caja nueva.py\n"
+        "similarity index 80%\n"
+        "rename from tests/test caja vieja.py\n"
+        "rename to tests/test caja nueva.py\n"
+        "--- a/tests/test caja vieja.py\n"
+        "+++ b/tests/test caja nueva.py\n"
+        "@@ -1,3 +1,3 @@ def test_uno():\n"
+        " def test_uno():\n"
+        "-    assert caja() == 1\n"
+        "+    assert caja() == 2\n"
+    )
+
+    files = changes.parse_diff(diff)
+
+    assert list(files) == ["tests/test caja nueva.py"]
+    entrada = files["tests/test caja nueva.py"]
+    assert entrada["deleted"] is False
+    assert entrada["added"] == ["    assert caja() == 2"]
+    assert entrada["removed"] == ["    assert caja() == 1"]
+    # el mismo nombre con espacios sobrevive tambien en el rango de la onda
+    assert changes._hunks_py(diff) == {"tests/test caja nueva.py": [(1, 3)]}
+
+
+def test_fichero_borrado_entero_se_atribuye_a_la_ruta_vieja():
+    """Con `+++ /dev/null` la unica ruta que queda es la de la cabecera `---`.
+
+    Es el caso mas grave —borrar la evidencia— y el que se perderia mirando solo
+    la cabecera `+++`. Ademas no aporta rangos nuevos: un fichero que ya no
+    existe no tiene lineas que la onda pueda tocar.
+    """
+    diff = (
+        "diff --git a/tests/test_caja.py b/tests/test_caja.py\n"
+        "deleted file mode 100644\n"
+        "index 1234567..0000000\n"
+        "--- a/tests/test_caja.py\n"
+        "+++ /dev/null\n"
+        "@@ -1,2 +0,0 @@\n"
+        "-def test_uno():\n"
+        "-    assert caja() == 1\n"
+    )
+
+    files = changes.parse_diff(diff)
+
+    assert list(files) == ["tests/test_caja.py"]
+    entrada = files["tests/test_caja.py"]
+    assert entrada["deleted"] is True
+    assert entrada["added"] == []
+    assert entrada["removed"] == ["def test_uno():", "    assert caja() == 1"]
+    assert changes._hunks_py(diff) == {}
+
+
+def test_un_fichero_binario_no_aporta_lineas_ni_ensucia_al_vecino():
+    """Un binario no trae `+++` ni hunks: ni entra al informe ni contamina.
+
+    Sus cabeceras (`Binary files ... differ`) caen entre dos ficheros del mismo
+    diff; el riesgo real es que se contabilicen como parte del fichero de test
+    que va detras.
+    """
+    diff = (
+        "diff --git a/tests/fixtures/blob.png b/tests/fixtures/blob.png\n"
+        "new file mode 100644\n"
+        "index 0000000..89abcde\n"
+        "Binary files /dev/null and b/tests/fixtures/blob.png differ\n"
+        "diff --git a/tests/test_caja.py b/tests/test_caja.py\n"
+        "index 1111111..2222222 100644\n"
+        "--- a/tests/test_caja.py\n"
+        "+++ b/tests/test_caja.py\n"
+        "@@ -1,2 +1,2 @@ def test_uno():\n"
+        " def test_uno():\n"
+        "-    assert caja() == 1\n"
+        "+    assert caja() == 2\n"
+    )
+
+    files = changes.parse_diff(diff)
+
+    assert list(files) == ["tests/test_caja.py"]
+    assert files["tests/test_caja.py"]["added"] == ["    assert caja() == 2"]
+    assert files["tests/test_caja.py"]["removed"] == ["    assert caja() == 1"]
+    assert changes._hunks_py(diff) == {"tests/test_caja.py": [(1, 2)]}
+
+
+def test_varios_hunks_del_mismo_fichero_se_acumulan_sin_pisarse():
+    """Un fichero con N hunks: una entrada, N secciones, N rangos.
+
+    Las secciones son lo que impide que un borrado en una funcion se enmascare
+    con un test nuevo en otra, asi que cada hunk tiene que quedar por separado
+    ademas de sumar al total del fichero.
+    """
+    diff = (
+        "diff --git a/tests/test_caja.py b/tests/test_caja.py\n"
+        "index 1111111..2222222 100644\n"
+        "--- a/tests/test_caja.py\n"
+        "+++ b/tests/test_caja.py\n"
+        "@@ -1,3 +1,3 @@ def test_uno():\n"
+        " def test_uno():\n"
+        "-    assert caja() == 1\n"
+        "+    assert caja() == 2\n"
+        "@@ -20,4 +21,5 @@ def test_dos():\n"
+        " def test_dos():\n"
+        "-    assert caja() == 9\n"
+        "+    assert caja() == 8\n"
+        "+    assert caja() != 0\n"
+    )
+
+    entrada = changes.parse_diff(diff)["tests/test_caja.py"]
+
+    assert entrada["added"] == [
+        "    assert caja() == 2",
+        "    assert caja() == 8",
+        "    assert caja() != 0",
+    ]
+    assert entrada["removed"] == ["    assert caja() == 1", "    assert caja() == 9"]
+    assert [s["func"] for s in entrada["sections"]] == ["def test_uno():", "def test_dos():"]
+    assert [(len(s["added"]), len(s["removed"])) for s in entrada["sections"]] == [(1, 1), (2, 1)]
+    # cada hunk deja su propio rango `+c,d` para la onda
+    assert changes._hunks_py(diff) == {"tests/test_caja.py": [(1, 3), (21, 25)]}
+# --- test_signals: casos borde ---
+
+
+def test_reescribir_una_asercion_en_otro_estilo_no_es_perdida(tmp_path):
+    """Migrar `assertEqual(a, b)` a `assert a == b` quita una linea y pone otra
+    distinta: no es el mismo texto retocado, es una aserción sustituida por su
+    equivalente. Contarlo como perdida seria cobrar peaje por un refactor limpio,
+    y ese peaje es lo que manda una revision a --no-verify."""
+    root = _repo(tmp_path)
+    _write(
+        root,
+        "tests/test_caja.py",
+        "def test_x():\n    self.assertEqual(total(), 6)\n    self.assertIn(3, items())\n",
+    )
+    _commit(root, "base")
+    _write(
+        root,
+        "tests/test_caja.py",
+        "def test_x():\n    assert total() == 6\n    assert 3 in items()\n",
+    )
+    _commit(root, "migra a assert pelado")
+
+    senales = _senales(changes.analyze(root, "HEAD~1..HEAD"))
+    assert "ASSERT_REMOVED" not in senales
+    assert "ASSERT_WEAKENED" not in senales
+
+
+def test_una_asercion_escrita_dentro_de_una_cadena_no_compensa_a_la_que_falta(tmp_path):
+    """Lo que vive dentro de un literal es dato, no comprobacion. Si contara como
+    aserción puesta, taparia la que se acaba de quitar escribiendo la palabra."""
+    root = _repo(tmp_path)
+    _write(
+        root,
+        "tests/test_caja.py",
+        "def test_x():\n    assert total() == 6\n    assert nombre() == 'ok'\n",
+    )
+    _commit(root, "base")
+    _write(
+        root,
+        "tests/test_caja.py",
+        "def test_x():\n    plantilla = 'assert total() == 6'\n    assert nombre() == 'ok'\n",
+    )
+    _commit(root, "cambia la asercion por su texto")
+
+    senales = _senales(changes.analyze(root, "HEAD~1..HEAD"))
+    assert "ASSERT_REMOVED" in senales
+
+
+def test_borrar_una_linea_que_solo_nombra_una_asercion_no_levanta_nada(tmp_path):
+    """La otra cara: quitar un literal que MENCIONA un assert no pierde ninguna
+    comprobacion, asi que tampoco puede figurar como aserción quitada."""
+    root = _repo(tmp_path)
+    _write(
+        root,
+        "tests/test_caja.py",
+        "def test_x():\n    plantilla = 'assert total() == 6'\n    assert total() == 6\n",
+    )
+    _commit(root, "base")
+    _write(root, "tests/test_caja.py", "def test_x():\n    assert total() == 6\n")
+    _commit(root, "quita el literal")
+
+    assert changes.analyze(root, "HEAD~1..HEAD")["flags"] == []
+
+
+def test_un_diff_de_solo_borrado_no_se_confunde_con_el_fichero_entero(tmp_path):
+    """Un hunk sin una sola linea añadida (`+c,0`) es el caso donde el neto por
+    funcion no tiene con que restar. Tiene que salir la perdida, y tiene que salir
+    como perdida — no como TEST_FILE_DELETED, que es una señal mas grave."""
+    root = _repo(tmp_path)
+    _write(
+        root,
+        "tests/test_caja.py",
+        "def test_uno():\n    assert 1 == 1\n    assert 2 == 2\n\n"
+        "def test_dos():\n    assert 3 == 3\n",
+    )
+    _commit(root, "base")
+    _write(root, "tests/test_caja.py", "def test_uno():\n    assert 1 == 1\n")
+    _commit(root, "solo borra lineas")
+
+    report = changes.analyze(root, "HEAD~1..HEAD")
+    senales = _senales(report)
+    assert "TEST_FILE_DELETED" not in senales
+    assert {"TEST_REMOVED", "ASSERT_REMOVED"} <= senales
+    assert report["test_files_changed"] == 1

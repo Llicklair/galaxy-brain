@@ -248,6 +248,135 @@ def test_gate_falla_con_config_de_reglas_rota(tmp_path):
     )
 
 
+def test_fichero_solo_de_comentarios_no_inventa_reglas_ni_avisos(tmp_path):
+    """Comentarios, lineas en blanco y una regla COMENTADA mezclados.
+
+    Dos maneras de equivocarse aqui, opuestas: parsear la regla comentada (aplicar
+    una frontera que alguien desactivo a proposito) o meterla en `malformed` y
+    tumbar el gate por una linea que nunca fue una regla. Ninguna de las dos: cero
+    reglas, cero avisos, y el informe diciendo que NO ha comprobado nada — que es
+    justo lo que un fichero sin reglas activas significa.
+    """
+    root = str(tmp_path)
+    _write(root, ".gb-boundaries", "# cabecera\n\n   \n# app.web -/-> app.db\n\t\n")
+    _write(root, "app/__init__.py", "")
+    _write(root, "app/web.py", "from app import db\n")  # lo que la regla comentada prohibiria
+    _write(root, "app/db.py", "")
+
+    report = graph.analyze(root)
+    assert report["boundaries"] == 0
+    assert report["malformed_boundaries"] == []  # una regla comentada no es un typo
+    assert report["boundaries_error"] is None
+    assert report["violations"] == []  # y no se aplica: estaba desactivada
+    assert "SIN FRONTERAS COMPROBADAS" in _plain(report)  # pero no se calla
+
+
+def test_regla_a_medio_casar_se_avisa_y_tumba_el_gate(tmp_path):
+    """El typo mas facil de no ver: el SRC existe y el DST no.
+
+    Media regla que casa se lee como regla viva —"app.web esta vigilado"— y no
+    dispara jamas. El aviso tiene que decir QUE lado falla, o revisarlo obliga a
+    releer el grafo entero a mano.
+    """
+    root = str(tmp_path)
+    _write(root, ".gb-boundaries", "app.web -/-> app.dbb\n")  # dbb: el DST no existe
+    _write(root, "app/__init__.py", "")
+    _write(root, "app/web.py", "")
+    _write(root, "app/db.py", "")
+
+    report = graph.analyze(root)
+    assert report["boundaries"] == 1  # la regla se parsea bien: el typo es semantico
+    (aviso,) = report["unmatched_rules"]
+    assert aviso["rule"] == "app.web -/-> app.dbb"
+    assert aviso["src_matches"] is True and aviso["dst_matches"] is False
+    assert cli._graph_gate(report) == 1  # enforced nada -> nunca verde
+
+
+def test_con_dos_ficheros_manda_el_de_la_RAIZ(tmp_path):
+    """`.gb-boundaries` en la raiz Y en `src/`, analizando la raiz.
+
+    La regla de descubrimiento es "la raiz gana siempre"; sin este test, cambiar el
+    orden de busqueda en `find_boundaries` aplicaria en silencio las fronteras del
+    subdirectorio. Cual de los dos manda tiene que ser un hecho comprobable, no un
+    detalle del recorrido de `os.walk`.
+    """
+    root = str(tmp_path)
+    _write(root, ".gb-boundaries", "raizmod -/-> otromod\n")
+    _write(root, "src/.gb-boundaries", "src.pkg.a -/-> src.pkg.b\n")
+    _write(root, "raizmod.py", "import otromod\n")  # cruce, pero solo segun la raiz
+    _write(root, "otromod.py", "")
+    _write(root, "src/pkg/__init__.py", "")
+    _write(root, "src/pkg/a.py", "")
+
+    report = graph.analyze(root)
+    assert report["boundaries_path"] == os.path.join(root, graph.BOUNDARIES_FILE)
+    assert [(v["importer"], v["imported"]) for v in report["violations"]] == [
+        ("raizmod", "otromod")
+    ]  # se aplica la regla de la raiz, no la de src/
+    # y el segundo fichero, el que NO se aplica, queda localizado en el informe
+    assert report["boundaries_elsewhere"] == os.path.join(root, "src", graph.BOUNDARIES_FILE)
+
+
+def test_fichero_hondo_se_encuentra_a_dos_niveles_y_mas_abajo_se_DICE(tmp_path):
+    """Hasta donde llega la busqueda hacia abajo, y que pasa al pasarse.
+
+    A dos niveles el fichero SE ENCUENTRA, pero sus nombres de modulo son relativos
+    a SU carpeta, asi que desde la raiz no casan con nada: encontrarlo no basta,
+    tiene que avisar de que no enforced nada. Mas hondo ya cae fuera del alcance
+    declarado de `find_boundaries` — y entonces lo unico que impide repetir el bug
+    historico (fichero que existe, gate en verde, nadie enterado) es que el informe
+    DIGA que ha cargado cero reglas y donde busco.
+    """
+    root = str(tmp_path)
+    _write(root, "a/b/.gb-boundaries", "pkg.x -/-> pkg.y\n")
+    _write(root, "a/b/pkg/__init__.py", "")
+    _write(root, "a/b/pkg/x.py", "from pkg import y\n")
+    _write(root, "a/b/pkg/y.py", "")
+
+    hondo = graph.analyze(root)
+    assert hondo["boundaries"] == 1  # dos niveles: dentro de alcance, se lee
+    # pero desde aqui los modulos se llaman a.b.pkg.x, no pkg.x: la regla no casa
+    assert [u["rule"] for u in hondo["unmatched_rules"]] == ["pkg.x -/-> pkg.y"]
+    assert hondo["violations"] == []
+    assert cli._graph_gate(hondo) == 1  # y por eso no puede quedar en verde
+
+    # desde SU carpeta, el mismo fichero si enforced: mismo cruce, ahora visto
+    dentro = graph.analyze(os.path.join(root, "a", "b"))
+    assert dentro["boundaries"] == 1 and dentro["unmatched_rules"] == []
+    assert len(dentro["violations"]) == 1
+
+    # un nivel mas abajo, fuera de alcance: no se encuentra, pero no se calla
+    mas_hondo = str(tmp_path / "raiz2")
+    _write(mas_hondo, "a/b/c/.gb-boundaries", "pkg.x -/-> pkg.y\n")
+    _write(mas_hondo, "a/b/c/pkg/__init__.py", "")
+    _write(mas_hondo, "a/b/c/pkg/x.py", "from pkg import y\n")
+    _write(mas_hondo, "a/b/c/pkg/y.py", "")
+
+    fuera = graph.analyze(mas_hondo)
+    assert fuera["boundaries"] == 0
+    salida = _plain(fuera)
+    assert "SIN FRONTERAS COMPROBADAS" in salida
+    assert graph.BOUNDARIES_FILE in salida  # y donde se busco
+
+
+def test_regla_duplicada_no_duplica_el_cruce(tmp_path):
+    """La misma regla dos veces (copiar-pegar, o un merge) cuenta como dos reglas
+    cargadas, pero un cruce es UNO: si cada arista se reportara una vez por regla
+    que la atrapa, la lista de cruces creceria con el ruido del fichero en vez de
+    con los problemas del codigo."""
+    root = str(tmp_path)
+    _write(root, ".gb-boundaries", "app.web -/-> app.db\napp.web  -/->  app.db   # otra vez\n")
+    _write(root, "app/__init__.py", "")
+    _write(root, "app/web.py", "from app import db\n")
+    _write(root, "app/db.py", "")
+
+    report = graph.analyze(root)
+    assert report["boundaries"] == 2  # no se deduplica en silencio: se cargaron dos
+    assert len(report["violations"]) == 1  # pero el cruce se cuenta una vez
+    assert report["unmatched_rules"] == []  # y la copia no se confunde con un typo
+    assert cli._graph_gate(report) == 1
+
+
 def test_cli_gate_falla_con_cruce_y_pasa_sin_el(tmp_path):
     root = str(tmp_path)
     _write(root, ".gb-boundaries", "app.web -/-> app.db\n")
