@@ -39,9 +39,11 @@ def vault_dir() -> Path:
 
 
 class Note:
-    __slots__ = ("name", "description", "type", "scope", "tags", "body", "file")
+    __slots__ = ("name", "description", "type", "scope", "tags", "body", "file",
+                 "frontmatter_roto")
 
-    def __init__(self, name, description, type, scope, tags, body, file):
+    def __init__(self, name, description, type, scope, tags, body, file,
+                 frontmatter_roto=False):
         self.name = name
         self.description = description
         self.type = type
@@ -49,13 +51,22 @@ class Note:
         self.tags = tags
         self.body = body
         self.file = file
+        self.frontmatter_roto = frontmatter_roto
 
 
 def parse_note(path: Path) -> Note:
-    raw = path.read_text(encoding="utf-8", errors="replace")
+    # utf-8-sig: un BOM (la trampa conocida de Set-Content en PowerShell) delante
+    # del `---` haria fallar el frontmatter entero en silencio.
+    raw = path.read_text(encoding="utf-8-sig", errors="replace")
     meta: dict[str, str] = {}
     body = raw
     m = _FRONTMATTER.match(raw)
+    # "No hay frontmatter" y "hay frontmatter roto" no son la misma cosa: un
+    # `---` abierto sin cerrar (o con finales CRLF) significa que TODO el
+    # frontmatter — scope incluido — se esta ignorando, y callarlo degrada una
+    # nota `always` a `general` sin que nadie se entere. La nota se carga igual
+    # con defaults, pero marcada; los consumidores dicen el hecho.
+    roto = m is None and raw.startswith("---")
     if m:
         body = m.group(2).strip()
         for line in m.group(1).splitlines():
@@ -71,14 +82,29 @@ def parse_note(path: Path) -> Note:
         tags=tags,
         body=body,
         file=path.name,
+        frontmatter_roto=roto,
     )
+
+
+def _aviso_rotas(notes: list[Note]) -> list[str]:
+    """Una linea por nota con frontmatter ilegible. Informa, no bloquea: el
+    hecho es que su scope/etiquetas se estan ignorando, y quien la escribio
+    merece enterarse donde ya esta leyendo."""
+    return [
+        "(AVISO: %s tiene frontmatter roto — `---` sin cerrar o formato ilegible; "
+        "su scope/etiquetas se estan ignorando)" % n.file
+        for n in notes
+        if n.frontmatter_roto
+    ]
 
 
 def all_notes() -> list[Note]:
     d = vault_dir()
     if not d.is_dir():
         return []
-    notes = [parse_note(p) for p in d.iterdir() if p.suffix == ".md" and p.name != "MEMORY.md"]
+    # suffix sin distinguir caja: NOTA.MD era invisible.
+    notes = [parse_note(p) for p in d.iterdir()
+             if p.suffix.lower() == ".md" and p.name.lower() != "memory.md"]
     notes.sort(key=lambda n: n.name)
     return notes
 
@@ -154,13 +180,14 @@ def recall(query: str) -> list[str]:
         return [
             "(ninguna de las %d nota(s) casa con '%s' — `gb memory index` las lista todas)"
             % (len(notes), " ".join(terms))
-        ]
+        ] + _aviso_rotas(notes)
     out: list[str] = []
     for n in ranked:
         out.append(f"### {n.name}  [{n.type}/{n.scope}]")
         if n.tags:
             out.append("tags: " + ", ".join(n.tags))
         out.append(n.body + "\n")
+    out.extend(_aviso_rotas(notes))
     return out
 
 
@@ -190,6 +217,10 @@ def context(project: str | None = None) -> str | None:
     ]
     for n in notes:
         out.append(f"- {n.name} [{n.scope}] — {n.description}")
+    avisos = _aviso_rotas(notes)
+    if avisos:
+        out.append("")
+        out.extend(avisos)
     if full:
         out.append("")
         out.append("Loaded in full (always + this project):")

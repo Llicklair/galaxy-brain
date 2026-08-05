@@ -75,14 +75,13 @@ def test_frontmatter_sin_cierre_degrada_a_cuerpo_entero(vault):
 
 
 def test_nombres_de_nota_con_caracteres_raros(vault):
-    """El nombre sale del stem tal cual: espacios, acentos y puntos valen.
-
-    Lo que NO entra queda fijado igual de explicito: sin extension y `.MD` en
-    mayusculas se ignoran, porque el filtro es `p.suffix == ".md"` y distingue caja.
+    """El nombre sale del stem tal cual: espacios, acentos y puntos valen, y la
+    extension ya no distingue caja (`UPPER.MD` era invisible). Lo que NO entra
+    queda fijado igual de explicito: sin extension se ignora.
     """
     for filename in ["con espacios.md", "acentué-ñ.md", "v1.2.3.md", "UPPER.MD", "sin-extension"]:
         (vault / filename).write_text("cuerpo x\n", encoding="utf-8")
-    assert [n.name for n in memory.all_notes()] == ["acentué-ñ", "con espacios", "v1.2.3"]
+    assert [n.name for n in memory.all_notes()] == ["UPPER", "acentué-ñ", "con espacios", "v1.2.3"]
 
 
 def test_index_md_is_skipped(vault):
@@ -236,3 +235,38 @@ def test_context_project_derived_from_env(vault, monkeypatch):
     write_note(vault, "n", body="AQUI", description="d", scope="project:foo-bar")
     payload = memory.context()  # sin --project: se deriva y se quita el prefijo c--
     assert "AQUI" in payload
+
+def test_frontmatter_roto_se_dice_no_se_degrada_en_silencio(vault):
+    """`---` abierto sin cerrar: la nota carga con defaults (el scope always
+    declarado cae a general y deja de inyectarse en SessionStart) — antes sin
+    avisar a nadie. Ahora el hecho sale donde ya se lee: context y recall."""
+    (vault / "rota.md").write_text(
+        "---\nname: rota\nscope: always\n\nel cuerpo sin cierre\n", encoding="utf-8")
+    (note,) = memory.all_notes()
+    assert note.frontmatter_roto
+    assert note.scope == "general"  # el default: el scope declarado se perdio
+    assert "frontmatter roto" in memory.context()
+    assert any("frontmatter roto" in l for l in memory.recall("cuerpo"))
+
+
+def test_sin_frontmatter_no_es_roto_y_no_se_avisa(vault):
+    (vault / "plana.md").write_text("solo un cuerpo, sin frontmatter\n", encoding="utf-8")
+    (note,) = memory.all_notes()
+    assert not note.frontmatter_roto
+    assert "frontmatter roto" not in (memory.context() or "")
+
+
+def test_el_bom_de_powershell_no_rompe_el_frontmatter(vault):
+    """Set-Content -Encoding utf8 en PS 5.1 escribe BOM delante del `---`: sin
+    utf-8-sig el frontmatter entero fallaba — la misma degradacion, otra via."""
+    (vault / "con-bom.md").write_bytes(
+        b"\xef\xbb\xbf---\nname: con-bom\nscope: always\n---\n\ncuerpo\n")
+    (note,) = memory.all_notes()
+    assert note.scope == "always"
+    assert not note.frontmatter_roto
+
+
+def test_la_nota_en_mayusculas_no_es_invisible(vault):
+    (vault / "GRITADA.MD").write_text("---\nname: gritada\n---\n\ncuerpo\n",
+                                      encoding="utf-8")
+    assert [n.name for n in memory.all_notes()] == ["gritada"]
