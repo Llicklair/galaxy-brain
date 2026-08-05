@@ -119,7 +119,10 @@ def _repr_mapping(obj, limit, max_items, depth):
         if index >= max_items:
             break
         key_text = safe_repr(key, 60, max_items, depth + 1)
-        if is_sensitive(key if isinstance(key, str) else ""):
+        # La clave viaja tal cual: is_sensitive ya sabe tratar cualquier tipo.
+        # El guard viejo (`"" si no es str`) era la fuga: una clave bytes se
+        # saltaba la redaccion entera.
+        if is_sensitive(key):
             value_text = REDACTED
         else:
             value_text = _repr_value(value, min(limit, 80), max_items, depth + 1)
@@ -141,7 +144,19 @@ def is_sensitive(name):
     heuristica cara y falible; el nombre lo escribio un humano a proposito.
     Falso positivo = pierdes un valor que no necesitabas. Falso negativo =
     un token en un fichero. Coste asimetrico, propiedad 5.
+
+    Acepta CUALQUIER tipo de nombre. Una clave `bytes` se colaba entera:
+    `{b"password": ...}` volcaba el secreto sin tapar porque el call-site pasaba
+    "" para claves no-str (hallado por la tirada de agentes del 5-ago-2026). La
+    conversion a texto preserva el nombre visible (`str(b'password')` contiene
+    'password'), y si ni convertirse puede, se redacta: el mismo coste
+    asimetrico manda fallar hacia el lado que no escribe secretos.
     """
+    if not isinstance(name, str):
+        try:
+            name = str(name)
+        except Exception:
+            return True
     lowered = name.lower()
     return any(pattern in lowered for pattern in config.REDACT_PATTERNS)
 

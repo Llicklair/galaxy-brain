@@ -191,3 +191,49 @@ def test_contenedor_con_len_roto_se_describe_no_propaga():
             raise ValueError("items roto")
 
     assert saferepr.safe_repr(ItemsRoto(a=1)) == "<ItemsRoto: repr() fallo con ValueError>"
+
+
+# --- redaccion con claves que no son str (la fuga del 5-ago-2026) -----------
+
+def test_una_clave_bytes_sensible_ya_no_vuelca_el_secreto():
+    """`{b"password": ...}` se saltaba la redaccion entera: el call-site pasaba
+    "" a is_sensitive para claves no-str y el valor acababa en disco sin tapar."""
+    salida = saferepr.safe_repr({b"password": "hunter2"})
+    assert "hunter2" not in salida
+    assert saferepr.REDACTED in salida
+
+
+def test_repr_local_con_nombre_bytes_no_propaga_y_redacta():
+    """El docstring del modulo promete que aqui NADA propaga; con un nombre
+    bytes, `name.lower()` devolvia bytes y el `in` contra patrones str lanzaba
+    TypeError."""
+    assert saferepr.repr_local(b"password", "x") == saferepr.REDACTED
+    assert "no-sensible" in saferepr.repr_local(b"contador", "no-sensible")
+
+
+def test_una_clave_de_otro_tipo_tambien_se_mira_por_su_texto():
+    salida = saferepr.safe_repr({("api_key",): "sk-123"})
+    assert "sk-123" not in salida
+    assert saferepr.REDACTED in salida
+
+
+def test_una_clave_cuyo_str_revienta_se_redacta_en_vez_de_colarse():
+    """Si el nombre ni siquiera puede decirse, el coste asimetrico manda: mejor
+    perder un valor que escribir un secreto."""
+    class SinNombre:
+        def __str__(self):
+            raise RuntimeError("sin nombre")
+        def __repr__(self):
+            raise RuntimeError("sin repr")
+        def __hash__(self):
+            return 1
+        def __eq__(self, otro):
+            return self is otro
+
+    salida = saferepr.safe_repr({SinNombre(): "quiza-secreto"})
+    assert "quiza-secreto" not in salida
+
+
+def test_las_claves_normales_siguen_enseniando_su_valor():
+    salida = saferepr.safe_repr({"contador": 3, "usuario": "ana"})
+    assert "3" in salida and "ana" in salida
