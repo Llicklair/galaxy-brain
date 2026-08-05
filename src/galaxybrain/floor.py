@@ -415,7 +415,8 @@ def _plantilla_claude_settings():
       {
         "matcher": "Edit|Write|NotebookEdit",
         "hooks": [
-          { "type": "command", "command": "gb graph --context --if-changed", "timeout": 15 }
+          { "type": "command", "command": "gb graph --context --if-changed", "timeout": 15 },
+          { "type": "command", "command": "gb delta --worktree --brief", "timeout": 15 }
         ]
       }
     ],

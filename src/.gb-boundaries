@@ -39,3 +39,6 @@ galaxybrain.memory    -/->  galaxybrain.viz
 galaxybrain.impacted  -/->  galaxybrain.cli
 galaxybrain.impacted  -/->  galaxybrain.render
 galaxybrain.impacted  -/->  galaxybrain.viz
+galaxybrain.delta     -/->  galaxybrain.cli
+galaxybrain.delta     -/->  galaxybrain.render
+galaxybrain.delta     -/->  galaxybrain.viz
