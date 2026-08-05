@@ -99,15 +99,35 @@ store.append: (entry) → (entry, *, flush=False)
 Que sea estrecho no es estética: es lo que evita que 4 agentes compartiendo se coman el contexto
 entre ellos. Cada agente recibe el fan-in de sus nodos, no la cháchara de los otros tres.
 
-> **Experimento en curso (5-ago-2026, tarde):** el enrutador sigue sin evidencia tras dos tiradas
-> (cero firmas incompatibles espontáneas), así que la evidencia se fabrica. Dos brazos, mismo par
-> de tareas sobre el banco desechable `experimento/`: A rompe la firma de `nucleo.calcula`
-> (parámetro obligatorio, sin default), B escribe código nuevo contra esa función. **Control:** sin
-> señal. **Tratamiento:** B recibe en vuelo el hecho derivado del diff real de A. Criterio, escrito
-> antes de lanzar: enrutador **justificado** si control-unión ROJA y tratamiento-unión VERDE;
-> **refutado-en-contexto** si el tratamiento también sale rojo (la obligación va a la arista — al
-> bucle — no al contexto); **inconcluso** si el control sale verde (el par no fabricó la deriva).
-> A corre una vez; su worktree vive durante los dos brazos. El resultado se escribe aquí.
+> **MEDIDO (5-ago-2026, tarde) — el enrutador queda JUSTIFICADO.** Evidencia fabricada sobre el
+> banco desechable `experimento/`: A rompió la firma de `nucleo.calcula` («(a, b) → (a, b, base)»,
+> obligatorio, sin default — invisible para la suite entera: 552 verdes con el contrato roto), y
+> dos agentes B idénticos escribieron llamadas directas nuevas. El criterio se escribió y commiteó
+> ANTES de lanzar (`23f7270`).
+>
+> | Brazo | A solo | B solo | Unión |
+> |---|---|---|---|
+> | Control (sin señal) | ok | ok | **ROJA** — `TypeError: missing 'base'` en las 2 llamadas ciegas |
+> | Tratamiento (hecho enrutado en el despacho) | ok | ROJA | **VERDE** (257 passed) |
+>
+> El hecho enrutado no fue redactado: se derivó del diff real de A con la maquinaria de firmas de
+> `symbols` («calcula: (a, b) → (a, b, base); su llamante capa.procesa ya adaptado»). B₂ lo aplicó
+> **pagando su verde local** — sus tests salían rojos en su propio árbol (firma vieja) y lo
+> reportó tal cual, con el porqué en el docstring y una predicción comprobable (unión: 4 passed)
+> que se cumplió al dígito. *Compartir no es obedecer* sigue siendo cierto en general, pero con el
+> hecho correcto, estrecho y en el despacho, este agente obedeció contra su propia evidencia local.
+>
+> **Hallazgo colateral que hereda el bucle:** el checkpoint marcó a B₂ como «rescate accidental»
+> (exit global 1 con la unión verde). La heurística no puede distinguir rescate-por-suerte de
+> **coordinación-por-señal**: el rastro observable es idéntico (rama roja sola, unión verde). Un
+> agente correctamente enrutado se parece, desde fuera, a uno rescatado. La desambiguación exige
+> que el enrutador deje constancia de qué hecho entregó a quién — registro del ORQUESTADOR (el
+> bucle), no de `gb`: gb deriva; quién recibió qué señal es historia de la tirada.
+>
+> **Nota de método:** los worktrees del harness de agentes nacen anclados a un commit fijo de la
+> sesión (no «uno por detrás» como se creyó primero) — el experimento corrió sobre worktrees
+> propios (`git worktree add --detach <ruta> main`) con la ruta pasada al agente. El banco
+> `experimento/` queda en el repo hasta que la fase 2 (el bucle) lo reuse o lo retire.
 
 **Piezas que ya existen:** `symbols.py` extrae la firma tecleable de cada `def`
 ([`_firma`](../src/galaxybrain/symbols.py#L104), volcada en `sigs`); `delta.py` sabe leer un

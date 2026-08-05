@@ -38,9 +38,16 @@
    pasa en verde. El conftest ya se defiende, pero los worktrees parten de un commit que puede
    no llevarlo. En el prompt del agente, siempre:
    `PYTHONPATH=<worktree>/src` + verificar `python -c "import galaxybrain.cli as c; print(c.__file__)"`.
-2. **Los worktrees del Agent tool no nacen en tu HEAD** (dos tiradas seguidas nacieron un
-   commit por detrás). Consecuencia: el aviso `parte de otra base` en el panel es lo esperado,
-   y `--union` rehusará mezclar con tu árbol — eso es el checkpoint funcionando, no un fallo.
+2. **Los worktrees del Agent tool nacen ANCLADOS a un commit fijo de la sesión** — no «uno por
+   detrás», como se creyó primero: tres tandas nacieron en el mismo commit con HEAD ya doce
+   commits más allá, y un commit-colchón no cambió nada. Consecuencias: el aviso `parte de otra
+   base` es lo esperado, `--union` rehusará mezclar con tu árbol, y **un banco commiteado después
+   del ancla no existe para el agente**. Si la tirada necesita bases exactas (experimentos,
+   código recién commiteado), la receta es worktrees PROPIOS: `git worktree add --detach
+   <ruta> main`, el agente se lanza SIN aislamiento del harness y recibe la ruta en el prompt
+   con la orden de trabajar solo ahí. Limpieza manual al terminar (el harness solo autolimpia
+   los suyos). Verificar la base del agente ANTES de darle trabajo: la toma 1 del experimento
+   del enrutador se gastó entera en descubrir esto.
 3. **El checkpoint y los agentes no comparten CPU.** Una suite bajo el pre-commit con 1-3
    agentes Opus corriendo las suyas da rojos falsos por inanición (18 en la medición del
    5-ago). Los commits y el `--union` esperan a que la tirada termine.
