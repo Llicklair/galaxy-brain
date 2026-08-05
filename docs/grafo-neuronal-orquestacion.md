@@ -363,6 +363,17 @@ es la que el usuario pidió, así que se construye entera o no se construye.
 > la unión — el bucle ya conoce el hecho entregado; comprobar en el diff de B si escribió contra
 > la firma vieja es estático, barato y no depende de que el LLM coopere. La señal que obliga no
 > es la del despacho: es la del bucle rechazando el trabajo que la ignoró.
+>
+> **Construida el 6-ago-2026 (v1).** Tras derivar los hechos del receptor, el bucle cruza por AST
+> las llamadas *añadidas* en su diff (incluidos ficheros nuevos, vía `add -N`) contra la firma
+> nueva de cada hecho entregado; una llamada que no encaja es una infracción con fichero:línea, y
+> el rechazo reintenta UNA vez con esas llamadas exactas como señal, consumiendo el mismo
+> presupuesto de reintento que la unión. Conservadora a propósito (regla 9: solo hechos):
+> `*args`/`**kwargs`, firmas ilegibles y llamadas por atributo con self plausible **no acusan** —
+> el precio es que alguna desobediencia escapa a la unión, nunca un falso rechazo. El caso de la
+> tirada del 5-ago (`calcula(3, 4)` con el hecho delante) es test fijo de la suite. Sin medir
+> aún: si el rechazo con las llamadas exactas corrige a B en vivo — esa tirada cuesta cuota y se
+> propone aparte.
 
 ## 5. Encaje en las familias (CLAUDE.md, regla dura 4)
 
