@@ -339,6 +339,31 @@ es la que el usuario pidió, así que se construye entera o no se construye.
 
 ---
 
+### D. El bucle — la arista determinista entre agentes estocásticos
+
+> **Construido y corrido en vivo el 5-ago-2026 (v0): `bucle/bucle.py`.** No es parte de `gb` y no
+> debe serlo nunca: es el orquestador, y consume `gb` por CLI/JSON — probando de paso la superficie
+> de integración que este proyecto promete. Ciclo: preparar worktrees propios → lanzar A (`claude
+> -p`, Opus) → derivar sus hechos (firmas, contra una base LIMPIA, nunca contra el árbol del
+> orquestador — el primer test lo cazó) → enrutar en el despacho de B → aterrizar con `--union` →
+> un reintento → acta SIEMPRE, con el registro de entregas que separa *coordinada* de *rescatada*.
+> Nunca mergea.
+>
+> **La primera tirada en vivo, autónoma de punta a punta, salió ROJA — y eso es el bucle
+> funcionando:** el acta muestra la cadena completa sin manos humanas (hecho derivado exacto,
+> entrega registrada, unión, reintento, limpieza), y muestra que **este B ignoró la señal** —
+> escribió contra la firma vieja de su árbol con el hecho delante. Con el B₂ de la tarde que sí
+> obedeció: n=2, 1/2. «Compartir no es obedecer» ya es una frecuencia, no una tesis — y la arista
+> determinista cazó la desobediencia ambas veces (unión roja; jamás falso verde).
+>
+> Defecto propio de v0, cazado por su primera acta y arreglado: el reintento entregaba la cola
+> cruda del output (lista de ficheros) en vez de los fallos exactos; B reintentó a ciegas.
+>
+> **La rebanada v1 que esta medición justifica:** verificación determinista de adopción ANTES de
+> la unión — el bucle ya conoce el hecho entregado; comprobar en el diff de B si escribió contra
+> la firma vieja es estático, barato y no depende de que el LLM coopere. La señal que obliga no
+> es la del despacho: es la del bucle rechazando el trabajo que la ignoró.
+
 ## 5. Encaje en las familias (CLAUDE.md, regla dura 4)
 
 Ninguna de las dos mecánicas abre familia nueva:
