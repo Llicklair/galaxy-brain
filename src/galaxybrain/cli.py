@@ -879,13 +879,22 @@ def cmd_graph(args):
     return 1 if report.get("root_error") else 0
 
 
+RUIDO_WALK = (".git", "__pycache__", ".venv", "node_modules", ".pytest_cache")
+
+
 def _firma_py(root):
     """Nombre + tamano + mtime de cada .py del arbol. Barato, y cualquier edicion
-    lo mueve — es lo que usa --watch para saber cuando reanalizar."""
+    lo mueve — es lo que usa --watch para saber cuando reanalizar.
+
+    La poda va sobre `dirs` IN PLACE, no con un `continue`. Con `continue` se
+    saltaban los ficheros de la carpeta de ruido pero `os.walk` seguia bajando
+    dentro: en este repo eran 290 directorios y 1499 ficheros recorridos en vez
+    de 16 y 98, y 22 ms por vuelta en vez de 1. Medido el 5-ago-2026 al presupuestar
+    el sondeo de varios arboles a la vez; el coste lo pagaba el `--watch` de hoy.
+    """
     marcas = []
-    for base, _dirs, ficheros in os.walk(root):
-        if any(p in base for p in (".git", "__pycache__", ".venv", "node_modules")):
-            continue
+    for base, dirs, ficheros in os.walk(root):
+        dirs[:] = [d for d in dirs if d not in RUIDO_WALK]
         for f in ficheros:
             if f.endswith(".py"):
                 try:

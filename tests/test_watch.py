@@ -154,3 +154,35 @@ def test_fondo_relanza_sin_la_bandera_y_vuelve(tmp_path, monkeypatch):
     assert len(ordenes) == 1
     assert "--fondo" not in ordenes[0]
     assert "galaxybrain.cli" in ordenes[0]
+
+
+def test_la_firma_no_baja_a_las_carpetas_de_ruido(tmp_path):
+    """El tick del watch no puede pagar el arbol de `.git`.
+
+    Podar con `continue` en vez de sobre `dirs` dejaba que `os.walk` siguiera
+    bajando: 290 directorios recorridos en vez de 16 en este repo, 22 ms por
+    vuelta en vez de 1 (medido el 5-ago-2026 al presupuestar el sondeo de varios
+    arboles a la vez). El coste lo pagaba cada vuelta, hubiera cambios o no.
+    """
+    (tmp_path / "vivo.py").write_text("x = 1\n", encoding="utf-8")
+    for ruido in (".git", "__pycache__", ".venv", "node_modules", ".pytest_cache"):
+        hondo = tmp_path / ruido / "hondo"
+        hondo.mkdir(parents=True)
+        (hondo / "trampa.py").write_text("y = 2\n", encoding="utf-8")
+
+    nombres = [marca[0] for marca in cli._firma_py(str(tmp_path))]
+    assert nombres == ["vivo.py"]
+
+
+def test_una_carpeta_que_solo_CONTIENE_el_nombre_del_ruido_si_se_mira(tmp_path):
+    """`.github` no es `.git`: la poda va por nombre exacto, no por subcadena.
+
+    El filtro viejo comparaba la ruta entera contra la subcadena, asi que un
+    proyecto colgando de cualquier carpeta con `.git` dentro del nombre se
+    quedaba sin vigilar y sin decirlo.
+    """
+    sitio = tmp_path / ".github" / "scripts"
+    sitio.mkdir(parents=True)
+    (sitio / "util.py").write_text("z = 3\n", encoding="utf-8")
+    nombres = [marca[0] for marca in cli._firma_py(str(tmp_path))]
+    assert nombres == ["util.py"]
