@@ -143,6 +143,18 @@ def componer_prompt(tarea, hechos_enrutados, extra=""):
     return "\n\n".join(bloques)
 
 
+def extracto_fallo(texto):
+    """Las lineas que DICEN el fallo, no la cola cruda del output.
+
+    La primera tirada en vivo lo pago: el recorte de los ultimos 2000 caracteres
+    entrego al reintento la lista de ficheros de pytest en vez del TypeError, y
+    el agente reintento a ciegas. La señal del reintento tiene que ser tan
+    estrecha y tan factual como la del despacho."""
+    lineas = [ln for ln in texto.splitlines()
+              if re.search(r"FAILED|Error\b|error:|^E\s", ln)]
+    return "\n".join(lineas[-15:]) if lineas else texto[-800:]
+
+
 def veredicto_union():
     """`gb tests --run --union` y su lectura: (exit, union_verde, ramas_rojas)."""
     rc, salida, err = _corre(GB + ["tests", "--run", "--union"], timeout=1800)
@@ -217,8 +229,8 @@ def correr(tirada, dir_parches=None, max_reintentos=1, timeout_agente=900):
             ultima = tirada["tareas"][-1]
             wt = worktrees[ultima["id"]]
             _corre(["git", "checkout", "--", "."], cwd=wt)
-            extra = ("REINTENTO: la union de todos los diffs fallo. Cola del fallo:\n"
-                     + cola[-1200:])
+            extra = ("REINTENTO: la union de todos los diffs fallo. Los fallos exactos:\n"
+                     + extracto_fallo(cola))
             acta["entregas"].setdefault(ultima["id"], []).append("(cola del fallo de union)")
             if dir_parches:
                 break  # en simulado no hay reintento distinto que aplicar

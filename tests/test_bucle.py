@@ -98,3 +98,22 @@ def test_hechos_entre_es_puro_y_dice_altas_bajas_y_cambios():
     assert "m.f: (a) -> (a, b)" in hechos
     assert "m.g: (x) -> (borrada)" in hechos
     assert "m.h: (no existia) -> (z)" in hechos
+
+
+def test_el_extracto_del_fallo_trae_el_error_no_la_lista_de_ficheros():
+    """La primera tirada en vivo reintentro a ciegas: la cola cruda del output
+    entregaba la lista de ficheros de pytest en vez del TypeError."""
+    texto = (
+        "$ -m pytest tests/test_a.py tests/test_b.py tests/test_c.py\n"
+        "E       TypeError: calcula() missing 1 required positional argument: 'base'\n"
+        "FAILED tests/test_experimento_uso.py::test_directa - TypeError\n"
+        "======================= 2 failed, 255 passed ========================\n"
+        "  ROJA   union\n")
+    extracto = bucle.extracto_fallo(texto)
+    assert "TypeError" in extracto
+    assert "FAILED" in extracto
+    assert "$ -m pytest" not in extracto
+
+
+def test_sin_lineas_de_error_cae_a_la_cola_y_no_a_vacio():
+    assert bucle.extracto_fallo("nada de interes aqui") != ""
