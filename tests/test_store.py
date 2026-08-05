@@ -184,3 +184,16 @@ def test_si_el_home_no_se_puede_crear_se_falla_hacia_el_lado_seguro(gb_home, tmp
     assert store.uso_stats() == {}
     store.mark_read("uno")  # silencioso
     store.mark_uso("gb list")  # silencioso
+
+def test_un_id_nulo_en_el_indice_no_revienta_la_carga(gb_home):
+    """Una linea de JSON valido con "id": null pasa el filtro de read_index (es
+    un dict legal) y reventaba load() con AttributeError (None.startswith).
+    Regla 9: un registro raro se salta, no tumba la consulta entera."""
+    store.write(_record())
+    with open(gb_home / store.INDEX_NAME, "a", encoding="utf-8") as handle:
+        handle.write('{"id": null, "ts": "2026-08-06T10:00:00+02:00", '
+                     '"type": "X", "where": "a.py:1"}\n')
+
+    buena = next(e for e in store.read_index() if e.get("id"))
+    assert store.load(buena["id"][:8]) is not None
+    assert store.load("id-que-no-existe") is None

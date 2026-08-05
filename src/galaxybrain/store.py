@@ -388,7 +388,7 @@ def load(record_id=None, project=None, since=None):
         entry = entries[0]
     else:
         entry = next(
-            (item for item in entries if item.get("id", "").startswith(record_id)),
+            (item for item in entries if (item.get("id") or "").startswith(record_id)),
             None,
         )
         if entry is None:
