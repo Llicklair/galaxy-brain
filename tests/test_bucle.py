@@ -194,3 +194,16 @@ def test_las_llamadas_viejas_no_tocadas_no_se_acusan(worktree_real):
     """experimento/capa.py llama a calcula con la firma vieja en la base — pero
     el agente no lo toco, asi que no es suyo y no se acusa."""
     assert bucle.llamadas_contra_firma_vieja(str(worktree_real), [HECHO_VIVO]) == []
+
+
+# --- actas: el dataset se acumula, nunca se pisa ------------------------------
+
+def test_cada_inicio_da_un_acta_distinta_y_ninguna_pisa_a_otra():
+    """La primera acta viva del proyecto se perdio por sobreescritura (la
+    tirada de las 00:15 del 6-ago piso la de las 22:40 del 5-ago). El nombre
+    se deriva del inicio: dos tiradas, dos ficheros."""
+    a = bucle._ruta_acta("2026-08-05 22:40:12")
+    b = bucle._ruta_acta("2026-08-06 00:15:34")
+    assert a != b
+    assert a.endswith(os.path.join(".claude", "actas", "bucle-20260805-224012.json"))
+    assert b.endswith(os.path.join(".claude", "actas", "bucle-20260806-001534.json"))

@@ -212,6 +212,17 @@ def llamadas_contra_firma_vieja(worktree, hechos):
     return infracciones
 
 
+def _ruta_acta(inicio):
+    """Donde vive el acta de una tirada: .claude/actas/bucle-<inicio>.json.
+
+    Las actas se ACUMULAN, nunca se pisan: son el dataset del que algun dia se
+    aprendera (despacho entregado -> ¿adopto? -> ¿union verde?), y un dataset
+    que se sobreescribe no es un dataset. La primera acta viva del proyecto se
+    perdio exactamente asi: la tirada de las 00:15 piso la de las 22:40."""
+    nombre = "bucle-%s.json" % inicio.replace("-", "").replace(":", "").replace(" ", "-")
+    return os.path.join(RAIZ, ".claude", "actas", nombre)
+
+
 def _reset_worktree(worktree):
     """Un reintento parte de la base, no del intento fallido: fuera cambios,
     fuera stage (incluidos los add -N de la verificacion) y fuera ficheros nuevos."""
@@ -396,7 +407,7 @@ def correr(tirada, dir_parches=None, max_reintentos=1, timeout_agente=900):
         for wt in worktrees.values():
             quitar_worktree(wt)
         acta["fin"] = time.strftime("%Y-%m-%d %H:%M:%S")
-        destino = os.path.join(RAIZ, ".claude", "bucle-acta.json")
+        destino = _ruta_acta(acta["inicio"])
         os.makedirs(os.path.dirname(destino), exist_ok=True)
         with io.open(destino, "w", encoding="utf-8") as fh:
             json.dump(acta, fh, ensure_ascii=False, indent=2)
@@ -413,8 +424,9 @@ def main(argv=None):
     with io.open(args.tirada, encoding="utf-8") as fh:
         tirada = json.load(fh)
     acta = correr(tirada, dir_parches=args.simula, timeout_agente=args.timeout_agente)
-    print("veredicto: %s | lectura: %s | acta: .claude/bucle-acta.json"
-          % (acta["veredicto"], acta["lectura_ramas"] or "(sin ramas rojas)"))
+    print("veredicto: %s | lectura: %s | acta: %s"
+          % (acta["veredicto"], acta["lectura_ramas"] or "(sin ramas rojas)",
+             os.path.relpath(_ruta_acta(acta["inicio"]), RAIZ)))
     return 0 if acta["veredicto"] == "verde" else 1
 
 
