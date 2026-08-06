@@ -750,9 +750,14 @@ _NUBE = """<!doctype html>
         background:#04070c;border:1px solid rgba(255,255,255,.14);border-radius:6px;
         padding:3px 7px;width:240px;font:9px/1.5 ui-monospace,Consolas,monospace;
         cursor:pointer;box-shadow:0 6px 20px rgba(0,0,0,.5)}
-  #terminales .tcab{font-weight:700;margin-bottom:1px;font-size:10px}
+  #terminales .tcab{font-weight:700;margin-bottom:1px;font-size:10px;
+        display:flex;align-items:center;gap:4px}
+  #terminales .tbot{margin-left:auto}
+  #terminales .tcab b{cursor:pointer;color:var(--suave);font-weight:700;
+        padding:0 3px;user-select:none}
+  #terminales .tcab b:hover{color:#fff}
   #terminales .tl{color:#9fb0c0;white-space:nowrap;overflow:hidden;
-        text-overflow:ellipsis;max-width:226px}
+        text-overflow:ellipsis}
   #terminales .cur{animation:parpadeo 1s steps(1) infinite}
   @keyframes parpadeo{50%%{opacity:0}}
 </style>
@@ -1402,23 +1407,46 @@ const CMEM='gb-mapa-consola';
   // en la consola de abajo. Cursor parpadeando mientras el agente esta vivo.
   const termCont=document.getElementById('terminales');
   const IDXN={}; NODOS.forEach((n,i)=>{ IDXN[n.id]=i; });
+  // La talla la elige quien mira: tres discretas con -/+ (mismo motivo que la
+  // consola: resize libre no vale con el ancla en el nodo), recordada entre
+  // recargas. [ancho px, lineas visibles]
+  const TAMT=[[180,2],[240,3],[340,6]];
+  const TMEM='gb-mapa-terminal';
+  let tamT=1;
+  try{ const g=sessionStorage.getItem(TMEM);
+       if(g!=null) tamT=Math.max(0,Math.min(TAMT.length-1,+g||0)); }catch(_){}
   const TERMS=[]; const anclados={}; let sueltos=0;
+  function renderTerm(t){
+    const a=AGENTES[t.nom]; if(!a) return;
+    const vivo = a.hace!=null && a.hace<120;
+    t.el.style.width=TAMT[tamT][0]+'px';
+    t.el.innerHTML='<div class="tcab" style="color:'+a.c+'">&#9679; '+escapa(t.nom)+
+      '<span class="tbot"><b data-acc="tmenos" title="mas pequena">&#8722;</b>'+
+      '<b data-acc="tmas" title="mas grande">+</b></span></div>'+
+      a.consola.slice(-TAMT[tamT][1]).map(l=>'<div class="tl">'+escapa(l)+'</div>').join('')+
+      (vivo?'<span class="cur" style="color:'+a.c+'">&#9612;</span>':'');
+  }
   for(const nom of Object.keys(AGENTES).sort()){
     const a=AGENTES[nom];
     if(!(a.consola||[]).length) continue;
     let idx=null;
     for(const n of NODOS){ if((n.ag||[]).indexOf(nom)>=0){ idx=IDXN[n.id]; break; } }
-    const vivo = a.hace!=null && a.hace<120;
     const el=document.createElement('div');
     el.className='term'; el.dataset.ag=nom;
-    el.innerHTML='<div class="tcab" style="color:'+a.c+'">&#9679; '+escapa(nom)+'</div>'+
-      a.consola.slice(-3).map(l=>'<div class="tl">'+escapa(l)+'</div>').join('')+
-      (vivo?'<span class="cur" style="color:'+a.c+'">&#9612;</span>':'');
     termCont.appendChild(el);
     const orden = idx==null ? 0 : (anclados[idx]=(anclados[idx]||0)+1)-1;
-    TERMS.push({el:el, idx:idx, orden:orden, suelto: idx==null ? sueltos++ : -1});
+    const t={el:el, nom:nom, idx:idx, orden:orden, suelto: idx==null ? sueltos++ : -1};
+    renderTerm(t);
+    TERMS.push(t);
   }
   termCont.addEventListener('click', ev=>{
+    const acc = ev.target && ev.target.dataset ? ev.target.dataset.acc : null;
+    if(acc==='tmenos' || acc==='tmas'){
+      tamT=Math.max(0, Math.min(TAMT.length-1, tamT+(acc==='tmas'?1:-1)));
+      try{ sessionStorage.setItem(TMEM, String(tamT)); }catch(_){}
+      for(const t of TERMS) renderTerm(t);
+      return;
+    }
     let el=ev.target;
     while(el && el!==termCont && !(el.dataset && el.dataset.ag)) el=el.parentNode;
     const nom=(el && el.dataset) ? el.dataset.ag : null;
@@ -1433,11 +1461,12 @@ const CMEM='gb-mapa-consola';
           // Agente sin nodo en el mapa todavia: su terminal se apila a la
           // izquierda, bajo la cabecera — operando, pero aun sin sitio.
           t.el.style.transform='none';
-          t.el.style.left='12px'; t.el.style.top=(96+58*t.suelto)+'px';
+          t.el.style.left='12px';
+          t.el.style.top=(96+(t.el.offsetHeight+8)*t.suelto)+'px';
           continue;
         }
         t.el.style.left=(X[t.idx]*esc+ox)+'px';
-        t.el.style.top=(Y[t.idx]*esc+oy-14-48*t.orden)+'px';
+        t.el.style.top=(Y[t.idx]*esc+oy-14-(t.el.offsetHeight+6)*t.orden)+'px';
       }
       requestAnimationFrame(animaTerms);
     })();
