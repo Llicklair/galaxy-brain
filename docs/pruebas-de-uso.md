@@ -42,9 +42,11 @@ Honestidad estadística: n=4 por brazo; marco+señal juntos 8/8 contra 2/4 del b
 sin cruzar significancia clásica (~0,09 una cola). Es coherente, replicado en dos brazos y con
 mecanismo — pero si algún día importa de verdad, se compra con n, no con prosa.
 
-Consecuencia propuesta (pendiente de decisión): el despacho por defecto lleva el AVISO fijo y
-reserva los hechos al rechazo — mismo efecto medido, coste cero de derivación en el despacho y un
-prompt más corto. La señal completa quedaría tras bandera (`--senal-completa`).
+Consecuencia — DECIDIDA por Marcos la misma noche («gíralo si lo ves necesario») y girada: el
+despacho por defecto lleva el AVISO fijo y reserva los hechos al rechazo — mismo efecto medido y un
+prompt más corto; la derivación sigue igual (la necesita la verificación). La señal completa queda
+tras `--senal-completa`, el brazo desnudo tras `--sin-senal`, y los tres modos son excluyentes: la
+norma va en el defecto, desviarse cuesta una bandera.
 
 ## 2026-08-06 · La 4ª rebanada: ¿sobra la señal preventiva? — NO, y el porqué es mejor que la pregunta
 
