@@ -341,6 +341,19 @@ def componer_prompt(tarea, hechos_enrutados, extra=""):
     return "\n\n".join(bloques)
 
 
+def despacho_de(tarea, enrutados, sin_senal=False):
+    """Qué recibe el agente y qué se queda el bucle.
+
+    Con `sin_senal` (4ª rebanada del dataset: ¿aporta algo la señal preventiva
+    si el rechazo ya corrige? — con señal iba ignorada 4/4 y el rechazo corrigió
+    4/4) los hechos se DERIVAN y se VERIFICAN igual, pero no viajan en el
+    despacho: aparecerán, exactos, solo en un rechazo. Devuelve
+    (prompt, entregados, retenidos)."""
+    if sin_senal and enrutados:
+        return componer_prompt(tarea, []), [], list(enrutados)
+    return componer_prompt(tarea, enrutados), list(enrutados), []
+
+
 def extracto_fallo(texto):
     """Las lineas que DICEN el fallo, no la cola cruda del output.
 
@@ -409,12 +422,14 @@ def interpretar(ramas_rojas, union_verde, entregas):
     return lectura
 
 
-def correr(tirada, dir_parches=None, max_reintentos=1, timeout_agente=900):
+def correr(tirada, dir_parches=None, max_reintentos=1, timeout_agente=900, sin_senal=False):
     acta = {
         "inicio": time.strftime("%Y-%m-%d %H:%M:%S"),
         "modo": "simulado" if dir_parches else "real",
         "tareas": [t["id"] for t in tirada["tareas"]],
         "entregas": {},          # id_tarea -> [hechos que recibio en el despacho]
+        "senal_retenida": {},    # id_tarea -> [hechos derivados que NO se despacharon]
+        "sin_senal": bool(sin_senal),
         "despachos": {},         # id_tarea -> [texto COMPLETO de cada lanzamiento]
         "adopcion": {},          # id_tarea -> [llamadas contra la firma vieja]
         "reintentos": 0,
@@ -432,9 +447,13 @@ def correr(tirada, dir_parches=None, max_reintentos=1, timeout_agente=900):
             wt = preparar_worktree(tarea["id"])
             worktrees[tarea["id"]] = wt
             enrutados = hechos_acumulados if tarea.get("depende_de") else []
-            if enrutados:
-                acta["entregas"][tarea["id"]] = list(enrutados)
-            prompt = componer_prompt(tarea, enrutados)
+            prompt, entregados, retenidos = despacho_de(tarea, enrutados, sin_senal)
+            if entregados:
+                acta["entregas"][tarea["id"]] = list(entregados)
+            if retenidos:
+                acta["senal_retenida"][tarea["id"]] = list(retenidos)
+                acta["pasos"].append("señal retenida a %s: %d hecho(s)"
+                                     % (tarea["id"], len(retenidos)))
             # El despacho entero al acta ANTES de lanzar: la variante del
             # despacho ES su texto (derivado sobre declarado — una etiqueta de
             # version se olvida de subir; el texto no puede mentir), y es la
@@ -460,12 +479,23 @@ def correr(tirada, dir_parches=None, max_reintentos=1, timeout_agente=900):
                     if not dir_parches and acta["reintentos"] < max_reintentos:
                         acta["reintentos"] += 1
                         _reset_worktree(wt)
-                        extra = ("RECHAZO DEL BUCLE: tu diff llama contra la firma "
-                                 "VIEJA teniendo la señal delante. Las llamadas "
-                                 "exactas:\n" + "\n".join(infracciones))
+                        if sin_senal:
+                            # El rechazo es la PRIMERA noticia: lleva los hechos
+                            # que se retuvieron, ademas de las llamadas exactas.
+                            extra = ("RECHAZO DEL BUCLE: tu diff llama contra una "
+                                     "firma que otro worktree en vuelo acaba de "
+                                     "cambiar. Los hechos:\n"
+                                     + "\n".join("- " + h for h in enrutados)
+                                     + "\nLas llamadas exactas:\n"
+                                     + "\n".join(infracciones))
+                            prompt_rechazo = componer_prompt(tarea, [], extra)
+                        else:
+                            extra = ("RECHAZO DEL BUCLE: tu diff llama contra la firma "
+                                     "VIEJA teniendo la señal delante. Las llamadas "
+                                     "exactas:\n" + "\n".join(infracciones))
+                            prompt_rechazo = componer_prompt(tarea, enrutados, extra)
                         acta["entregas"].setdefault(tarea["id"], []).append(
                             "(rechazo por adopcion)")
-                        prompt_rechazo = componer_prompt(tarea, enrutados, extra)
                         acta["despachos"].setdefault(tarea["id"], []).append(prompt_rechazo)
                         ejecutar_real(tarea, wt, prompt_rechazo, timeout_agente)
                         nuevos = derivar_hechos(wt, firmas_base)
@@ -500,7 +530,7 @@ def correr(tirada, dir_parches=None, max_reintentos=1, timeout_agente=900):
             acta["entregas"].setdefault(ultima["id"], []).append("(cola del fallo de union)")
             if dir_parches:
                 break  # en simulado no hay reintento distinto que aplicar
-            prompt_union = componer_prompt(ultima, hechos_acumulados, extra)
+            prompt_union = componer_prompt(ultima, [] if sin_senal else hechos_acumulados, extra)
             acta["despachos"].setdefault(ultima["id"], []).append(prompt_union)
             ejecutar_real(ultima, wt, prompt_union, timeout_agente)
             acta["pasos"].append("reintento de %s" % ultima["id"])
@@ -565,10 +595,14 @@ def resumen_actas(dir_actas=None):
                     (", rechazo NO corrigio" if hubo_rechazo else ""))
             else:
                 estado = "adopcion: limpia"
-        lineas.append("  %s · %s · %s · señal: %s · %s · reintentos: %d%s"
+        retenida = ""
+        if acta.get("senal_retenida"):
+            retenida = " · señal RETENIDA (%d hecho(s))" % sum(
+                len(v) for v in acta["senal_retenida"].values())
+        lineas.append("  %s · %s · %s · señal: %s · %s · reintentos: %d%s%s"
                       % (acta.get("inicio", "?"), acta.get("modo", "?"),
                          acta.get("veredicto", "?"), "si" if senal else "no", estado,
-                         acta.get("reintentos", 0),
+                         acta.get("reintentos", 0), retenida,
                          " · con nota (leerla)" if "_nota" in acta else ""))
     cabecera = "%d tirada(s) · %d con señal · adopcion ignorada %d/%d (con dato) · " \
                "rechazo corrigio %d/%d" % (n, con_senal, ignoradas, con_dato,
@@ -584,6 +618,9 @@ def main(argv=None):
     parser.add_argument("--resumen", action="store_true",
                         help="leer el dataset de actas: frecuencias y una linea por tirada")
     parser.add_argument("--timeout-agente", type=int, default=900)
+    parser.add_argument("--sin-senal", action="store_true",
+                        help="4ª rebanada: derivar y verificar igual, pero NO despachar la "
+                             "señal preventiva; los hechos solo viajan en un rechazo")
     args = parser.parse_args(argv)
     if args.resumen:
         print(resumen_actas())
@@ -592,7 +629,8 @@ def main(argv=None):
         parser.error("hace falta la tirada (o --resumen)")
     with io.open(args.tirada, encoding="utf-8") as fh:
         tirada = json.load(fh)
-    acta = correr(tirada, dir_parches=args.simula, timeout_agente=args.timeout_agente)
+    acta = correr(tirada, dir_parches=args.simula, timeout_agente=args.timeout_agente,
+                  sin_senal=args.sin_senal)
     print("veredicto: %s | lectura: %s | acta: %s"
           % (acta["veredicto"], acta["lectura_ramas"] or "(sin ramas rojas)",
              os.path.relpath(_ruta_acta(acta["inicio"]), RAIZ)))

@@ -327,3 +327,25 @@ def test_las_capturas_de_la_tirada_se_filtran_por_su_inicio(monkeypatch):
 def test_si_la_consola_no_responde_el_acta_no_inventa(monkeypatch):
     monkeypatch.setattr(bucle, "_corre", lambda *a, **k: (1, b"", b"error"))
     assert bucle.capturas_desde("2026-08-06 03:00:00") == []
+
+
+def test_sin_senal_retiene_el_despacho_pero_no_la_verificacion():
+    """4ª rebanada: con --sin-senal los hechos NO viajan en el despacho (el
+    agente no ve la señal preventiva) pero el bucle se los queda para verificar
+    la adopcion y para el rechazo. La variante es el TEXTO del despacho."""
+    tarea = {"id": "B", "prompt": "haz tests", "depende_de": ["A"]}
+    hechos = ["calcula(a, b) -> calcula(a, b, base)"]
+
+    prompt, entregados, retenidos = bucle.despacho_de(tarea, hechos, sin_senal=True)
+    assert "SEÑAL DEL ENRUTADOR" not in prompt
+    assert entregados == []
+    assert retenidos == hechos
+
+    prompt, entregados, retenidos = bucle.despacho_de(tarea, hechos, sin_senal=False)
+    assert "SEÑAL DEL ENRUTADOR" in prompt
+    assert entregados == hechos
+    assert retenidos == []
+
+    # sin hechos no hay nada que retener, con o sin bandera
+    prompt, entregados, retenidos = bucle.despacho_de(tarea, [], sin_senal=True)
+    assert entregados == [] and retenidos == []
