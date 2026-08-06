@@ -29,6 +29,11 @@ packages = ["src/galaxybrain"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# La raiz en sys.path: `python -m pytest` la mete solo y `pytest` a secas NO —
+# el comando declarado (el que floor cronometra) moria en la coleccion porque
+# tests/test_experimento_uso.py importa el banco experimento/ de la raiz.
+# Cazado midiendo: floor --time decia "1.6s y NO pasa" con la suite en verde.
+pythonpath = ["."]
 
 # Lint. La linea de 110 sale de MEDIR el codigo que ya hay (maximo real 128, y
 # solo 9 lineas por encima de 110), no de un gusto: una regla de estilo que
