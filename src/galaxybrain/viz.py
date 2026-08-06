@@ -1351,12 +1351,21 @@ const CMEM='gb-mapa-consola';
   }
   guarda();
   function pintaConsola(){
-    if(!log.length || !abierto){ consolaEl.style.display='none'; return; }
+    // El recuento de capturas sin leer se deriva FRESCO en cada recarga: un
+    // evento de una sola pasada se entierra bajo la actividad de una tirada;
+    // una fila fija no — y desaparece sola cuando se leen (regla 9).
+    const sinLeer=(CAPTURAS||[]).filter(c=>!c.leida).length;
+    if((!log.length && !sinLeer) || !abierto){ consolaEl.style.display='none'; return; }
     // La consola DE un agente: el foco del panel filtra tambien aqui (un CRUCE
     // en el que participa cuenta como suyo). Sin foco, la de todos.
     const filas = agenteFoco
       ? log.filter(e=>e.a===agenteFoco || e.a.split(' + ').indexOf(agenteFoco)>=0)
       : log;
+    const aviso = sinLeer
+      ? '<div class="fila"><span class="quien" style="color:#f87171">consola</span>'+
+        '<span class="que">'+sinLeer+' captura(s) sin leer</span>'+
+        '<span class="detalle">los `peta` rojos del feed traen su gb show · gb list para el embudo</span></div>'
+      : '';
     consolaEl.style.width=TAM[tam][0]+'px';
     consolaEl.style.maxHeight=TAM[tam][1];
     consolaEl.innerHTML =
@@ -1365,7 +1374,7 @@ const CMEM='gb-mapa-consola';
         : 'actividad (hechos derivados)')+'</span>'+
       '<span><b data-acc="menos" title="mas pequena">&#8722;</b>'+
       '<b data-acc="mas" title="mas grande">+</b>'+
-      '<b data-acc="cerrar" title="ocultar">&#10005;</b></span></div>'+
+      '<b data-acc="cerrar" title="ocultar">&#10005;</b></span></div>'+aviso+
       (filas.length ? filas.map(e=>
       '<div class="fila"><span class="hora">'+e.h+'</span>'+
       '<span class="quien" style="color:'+e.c+'">'+escapa(e.a)+'</span>'+
@@ -1452,6 +1461,10 @@ const CMEM='gb-mapa-consola';
     if(marca){
       desde=0;
       for(let i=total-1;i>=0;i--){ if(a.consola[i]===marca){ desde=i+1; break; } }
+      // La marca puede haberse salido de la ventana de 40 lineas (agente muy
+      // hablador): llover 40 desde cero tarda 28 s y la tarjeta se ve VACIA
+      // mientras tanto. Rastro perdido: se enseña casi todo y llueve el final.
+      if(desde===0) desde=Math.max(0, total-6);
     }
     if(desde>0) vistos[nom]=a.consola[desde-1];
     let hilo=null;
@@ -1472,6 +1485,9 @@ const CMEM='gb-mapa-consola';
     for(const t of TERMS){
       const cons=(AGENTES[t.nom]||{}).consola||[];
       if(t.reveladas<cons.length){
+        // Sin deuda eterna: si la lluvia va mas de 12 lineas por detras del
+        // agente, salta al presente y llueven solo las ultimas.
+        if(cons.length-t.reveladas>12) t.reveladas=cons.length-6;
         t.reveladas++;
         vistos[t.nom]=cons[t.reveladas-1];
         renderTerm(t, true);
