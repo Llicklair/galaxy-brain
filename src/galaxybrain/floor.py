@@ -105,13 +105,13 @@ GATE_CONFIGS = {
     "lint": ["ruff.toml", ".ruff.toml", ".flake8", ".pylintrc", ".eslintrc",
              ".eslintrc.json", ".eslintrc.js", "eslint.config.js", "eslint.config.mjs",
              "biome.json", ".golangci.yml", ".golangci.yaml"],
-    "tipos": ["mypy.ini", ".mypy.ini", "pyrightconfig.json", "tsconfig.json"],
+    "tipos": ["mypy.ini", ".mypy.ini", "pyrightconfig.json", "pyrefly.toml", "tsconfig.json"],
     "formato": [".prettierrc", ".prettierrc.json", "prettier.config.js", ".editorconfig", "rustfmt.toml"],
 }
 
 GATE_INLINE = {
     "lint": ["[tool.ruff", "[flake8]", "[tool.pylint"],
-    "tipos": ["[tool.mypy", "[tool.pyright"],
+    "tipos": ["[tool.mypy", "[tool.pyright", "[tool.pyrefly"],
     "formato": ["[tool.black", "[tool.isort"],
 }
 

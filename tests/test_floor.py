@@ -234,3 +234,16 @@ def test_raiz_inexistente_si_es_error(tmp_path):
     root = os.path.join(str(tmp_path), "no-existe")
     assert floor.analyze(root)["root_error"]
     assert cli.main(["floor", root, "--color", "never"]) == 1
+
+
+def test_detecta_pyrefly_como_gate_de_tipos(tmp_path):
+    """pyrefly es el checker de tipos rapido del mercado (Rust, <10 ms); no verlo
+    seria el "falta" falso que este modulo existe para no fabricar: mandaria a
+    instalar mypy a quien ya tiene los tipos gateados."""
+    root = str(tmp_path / "a")
+    _write(root, "pyrefly.toml", 'project-includes = ["src"]\n')
+    assert floor.detect_gates(root).get("tipos") == "pyrefly.toml"
+
+    root = str(tmp_path / "b")
+    _write(root, "pyproject.toml", "[tool.pyrefly]\nproject-includes = ['src']\n")
+    assert "pyrefly" in floor.detect_gates(root).get("tipos", "")
