@@ -828,26 +828,30 @@ def cmd_list(args):
     entries = store.read_index(project=_project_filter(args))
     style = _style(args)
 
-    # --json NUNCA filtra: es la superficie de maquina y los hechos se entregan
-    # crudos (regla 6). Quien automatiza decide que hacer con ellos; esconderselo
-    # seria mentir por omision a un consumidor que no puede ver el aviso.
+    # Solo la vista agrupada esconde los efimeros, porque es la libreta de QUE
+    # SE ROMPE Y CUANTAS VECES: un `python -c` fallido no se repite jamas, asi
+    # que gasta una fila y entierra lo que si vuelve. El timeline crudo sigue
+    # crudo, que para eso es el timeline.
+    ocultos = 0
+    if not args.chrono and not args.efimeros:
+        reales = [e for e in entries if not store.is_ephemeral(e)]
+        ocultos = len(entries) - len(reales)
+        entries = reales
+
+    # El json enseña las MISMAS firmas que el texto con las mismas banderas.
+    # Antes no filtraba efimeros ("crudo para maquina") y el [:n] hacia el resto:
+    # con el mismo -n, los efimeros empujaban firmas reales fuera de la ventana y
+    # la maquina listaba un conjunto DISTINTO del que veia el humano (medido
+    # 2026-08-06: 4 NameError propios presentes en texto y ausentes del --json).
+    # Crudo de verdad es --efimeros, que destapa lo mismo en ambas salidas.
     if args.json:
         payload = entries[: args.n] if args.chrono else store.summarize(entries)[: args.n]
         emit(json.dumps(payload, ensure_ascii=False, indent=2))
         return 0
 
-    ocultos = 0
     if args.chrono:
         text = render.render_index(entries[: args.n], style)
     else:
-        # Solo la vista agrupada esconde los efimeros, porque es la libreta de QUE
-        # SE ROMPE Y CUANTAS VECES: un `python -c` fallido no se repite jamas, asi
-        # que gasta una fila y entierra lo que si vuelve. El timeline crudo sigue
-        # crudo, que para eso es el timeline.
-        if not args.efimeros:
-            reales = [e for e in entries if not store.is_ephemeral(e)]
-            ocultos = len(entries) - len(reales)
-            entries = reales
         text = render.render_groups(store.summarize(entries)[: args.n], style)
     emit(text)
     # Ocultar en silencio seria el mismo fallo que acabamos de arreglar en el gate:

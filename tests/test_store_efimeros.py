@@ -67,3 +67,41 @@ def test_el_filtro_deja_pasar_lo_real_y_cuenta_lo_oculto():
     reales = [e for e in entries if not store.is_ephemeral(e)]
     assert len(reales) == 2
     assert len(entries) - len(reales) == 2  # lo que `gb list` anuncia como oculto
+
+
+def test_json_y_texto_ensenan_las_mismas_firmas_con_el_mismo_n(monkeypatch, capsys):
+    """Con el mismo `-n`, `gb list` y `gb list --json` listan el MISMO conjunto.
+
+    Antes el json no apartaba efimeros y el [:n] hacia el resto: los efimeros
+    (mas recientes) empujaban firmas reales fuera de la ventana del json, y la
+    maquina veia un listado distinto del humano. Medido 2026-08-06: 4 NameError
+    propios en el texto que el --json no traia.
+    """
+    import json
+
+    from galaxybrain import cli
+
+    # 3 efimeros mas recientes que 2 firmas reales: con -n 3, un json sin filtro
+    # se llenaria de efimeros y dejaria fuera las dos reales.
+    entries = [_entry("<string>:%d" % i) for i in range(3)] + [
+        _entry("src/pkg/a.py:7"),
+        _entry("src/pkg/b.py:3"),
+    ]
+    monkeypatch.setattr(store, "read_index", lambda project=None: entries)
+    parser = cli.build_parser()
+
+    cli.cmd_list(parser.parse_args(["list", "-n", "3", "--color", "never"]))
+    texto = capsys.readouterr().out
+
+    cli.cmd_list(parser.parse_args(["list", "-n", "3", "--json"]))
+    grupos = json.loads(capsys.readouterr().out)
+    firmas_json = {(g["type"], g["where"]) for g in grupos}
+
+    assert firmas_json == {
+        ("ValueError", "src/pkg/a.py:7"),
+        ("ValueError", "src/pkg/b.py:3"),
+    }
+    for _, where in firmas_json:
+        assert where in texto
+    # y el texto sigue anunciando lo que aparto, no lo esconde en silencio
+    assert "3 efimero(s)" in texto
