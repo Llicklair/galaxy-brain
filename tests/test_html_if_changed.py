@@ -173,14 +173,15 @@ def test_el_mantenimiento_conserva_el_auto_refresh(tmp_path, gb_home):
     destino = str(tmp_path / "mapa.html")
     # Generacion manual con refresco, como haria el usuario.
     cli.main(["symbols", raiz, "--html", destino, "--refresco", "300", "--color", "never"])
-    assert 'content="300"' in open(destino, encoding="utf-8").read()
+    # Desde el 6-ago la recarga es por JS (aplazable mientras se busca), no <meta>.
+    assert "const REFRESCO = 300;" in open(destino, encoding="utf-8").read()
 
     # Cambia la forma y mantenimiento SIN --refresco, como el hook.
     with open(os.path.join(raiz, "pkg", "nuevo.py"), "w", encoding="utf-8") as handle:
         handle.write("def n():\n    return 3\n")
     cli.main(["symbols", raiz, "--html", destino, "--if-changed", "--color", "never"])
 
-    assert 'content="300"' in open(destino, encoding="utf-8").read(), (
+    assert "const REFRESCO = 300;" in open(destino, encoding="utf-8").read(), (
         "el mantenimiento se comio el auto-refresh: la pagina se congelaria"
     )
 
@@ -193,7 +194,7 @@ def test_sin_refresco_el_mantenimiento_no_lo_inventa(tmp_path, gb_home):
     with open(os.path.join(raiz, "pkg", "nuevo.py"), "w", encoding="utf-8") as handle:
         handle.write("def n():\n    return 3\n")
     cli.main(["symbols", raiz, "--html", destino, "--if-changed", "--color", "never"])
-    assert 'http-equiv="refresh"' not in open(destino, encoding="utf-8").read()
+    assert "const REFRESCO = 0;" in open(destino, encoding="utf-8").read()
 
 
 def test_watch_necesita_html(tmp_path):

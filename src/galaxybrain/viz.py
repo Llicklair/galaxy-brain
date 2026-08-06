@@ -661,14 +661,14 @@ def render_graph_cloud(
         # Recargar la pagina no la actualiza sola: hace falta que ALGO regenere el
         # fichero. Por eso esto es opt-in y no el defecto — un refresco sobre un
         # fichero que nadie regenera solo consigue parpadear.
-        "refresco": (
-            '\n<meta http-equiv="refresh" content="%d">' % int(refresco) if refresco else ""
-        ),
+        # Recarga por JS, no <meta http-equiv>: el meta no se puede aplazar, y
+        # una recarga que te borra lo tecleado en buscar enseña a no buscar.
+        "refresco": str(int(refresco or 0)),
     }
 
 
 _NUBE = """<!doctype html>
-<meta charset="utf-8">%(refresco)s
+<meta charset="utf-8">
 <title>%(title)s</title>
 <style>
   /* Oscuro siempre, a proposito: la paleta neon esta diseniada para negro y en
@@ -786,6 +786,7 @@ const IMPORT_COLOR = '%(color_import)s', CICLO_COLOR = '%(color_ciclo)s';
 const OBRA_COLOR = '%(color_obra)s';
 const AGENTES = %(agentes)s;
 const CAPTURAS = %(capturas)s;
+const REFRESCO = %(refresco)s;
 const N = NODOS.length;
 
 // ================= simulacion =================
@@ -1494,6 +1495,7 @@ const CMEM='gb-mapa-consola';
     const d=desvios[el.dataset.ag]||[0,0];
     arrastreT={nom:el.dataset.ag, x:ev.clientX, y:ev.clientY, dx:d[0], dy:d[1]};
     seMovioT=false;
+    window._arrastrandoTerm=true;  // la recarga automatica se aplaza mientras
     ev.preventDefault();
   });
   addEventListener('mousemove', ev=>{
@@ -1503,6 +1505,7 @@ const CMEM='gb-mapa-consola';
     desvios[arrastreT.nom]=[arrastreT.dx+nx, arrastreT.dy+ny];
   });
   addEventListener('mouseup', ()=>{
+    window._arrastrandoTerm=false;
     if(!arrastreT) return;
     arrastreT=null;
     try{ sessionStorage.setItem(OMEM, JSON.stringify(desvios)); }catch(_){}
@@ -1530,10 +1533,12 @@ const CMEM='gb-mapa-consola';
         const d=desvios[t.nom]||[0,0];
         if(t.idx==null){
           // Agente sin nodo en el mapa todavia: su terminal se apila a la
-          // izquierda, bajo la cabecera — operando, pero aun sin sitio.
+          // izquierda, bajo la cabecera REAL — la altura fija de antes se
+          // solapaba con la barra de buscar cuando la leyenda crecia.
+          const hh=((document.querySelector('header')||{}).offsetHeight||84)+10;
           t.el.style.transform='none';
           t.el.style.left=(12+d[0])+'px';
-          t.el.style.top=(96+(t.el.offsetHeight+8)*t.suelto+d[1])+'px';
+          t.el.style.top=(hh+(t.el.offsetHeight+8)*t.suelto+d[1])+'px';
           continue;
         }
         const nx=X[t.idx]*esc+ox, ny=Y[t.idx]*esc+oy;
@@ -1551,6 +1556,23 @@ const CMEM='gb-mapa-consola';
     })();
   }
 })();
+
+// La recarga automatica, por JS y con modales: se APLAZA mientras se escribe
+// en buscar o se arrastra una tarjeta. Un refresco que borra lo tecleado
+// enseña a no usar la busqueda — y eso es peor que un mapa 10 s mas viejo.
+if(REFRESCO>0){
+  setInterval(()=>{
+    if(document.activeElement===buscar) return;
+    if(window._arrastrandoTerm) return;
+    location.reload();
+  }, REFRESCO*1000);
+}
+// Lo buscado sobrevive a la recarga: valor restaurado y filtro re-aplicado.
+try{ const _b=sessionStorage.getItem('gb-mapa-buscar');
+     if(_b && !buscar.value){ buscar.value=_b; buscar.dispatchEvent(new Event('input')); } }catch(_){}
+buscar.addEventListener('input', ()=>{
+  try{ sessionStorage.setItem('gb-mapa-buscar', buscar.value); }catch(_){}
+});
 
 medir(); recupera(); requestAnimationFrame(bucle);
 </script>

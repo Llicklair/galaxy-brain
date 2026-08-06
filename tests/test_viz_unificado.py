@@ -229,8 +229,9 @@ def test_el_refresco_es_opt_in(tmp_path):
     """Por defecto no se recarga nada. Un refresco sobre un fichero que nadie
     regenera solo consigue parpadear, asi que se pide a proposito."""
     informe = symbols.analyze(_proyecto(tmp_path))
-    assert 'http-equiv="refresh"' not in viz.render_graph_cloud(informe)
-    assert 'content="60"' in viz.render_graph_cloud(informe, refresco=60)
+    # Desde el 6-ago la recarga es por JS aplazable (no <meta>): 0 = apagada.
+    assert "const REFRESCO = 0;" in viz.render_graph_cloud(informe)
+    assert "const REFRESCO = 60;" in viz.render_graph_cloud(informe, refresco=60)
 
 
 def test_la_camara_sobrevive_a_una_recarga(tmp_path):
