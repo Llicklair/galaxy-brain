@@ -296,3 +296,31 @@ def test_el_join_de_rutas_aguanta_caja_y_separadores_mezclados(tmp_path):
     assert "pkg.util" in mapa["nodos"]
     assert mapa["nodos"]["pkg.util"]["estado"] == "en-silencio"
     assert any("util.py:2" in linea for linea in mapa["nodos"]["pkg.util"]["lineas"])
+
+
+def test_las_capturas_para_el_mapa_traen_nodo_id_y_estado_de_lectura(tmp_path):
+    """La consola de errores entra al lienzo POR DEFECTO: cada captura viaja
+    con su nodo del grafo, su id (para `gb show`) y si esta leida — el feed
+    del mapa dice `peta` sin que nadie tenga que saber mirar una capa."""
+    root = _repo(tmp_path)
+    fichero = _write(root, "pkg/util.py")
+    _commit(root, "base")
+    id_captura = _captura(root, fichero, _ahora())
+
+    informe = symbols.analyze(root)
+    (captura,) = cli._capturas_para_mapa(root, informe)
+    assert captura["nodo"] == "pkg.util"
+    assert captura["id"] == id_captura
+    assert captura["tipo"] == "ValueError"
+    assert captura["leida"] is False
+
+    store.mark_read(id_captura)
+    (releida,) = cli._capturas_para_mapa(root, informe)
+    assert releida["leida"] is True
+
+
+def test_sin_capturas_el_mapa_no_lleva_ni_rastro_de_consola(tmp_path):
+    root = _repo(tmp_path)
+    _write(root, "pkg/util.py")
+    _commit(root, "base")
+    assert cli._capturas_para_mapa(root, symbols.analyze(root)) == []

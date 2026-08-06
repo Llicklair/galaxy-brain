@@ -313,6 +313,8 @@ def render_graph_cloud(
     ciclo=None,
     tocados=None,
     actividad=None,
+    capturas=None,
+    suelo=None,
 ):
     """La nube: nodos repartidos por fuerzas, coloreados por módulo, navegable.
 
@@ -648,6 +650,13 @@ def render_graph_cloud(
         "color_ciclo": _COLOR_CICLO,
         "color_obra": _COLOR_OBRA,
         "agentes": _en_script(_json.dumps(_agentes_js, ensure_ascii=False)),
+        # La consola de errores entra al lienzo por defecto: las capturas
+        # recientes, con su nodo, para que el feed diga `peta` en movimiento.
+        "capturas": _en_script(_json.dumps(capturas or [], ensure_ascii=False)),
+        "suelo": (
+            '\n  <span class="meta">suelo: %s</span>' % _html.escape(suelo)
+            if suelo else ""
+        ),
         "maxit": maxit,
         # Recargar la pagina no la actualiza sola: hace falta que ALGO regenere el
         # fichero. Por eso esto es opt-in y no el defecto — un refresco sobre un
@@ -757,7 +766,7 @@ _NUBE = """<!doctype html>
 </style>
 <header>
   <h1>%(title)s</h1>
-  <span class="meta">%(resumen)s</span>%(ciclo)s%(obra)s
+  <span class="meta">%(resumen)s</span>%(ciclo)s%(suelo)s%(obra)s
   <span id="estado">layout optimizando&hellip;</span>
   <input id="buscar" placeholder="buscar simbolo..." autocomplete="off">
   <button id="btnPausa" title="pausar/reanudar la fisica">&#9208;</button>
@@ -776,6 +785,7 @@ const NODOS = %(nodos)s, ARISTAS = %(aristas)s, LADO = 1000;
 const IMPORT_COLOR = '%(color_import)s', CICLO_COLOR = '%(color_ciclo)s';
 const OBRA_COLOR = '%(color_obra)s';
 const AGENTES = %(agentes)s;
+const CAPTURAS = %(capturas)s;
 const N = NODOS.length;
 
 // ================= simulacion =================
@@ -1313,6 +1323,20 @@ const CMEM='gb-mapa-consola';
   for(const e of eventosEntre(est && est.snap, ahora))
     log.push({h:hora, c: e.t==='CRUCE' ? '#ffffff' : ((AGENTES[e.a]||{}).c||'#94a3b8'),
               a:e.a, t:e.t, d:e.d});
+  // La consola de errores, POR DEFECTO y en movimiento: cada captura nueva es
+  // un evento `peta` en rojo con su nodo y su `gb show`. La capa estatica que
+  // habia que saber mirar acumulo 18 sin leer; el feed no pide que nadie mire.
+  const CAPM='gb-mapa-capturas-vistas';
+  let capVistas={};
+  try{ capVistas=JSON.parse(sessionStorage.getItem(CAPM)||'{}')||{}; }catch(_){}
+  for(const c of (CAPTURAS||[])){
+    if(!c.id || capVistas[c.id]) continue;
+    capVistas[c.id]=1;
+    log.push({h:hora, c:'#f87171', a:c.nodo||c.donde||'?', t:'peta',
+              d:(c.tipo||'?')+(c.leida?'':' · SIN LEER')
+                +' · gb show '+String(c.id).slice(0,8)});
+  }
+  try{ sessionStorage.setItem(CAPM, JSON.stringify(capVistas)); }catch(_){}
   while(log.length>200) log.shift();
   let abierto = est ? est.abierto!==0 : true;
   // Tres tallas, no un resize libre: anclada abajo-izquierda, el asa nativa de

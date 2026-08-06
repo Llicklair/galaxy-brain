@@ -426,3 +426,25 @@ def test_si_la_ventana_no_se_cierra_el_error_sube(monkeypatch):
     monkeypatch.setattr(cli.time, "sleep", lambda s: None)
     with pytest.raises(OSError):
         cli._reemplaza_html("a.tmp", "a.html")
+
+
+def test_las_capturas_y_el_suelo_viajan_al_mapa(tmp_path):
+    """El grafo como superficie unica: la consola de errores (feed `peta`) y
+    el suelo de floor (cabecera) entran al mapa por defecto."""
+    from galaxybrain import symbols
+
+    salida = viz.render_graph_cloud(
+        symbols.analyze(_proyecto(tmp_path)),
+        capturas=[{"id": "abc12345", "ts": "", "tipo": "KeyError",
+                   "donde": "x.py:3", "nodo": "app.store", "leida": False}],
+        suelo="5/8 capas")
+    assert "const CAPTURAS" in salida and '"tipo": "KeyError"' in salida
+    assert "suelo: 5/8 capas" in salida
+
+
+def test_sin_capturas_ni_suelo_el_mapa_calla(tmp_path):
+    from galaxybrain import symbols
+
+    salida = viz.render_graph_cloud(symbols.analyze(_proyecto(tmp_path)))
+    assert "const CAPTURAS = [];" in salida
+    assert "suelo:" not in salida

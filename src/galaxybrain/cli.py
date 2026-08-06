@@ -257,6 +257,66 @@ def _ciclo_para_mapa(root, informe_simbolos):
     return {"embudo": _embudo_ciclo(ciclo["embudo"]), "nodos": nodos}
 
 
+def _capturas_para_mapa(root, informe_simbolos, tope=10):
+    """Las ultimas capturas del proyecto con su nodo del grafo: el material del
+    evento `peta` en la consola del mapa. La consola de errores entra al lienzo
+    POR DEFECTO y en movimiento — la capa estatica del ciclo, que habia que
+    saber mirar, acumulo 18 sin leer (regla 10: el no-uso se investiga; esta es
+    la correccion que salio de investigarlo). Sin capturas, lista vacia y ni
+    rastro (regla 9)."""
+    from . import changes
+    from . import graph as graph_mod
+    from .capture import _project_root
+
+    proyecto = _project_root(root) or os.path.abspath(root)
+    entradas = [e for e in store.read_index(project=proyecto)
+                if not store.is_ephemeral(e)][:tope]
+    if not entradas:
+        return []
+    leidas = store.read_ids()
+    modulos = {
+        os.path.normcase(n.get("qual") or ""): n.get("qual")
+        for n in informe_simbolos.get("nodes", [])
+        if n.get("kind") == "module"
+    }
+    capturas = []
+    for entrada in entradas:
+        fichero = changes._fichero_de_firma(entrada.get("where") or "")
+        nodo = ""
+        if fichero:
+            try:
+                mod = graph_mod.module_name(fichero, root)
+                nodo = modulos.get(os.path.normcase(mod)) or ""
+            except ValueError:
+                pass
+        capturas.append({
+            "id": entrada.get("id") or "",
+            "ts": entrada.get("ts") or "",
+            "tipo": entrada.get("type") or "?",
+            "donde": entrada.get("where") or "",
+            "nodo": nodo,
+            "leida": bool(entrada.get("id") in leidas),
+        })
+    return capturas
+
+
+def _suelo_para_mapa(root):
+    """'N/M capas' para la cabecera del mapa: la fase de construccion tambien
+    pasa por el grafo. Solo el recuento — el detalle es de `gb floor` — y None
+    si floor no puede leer la raiz (el mapa calla, regla 9)."""
+    from . import floor
+
+    try:
+        report = floor.analyze(root)
+    except Exception:
+        return None
+    niveles = report.get("levels") or []
+    if not niveles:
+        return None
+    ok = sum(1 for nivel in niveles if nivel.get("status") == "ok")
+    return "%d/%d capas" % (ok, len(niveles))
+
+
 def _ficheros_tocados(root):
     """Los .py tocados respecto a HEAD: modificados, anadidos, renombrados o
     untracked, esten o no en el indice. Rutas absolutas.
@@ -894,6 +954,8 @@ def cmd_graph(args):
                         ciclo=_ciclo_para_mapa(root, simbolos),
                         tocados=_tocados_para_mapa(root, simbolos),
                         actividad=_actividad_para_mapa(root, simbolos),
+                        capturas=_capturas_para_mapa(root, simbolos),
+                        suelo=_suelo_para_mapa(root),
                     )
                 )
             _reemplaza_html(destino + ".tmp", destino)

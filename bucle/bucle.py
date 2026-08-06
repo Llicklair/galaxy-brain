@@ -363,6 +363,38 @@ def veredicto_union():
     return rc, union_verde, ramas_rojas, texto[-2000:]
 
 
+def capturas_desde(inicio_texto):
+    """Las capturas de la consola de gb ocurridas desde el inicio de la tirada,
+    consultadas por CLI como todo lo demas. VACIO ES UN HECHO y se escribe al
+    acta — que ningun script de agente murio tambien es informacion. (En el
+    banco casi siempre sera vacio: pytest atrapa las excepciones y no llegan a
+    sys.excepthook; el valor aparece cuando un script o CLI muera de verdad.)"""
+    rc, salida, _ = _corre(GB + ["list", "--chrono", "--json", "-n", "50"])
+    if rc != 0:
+        return []
+    try:
+        entradas = json.loads(_texto(salida))
+    except ValueError:
+        return []
+    import datetime as _dt
+    try:
+        inicio = _dt.datetime.strptime(inicio_texto, "%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        return []
+    resultado = []
+    for entrada in entradas if isinstance(entradas, list) else []:
+        try:
+            cuando = _dt.datetime.fromisoformat(entrada.get("ts") or "")
+            cuando = cuando.astimezone().replace(tzinfo=None)
+        except ValueError:
+            continue
+        if cuando >= inicio:
+            resultado.append({"id": (entrada.get("id") or "")[:8],
+                              "tipo": entrada.get("type") or "?",
+                              "donde": entrada.get("where") or ""})
+    return resultado
+
+
 def interpretar(ramas_rojas, union_verde, entregas):
     """Coordinada o rescatada: la desambiguacion que el checkpoint no puede
     hacer solo (§4A, hallazgo colateral). Una rama roja-sola con union verde
@@ -472,6 +504,9 @@ def correr(tirada, dir_parches=None, max_reintentos=1, timeout_agente=900):
             acta["despachos"].setdefault(ultima["id"], []).append(prompt_union)
             ejecutar_real(ultima, wt, prompt_union, timeout_agente)
             acta["pasos"].append("reintento de %s" % ultima["id"])
+        # La consola de errores tambien aterriza en el acta: que peto (o que
+        # nada peto) durante la tirada es un hecho de la tirada.
+        acta["capturas_durante"] = capturas_desde(acta["inicio"])
         # Los diffs se conservan como evidencia; el merge NUNCA es del bucle.
         acta["diffs"] = {}
         for id_tarea, wt in worktrees.items():

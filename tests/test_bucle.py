@@ -302,3 +302,28 @@ def test_la_consola_vive_al_lado_del_worktree_no_dentro():
     ruta = bucle._log_consola(os.path.join("x", "worktrees", "bucle-A"))
     assert ruta.endswith("bucle-A.consola.log")
     assert os.path.dirname(ruta).endswith("worktrees")
+
+
+# --- la consola de errores aterriza en el acta --------------------------------
+
+def test_las_capturas_de_la_tirada_se_filtran_por_su_inicio(monkeypatch):
+    """El acta registra lo que peto DURANTE la tirada — vacio es un hecho; lo
+    de antes no es de esta tirada. Fechas a dias de distancia para que ningun
+    huso horario mueva el veredicto."""
+    import json as _json
+    lista = _json.dumps([
+        {"id": "viejo111", "ts": "2026-08-04T00:00:00+02:00",
+         "type": "KeyError", "where": "a.py:1"},
+        {"id": "nuevo222", "ts": "2026-08-08T00:00:00+02:00",
+         "type": "ValueError", "where": "b.py:2"},
+    ]).encode("utf-8")
+    monkeypatch.setattr(bucle, "_corre", lambda *a, **k: (0, lista, b""))
+
+    capturas = bucle.capturas_desde("2026-08-06 03:00:00")
+    assert [c["tipo"] for c in capturas] == ["ValueError"]
+    assert capturas[0]["id"] == "nuevo222"
+
+
+def test_si_la_consola_no_responde_el_acta_no_inventa(monkeypatch):
+    monkeypatch.setattr(bucle, "_corre", lambda *a, **k: (1, b"", b"error"))
+    assert bucle.capturas_desde("2026-08-06 03:00:00") == []
