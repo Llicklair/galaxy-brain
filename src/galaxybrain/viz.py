@@ -1676,12 +1676,15 @@ const CMEM='gb-mapa-consola';
 })();
 
 // La recarga automatica, por JS y con modales: se APLAZA mientras se escribe
-// en buscar o se arrastra una tarjeta. Un refresco que borra lo tecleado
-// enseña a no usar la busqueda — y eso es peor que un mapa 10 s mas viejo.
+// en buscar, se arrastra una tarjeta o hay texto seleccionado. Un refresco que
+// borra lo tecleado — o la seleccion justo antes del Ctrl+C — enseña a no usar
+// la busqueda ni a copiar del mapa; y eso es peor que un mapa 10 s mas viejo.
 if(REFRESCO>0){
   setInterval(()=>{
     if(document.activeElement===buscar) return;
     if(window._arrastrandoTerm) return;
+    const sel=window.getSelection?window.getSelection():null;
+    if(sel&&!sel.isCollapsed) return;
     location.reload();
   }, REFRESCO*1000);
 }
