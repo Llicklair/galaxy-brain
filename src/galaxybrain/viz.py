@@ -1388,7 +1388,10 @@ const CMEM='gb-mapa-consola';
   }
   guarda();
   function pintaConsola(){
-    if(!log.length || !abierto){ consolaEl.style.display='none'; return; }
+    // ABIERTO manda: con el log vacio se dice "0 eventos" en vez de esconder
+    // el panel — un boton que conmuta algo invisible parece un boton roto
+    // (paso: pestaña nueva, sessionStorage virgen, ≡ "no funcionaba").
+    if(!abierto){ consolaEl.style.display='none'; return; }
     // La consola DE un agente: el foco del panel filtra tambien aqui (un CRUCE
     // en el que participa cuenta como suyo). Sin foco, la de todos.
     const filas = agenteFoco
@@ -1408,7 +1411,10 @@ const CMEM='gb-mapa-consola';
       '<span class="quien" style="color:'+e.c+'">'+escapa(e.a)+'</span>'+
       '<span class="que">'+escapa(e.t)+'</span><span class="detalle">'+escapa(e.d)+'</span></div>'
       ).join('')
-      : '<div class="fila"><span class="detalle">(sin eventos registrados de '+escapa(agenteFoco)+')</span></div>');
+      : '<div class="fila"><span class="detalle">'+(agenteFoco
+          ? '(sin eventos registrados de '+escapa(agenteFoco)+')'
+          : '(0 eventos: se derivan comparando instantaneas entre recargas — '+
+            'apareceran en cuanto un agente toque el arbol)')+'</span></div>');
     consolaEl.style.display='block';
     consolaEl.scrollTop=consolaEl.scrollHeight;
   }
@@ -1630,16 +1636,18 @@ const CMEM='gb-mapa-consola';
   function guarda(){ try{ sessionStorage.setItem(EMEM,
     JSON.stringify({abierto:abierto?1:0, tam:tamE})); }catch(_){} }
   function pinta(){
-    if(!(CAPTURAS||[]).length || !abierto){ erroresEl.style.display='none'; return; }
+    if(!abierto){ erroresEl.style.display='none'; return; }
     erroresEl.style.width=TAME[tamE][0]+'px';
     erroresEl.style.maxHeight=TAME[tamE][1];
-    const filas=(CAPTURAS||[]).map(c=>
+    const filas=(CAPTURAS||[]).length ? (CAPTURAS||[]).map(c=>
       '<div class="fila"><span class="hora">'+escapa((c.ts||'').slice(11,19))+'</span>'+
       '<span class="quien" style="color:'+(c.leida?'var(--suave)':'#f87171')+'">'+
       escapa(c.nodo||c.donde||'?')+'</span>'+
       '<span class="que">'+escapa(c.tipo||'?')+'</span>'+
       '<span class="detalle">'+(c.leida?'leida':'SIN LEER')+
-      ' · gb show '+escapa(String(c.id).slice(0,8))+'</span></div>').join('');
+      ' · gb show '+escapa(String(c.id).slice(0,8))+'</span></div>').join('')
+      : '<div class="fila"><span class="detalle">(0 capturas: nada ha petado '+
+        'en este proyecto)</span></div>';
     erroresEl.innerHTML='<div class="cab"><span>consola de errores · '+(SIN_LEER||0)+
       ' sin leer</span><span><b data-acc="emenos" title="mas pequena">&#8722;</b>'+
       '<b data-acc="emas" title="mas grande">+</b>'+
