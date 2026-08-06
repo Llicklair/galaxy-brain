@@ -459,8 +459,9 @@ def correr(tirada, dir_parches=None, max_reintentos=1, timeout_agente=900, sin_s
             # version se olvida de subir; el texto no puede mentir), y es la
             # columna del dataset que permitira comparar formatos de despacho.
             acta["despachos"].setdefault(tarea["id"], []).append(prompt)
-            acta["pasos"].append("lanzada %s (%d hecho(s) enrutado(s))"
-                                 % (tarea["id"], len(enrutados)))
+            acta["pasos"].append("lanzada %s (%d hecho(s) en el despacho%s)"
+                                 % (tarea["id"], len(entregados),
+                                    ", %d retenido(s)" % len(retenidos) if retenidos else ""))
             if dir_parches:
                 ejecutar_simulado(tarea, wt, dir_parches)
             else:
