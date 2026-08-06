@@ -838,6 +838,31 @@ def cmd_list(args):
         ocultos = len(entries) - len(reales)
         entries = reales
 
+    # --pendientes: la cola de trabajo, no la libreta. Fuera las firmas
+    # en-silencio (intervenidas y sin reaparecer): estan controladas, y volver a
+    # repasarlas una y otra vez es justo el desgaste que la libreta debia evitar.
+    # Se aplica ANTES de la bifurcacion texto/json, como el filtro de efimeros:
+    # misma bandera, mismas firmas en ambas salidas.
+    controladas = 0
+    if getattr(args, "pendientes", False):
+        raiz = _project_filter(args)
+        if raiz is None:
+            # El estado en-silencio se deriva del git de UN proyecto; con --all
+            # no hay uno del que derivarlo.
+            emit("--pendientes no combina con --all: en-silencio se deriva del git del proyecto")
+            return 2
+        from . import changes
+
+        ciclo = changes.ciclo_errores(raiz, entries, store.read_ids())
+        silencio = {
+            (f["type"], f["where"])
+            for f in (ciclo["firmas"] if ciclo else [])
+            if f["estado"] == "en-silencio"
+        }
+        if silencio:
+            entries = [e for e in entries if (e.get("type"), e.get("where")) not in silencio]
+            controladas = len(silencio)
+
     # El json enseña las MISMAS firmas que el texto con las mismas banderas.
     # Antes no filtraba efimeros ("crudo para maquina") y el [:n] hacia el resto:
     # con el mismo -n, los efimeros empujaban firmas reales fuera de la ventana y
@@ -861,6 +886,14 @@ def cmd_list(args):
             style(
                 "\n(%d efimero(s) oculto(s): `python -c` o stdin, no son ficheros "
                 "del proyecto — `--efimeros` para verlos)" % ocultos,
+                render.DIM,
+            )
+        )
+    if controladas:
+        emit(
+            style(
+                "\n(%d firma(s) en silencio fuera del listado: controladas — "
+                "sin --pendientes se ven)" % controladas,
                 render.DIM,
             )
         )
@@ -1854,6 +1887,11 @@ def build_parser():
         "--efimeros",
         action="store_true",
         help="incluir las capturas de `python -c`/stdin (por defecto se ocultan y se dicen)",
+    )
+    listing.add_argument(
+        "--pendientes",
+        action="store_true",
+        help="solo lo sin controlar: fuera las firmas en-silencio (se deriva del git del proyecto)",
     )
     common(listing, with_full=False)
     listing.set_defaults(func=cmd_list)

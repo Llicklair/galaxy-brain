@@ -324,3 +324,41 @@ def test_sin_capturas_el_mapa_no_lleva_ni_rastro_de_consola(tmp_path):
     _write(root, "pkg/util.py")
     _commit(root, "base")
     assert cli._capturas_para_mapa(root, symbols.analyze(root)) == []
+
+
+def test_list_pendientes_aparta_lo_controlado(tmp_path, capsys, monkeypatch):
+    """--pendientes es la cola, no la libreta: la firma en-silencio (controlada)
+    sale del listado y se dice; la viva se queda. Texto y --json ensenan el
+    mismo conjunto, la misma paridad que ya se fijo para --efimeros."""
+    import json as _json
+
+    root = _repo(tmp_path)
+    curado = _write(root, "curado.py")
+    vivo = _write(root, "vivo.py")
+    _commit(root, "inicial")
+    # curado: capturada AYER, commit de hoy posterior, cero ocurrencias despues
+    # -> en-silencio. vivo: capturada DESPUES del ultimo commit -> pendiente.
+    _captura(root, curado, _ahora() - datetime.timedelta(days=1))
+    _captura(root, vivo, _ahora() + datetime.timedelta(minutes=5))
+    monkeypatch.chdir(root)
+
+    assert cli.main(["list", "--pendientes", "--color", "never"]) == 0
+    texto = capsys.readouterr().out
+    assert "vivo.py" in texto
+    assert "curado.py" not in texto
+    assert "1 firma(s) en silencio fuera del listado" in texto
+
+    assert cli.main(["list", "--pendientes", "--json"]) == 0
+    grupos = _json.loads(capsys.readouterr().out)
+    assert [g["where"] for g in grupos] == ["%s:2" % vivo]
+
+    # Sin la bandera, la libreta entera: las controladas siguen registradas.
+    assert cli.main(["list", "--color", "never"]) == 0
+    assert "curado.py" in capsys.readouterr().out
+
+
+def test_list_pendientes_no_combina_con_all(tmp_path, capsys, monkeypatch):
+    """en-silencio se deriva del git de UN proyecto; con --all no hay uno."""
+    monkeypatch.chdir(_repo(tmp_path))
+    assert cli.main(["list", "--pendientes", "--all"]) == 2
+    assert "no combina" in capsys.readouterr().out
