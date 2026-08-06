@@ -1439,6 +1439,34 @@ const CMEM='gb-mapa-consola';
     renderTerm(t);
     TERMS.push(t);
   }
+  // Desplazables: el arrastre guarda un DESVIO por agente (recordado entre
+  // recargas), asi la terminal sigue a su nodo con la camara pero desde donde
+  // tu la dejaste — la cura de la superposicion sin soltar el ancla.
+  const OMEM='gb-mapa-terminal-pos';
+  let desvios={};
+  try{ desvios=JSON.parse(sessionStorage.getItem(OMEM)||'{}')||{}; }catch(_){}
+  let arrastreT=null, seMovioT=false;
+  termCont.addEventListener('mousedown', ev=>{
+    if(ev.target && ev.target.dataset && ev.target.dataset.acc) return; // -/+
+    let el=ev.target;
+    while(el && el!==termCont && !(el.dataset && el.dataset.ag)) el=el.parentNode;
+    if(!el || el===termCont || !el.dataset.ag) return;
+    const d=desvios[el.dataset.ag]||[0,0];
+    arrastreT={nom:el.dataset.ag, x:ev.clientX, y:ev.clientY, dx:d[0], dy:d[1]};
+    seMovioT=false;
+    ev.preventDefault();
+  });
+  addEventListener('mousemove', ev=>{
+    if(!arrastreT) return;
+    const nx=ev.clientX-arrastreT.x, ny=ev.clientY-arrastreT.y;
+    if(Math.abs(nx)+Math.abs(ny)>3) seMovioT=true;
+    desvios[arrastreT.nom]=[arrastreT.dx+nx, arrastreT.dy+ny];
+  });
+  addEventListener('mouseup', ()=>{
+    if(!arrastreT) return;
+    arrastreT=null;
+    try{ sessionStorage.setItem(OMEM, JSON.stringify(desvios)); }catch(_){}
+  });
   termCont.addEventListener('click', ev=>{
     const acc = ev.target && ev.target.dataset ? ev.target.dataset.acc : null;
     if(acc==='tmenos' || acc==='tmas'){
@@ -1447,6 +1475,7 @@ const CMEM='gb-mapa-consola';
       for(const t of TERMS) renderTerm(t);
       return;
     }
+    if(seMovioT){ seMovioT=false; return; }  // arrastrar no es enfocar
     let el=ev.target;
     while(el && el!==termCont && !(el.dataset && el.dataset.ag)) el=el.parentNode;
     const nom=(el && el.dataset) ? el.dataset.ag : null;
@@ -1457,16 +1486,17 @@ const CMEM='gb-mapa-consola';
   if(TERMS.length){
     (function animaTerms(){
       for(const t of TERMS){
+        const d=desvios[t.nom]||[0,0];
         if(t.idx==null){
           // Agente sin nodo en el mapa todavia: su terminal se apila a la
           // izquierda, bajo la cabecera — operando, pero aun sin sitio.
           t.el.style.transform='none';
-          t.el.style.left='12px';
-          t.el.style.top=(96+(t.el.offsetHeight+8)*t.suelto)+'px';
+          t.el.style.left=(12+d[0])+'px';
+          t.el.style.top=(96+(t.el.offsetHeight+8)*t.suelto+d[1])+'px';
           continue;
         }
-        t.el.style.left=(X[t.idx]*esc+ox)+'px';
-        t.el.style.top=(Y[t.idx]*esc+oy-14-(t.el.offsetHeight+6)*t.orden)+'px';
+        t.el.style.left=(X[t.idx]*esc+ox+d[0])+'px';
+        t.el.style.top=(Y[t.idx]*esc+oy-14-(t.el.offsetHeight+6)*t.orden+d[1])+'px';
       }
       requestAnimationFrame(animaTerms);
     })();
