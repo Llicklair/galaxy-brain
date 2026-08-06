@@ -20,6 +20,13 @@ import time
 from . import __version__, bootstrap, config, render, store
 
 
+def _tmp_sufijo():
+    """El temporal lleva el PID: dos escritores a la vez (un regenerador de
+    fondo y una generacion manual) se pisaban el MISMO .tmp y el rename moria
+    con WinError 2 — cada proceso escribe el suyo y el replace sigue atomico."""
+    return ".%d.tmp" % os.getpid()
+
+
 def _reemplaza_html(tmp, destino):
     """`os.replace` con reintento corto para los mapas HTML.
 
@@ -940,7 +947,7 @@ def cmd_graph(args):
             # recarga que caiga en mitad de un open("w") directo ve el fichero
             # truncado — pagina en blanco (visto en uso real, 4-ago). Con el
             # replace se ve el mapa viejo o el nuevo, nunca el hueco.
-            with open(destino + ".tmp", "w", encoding="utf-8") as handle:
+            with open(destino + _tmp_sufijo(), "w", encoding="utf-8") as handle:
                 handle.write(
                     viz.render_graph_cloud(
                         simbolos,
@@ -958,7 +965,7 @@ def cmd_graph(args):
                         suelo=_suelo_para_mapa(root),
                     )
                 )
-            _reemplaza_html(destino + ".tmp", destino)
+            _reemplaza_html(destino + _tmp_sufijo(), destino)
         except OSError as error:
             sys.stderr.write("[gb graph] no pude escribir %s (%s)\n" % (destino, error))
             return 2
@@ -1149,7 +1156,7 @@ def _vigilar(root, args):
                         try:
                             # Misma escritura atomica que en los one-shot: aqui
                             # es donde MAS importa, el watch reescribe a menudo.
-                            with open(destino + ".tmp", "w", encoding="utf-8") as handle:
+                            with open(destino + _tmp_sufijo(), "w", encoding="utf-8") as handle:
                                 handle.write(
                                     viz.render_graph_cloud(
                                         report,
@@ -1167,7 +1174,7 @@ def _vigilar(root, args):
                                         actividad=_actividad_para_mapa(root, report),
                                     )
                                 )
-                            _reemplaza_html(destino + ".tmp", destino)
+                            _reemplaza_html(destino + _tmp_sufijo(), destino)
                             _html_registrar_forma(root, destino, report, grafo, refresco)
                             emit("  actualizado %s" % _procedencia(root).split(" desde ")[0])
                         except OSError as error:
@@ -1343,7 +1350,7 @@ def cmd_symbols(args):
             if not refresco:
                 refresco = _html_refresco_recordado(root, destino, report, grafo)
         try:
-            with open(destino + ".tmp", "w", encoding="utf-8") as handle:
+            with open(destino + _tmp_sufijo(), "w", encoding="utf-8") as handle:
                 handle.write(
                     viz.render_graph_cloud(
                         report,
@@ -1361,7 +1368,7 @@ def cmd_symbols(args):
                         actividad=_actividad_para_mapa(root, report),
                     )
                 )
-            _reemplaza_html(destino + ".tmp", destino)
+            _reemplaza_html(destino + _tmp_sufijo(), destino)
         except OSError as error:
             sys.stderr.write("[gb symbols] no pude escribir %s (%s)\n" % (destino, error))
             return 2
