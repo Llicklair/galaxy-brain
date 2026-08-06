@@ -364,3 +364,16 @@ def test_la_senal_de_sinapsis_solo_se_explica_cuando_puede_existir(tmp_path):
 
     sin = viz.render_graph_cloud(informe)
     assert "fluyendo hacia su onda" not in sin
+
+def test_los_cambios_del_agente_viajan_al_payload(tmp_path):
+    """La consola necesita el hecho para el evento `escribe` con sustancia."""
+    from galaxybrain import symbols
+
+    root = _proyecto(tmp_path)
+    act = {"base": "abc1234", "por_nodo": {}, "cruces": [], "agentes": [{
+        "nombre": "rama_a", "nodos": [], "vecinos": [], "hace_seg": 1,
+        "fuera_del_mapa": 0, "base": "abc1234", "misma_base": True,
+        "cambios": ["lib.nucleo.suma: (a, b) -> (a, b, extra)"],
+    }]}
+    salida = viz.render_graph_cloud(symbols.analyze(root), actividad=act)
+    assert '"cambios": ["lib.nucleo.suma: (a, b) -> (a, b, extra)"]' in salida

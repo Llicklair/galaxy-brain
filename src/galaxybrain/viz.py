@@ -520,6 +520,9 @@ def render_graph_cloud(
             "fuera": a.get("fuera_del_mapa", 0),
             "base": a.get("base", ""),
             "misma": 1 if a.get("misma_base") else 0,
+            # Qué escribió, exactamente: firmas contra el mapa canónico. La
+            # consola convierte cada uno en un evento `escribe` con sustancia.
+            "cambios": a.get("cambios") or [],
         }
         for a in (_act.get("agentes") or [])
     }
@@ -549,7 +552,8 @@ def render_graph_cloud(
             # El aro blanco solo puede aparecer con dos o mas agentes vivos, asi
             # que la entrada solo existe entonces (una leyenda que explica marcas
             # imposibles tambien miente).
-            leyenda += '<span><i class="agente" style="color:#fff"></i>2+ a la vez</span>'
+            # Mismo nombre que en la consola (CRUCE): un hecho, un nombre.
+            leyenda += '<span><i class="agente" style="color:#fff"></i>CRUCE (2+ a la vez)</span>'
         # La sinapsis: cada arista que sale de un nodo tocado fluye con el color
         # de su agente. La entrada es una (la forma explica; el color varia).
         leyenda += (
@@ -1265,6 +1269,7 @@ panelAg.addEventListener('click', ev=>{
   if(!nom) return;
   agenteFoco = (agenteFoco===nom) ? null : nom;
   calculaCercaAg(); recuerda(); pintaPanel();
+  if(window._pintaConsola) window._pintaConsola();  // el foco filtra tambien la consola
 });
 pintaPanel();
 
@@ -1279,9 +1284,23 @@ function eventosEntre(prev, ahora){
   const antes=prev||{ag:{},nodos:{}};
   for(const nombre of Object.keys(ahora.ag)){
     const a=ahora.ag[nombre], pa=antes.ag[nombre];
-    if(!pa){ ev.push({a:nombre,t:'aparece',d:(a.nodos||0)+' nodo(s) en su onda'}); continue; }
-    if(a.hace!=null && pa.hace!=null && a.hace<pa.hace)
-      ev.push({a:nombre,t:'escribe',d:'ultima actividad hace '+a.hace+'s'});
+    if(!pa){
+      ev.push({a:nombre,t:'aparece',d:(a.nodos||0)+' nodo(s) en su onda'});
+      // Lo que ya lleva escrito al aparecer tambien es un hecho: sin esto, un
+      // agente que arranca con trabajo hecho parece que no ha hecho nada.
+      for(const h of (a.cambios||[]).slice(0,4)) ev.push({a:nombre,t:'escribe',d:h});
+      if((a.cambios||[]).length>4) ev.push({a:nombre,t:'escribe',d:'+'+((a.cambios||[]).length-4)+' hecho(s) mas'});
+      continue;
+    }
+    // "escribe" con sustancia: los hechos de firma NUEVOS desde la instantanea
+    // anterior — que escribio exactamente, no "ultima actividad hace 2s". El
+    // texto generico queda solo de reserva, para cambios sin firma (cuerpos).
+    const antesC={}; for(const h of (pa.cambios||[])) antesC[h]=1;
+    const nuevos=(a.cambios||[]).filter(h=>!antesC[h]);
+    for(const h of nuevos.slice(0,4)) ev.push({a:nombre,t:'escribe',d:h});
+    if(nuevos.length>4) ev.push({a:nombre,t:'escribe',d:'+'+(nuevos.length-4)+' hecho(s) mas'});
+    if(!nuevos.length && a.hace!=null && pa.hace!=null && a.hace<pa.hace)
+      ev.push({a:nombre,t:'escribe',d:'sin cambio de firma (cuerpos o docs) · hace '+a.hace+'s'});
     if((a.fuera||0)>(pa.fuera||0))
       ev.push({a:nombre,t:'crea',d:(a.fuera-(pa.fuera||0))+' fichero(s) aun sin sitio en el mapa'});
   }
@@ -1323,21 +1342,30 @@ const CMEM='gb-mapa-consola';
   guarda();
   function pintaConsola(){
     if(!log.length || !abierto){ consolaEl.style.display='none'; return; }
+    // La consola DE un agente: el foco del panel filtra tambien aqui (un CRUCE
+    // en el que participa cuenta como suyo). Sin foco, la de todos.
+    const filas = agenteFoco
+      ? log.filter(e=>e.a===agenteFoco || e.a.split(' + ').indexOf(agenteFoco)>=0)
+      : log;
     consolaEl.style.width=TAM[tam][0]+'px';
     consolaEl.style.maxHeight=TAM[tam][1];
     consolaEl.innerHTML =
-      '<div class="cab"><span>actividad (hechos derivados)</span>'+
+      '<div class="cab"><span>'+(agenteFoco
+        ? 'consola de '+escapa(agenteFoco)
+        : 'actividad (hechos derivados)')+'</span>'+
       '<span><b data-acc="menos" title="mas pequena">&#8722;</b>'+
       '<b data-acc="mas" title="mas grande">+</b>'+
       '<b data-acc="cerrar" title="ocultar">&#10005;</b></span></div>'+
-      log.map(e=>
+      (filas.length ? filas.map(e=>
       '<div class="fila"><span class="hora">'+e.h+'</span>'+
       '<span class="quien" style="color:'+e.c+'">'+escapa(e.a)+'</span>'+
       '<span class="que">'+escapa(e.t)+'</span><span class="detalle">'+escapa(e.d)+'</span></div>'
-    ).join('');
+      ).join('')
+      : '<div class="fila"><span class="detalle">(sin eventos registrados de '+escapa(agenteFoco)+')</span></div>');
     consolaEl.style.display='block';
     consolaEl.scrollTop=consolaEl.scrollHeight;
   }
+  window._pintaConsola=pintaConsola;
   // Delegacion: pintaConsola reconstruye el innerHTML, asi que los botones no
   // pueden llevar listeners propios — se escucha en el contenedor, que vive.
   consolaEl.addEventListener('click', ev=>{

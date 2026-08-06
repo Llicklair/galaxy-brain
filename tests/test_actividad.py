@@ -192,3 +192,51 @@ def test_un_agente_que_solo_crea_modulos_nuevos_sigue_visible(proyecto):
     assert agente["nodos"] == []            # nada que casar en el mapa de ahora
     assert agente["fuera_del_mapa"] == 1    # pero el hecho no se pierde
     assert agente["ficheros"] == 1
+
+# --- cambios: que escribio, exactamente -------------------------------------
+
+def test_los_cambios_dicen_la_firma_exacta(proyecto):
+    """'Ver exactamente que escriben': la firma del worktree contra el mapa
+    canonico — el mismo hecho estrecho que el bucle deriva para enrutar."""
+    informe = symbols.analyze(str(proyecto))
+    rama = _rama(proyecto, "rama_a")
+    (rama / "lib" / "nucleo.py").write_text(
+        "def suma(a, b, extra):\n    return a + b + extra\n"
+        "\n\ndef resta(a, b):\n    return a - b\n",
+        encoding="utf-8")
+
+    foto = actividad.instantanea(str(proyecto), informe)
+    cambios = foto["agentes"][0]["cambios"]
+    assert "lib.nucleo.suma: (a, b) -> (a, b, extra)" in cambios
+    assert "lib.nucleo.resta: (no existia) -> (a, b)" in cambios
+
+
+def test_borrar_un_simbolo_sale_como_borrado(proyecto):
+    informe = symbols.analyze(str(proyecto))
+    rama = _rama(proyecto, "rama_a")
+    (rama / "lib" / "nucleo.py").write_text("X = 1\n", encoding="utf-8")
+
+    foto = actividad.instantanea(str(proyecto), informe)
+    assert "lib.nucleo.suma: (a, b) -> (borrado)" in foto["agentes"][0]["cambios"]
+
+
+def test_el_fichero_a_medio_escribir_se_dice_ilegible(proyecto):
+    """La sintaxis rota de un agente escribiendo es un hecho, no un error: se
+    dice con su linea, y desaparece solo cuando el fichero vuelve a parsear."""
+    informe = symbols.analyze(str(proyecto))
+    rama = _rama(proyecto, "rama_a")
+    (rama / "lib" / "nucleo.py").write_text("def suma(a, b:\n", encoding="utf-8")
+
+    foto = actividad.instantanea(str(proyecto), informe)
+    (cambio,) = foto["agentes"][0]["cambios"]
+    assert "ilegible" in cambio and "lib.nucleo" in cambio
+
+
+def test_tocar_solo_el_cuerpo_no_inventa_hechos_de_firma(proyecto):
+    informe = symbols.analyze(str(proyecto))
+    rama = _rama(proyecto, "rama_a")
+    (rama / "lib" / "nucleo.py").write_text(
+        "def suma(a, b):\n    return b + a\n", encoding="utf-8")
+
+    foto = actividad.instantanea(str(proyecto), informe)
+    assert foto["agentes"][0]["cambios"] == []

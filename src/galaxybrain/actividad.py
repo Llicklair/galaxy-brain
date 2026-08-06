@@ -17,11 +17,13 @@ Lo que se puede derivar y lo que no, dicho de frente:
   pedírsela nos devolvería al registro declarado que ya se rechazó.
 """
 
+import ast
 import os
 import time
 
 from . import aislado
 from . import graph as graph_mod
+from . import symbols as symbols_mod
 
 # El DEFINES es estructura (un módulo contiene una función), no comunicación. Para
 # «con quién habla este nodo» solo cuentan las aristas de llamada.
@@ -77,6 +79,65 @@ def nodos_tocados(root, informe_simbolos):
         if qual:
             tocados.add(qual)
     return tocados
+
+
+#: Tope de hechos por agente en la foto: la consola tiene que caber en un
+#: vistazo, y un refactor masivo se resume, no se vuelca.
+MAX_CAMBIOS = 20
+
+
+def cambios_de(analisis, ficheros, informe_simbolos):
+    """QUÉ escribió exactamente: las firmas de los ficheros tocados del worktree
+    contra el mapa canónico. El mismo hecho estrecho que deriva el bucle para
+    enrutar («suma: (a, b) -> (a, b, extra)») — la consola habla el idioma de gb,
+    no el de «última actividad hace 2s». Derivado del AST, nadie declara nada.
+
+    Un fichero con sintaxis rota se dice ilegible (el agente está a medio
+    escribir: es un hecho, no un error). Ficheros fuera del mapa canónico no
+    salen aquí — ya los cuenta `fuera_del_mapa`.
+    """
+    modulos = {
+        os.path.normcase(n.get("qual") or ""): n.get("qual")
+        for n in informe_simbolos.get("nodes", [])
+        if n.get("kind") == "module"
+    }
+    canon_por_modulo = {}
+    for n in informe_simbolos.get("nodes", []):
+        if n.get("qual") and n.get("kind") != "module":
+            canon_por_modulo.setdefault(n.get("module") or "", {})[n["qual"]] = n.get("sig") or ""
+    hechos = []
+    for fichero in sorted(ficheros):
+        try:
+            mod = graph_mod.module_name(fichero, analisis)
+        except ValueError:
+            continue
+        qual_canon = modulos.get(os.path.normcase(mod))
+        if not qual_canon:
+            continue
+        try:
+            with open(fichero, encoding="utf-8", errors="replace") as fh:
+                arbol = ast.parse(fh.read())
+        except OSError:
+            continue
+        except SyntaxError as error:
+            hechos.append("%s: (ilegible ahora mismo: sintaxis rota en linea %s)"
+                          % (qual_canon, error.lineno or "?"))
+            continue
+        info = symbols_mod._scan_module(mod, arbol, fichero.endswith("__init__.py"))
+        nuevas = {
+            (qual_canon + q[len(mod):] if mod != qual_canon else q): s
+            for q, s in info["sigs"].items()
+        }
+        canon = canon_por_modulo.get(qual_canon, {})
+        for q in sorted(set(canon) | set(nuevas)):
+            a, b = canon.get(q), nuevas.get(q)
+            if a != b:
+                hechos.append("%s: %s -> %s" % (
+                    q, "(no existia)" if a is None else (a or "()"),
+                    "(borrado)" if b is None else (b or "()")))
+    if len(hechos) > MAX_CAMBIOS:
+        hechos = hechos[:MAX_CAMBIOS] + ["(+%d hecho(s) mas)" % (len(hechos) - MAX_CAMBIOS)]
+    return hechos
 
 
 def _mapa_de_modulos(informe_simbolos):
@@ -174,6 +235,8 @@ def instantanea(raiz, informe_simbolos, ahora=None):
             "vecinos": _vecinos(informe_simbolos, nodos, de_modulo),
             "ficheros": len(ficheros),
             "hace_seg": int(max(0, ahora - reciente)) if reciente else None,
+            # Qué escribió, exactamente: firmas contra el mapa canónico.
+            "cambios": cambios_de(analisis, ficheros, informe_simbolos),
         })
 
     for agente in foto["agentes"]:

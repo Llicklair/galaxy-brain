@@ -167,3 +167,39 @@ console.log(JSON.stringify(eventosEntre(ahora, {ag:{a2:ahora.ag.a2}, nodos:{'m.y
     tipos2 = {(e["a"], e["t"]) for e in json.loads(linea2)}
     assert ("a1", "se va") in tipos2
     assert ("a1", "suelta") not in tipos2
+
+def test_el_escribe_lleva_el_hecho_no_el_hace(tmp_path):
+    """'Ver exactamente que escriben': el evento escribe trae la firma derivada
+    (el mismo hecho que enruta el bucle), no 'ultima actividad hace 2s'. El
+    texto generico queda solo para cambios sin firma (cuerpos, docs)."""
+    if shutil.which("node") is None:
+        pytest.skip("sin node no se puede EJECUTAR el script del mapa")
+    import json
+
+    js = _js(tmp_path)
+    m = re.search(r"function eventosEntre\(prev, ahora\)\{[\s\S]*?\n\}", js)
+    assert m
+    arnes = m.group(0) + """
+const prev = {ag:{b1:{hace:50,fuera:0,nodos:1,cambios:['m.f: (a) -> (a, b)']}}, nodos:{}};
+const ahora = {ag:{b1:{hace:2,fuera:0,nodos:1,
+  cambios:['m.f: (a) -> (a, b)','m.g: (no existia) -> (x)']}}, nodos:{}};
+console.log(JSON.stringify(eventosEntre(prev, ahora)));
+console.log(JSON.stringify(eventosEntre(null, ahora)));
+const solocuerpo = {ag:{b1:{hace:2,fuera:0,nodos:1,cambios:['m.f: (a) -> (a, b)']}}, nodos:{}};
+console.log(JSON.stringify(eventosEntre(prev, solocuerpo)));
+"""
+    destino = tmp_path / "consola-escribe.js"
+    destino.write_text(arnes, encoding="utf-8")
+    r = subprocess.run(["node", str(destino)], capture_output=True, text=True, timeout=60)
+    assert r.returncode == 0, r.stderr
+    linea1, linea2, linea3 = r.stdout.strip().splitlines()
+
+    escribe1 = [e["d"] for e in json.loads(linea1) if e["t"] == "escribe"]
+    assert escribe1 == ["m.g: (no existia) -> (x)"]  # SOLO el hecho nuevo
+
+    ev2 = json.loads(linea2)  # al aparecer, lo ya escrito tambien se dice
+    assert ("b1", "aparece") in {(e["a"], e["t"]) for e in ev2}
+    assert "m.f: (a) -> (a, b)" in [e["d"] for e in ev2 if e["t"] == "escribe"]
+
+    escribe3 = [e["d"] for e in json.loads(linea3) if e["t"] == "escribe"]
+    assert len(escribe3) == 1 and "sin cambio de firma" in escribe3[0]
