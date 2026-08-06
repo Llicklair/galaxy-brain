@@ -368,3 +368,13 @@ def test_aviso_desfase_lleva_el_marco_pero_no_los_hechos():
     # sin dependencias no hay hechos ni aviso que dar
     prompt, _, _ = bucle.despacho_de({"id": "A", "prompt": "x"}, [], aviso_desfase=True)
     assert "AVISO DEL ENRUTADOR" not in prompt
+
+
+def test_los_modos_de_despacho_son_excluyentes():
+    """El defecto es el marco; desviarse cuesta UNA bandera, no una combinacion
+    ambigua. Dos modos a la vez es un error de uso, no una preferencia."""
+    try:
+        bucle.main(["tirada.json", "--sin-senal", "--senal-completa"])
+        raise AssertionError("argparse debia rechazar los modos combinados")
+    except SystemExit as e:
+        assert e.code == 2

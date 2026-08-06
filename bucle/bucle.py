@@ -10,10 +10,13 @@ La tesis que implementa (§4, medida el 5-ago-2026): la señal no puede obligar 
 un LLM, pero si obliga a un bucle. Los nodos (agentes) son estocasticos; el
 determinismo va en las aristas:
 
-    preparar -> lanzar A -> DERIVAR hechos de su diff -> ENRUTAR en el despacho
-    de B -> VERIFICAR la adopcion en el diff de B (v1: estatico, antes de la
-    union; si escribio contra la firma vieja, el bucle RECHAZA y reintenta con
-    las llamadas exactas) -> aterrizar con `gb tests --run --union` -> decidir
+    preparar -> lanzar A -> DERIVAR hechos de su diff -> despachar B con el
+    MARCO del desfase (defecto desde la 5ª rebanada, 6-ago-2026: el aviso fijo
+    corrige 4/4 igual que la señal completa y los hechos solo hacen falta EN el
+    rechazo; `--senal-completa` restaura el despacho antiguo) -> VERIFICAR la
+    adopcion en el diff de B (v1: estatico, antes de la union; si escribio
+    contra la firma vieja, el bucle RECHAZA y reintenta con los hechos y las
+    llamadas exactas) -> aterrizar con `gb tests --run --union` -> decidir
     (verde: acta y parar; roja: UN reintento con el fallo como hecho) -> acta
     SIEMPRE.
 
@@ -638,12 +641,18 @@ def main(argv=None):
     parser.add_argument("--resumen", action="store_true",
                         help="leer el dataset de actas: frecuencias y una linea por tirada")
     parser.add_argument("--timeout-agente", type=int, default=900)
-    parser.add_argument("--sin-senal", action="store_true",
-                        help="4ª rebanada: derivar y verificar igual, pero NO despachar la "
-                             "señal preventiva; los hechos solo viajan en un rechazo")
-    parser.add_argument("--aviso-desfase", action="store_true",
-                        help="5ª rebanada: despachar el MARCO del desfase (aviso generico, "
-                             "sin hechos derivados); los hechos solo viajan en un rechazo")
+    # El defecto es el MARCO (aviso fijo): medido en la 5ª rebanada igual de
+    # eficaz que la señal completa (4/4 = 4/4) y mas barato. La norma va en el
+    # defecto; desviarse cuesta una bandera.
+    modo = parser.add_mutually_exclusive_group()
+    modo.add_argument("--senal-completa", action="store_true",
+                      help="despachar la señal derivada completa (el defecto hasta la 5ª "
+                           "rebanada; medido igual que el aviso, 4/4 vs 4/4)")
+    modo.add_argument("--sin-senal", action="store_true",
+                      help="brazo desnudo (4ª rebanada): ni señal ni marco; los hechos "
+                           "solo viajan en un rechazo (corrigio 2/4 — experimental)")
+    modo.add_argument("--aviso-desfase", action="store_true",
+                      help="el defecto, explicito: MARCO del desfase sin hechos derivados")
     args = parser.parse_args(argv)
     if args.resumen:
         print(resumen_actas())
@@ -653,7 +662,8 @@ def main(argv=None):
     with io.open(args.tirada, encoding="utf-8") as fh:
         tirada = json.load(fh)
     acta = correr(tirada, dir_parches=args.simula, timeout_agente=args.timeout_agente,
-                  sin_senal=args.sin_senal, aviso_desfase=args.aviso_desfase)
+                  sin_senal=args.sin_senal,
+                  aviso_desfase=not (args.senal_completa or args.sin_senal))
     print("veredicto: %s | lectura: %s | acta: %s"
           % (acta["veredicto"], acta["lectura_ramas"] or "(sin ramas rojas)",
              os.path.relpath(_ruta_acta(acta["inicio"]), RAIZ)))
