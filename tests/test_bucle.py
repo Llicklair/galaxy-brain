@@ -349,3 +349,22 @@ def test_sin_senal_retiene_el_despacho_pero_no_la_verificacion():
     # sin hechos no hay nada que retener, con o sin bandera
     prompt, entregados, retenidos = bucle.despacho_de(tarea, [], sin_senal=True)
     assert entregados == [] and retenidos == []
+
+
+def test_aviso_desfase_lleva_el_marco_pero_no_los_hechos():
+    """5ª rebanada: el confundido de la 4ª (quito hechos Y marco a la vez) se
+    deshace despachando SOLO el marco. El aviso viaja, los hechos se retienen
+    para la verificacion y el rechazo."""
+    tarea = {"id": "B", "prompt": "haz tests", "depende_de": ["A"]}
+    hechos = ["calcula(a, b) -> calcula(a, b, base)"]
+
+    prompt, entregados, retenidos = bucle.despacho_de(tarea, hechos, aviso_desfase=True)
+    assert "AVISO DEL ENRUTADOR" in prompt
+    assert "SEÑAL DEL ENRUTADOR" not in prompt
+    assert "calcula" not in prompt.replace(tarea["prompt"], "")  # los hechos no viajan
+    assert entregados == []
+    assert retenidos == hechos
+
+    # sin dependencias no hay hechos ni aviso que dar
+    prompt, _, _ = bucle.despacho_de({"id": "A", "prompt": "x"}, [], aviso_desfase=True)
+    assert "AVISO DEL ENRUTADOR" not in prompt

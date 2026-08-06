@@ -322,9 +322,18 @@ def ejecutar_real(tarea, worktree, prompt, timeout_seg):
         raise RuntimeError("claude -p salio %d: %s" % (rc, _texto(err)[:300]))
 
 
-def componer_prompt(tarea, hechos_enrutados, extra=""):
+#: El marco sin los hechos (5ª rebanada): la 4ª midio que el rechazo pierde
+#: autoridad cuando contradice lo que el agente OBSERVA (su arbol viejo, su
+#: pytest verde). Este aviso planta el marco del desfase sin derivar nada.
+AVISO_DESFASE = ("AVISO DEL ENRUTADOR: hay otros worktrees en vuelo que pueden cambiar "
+                 "contratos que tu arbol todavia no ve; que tu pytest local salga verde "
+                 "no lo descarta. Escribe pensando en el arbol donde aterriza tu trabajo.")
+
+
+def componer_prompt(tarea, hechos_enrutados, extra="", aviso=False):
     """El despacho: tarea + señal. La señal son HECHOS, no ordenes — lo que el
-    agente haga con ellos es suyo; lo que el bucle haga con el veredicto, no."""
+    agente haga con ellos es suyo; lo que el bucle haga con el veredicto, no.
+    Con `aviso`, el marco del desfase viaja aunque los hechos no."""
     bloques = [
         "Tu directorio de trabajo es el actual (un worktree preparado). Trabaja SOLO aqui.",
         tarea["prompt"],
@@ -336,21 +345,24 @@ def componer_prompt(tarea, hechos_enrutados, extra=""):
         bloques.insert(1, "SEÑAL DEL ENRUTADOR (hechos derivados del grafo de otro worktree "
                           "en vuelo; tu arbol puede estar desfasado respecto a donde aterriza "
                           "tu trabajo):\n" + "\n".join("- " + h for h in hechos_enrutados))
+    elif aviso:
+        bloques.insert(1, AVISO_DESFASE)
     if extra:
         bloques.append(extra)
     return "\n\n".join(bloques)
 
 
-def despacho_de(tarea, enrutados, sin_senal=False):
+def despacho_de(tarea, enrutados, sin_senal=False, aviso_desfase=False):
     """Qué recibe el agente y qué se queda el bucle.
 
-    Con `sin_senal` (4ª rebanada del dataset: ¿aporta algo la señal preventiva
-    si el rechazo ya corrige? — con señal iba ignorada 4/4 y el rechazo corrigió
-    4/4) los hechos se DERIVAN y se VERIFICAN igual, pero no viajan en el
-    despacho: aparecerán, exactos, solo en un rechazo. Devuelve
-    (prompt, entregados, retenidos)."""
-    if sin_senal and enrutados:
-        return componer_prompt(tarea, []), [], list(enrutados)
+    Con `sin_senal` (4ª rebanada: medida — el rechazo solo corrigió 2/4 sin la
+    señal, contra 4/4 con ella) los hechos se DERIVAN y se VERIFICAN igual pero
+    no viajan en el despacho: aparecen, exactos, solo en un rechazo. Con
+    `aviso_desfase` (5ª rebanada: deshacer el confundido de la 4ª, que quitó
+    hechos Y marco a la vez) viaja el AVISO genérico del desfase pero no los
+    hechos. Devuelve (prompt, entregados, retenidos)."""
+    if (sin_senal or aviso_desfase) and enrutados:
+        return componer_prompt(tarea, [], aviso=aviso_desfase), [], list(enrutados)
     return componer_prompt(tarea, enrutados), list(enrutados), []
 
 
@@ -422,7 +434,8 @@ def interpretar(ramas_rojas, union_verde, entregas):
     return lectura
 
 
-def correr(tirada, dir_parches=None, max_reintentos=1, timeout_agente=900, sin_senal=False):
+def correr(tirada, dir_parches=None, max_reintentos=1, timeout_agente=900, sin_senal=False,
+           aviso_desfase=False):
     acta = {
         "inicio": time.strftime("%Y-%m-%d %H:%M:%S"),
         "modo": "simulado" if dir_parches else "real",
@@ -430,6 +443,7 @@ def correr(tirada, dir_parches=None, max_reintentos=1, timeout_agente=900, sin_s
         "entregas": {},          # id_tarea -> [hechos que recibio en el despacho]
         "senal_retenida": {},    # id_tarea -> [hechos derivados que NO se despacharon]
         "sin_senal": bool(sin_senal),
+        "aviso_desfase": bool(aviso_desfase),
         "despachos": {},         # id_tarea -> [texto COMPLETO de cada lanzamiento]
         "adopcion": {},          # id_tarea -> [llamadas contra la firma vieja]
         "reintentos": 0,
@@ -447,7 +461,7 @@ def correr(tirada, dir_parches=None, max_reintentos=1, timeout_agente=900, sin_s
             wt = preparar_worktree(tarea["id"])
             worktrees[tarea["id"]] = wt
             enrutados = hechos_acumulados if tarea.get("depende_de") else []
-            prompt, entregados, retenidos = despacho_de(tarea, enrutados, sin_senal)
+            prompt, entregados, retenidos = despacho_de(tarea, enrutados, sin_senal, aviso_desfase)
             if entregados:
                 acta["entregas"][tarea["id"]] = list(entregados)
             if retenidos:
@@ -480,16 +494,17 @@ def correr(tirada, dir_parches=None, max_reintentos=1, timeout_agente=900, sin_s
                     if not dir_parches and acta["reintentos"] < max_reintentos:
                         acta["reintentos"] += 1
                         _reset_worktree(wt)
-                        if sin_senal:
-                            # El rechazo es la PRIMERA noticia: lleva los hechos
-                            # que se retuvieron, ademas de las llamadas exactas.
+                        if sin_senal or aviso_desfase:
+                            # El rechazo es la PRIMERA noticia de los hechos:
+                            # lleva los retenidos, ademas de las llamadas exactas.
                             extra = ("RECHAZO DEL BUCLE: tu diff llama contra una "
                                      "firma que otro worktree en vuelo acaba de "
                                      "cambiar. Los hechos:\n"
                                      + "\n".join("- " + h for h in enrutados)
                                      + "\nLas llamadas exactas:\n"
                                      + "\n".join(infracciones))
-                            prompt_rechazo = componer_prompt(tarea, [], extra)
+                            prompt_rechazo = componer_prompt(tarea, [], extra,
+                                                             aviso=aviso_desfase)
                         else:
                             extra = ("RECHAZO DEL BUCLE: tu diff llama contra la firma "
                                      "VIEJA teniendo la señal delante. Las llamadas "
@@ -531,7 +546,9 @@ def correr(tirada, dir_parches=None, max_reintentos=1, timeout_agente=900, sin_s
             acta["entregas"].setdefault(ultima["id"], []).append("(cola del fallo de union)")
             if dir_parches:
                 break  # en simulado no hay reintento distinto que aplicar
-            prompt_union = componer_prompt(ultima, [] if sin_senal else hechos_acumulados, extra)
+            prompt_union = componer_prompt(
+                ultima, [] if (sin_senal or aviso_desfase) else hechos_acumulados, extra,
+                aviso=aviso_desfase)
             acta["despachos"].setdefault(ultima["id"], []).append(prompt_union)
             ejecutar_real(ultima, wt, prompt_union, timeout_agente)
             acta["pasos"].append("reintento de %s" % ultima["id"])
@@ -600,6 +617,8 @@ def resumen_actas(dir_actas=None):
         if acta.get("senal_retenida"):
             retenida = " · señal RETENIDA (%d hecho(s))" % sum(
                 len(v) for v in acta["senal_retenida"].values())
+            if acta.get("aviso_desfase"):
+                retenida += " con AVISO de desfase"
         lineas.append("  %s · %s · %s · señal: %s · %s · reintentos: %d%s%s"
                       % (acta.get("inicio", "?"), acta.get("modo", "?"),
                          acta.get("veredicto", "?"), "si" if senal else "no", estado,
@@ -622,6 +641,9 @@ def main(argv=None):
     parser.add_argument("--sin-senal", action="store_true",
                         help="4ª rebanada: derivar y verificar igual, pero NO despachar la "
                              "señal preventiva; los hechos solo viajan en un rechazo")
+    parser.add_argument("--aviso-desfase", action="store_true",
+                        help="5ª rebanada: despachar el MARCO del desfase (aviso generico, "
+                             "sin hechos derivados); los hechos solo viajan en un rechazo")
     args = parser.parse_args(argv)
     if args.resumen:
         print(resumen_actas())
@@ -631,7 +653,7 @@ def main(argv=None):
     with io.open(args.tirada, encoding="utf-8") as fh:
         tirada = json.load(fh)
     acta = correr(tirada, dir_parches=args.simula, timeout_agente=args.timeout_agente,
-                  sin_senal=args.sin_senal)
+                  sin_senal=args.sin_senal, aviso_desfase=args.aviso_desfase)
     print("veredicto: %s | lectura: %s | acta: %s"
           % (acta["veredicto"], acta["lectura_ramas"] or "(sin ramas rojas)",
              os.path.relpath(_ruta_acta(acta["inicio"]), RAIZ)))
