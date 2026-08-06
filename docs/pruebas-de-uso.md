@@ -10,6 +10,36 @@ mismo detalle que los positivos, o más.
 
 ---
 
+## 2026-08-06 · Por qué no se lee la consola — la investigación del 13/55 (regla 10)
+
+El termómetro decía «capturas leídas: 13 de 55» y la obligación era investigar, no blindar. Cruzado
+el histórico completo (`index.jsonl`) con la libreta de lecturas (`leidas.jsonl`) y los commits de
+intervención:
+
+- **El 78% del histórico no es código de ningún proyecto**: 30 efímeras (`python -c`/stdin de
+  exploración de agentes) + 13 de scripts de scratchpad + 2 sueltas. No leerlas es correcto — no hay
+  nada que leer. El denominador 55 infla la sensación de abandono.
+- **Las 6 capturas de código propio de gb: 6/6 arregladas SIN leerlas.** Las seis se leyeron por
+  primera vez el 6-ago a las 17:51 — un triaje post-hoc, días después de que los commits ya las
+  hubieran curado. El patrón es idéntico en las seis: crash delante del que lo provocó (sesión de
+  desarrollo en vivo), traceback ya impreso en el terminal, causa obvia (`NameError` de función aún
+  no escrita), reproducir gratis. **El valor diferencial de la consola —los locales, el estado— no
+  compite contra un traceback que ya tienes delante.**
+- **Las 4 de guardia (otro repo): 0 leídas.** Este sí es el caso con pinta de valor (el crash lejos
+  de la sesión que lo mira) y también quedó sin leer — pero desde aquí no se opera ese repo; queda
+  como dato para cuando se abra.
+
+**Diagnóstico:** no es abandono de la herramienta; es que en 7 días no ocurrió ni una vez el caso
+para el que la consola existe — un crash **caro de reproducir** (watch nocturno, servidor, estado
+complejo, otra sesión). Los crashes del flujo real (desarrollo interactivo con agentes) son baratos:
+el terminal ya da el traceback y el fix es inmediato. La promesa «sin reproducir a mano» solo paga
+cuando reproducir cuesta.
+
+**Consecuencia (devolver, no blindar):** el termómetro mezclaba exploración con producto — `gb
+status` pasa a separar el denominador (leídas en código de proyecto vs exploración), para que la
+métrica lea señal y no ruido. Ningún aviso nuevo, ningún hook: si el caso caro no ocurre, la
+consola no se empuja — se espera, y esta entrada es el registro de la espera.
+
 ## 2026-08-04 · La consciencia del LLM deja de ser artesanía — **el arnés viaja con el repo**
 
 Pregunta de Marcos: ¿es el LLM consciente de gb frente a un usuario nuevo? Auditados los canales:
