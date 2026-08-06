@@ -729,7 +729,9 @@ _NUBE = """<!doctype html>
   #consola{position:fixed;bottom:12px;left:12px;z-index:5;background:var(--panel);
            border:1px solid var(--linea);border-radius:6px;width:410px;max-height:38vh;
            overflow-y:auto;font:11px ui-monospace,Consolas,monospace;display:none;
-           padding:5px 0}
+           /* sin padding SUPERIOR: la cabecera sticky se pegaba 5px por debajo
+              del borde y las filas asomaban por encima */
+           padding:0 0 5px}
   #consola .cab,#errores .cab{position:sticky;top:0;display:flex;justify-content:space-between;
            align-items:center;padding:3px 10px;background:var(--panel);
            border-bottom:1px solid var(--linea);color:var(--suave);cursor:move}
@@ -745,7 +747,7 @@ _NUBE = """<!doctype html>
   #errores{position:fixed;bottom:34px;right:12px;z-index:5;background:var(--panel);
            border:1px solid var(--linea);border-radius:6px;width:380px;max-height:32vh;
            overflow-y:auto;font:11px ui-monospace,Consolas,monospace;display:none;
-           padding:5px 0}
+           padding:0 0 5px}
   #pie{position:fixed;bottom:12px;right:12px;z-index:5;
        font:10px ui-monospace,Consolas,monospace;color:var(--suave);max-width:40vw;text-align:right}
   /* La terminal del agente: su consola cmd EN VIVO, anclada encima de sus
