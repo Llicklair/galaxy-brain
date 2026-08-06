@@ -1111,6 +1111,25 @@ def _watch_en_fondo():
     return 0
 
 
+def _codigo_del_motor(base=None):
+    """Firma (fichero, mtime, tamaño) de los .py del propio paquete: lo que un
+    proceso largo tiene congelado en memoria. Solo stat — entra en el tick."""
+    base = base or os.path.dirname(os.path.abspath(__file__))
+    firma = []
+    try:
+        nombres = sorted(os.listdir(base))
+    except OSError:
+        return ()
+    for nombre in nombres:
+        if nombre.endswith(".py"):
+            try:
+                st = os.stat(os.path.join(base, nombre))
+            except OSError:
+                continue
+            firma.append((nombre, int(st.st_mtime), st.st_size))
+    return tuple(firma)
+
+
 def _vigilar(root, args):
     """Regenera el HTML mientras algun .py del arbol cambie. Un proceso vivo, no
     un hook.
@@ -1138,6 +1157,7 @@ def _vigilar(root, args):
         return 0
 
     emit("vigilando %s — el mapa se regenera al cambiar cualquier .py (Ctrl+C para parar)" % root)
+    motor = _codigo_del_motor()
     try:
         while True:
             if anterior is not None and not os.path.exists(destino):
@@ -1145,6 +1165,16 @@ def _vigilar(root, args):
                 # ausencia es el opt-out. Sin esto, un watch lanzado en fondo
                 # no tendria una forma razonable de morir.
                 emit("el mapa ya no esta — watch apagado")
+                return 0
+            if _codigo_del_motor() != motor:
+                # Un vigilante con el codigo viejo congelado en memoria pisa las
+                # regeneraciones nuevas sin saberlo: un watch de 8 horas sirvio
+                # un mapa fantasma toda la noche del 6-ago (tres cazas falsas
+                # hasta dar con el). Cambio el codigo en disco -> este proceso
+                # ya no es de fiar: lo dice y MUERE. Relanzarlo cuesta un
+                # comando y sirve la version nueva.
+                emit("el codigo de gb cambio en disco desde que arranco este watch — "
+                     "me apago para no servir un mapa viejo (relanzame)")
                 return 0
             _latir(candado)
             actual = (_firma_py(root), _firma_capas(root))
@@ -1173,6 +1203,9 @@ def _vigilar(root, args):
                                         ciclo=_ciclo_para_mapa(root, report),
                                         tocados=_tocados_para_mapa(root, report),
                                         actividad=_actividad_para_mapa(root, report),
+                                        capturas=_capturas_para_mapa(root, report),
+                                        suelo=_suelo_para_mapa(root),
+                                        sin_leer=_capturas_sin_leer(root),
                                     )
                                 )
                             _reemplaza_html(destino + _tmp_sufijo(), destino)
@@ -1367,6 +1400,12 @@ def cmd_symbols(args):
                         ciclo=_ciclo_para_mapa(root, report),
                         tocados=_tocados_para_mapa(root, report),
                         actividad=_actividad_para_mapa(root, report),
+                        # Mismos extras que el mapa de `graph`: es LA MISMA
+                        # pagina — un mapa regenerado por aqui sin capturas
+                        # diria "0 capturas" habiendo 18, y eso es mentir.
+                        capturas=_capturas_para_mapa(root, report),
+                        suelo=_suelo_para_mapa(root),
+                        sin_leer=_capturas_sin_leer(root),
                     )
                 )
             _reemplaza_html(destino + _tmp_sufijo(), destino)

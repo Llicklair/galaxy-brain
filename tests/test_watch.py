@@ -186,3 +186,42 @@ def test_una_carpeta_que_solo_CONTIENE_el_nombre_del_ruido_si_se_mira(tmp_path):
     (sitio / "util.py").write_text("z = 3\n", encoding="utf-8")
     nombres = [marca[0] for marca in cli._firma_py(str(tmp_path))]
     assert nombres == ["util.py"]
+
+
+def test_el_watch_se_apaga_si_el_codigo_de_gb_cambia_en_disco(tmp_path, monkeypatch, capsys):
+    """Un watch de 8 horas sirvio un mapa fantasma toda la noche (6-ago-2026):
+    su codigo vivia congelado en memoria mientras el disco avanzaba, y piso
+    cada regeneracion nueva durante horas (tres cazas falsas hasta dar con el).
+    Cambio el codigo en disco -> el vigilante lo dice y MUERE."""
+    import time
+
+    root = _proyecto(tmp_path)
+    destino = str(tmp_path / "mapa.html")
+    with open(destino, "w", encoding="utf-8") as handle:
+        handle.write("<!-- viejo -->")
+
+    vueltas = []
+
+    def _cambia_el_codigo(_segundos):
+        vueltas.append(1)
+        if len(vueltas) == 1:
+            monkeypatch.setattr(cli, "_codigo_del_motor", lambda base=None: ("otro",))
+            return
+        raise AssertionError("el watch dio otra vuelta con el codigo ya cambiado")
+
+    monkeypatch.setattr(time, "sleep", _cambia_el_codigo)
+    rc = cli.main(["symbols", root, "--html", destino, "--watch"])
+    assert rc == 0
+    assert "me apago para no servir un mapa viejo" in capsys.readouterr().out
+    assert not os.path.exists(cli._ruta_candado(destino))  # el candado se suelta
+
+
+def test_la_firma_del_motor_cambia_si_un_py_cambia(tmp_path):
+    base = tmp_path / "paquete"
+    base.mkdir()
+    (base / "a.py").write_text("x = 1\n", encoding="utf-8")
+    antes = cli._codigo_del_motor(str(base))
+    (base / "a.py").write_text("x = 1  # tocado\n", encoding="utf-8")
+    despues = cli._codigo_del_motor(str(base))
+    assert antes != despues
+    assert cli._codigo_del_motor(str(tmp_path / "no-existe")) == ()
