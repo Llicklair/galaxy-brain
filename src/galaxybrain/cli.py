@@ -15,8 +15,28 @@ import datetime
 import json
 import os
 import sys
+import time
 
 from . import __version__, bootstrap, config, render, store
+
+
+def _reemplaza_html(tmp, destino):
+    """`os.replace` con reintento corto para los mapas HTML.
+
+    En Windows, el navegador que esta recargando el mapa (`--refresco`) mantiene
+    el fichero abierto un instante y el rename atomico choca (WinError 32).
+    Paso dos veces el 6-ago-2026 con refresco de 10 s y regeneracion continua:
+    una regeneracion entera perdida por una ventana de milisegundos. Tres
+    intentos con 200 ms cubren la ventana observada; si aun asi falla, el error
+    sube y se dice, como siempre."""
+    for intento in range(3):
+        try:
+            os.replace(tmp, destino)
+            return
+        except OSError:
+            if intento == 2:
+                raise
+            time.sleep(0.2)
 
 
 def emit(text):
@@ -876,7 +896,7 @@ def cmd_graph(args):
                         actividad=_actividad_para_mapa(root, simbolos),
                     )
                 )
-            os.replace(destino + ".tmp", destino)
+            _reemplaza_html(destino + ".tmp", destino)
         except OSError as error:
             sys.stderr.write("[gb graph] no pude escribir %s (%s)\n" % (destino, error))
             return 2
@@ -1085,7 +1105,7 @@ def _vigilar(root, args):
                                         actividad=_actividad_para_mapa(root, report),
                                     )
                                 )
-                            os.replace(destino + ".tmp", destino)
+                            _reemplaza_html(destino + ".tmp", destino)
                             _html_registrar_forma(root, destino, report, grafo, refresco)
                             emit("  actualizado %s" % _procedencia(root).split(" desde ")[0])
                         except OSError as error:
@@ -1279,7 +1299,7 @@ def cmd_symbols(args):
                         actividad=_actividad_para_mapa(root, report),
                     )
                 )
-            os.replace(destino + ".tmp", destino)
+            _reemplaza_html(destino + ".tmp", destino)
         except OSError as error:
             sys.stderr.write("[gb symbols] no pude escribir %s (%s)\n" % (destino, error))
             return 2

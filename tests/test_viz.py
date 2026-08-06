@@ -396,3 +396,33 @@ def test_la_consola_del_agente_viaja_al_payload_y_hay_terminal(tmp_path):
     assert '"consola": ["[02:13:05] > Edit lib/nucleo.py"]' in salida
     assert 'id="terminales"' in salida
     assert "parpadeo" in salida
+
+
+def test_el_mapa_sobrevive_al_navegador_releyendo(monkeypatch):
+    """WinError 32: con --refresco el navegador mantiene el fichero abierto un
+    instante y el rename atomico choca — paso DOS veces el 6-ago-2026, cada una
+    una regeneracion entera perdida. El escritor reintenta la ventana."""
+    intentos = []
+
+    def falla_dos_veces(a, b):
+        intentos.append(1)
+        if len(intentos) < 3:
+            raise OSError(32, "sharing violation")
+
+    monkeypatch.setattr(os, "replace", falla_dos_veces)
+    monkeypatch.setattr(cli.time, "sleep", lambda s: None)
+    cli._reemplaza_html("a.tmp", "a.html")
+    assert len(intentos) == 3
+
+
+def test_si_la_ventana_no_se_cierra_el_error_sube(monkeypatch):
+    """Tres intentos y a decirlo: un reintento infinito seria esconder el fallo."""
+    import pytest
+
+    def siempre_falla(a, b):
+        raise OSError(32, "sharing violation")
+
+    monkeypatch.setattr(os, "replace", siempre_falla)
+    monkeypatch.setattr(cli.time, "sleep", lambda s: None)
+    with pytest.raises(OSError):
+        cli._reemplaza_html("a.tmp", "a.html")
