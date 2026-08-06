@@ -10,6 +10,42 @@ mismo detalle que los positivos, o más.
 
 ---
 
+## 2026-08-06 · La 5ª rebanada: lo que prima es el MARCO, no los hechos — 4/4 con una frase fija
+
+La 4ª dejó un confundido: `--sin-senal` quitó a la vez los hechos derivados Y el marco del desfase
+(«tu árbol puede estar desfasado»), así que no se sabía cuál de los dos hacía obedecible el rechazo.
+Este brazo (`--aviso-desfase`) despacha SOLO el marco — una frase fija, sin derivar nada: «hay otros
+worktrees en vuelo que pueden cambiar contratos que tu árbol todavía no ve; que tu pytest local
+salga verde no lo descarta» — y reserva los hechos al rechazo. Criterio pre-escrito: ≥3/4 corrige →
+prima el marco; ≤2/4 → priman los hechos.
+
+**Resultado: 4/4 corrigió, 4/4 uniones verdes.** La tabla de los tres brazos (12 tiradas con dato):
+
+| brazo del despacho              | B infringe | rechazo corrige |
+|---------------------------------|-----------|-----------------|
+| señal completa (hechos + marco) | 4/4       | 4/4             |
+| nada (4ª rebanada)              | 4/4       | 2/4             |
+| solo el marco (5ª)              | 4/4       | **4/4**         |
+
+Tres cosas quedan medidas de una vez:
+
+1. **Nada previene la infracción** (12/12): B escribe contra lo que ve en su árbol, reciba lo que
+   reciba. La prevención por despacho es una ilusión en los tres brazos.
+2. **El marco compra la autoridad del rechazo** — y los hechos derivados en el despacho no añaden
+   nada medible sobre el marco solo (4/4 = 4/4). El mecanismo entendido en la 4ª se confirma: el
+   rechazo corrige cuando no contradice de primeras lo que el agente observa.
+3. **Los hechos son insustituibles donde siempre lo fueron: en el rechazo** (las llamadas exactas
+   con fichero:línea). Derivar sigue siendo obligatorio — para verificar y rechazar — pero no hace
+   falta gastarlo en el despacho.
+
+Honestidad estadística: n=4 por brazo; marco+señal juntos 8/8 contra 2/4 del brazo desnudo sigue
+sin cruzar significancia clásica (~0,09 una cola). Es coherente, replicado en dos brazos y con
+mecanismo — pero si algún día importa de verdad, se compra con n, no con prosa.
+
+Consecuencia propuesta (pendiente de decisión): el despacho por defecto lleva el AVISO fijo y
+reserva los hechos al rechazo — mismo efecto medido, coste cero de derivación en el despacho y un
+prompt más corto. La señal completa quedaría tras bandera (`--senal-completa`).
+
 ## 2026-08-06 · La 4ª rebanada: ¿sobra la señal preventiva? — NO, y el porqué es mejor que la pregunta
 
 Hipótesis (del dataset de 5 tiradas): la señal preventiva va ignorada 4/4 y el rechazo corrige 4/4 —
