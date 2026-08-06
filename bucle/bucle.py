@@ -534,7 +534,7 @@ def resumen_actas(dir_actas=None):
                       % (acta.get("inicio", "?"), acta.get("modo", "?"),
                          acta.get("veredicto", "?"), "si" if senal else "no", estado,
                          acta.get("reintentos", 0),
-                         " · restaurada" if "_nota" in acta else ""))
+                         " · con nota (leerla)" if "_nota" in acta else ""))
     cabecera = "%d tirada(s) · %d con señal · adopcion ignorada %d/%d (con dato) · " \
                "rechazo corrigio %d/%d" % (n, con_senal, ignoradas, con_dato,
                                            corrigio, rechazos)
