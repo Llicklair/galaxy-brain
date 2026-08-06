@@ -25,18 +25,18 @@ def _reemplaza_html(tmp, destino):
 
     En Windows, el navegador que esta recargando el mapa (`--refresco`) mantiene
     el fichero abierto un instante y el rename atomico choca (WinError 32).
-    Paso dos veces el 6-ago-2026 con refresco de 10 s y regeneracion continua:
-    una regeneracion entera perdida por una ventana de milisegundos. Tres
-    intentos con 200 ms cubren la ventana observada; si aun asi falla, el error
-    sube y se dice, como siempre."""
-    for intento in range(3):
+    Paso dos veces el 6-ago-2026 con refresco de 10 s y regeneracion continua —
+    y una TERCERA con el reintento de 3x200 ms ya puesto: el navegador retiene
+    el fichero mas de 600 ms. Cinco intentos con espera creciente (0,2 -> 1,6 s,
+    ~3 s en total); si aun asi falla, el error sube y se dice, como siempre."""
+    for intento in range(5):
         try:
             os.replace(tmp, destino)
             return
         except OSError:
-            if intento == 2:
+            if intento == 4:
                 raise
-            time.sleep(0.2)
+            time.sleep(0.2 * (2 ** intento))
 
 
 def emit(text):
