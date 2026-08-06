@@ -317,6 +317,9 @@ def render_graph_cloud(
     capturas=None,
     suelo=None,
     sin_leer=0,
+    # Epoch de generacion, puesto por QUIEN LLAMA (como el pie): el render sigue
+    # siendo determinista y el JS puede envejecer la actividad con la edad real.
+    gen_ts=None,
 ):
     """La nube: nodos repartidos por fuerzas, coloreados por módulo, navegable.
 
@@ -638,6 +641,12 @@ def render_graph_cloud(
         "pie": _html.escape(pie),
         "nodos": _en_script(_json.dumps(datos, ensure_ascii=False)),
         "aristas": _en_script(_json.dumps(lista_aristas)),
+        # Epoch de generacion: el JS calcula con el la edad REAL de la actividad
+        # (la que tenia al generarse + lo que la pagina lleva servida). Sin esto,
+        # una foto estatica anima flujo eternamente y lee como "pasando ahora".
+        # `null` cuando quien llama no lo sella: el JS envejece entonces solo
+        # con el tiempo de pagina abierta.
+        "gen_ts": str(int(gen_ts)) if gen_ts is not None else "null",
         "leyenda": leyenda,
         # El embudo del ciclo del error en la cabecera, ya formateado por quien
         # llama. Cadena vacia (ni hueco) si el proyecto no tiene capturas.
@@ -803,7 +812,7 @@ _NUBE = """<!doctype html>
 <div id="pie">%(pie)s</div>
 <script>
 // ================= datos =================
-const NODOS = %(nodos)s, ARISTAS = %(aristas)s, LADO = 1000;
+const NODOS = %(nodos)s, ARISTAS = %(aristas)s, LADO = 1000, GEN_TS = %(gen_ts)s;
 const IMPORT_COLOR = '%(color_import)s', CICLO_COLOR = '%(color_ciclo)s';
 const OBRA_COLOR = '%(color_obra)s';
 const AGENTES = %(agentes)s;
@@ -1034,13 +1043,15 @@ function pinta(t){
     const desde = agA ? a : b, hasta = agA ? b : a;
     const quien = agA ? na.ag : nb.ag;
     if(agenteFoco!==null && quien.indexOf(agenteFoco)<0) continue;
+    const vigor = vigorOnda(quien);
+    if(vigor<=0) continue;   // actividad de hace >10 min: la onda ya no es "ahora"
     const c = quien.length>1 ? '#ffffff' : ((AGENTES[quien[0]]||{}).c||OBRA_COLOR);
-    cx.globalAlpha=0.3; cx.strokeStyle=c; cx.lineWidth=1.2;
+    cx.globalAlpha=0.3*vigor; cx.strokeStyle=c; cx.lineWidth=1.2;
     cx.beginPath(); cx.moveTo(WX[desde],WY[desde]); cx.lineTo(WX[hasta],WY[hasta]); cx.stroke();
     let fase = reloj/1300 + (a*31+b*17)*0.013;
     fase = fase - Math.floor(fase);
     const sx=WX[desde]+(WX[hasta]-WX[desde])*fase, sy=WY[desde]+(WY[hasta]-WY[desde])*fase;
-    cx.globalAlpha=0.9; cx.fillStyle=c;
+    cx.globalAlpha=0.9*vigor; cx.fillStyle=c;
     cx.beginPath(); cx.arc(sx,sy,1.7*Math.min(Math.max(esc,0.6),1.5),0,6.284); cx.fill();
   }
   cx.lineWidth=1;
@@ -1290,7 +1301,27 @@ function calculaCercaAg(){
 }
 // El panel de agentes se retiro (6-ago): su tarjeta se FUSIONO con la terminal
 // y vive anclada al nodo del agente — una sola pieza por agente, donde opera.
-function fmtHace(s){ return s==null ? '' : (s<90 ? s+'s' : Math.round(s/60)+'m'); }
+function fmtHace(s){ return s==null ? '' : (s<90 ? Math.round(s)+'s' : Math.round(s/60)+'m'); }
+// La edad REAL de la actividad: la que tenia al generarse el mapa mas lo que ha
+// pasado desde la generacion (GEN_TS). El `hace` del payload esta congelado en
+// la foto; sin esto la tarjeta miente mas cuanto mas vieja es la pestana.
+function haceAhora(a){
+  if(!a || a.hace==null) return null;
+  const extra = GEN_TS!=null ? Math.max(0, Date.now()/1000 - GEN_TS) : performance.now()/1000;
+  return a.hace + extra;
+}
+// La onda del agente se apaga con la edad: fluye entera 3 min, se atenua y a los
+// 10 esta muerta. Una foto estatica que anima flujo eternamente lee como "esta
+// pasando ahora", cuando el hecho es "estaba pasando cuando se genero" — la
+// misma disciplina que el pie: decir de cuando es el dato.
+const ONDA_FRESCA=180, ONDA_MUERTA=600;
+function vigorOnda(quien){
+  let hace=null;
+  for(const q of quien){ const h=haceAhora(AGENTES[q]); if(h!=null && (hace==null||h<hace)) hace=h; }
+  if(hace==null) return 1;  // sin mtime no se inventa una muerte: se dibuja
+  if(hace<=ONDA_FRESCA) return 1;
+  return Math.max(0, 1-(hace-ONDA_FRESCA)/(ONDA_MUERTA-ONDA_FRESCA));
+}
 
 // Cualquier panel con cabecera se arrastra por ella y recuerda donde lo dejaste
 // (por pestaña): dos consolas fijas en esquinas acaban superpuestas en cuanto
@@ -1467,13 +1498,16 @@ const CMEM='gb-mapa-consola';
   function renderTerm(t, cayendo){
     const a=AGENTES[t.nom]; if(!a) return;
     const total=(a.consola||[]).length;
-    const vivo = (a.hace!=null && a.hace<120) || t.reveladas<total;
+    // vivo/hace con la edad REAL, no la congelada en la foto: un cursor
+    // parpadeando dos horas despues es la misma mentira que la onda eterna.
+    const hAhora = haceAhora(a);
+    const vivo = (hAhora!=null && hAhora<120) || t.reveladas<total;
     t.el.style.width=TAMT[tamT][0]+'px';
     t.el.className='term'+(agenteFoco===t.nom?' foco':'');
     // La tarjeta y la terminal son UNA pieza: cabecera con los datos del
     // agente (lo que era el panel) y debajo su consola, si habla.
     let h='<div class="tcab" style="color:'+a.c+'">&#9679; '+escapa(t.nom)+
-      '<span class="tdat">'+(a.nodos||0)+'n'+(a.hace!=null?' &middot; '+fmtHace(a.hace):'')+'</span>'+
+      '<span class="tdat">'+(a.nodos||0)+'n'+(hAhora!=null?' &middot; '+fmtHace(hAhora):'')+'</span>'+
       '<span class="tbot"><b data-acc="tmenos" title="mas pequena">&#8722;</b>'+
       '<b data-acc="tmas" title="mas grande">+</b></span></div>';
     if(!a.misma) h+='<div class="tav">&#9888; parte de otra base ('+escapa(a.base)+')</div>';
@@ -1535,6 +1569,7 @@ const CMEM='gb-mapa-consola';
     TERMS.push(t);
   }
   try{ sessionStorage.setItem(VMEM, JSON.stringify(vistos)); }catch(_){}
+  let tickHace=0;
   setInterval(()=>{
     let cambio=false;
     for(const t of TERMS){
@@ -1550,6 +1585,14 @@ const CMEM='gb-mapa-consola';
       }
     }
     if(cambio){ try{ sessionStorage.setItem(VMEM, JSON.stringify(vistos)); }catch(_){} }
+    // Cada ~7 s se re-pinta la cabecera de las tarjetas para que el "hace" y el
+    // cursor de vivo envejezcan con la edad real — salvo con texto seleccionado:
+    // re-pintar debajo de un Ctrl+C a medias es el mismo robo que la recarga.
+    tickHace=(tickHace+1)%%10;
+    if(tickHace===0 && !cambio){
+      const sel=window.getSelection?window.getSelection():null;
+      if(!(sel&&!sel.isCollapsed)) for(const t of TERMS) renderTerm(t);
+    }
   }, 700);
   // Desplazables: el arrastre guarda un DESVIO por agente (recordado entre
   // recargas), asi la terminal sigue a su nodo con la camara pero desde donde

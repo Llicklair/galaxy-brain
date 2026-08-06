@@ -992,6 +992,7 @@ def cmd_graph(args):
                         graph_report=report,
                         procedencia=_procedencia(root),
                         refresco=refresco,
+                        gen_ts=time.time(),
                         # El ciclo del error viaja como los demas extras: el cli
                         # lo computa (aqui, no en cada frame del navegador) y el
                         # renderizador solo dibuja. Informa, no bloquea.
@@ -1233,6 +1234,7 @@ def _vigilar(root, args):
                                         graph_report=grafo,
                                         procedencia=_procedencia(root),
                                         refresco=refresco,
+                                        gen_ts=time.time(),
                                         # La capa de cambio se recomputa por
                                         # REGENERACION, no por tick: un git
                                         # status (~30 ms) entra en presupuesto
@@ -1434,6 +1436,7 @@ def cmd_symbols(args):
                         graph_report=grafo,
                         procedencia=_procedencia(root),
                         refresco=refresco,
+                        gen_ts=time.time(),
                         ciclo=_ciclo_para_mapa(root, report),
                         tocados=_tocados_para_mapa(root, report),
                         actividad=_actividad_para_mapa(root, report),

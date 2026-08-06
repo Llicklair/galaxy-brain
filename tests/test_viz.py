@@ -471,3 +471,20 @@ def test_el_pie_lleva_el_motor_que_genero_el_mapa(tmp_path):
 
     salida = viz.render_graph_cloud(symbols.analyze(_proyecto(tmp_path)))
     assert re.search(r"motor [0-9a-f]{8}", salida)
+
+
+def test_la_nube_sella_su_generacion_y_la_onda_envejece(tmp_path):
+    """La onda del agente y el `hace` de su tarjeta envejecen con la edad REAL:
+    la del sello de generacion mas el tiempo de pagina abierta. Sin eso, una
+    foto estatica anima flujo eternamente y lee como 'pasando ahora'. El sello
+    lo pone QUIEN LLAMA, como el pie: sin sello el render sigue determinista."""
+    from galaxybrain import symbols
+
+    report = symbols.analyze(_proyecto(tmp_path))
+    sin_sello = viz.render_graph_cloud(report)
+    assert "GEN_TS = null" in sin_sello
+    assert "vigorOnda" in sin_sello  # la sinapsis pasa por el guard de edad
+    assert "haceAhora" in sin_sello  # y la tarjeta tambien
+
+    con_sello = viz.render_graph_cloud(report, gen_ts=1754500000.9)
+    assert "GEN_TS = 1754500000;" in con_sello
