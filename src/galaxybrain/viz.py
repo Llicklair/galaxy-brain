@@ -315,6 +315,7 @@ def render_graph_cloud(
     actividad=None,
     capturas=None,
     suelo=None,
+    sin_leer=0,
 ):
     """La nube: nodos repartidos por fuerzas, coloreados por módulo, navegable.
 
@@ -653,6 +654,9 @@ def render_graph_cloud(
         # La consola de errores entra al lienzo por defecto: las capturas
         # recientes, con su nodo, para que el feed diga `peta` en movimiento.
         "capturas": _en_script(_json.dumps(capturas or [], ensure_ascii=False)),
+        # El recuento REAL de capturas sin leer del proyecto: la ventana de 10
+        # de arriba no puede contarlas todas y un numero a medias miente.
+        "sin_leer": str(int(sin_leer or 0)),
         "suelo": (
             '\n  <span class="meta">suelo: %s</span>' % _html.escape(suelo)
             if suelo else ""
@@ -787,6 +791,7 @@ const OBRA_COLOR = '%(color_obra)s';
 const AGENTES = %(agentes)s;
 const CAPTURAS = %(capturas)s;
 const REFRESCO = %(refresco)s;
+const SIN_LEER = %(sin_leer)s;
 const N = NODOS.length;
 
 // ================= simulacion =================
@@ -1354,7 +1359,7 @@ const CMEM='gb-mapa-consola';
     // El recuento de capturas sin leer se deriva FRESCO en cada recarga: un
     // evento de una sola pasada se entierra bajo la actividad de una tirada;
     // una fila fija no — y desaparece sola cuando se leen (regla 9).
-    const sinLeer=(CAPTURAS||[]).filter(c=>!c.leida).length;
+    const sinLeer=SIN_LEER || (CAPTURAS||[]).filter(c=>!c.leida).length;
     if((!log.length && !sinLeer) || !abierto){ consolaEl.style.display='none'; return; }
     // La consola DE un agente: el foco del panel filtra tambien aqui (un CRUCE
     // en el que participa cuenta como suyo). Sin foco, la de todos.

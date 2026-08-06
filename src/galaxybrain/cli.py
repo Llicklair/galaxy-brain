@@ -963,6 +963,7 @@ def cmd_graph(args):
                         actividad=_actividad_para_mapa(root, simbolos),
                         capturas=_capturas_para_mapa(root, simbolos),
                         suelo=_suelo_para_mapa(root),
+                        sin_leer=_capturas_sin_leer(root),
                     )
                 )
             _reemplaza_html(destino + _tmp_sufijo(), destino)
