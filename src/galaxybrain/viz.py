@@ -748,11 +748,11 @@ _NUBE = """<!doctype html>
      no una interpretacion. Clic: foco en ese agente. */
   #terminales .term{position:fixed;z-index:4;transform:translate(-50%%,-100%%);
         background:#04070c;border:1px solid rgba(255,255,255,.14);border-radius:6px;
-        padding:4px 8px;max-width:360px;font:10px/1.5 ui-monospace,Consolas,monospace;
+        padding:3px 7px;width:240px;font:9px/1.5 ui-monospace,Consolas,monospace;
         cursor:pointer;box-shadow:0 6px 20px rgba(0,0,0,.5)}
-  #terminales .tcab{font-weight:700;margin-bottom:1px}
+  #terminales .tcab{font-weight:700;margin-bottom:1px;font-size:10px}
   #terminales .tl{color:#9fb0c0;white-space:nowrap;overflow:hidden;
-        text-overflow:ellipsis;max-width:344px}
+        text-overflow:ellipsis;max-width:226px}
   #terminales .cur{animation:parpadeo 1s steps(1) infinite}
   @keyframes parpadeo{50%%{opacity:0}}
 </style>
@@ -1412,7 +1412,7 @@ const CMEM='gb-mapa-consola';
     const el=document.createElement('div');
     el.className='term'; el.dataset.ag=nom;
     el.innerHTML='<div class="tcab" style="color:'+a.c+'">&#9679; '+escapa(nom)+'</div>'+
-      a.consola.slice(-4).map(l=>'<div class="tl">'+escapa(l)+'</div>').join('')+
+      a.consola.slice(-3).map(l=>'<div class="tl">'+escapa(l)+'</div>').join('')+
       (vivo?'<span class="cur" style="color:'+a.c+'">&#9612;</span>':'');
     termCont.appendChild(el);
     const orden = idx==null ? 0 : (anclados[idx]=(anclados[idx]||0)+1)-1;
@@ -1433,11 +1433,11 @@ const CMEM='gb-mapa-consola';
           // Agente sin nodo en el mapa todavia: su terminal se apila a la
           // izquierda, bajo la cabecera — operando, pero aun sin sitio.
           t.el.style.transform='none';
-          t.el.style.left='12px'; t.el.style.top=(96+70*t.suelto)+'px';
+          t.el.style.left='12px'; t.el.style.top=(96+58*t.suelto)+'px';
           continue;
         }
         t.el.style.left=(X[t.idx]*esc+ox)+'px';
-        t.el.style.top=(Y[t.idx]*esc+oy-14-58*t.orden)+'px';
+        t.el.style.top=(Y[t.idx]*esc+oy-14-48*t.orden)+'px';
       }
       requestAnimationFrame(animaTerms);
     })();
