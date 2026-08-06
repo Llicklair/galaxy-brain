@@ -85,9 +85,10 @@ def nodos_tocados(root, informe_simbolos):
 #: vistazo, y un refactor masivo se resume, no se vuelca.
 MAX_CAMBIOS = 20
 
-#: Lineas de consola por agente en la foto: la terminal del mapa es una
-#: ventanita, no un scrollback.
-MAX_CONSOLA = 8
+#: Lineas de consola por agente en la foto. Mas de las que la terminal enseña
+#: a la vez: el sobrante es el material de la lluvia — el mapa las revela de
+#: una en una entre recargas para que la conversacion CAIGA, no salte.
+MAX_CONSOLA = 40
 
 
 def _ruta_consola(ruta):

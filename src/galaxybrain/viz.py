@@ -749,7 +749,11 @@ _NUBE = """<!doctype html>
   #terminales .tl{color:#9fb0c0;white-space:nowrap;overflow:hidden;
         text-overflow:ellipsis}
   #terminales .cur{animation:parpadeo 1s steps(1) infinite}
+  #terminales .tl.nueva{animation:caer .35s ease-out}
+  #hilos .hilo{position:fixed;z-index:3;height:0;border-top:1px dashed;
+        opacity:.55;pointer-events:none;transform-origin:0 0}
   @keyframes parpadeo{50%%{opacity:0}}
+  @keyframes caer{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
 </style>
 <header>
   <h1>%(title)s</h1>
@@ -1377,9 +1381,16 @@ const CMEM='gb-mapa-consola';
   try{ const g=sessionStorage.getItem(TMEM);
        if(g!=null) tamT=Math.max(0,Math.min(TAMT.length-1,+g||0)); }catch(_){}
   const TERMS=[]; const anclados={}; let sueltos=0;
-  function renderTerm(t){
+  // La lluvia: la pagina recuerda la ultima linea que YA se vio (por agente) y
+  // las posteriores se revelan de una en una — la conversacion cae, no salta a
+  // golpes de recarga. La marca de lo visto sobrevive al refresco.
+  const VMEM='gb-mapa-terminal-visto';
+  let vistos={};
+  try{ vistos=JSON.parse(sessionStorage.getItem(VMEM)||'{}')||{}; }catch(_){}
+  function renderTerm(t, cayendo){
     const a=AGENTES[t.nom]; if(!a) return;
-    const vivo = a.hace!=null && a.hace<120;
+    const total=(a.consola||[]).length;
+    const vivo = (a.hace!=null && a.hace<120) || t.reveladas<total;
     t.el.style.width=TAMT[tamT][0]+'px';
     t.el.className='term'+(agenteFoco===t.nom?' foco':'');
     // La tarjeta y la terminal son UNA pieza: cabecera con los datos del
@@ -1390,10 +1401,18 @@ const CMEM='gb-mapa-consola';
       '<b data-acc="tmas" title="mas grande">+</b></span></div>';
     if(!a.misma) h+='<div class="tav">&#9888; parte de otra base ('+escapa(a.base)+')</div>';
     else if(a.fuera) h+='<div class="tav" style="color:var(--suave)">'+a.fuera+' fichero(s) sin sitio en el mapa</div>';
-    h+=(a.consola||[]).slice(-TAMT[tamT][1]).map(l=>'<div class="tl">'+escapa(l)+'</div>').join('')+
+    const visibles=(a.consola||[]).slice(0,t.reveladas).slice(-TAMT[tamT][1]);
+    h+=visibles.map((l,i)=>
+      '<div class="tl'+(cayendo && i===visibles.length-1?' nueva':'')+'">'+escapa(l)+'</div>').join('')+
       (vivo?'<span class="cur" style="color:'+a.c+'">&#9612;</span>':'');
     t.el.innerHTML=h;
   }
+  // El hilo tarjeta-nodo: al arrastrarla lejos se perdia DE QUE nodo colgaba.
+  // Un div de 1px rotado (nada de SVG: su namespace es una URL literal y el
+  // mapa se prueba autocontenido con un simple `http no aparece`).
+  const hilos=document.createElement('div');
+  hilos.id='hilos';
+  document.body.appendChild(hilos);
   for(const nom of Object.keys(AGENTES).sort()){
     const a=AGENTES[nom];
     let idx=null;
@@ -1402,10 +1421,40 @@ const CMEM='gb-mapa-consola';
     el.className='term'; el.dataset.ag=nom;
     termCont.appendChild(el);
     const orden = idx==null ? 0 : (anclados[idx]=(anclados[idx]||0)+1)-1;
-    const t={el:el, nom:nom, idx:idx, orden:orden, suelto: idx==null ? sueltos++ : -1};
+    const total=(a.consola||[]).length;
+    let desde=total;  // sin marca previa: todo visto, nada que llover
+    const marca=vistos[nom];
+    if(marca){
+      desde=0;
+      for(let i=total-1;i>=0;i--){ if(a.consola[i]===marca){ desde=i+1; break; } }
+    }
+    if(desde>0) vistos[nom]=a.consola[desde-1];
+    let hilo=null;
+    if(idx!=null){
+      hilo=document.createElement('div');
+      hilo.className='hilo';
+      hilo.style.borderTopColor=a.c;
+      hilos.appendChild(hilo);
+    }
+    const t={el:el, nom:nom, idx:idx, orden:orden, hilo:hilo,
+             reveladas:desde, suelto: idx==null ? sueltos++ : -1};
     renderTerm(t);
     TERMS.push(t);
   }
+  try{ sessionStorage.setItem(VMEM, JSON.stringify(vistos)); }catch(_){}
+  setInterval(()=>{
+    let cambio=false;
+    for(const t of TERMS){
+      const cons=(AGENTES[t.nom]||{}).consola||[];
+      if(t.reveladas<cons.length){
+        t.reveladas++;
+        vistos[t.nom]=cons[t.reveladas-1];
+        renderTerm(t, true);
+        cambio=true;
+      }
+    }
+    if(cambio){ try{ sessionStorage.setItem(VMEM, JSON.stringify(vistos)); }catch(_){} }
+  }, 700);
   // Desplazables: el arrastre guarda un DESVIO por agente (recordado entre
   // recargas), asi la terminal sigue a su nodo con la camara pero desde donde
   // tu la dejaste — la cura de la superposicion sin soltar el ancla.
@@ -1463,8 +1512,16 @@ const CMEM='gb-mapa-consola';
           t.el.style.top=(96+(t.el.offsetHeight+8)*t.suelto+d[1])+'px';
           continue;
         }
-        t.el.style.left=(X[t.idx]*esc+ox+d[0])+'px';
-        t.el.style.top=(Y[t.idx]*esc+oy-14-(t.el.offsetHeight+6)*t.orden+d[1])+'px';
+        const nx=X[t.idx]*esc+ox, ny=Y[t.idx]*esc+oy;
+        const cx=nx+d[0], cy=ny-14-(t.el.offsetHeight+6)*t.orden+d[1];
+        t.el.style.left=cx+'px';
+        t.el.style.top=cy+'px';
+        if(t.hilo){
+          const hx=cx-nx, hy=cy-ny;
+          t.hilo.style.left=nx+'px'; t.hilo.style.top=ny+'px';
+          t.hilo.style.width=Math.hypot(hx,hy)+'px';
+          t.hilo.style.transform='rotate('+Math.atan2(hy,hx)+'rad)';
+        }
       }
       requestAnimationFrame(animaTerms);
     })();
