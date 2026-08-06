@@ -10,6 +10,21 @@ mismo detalle que los positivos, o más.
 
 ---
 
+## 2026-08-06 · «No veo la actividad de los bucles» — el watch era ciego a los agentes
+
+Reportado por Marcos mirando el mapa en vivo durante las tandas: tres tandas enteras del bucle (8
+tiradas) y el lienzo mudo. Dos causas apiladas: la sonda del watch solo vigilaba los `.py` del
+proyecto — y los agentes trabajan en OTRO árbol (`.claude/worktrees/`), así que ni sus worktrees ni
+sus consolas disparaban regeneración — y aunque hubiera disparado, el guard de forma-igual se comía
+la escritura porque **la actividad no es forma**. Doble lección del mismo tipo que los anillos
+viejos del 4-ago: cada capa nueva del mapa necesita su fuente en la sonda, o el watch la sirve
+congelada.
+
+Cura: `_firma_actividad` (stat de las entradas de `.claude/worktrees/`: worktrees y consolas que
+crecen línea a línea — el tick sigue sin pagar subprocesos) en la sonda, y el cambio de actividad
+fuerza la escritura aunque la forma no haya cambiado. Verificado en vivo con una tirada real antes
+de la cura vía regenerador puente (la actividad se pintó) y con test de la firma después.
+
 ## 2026-08-06 · La 5ª rebanada: lo que prima es el MARCO, no los hechos — 4/4 con una frase fija
 
 La 4ª dejó un confundido: `--sin-senal` quitó a la vez los hechos derivados Y el marco del desfase
