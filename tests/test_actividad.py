@@ -240,3 +240,45 @@ def test_tocar_solo_el_cuerpo_no_inventa_hechos_de_firma(proyecto):
 
     foto = actividad.instantanea(str(proyecto), informe)
     assert foto["agentes"][0]["cambios"] == []
+
+
+# --- la consola del agente: su stdout, leido del disco -----------------------
+
+def test_la_consola_del_agente_se_lee_del_log_del_orquestador(proyecto):
+    """Convencion <worktree>.consola.log: el stdout del agente teeado por quien
+    lo lanza (el bucle lo hace). Derivada del disco — si nadie la escribe, no
+    hay terminal y NO se inventa narrativa."""
+    informe = symbols.analyze(str(proyecto))
+    rama = _rama(proyecto, "rama_a")
+    (rama / "lib" / "nucleo.py").write_text(
+        "def suma(a, b):\n    return b + a\n", encoding="utf-8")
+    (rama.parent / "rama_a.consola.log").write_text(
+        "[02:13:05] > Edit lib/nucleo.py\n[02:13:08] corriendo pytest\n",
+        encoding="utf-8")
+
+    foto = actividad.instantanea(str(proyecto), informe)
+    assert foto["agentes"][0]["consola"] == [
+        "[02:13:05] > Edit lib/nucleo.py", "[02:13:08] corriendo pytest"]
+
+
+def test_sin_log_no_se_inventa_consola(proyecto):
+    informe = symbols.analyze(str(proyecto))
+    rama = _rama(proyecto, "rama_a")
+    (rama / "lib" / "nucleo.py").write_text(
+        "def suma(a, b):\n    return b + a\n", encoding="utf-8")
+    foto = actividad.instantanea(str(proyecto), informe)
+    assert foto["agentes"][0]["consola"] == []
+
+
+def test_un_agente_con_consola_pero_arbol_limpio_aparece(proyecto):
+    """Recien lanzado: aun no toco codigo, pero su consola ya habla — esta
+    operando y esconderlo seria mentir por omision."""
+    informe = symbols.analyze(str(proyecto))
+    _rama(proyecto, "rama_a")
+    (proyecto.parent / "rama_a.consola.log").write_text(
+        "[02:13:01] $ agente A\n", encoding="utf-8")
+
+    foto = actividad.instantanea(str(proyecto), informe)
+    assert [a["nombre"] for a in foto["agentes"]] == ["rama_a"]
+    assert foto["agentes"][0]["nodos"] == []
+    assert foto["agentes"][0]["hace_seg"] is not None

@@ -523,6 +523,8 @@ def render_graph_cloud(
             # Qué escribió, exactamente: firmas contra el mapa canónico. La
             # consola convierte cada uno en un evento `escribe` con sustancia.
             "cambios": a.get("cambios") or [],
+            # Su consola en vivo (stdout del agente): la terminal del lienzo.
+            "consola": a.get("consola") or [],
         }
         for a in (_act.get("agentes") or [])
     }
@@ -741,6 +743,18 @@ _NUBE = """<!doctype html>
   #consola .detalle{color:var(--suave);word-break:break-all}
   #pie{position:fixed;bottom:12px;right:12px;z-index:5;
        font:10px ui-monospace,Consolas,monospace;color:var(--suave);max-width:40vw;text-align:right}
+  /* La terminal del agente: su consola cmd EN VIVO, anclada encima de sus
+     nodos. Refleja su stdout (teeado por el orquestador al lado del worktree),
+     no una interpretacion. Clic: foco en ese agente. */
+  #terminales .term{position:fixed;z-index:4;transform:translate(-50%%,-100%%);
+        background:#04070c;border:1px solid rgba(255,255,255,.14);border-radius:6px;
+        padding:4px 8px;max-width:360px;font:10px/1.5 ui-monospace,Consolas,monospace;
+        cursor:pointer;box-shadow:0 6px 20px rgba(0,0,0,.5)}
+  #terminales .tcab{font-weight:700;margin-bottom:1px}
+  #terminales .tl{color:#9fb0c0;white-space:nowrap;overflow:hidden;
+        text-overflow:ellipsis;max-width:344px}
+  #terminales .cur{animation:parpadeo 1s steps(1) infinite}
+  @keyframes parpadeo{50%%{opacity:0}}
 </style>
 <header>
   <h1>%(title)s</h1>
@@ -754,6 +768,7 @@ _NUBE = """<!doctype html>
 </header>
 <canvas id="lienzo"></canvas>
 <div id="ficha"></div>
+<div id="terminales"></div>
 <div id="consola"></div>
 <div id="agentes"></div>
 <div id="pie">%(pie)s</div>
@@ -1380,6 +1395,53 @@ const CMEM='gb-mapa-consola';
     abierto=!abierto; guarda(); pintaConsola();
   });
   pintaConsola();
+
+  // ---- terminales de agente: su consola cmd, anclada encima de sus nodos ----
+  // El contenido es el stdout REAL del agente (AGENTES[n].consola, teeado por
+  // el orquestador y leido del disco), no los hechos de firma: esos ya viven
+  // en la consola de abajo. Cursor parpadeando mientras el agente esta vivo.
+  const termCont=document.getElementById('terminales');
+  const IDXN={}; NODOS.forEach((n,i)=>{ IDXN[n.id]=i; });
+  const TERMS=[]; const anclados={}; let sueltos=0;
+  for(const nom of Object.keys(AGENTES).sort()){
+    const a=AGENTES[nom];
+    if(!(a.consola||[]).length) continue;
+    let idx=null;
+    for(const n of NODOS){ if((n.ag||[]).indexOf(nom)>=0){ idx=IDXN[n.id]; break; } }
+    const vivo = a.hace!=null && a.hace<120;
+    const el=document.createElement('div');
+    el.className='term'; el.dataset.ag=nom;
+    el.innerHTML='<div class="tcab" style="color:'+a.c+'">&#9679; '+escapa(nom)+'</div>'+
+      a.consola.slice(-4).map(l=>'<div class="tl">'+escapa(l)+'</div>').join('')+
+      (vivo?'<span class="cur" style="color:'+a.c+'">&#9612;</span>':'');
+    termCont.appendChild(el);
+    const orden = idx==null ? 0 : (anclados[idx]=(anclados[idx]||0)+1)-1;
+    TERMS.push({el:el, idx:idx, orden:orden, suelto: idx==null ? sueltos++ : -1});
+  }
+  termCont.addEventListener('click', ev=>{
+    let el=ev.target;
+    while(el && el!==termCont && !(el.dataset && el.dataset.ag)) el=el.parentNode;
+    const nom=(el && el.dataset) ? el.dataset.ag : null;
+    if(!nom) return;
+    agenteFoco=(agenteFoco===nom)?null:nom;
+    calculaCercaAg(); recuerda(); pintaPanel(); pintaConsola();
+  });
+  if(TERMS.length){
+    (function animaTerms(){
+      for(const t of TERMS){
+        if(t.idx==null){
+          // Agente sin nodo en el mapa todavia: su terminal se apila a la
+          // izquierda, bajo la cabecera — operando, pero aun sin sitio.
+          t.el.style.transform='none';
+          t.el.style.left='12px'; t.el.style.top=(96+70*t.suelto)+'px';
+          continue;
+        }
+        t.el.style.left=(X[t.idx]*esc+ox)+'px';
+        t.el.style.top=(Y[t.idx]*esc+oy-14-58*t.orden)+'px';
+      }
+      requestAnimationFrame(animaTerms);
+    })();
+  }
 })();
 
 medir(); recupera(); requestAnimationFrame(bucle);

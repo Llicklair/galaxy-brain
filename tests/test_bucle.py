@@ -275,3 +275,30 @@ def test_el_resumen_no_confunde_la_senal_con_las_marcas_del_bucle(tmp_path):
 
 def test_el_resumen_de_un_directorio_vacio_no_peta(tmp_path):
     assert "0 tirada(s)" in bucle.resumen_actas(str(tmp_path / "no-existe"))
+
+# --- la consola del agente: su stdout, teeado al lado del worktree ------------
+
+def test_la_linea_de_consola_resume_el_evento_stream():
+    """El stdout real del agente (stream-json): lo que dice y las herramientas
+    que usa, en una linea legible cada uno. Es la fuente de la terminal del
+    mapa — narrativa observada, no interpretada."""
+    ev = {"type": "assistant", "message": {"content": [
+        {"type": "text", "text": "Voy a cambiar   el contrato de calcula."},
+        {"type": "tool_use", "name": "Edit", "input": {"file_path": "experimento/nucleo.py"}},
+    ]}}
+    linea = bucle._linea_consola(ev)
+    assert "Voy a cambiar el contrato de calcula." in linea
+    assert "> Edit experimento/nucleo.py" in linea
+    assert bucle._linea_consola({"type": "result", "result": "listo,  254 tests"}) == "= listo, 254 tests"
+
+
+def test_eventos_sin_sustancia_no_producen_linea():
+    assert bucle._linea_consola({"type": "system"}) is None
+    assert bucle._linea_consola({"type": "assistant", "message": {"content": []}}) is None
+
+
+def test_la_consola_vive_al_lado_del_worktree_no_dentro():
+    """Dentro ensuciaria el git status del agente y se veria como cambio suyo."""
+    ruta = bucle._log_consola(os.path.join("x", "worktrees", "bucle-A"))
+    assert ruta.endswith("bucle-A.consola.log")
+    assert os.path.dirname(ruta).endswith("worktrees")

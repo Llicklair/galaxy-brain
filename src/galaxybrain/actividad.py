@@ -85,6 +85,29 @@ def nodos_tocados(root, informe_simbolos):
 #: vistazo, y un refactor masivo se resume, no se vuelca.
 MAX_CAMBIOS = 20
 
+#: Lineas de consola por agente en la foto: la terminal del mapa es una
+#: ventanita, no un scrollback.
+MAX_CONSOLA = 8
+
+
+def _ruta_consola(ruta):
+    """Convencion con los orquestadores: la consola del agente (su stdout,
+    teeado por quien lo lanza — el bucle lo hace) vive en `<worktree>.consola.log`,
+    AL LADO del worktree para no ensuciar su git status."""
+    return os.path.normpath(ruta).rstrip("\\/") + ".consola.log"
+
+
+def consola_de(ruta, max_lineas=MAX_CONSOLA):
+    """Las ultimas lineas de la consola del agente, si su orquestador la deja.
+    Derivada del disco: si nadie la escribe, no hay terminal — y no se inventa
+    narrativa, que es exactamente el registro declarado que se rechazo."""
+    try:
+        with open(_ruta_consola(ruta), encoding="utf-8", errors="replace") as fh:
+            lineas = fh.read().splitlines()
+    except OSError:
+        return []
+    return [ln for ln in lineas if ln.strip()][-max_lineas:]
+
 
 def cambios_de(analisis, ficheros, informe_simbolos):
     """QUÉ escribió exactamente: las firmas de los ficheros tocados del worktree
@@ -206,13 +229,16 @@ def instantanea(raiz, informe_simbolos, ahora=None):
     de_modulo = _mapa_de_modulos(informe_simbolos)
 
     for ruta, head in arboles:
-        if not aislado._tiene_cambios(ruta):
+        consola = consola_de(ruta)
+        # Un agente recien lanzado aun no toco nada, pero su consola ya habla:
+        # con log presente aparece igual (0 nodos), porque ya esta operando.
+        if not aislado._tiene_cambios(ruta) and not consola:
             continue
         analisis = os.path.normpath(os.path.join(ruta, rel)) if rel != "." else ruta
         if not os.path.isdir(analisis):
             continue
         ficheros = ficheros_tocados(analisis)
-        if not ficheros:
+        if not ficheros and not consola:
             continue
         nodos = sorted(nodos_tocados(analisis, informe_simbolos))
         # Un agente que solo esta creando modulos NUEVOS no casa con ningun nodo
@@ -223,6 +249,11 @@ def instantanea(raiz, informe_simbolos, ahora=None):
         for fichero in ficheros:
             try:
                 reciente = max(reciente, os.stat(fichero).st_mtime)
+            except OSError:
+                pass
+        if consola:
+            try:  # la consola tambien es actividad: mantiene vivo el cursor
+                reciente = max(reciente, os.stat(_ruta_consola(ruta)).st_mtime)
             except OSError:
                 pass
         foto["agentes"].append({
@@ -237,6 +268,8 @@ def instantanea(raiz, informe_simbolos, ahora=None):
             "hace_seg": int(max(0, ahora - reciente)) if reciente else None,
             # Qué escribió, exactamente: firmas contra el mapa canónico.
             "cambios": cambios_de(analisis, ficheros, informe_simbolos),
+            # Su consola en vivo (stdout teeado por el orquestador), si existe.
+            "consola": consola,
         })
 
     for agente in foto["agentes"]:

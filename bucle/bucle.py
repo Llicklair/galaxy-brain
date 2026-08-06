@@ -40,6 +40,7 @@ import re
 import shutil
 import subprocess
 import sys
+import threading
 import time
 
 RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -64,6 +65,10 @@ def _texto(b):
 def preparar_worktree(id_tarea):
     """Worktree PROPIO en main (aviso 2 del protocolo: el ancla del harness)."""
     ruta = os.path.join(RAIZ, ".claude", "worktrees", "bucle-%s" % id_tarea)
+    try:
+        os.remove(_log_consola(ruta))  # consola fresca por tirada
+    except OSError:
+        pass
     _corre(["git", "worktree", "remove", "--force", ruta])
     rc, _, err = _corre(["git", "worktree", "add", "--detach", ruta, "main"])
     if rc != 0:
@@ -240,17 +245,81 @@ def ejecutar_simulado(tarea, worktree, dir_parches):
                             entrada=fh.read())
     if rc != 0:
         raise RuntimeError("el parche %s no aplica: %s" % (parche, _texto(err)[:200]))
+    # El simulado tambien deja consola: es lo que permite probar la tuberia
+    # entera (log -> actividad -> terminal del mapa) sin gastar un token.
+    with io.open(_log_consola(worktree), "a", encoding="utf-8") as fh:
+        fh.write("[%s] $ agente %s (simulado)\n[%s] > git apply %s.diff\n"
+                 % (time.strftime("%H:%M:%S"), tarea["id"],
+                    time.strftime("%H:%M:%S"), tarea["id"]))
+
+
+def _log_consola(worktree):
+    """La consola del agente vive AL LADO del worktree (<ruta>.consola.log),
+    no dentro: dentro ensuciaria su git status y el propio agente la veria como
+    un cambio suyo. Es la convencion que `gb` (actividad) lee del disco para
+    pintar la terminal del agente en el mapa."""
+    return os.path.normpath(worktree).rstrip("\\/") + ".consola.log"
+
+
+def _linea_consola(evento):
+    """Un evento stream-json de `claude -p` -> la linea legible de su consola,
+    o None si no cuenta nada. Es el stdout REAL del agente (lo que dice y las
+    herramientas que usa), no una interpretacion."""
+    tipo = evento.get("type")
+    if tipo == "assistant":
+        partes = []
+        for bloque in (evento.get("message") or {}).get("content") or []:
+            if bloque.get("type") == "tool_use":
+                entrada = bloque.get("input") or {}
+                detalle = (entrada.get("file_path") or entrada.get("command")
+                           or entrada.get("pattern") or "")
+                detalle = " ".join(str(detalle).split())
+                partes.append(("> %s %s" % (bloque.get("name", "?"), detalle[:100])).rstrip())
+            elif bloque.get("type") == "text" and (bloque.get("text") or "").strip():
+                partes.append(" ".join(bloque["text"].split())[:120])
+        return "\n".join(partes) or None
+    if tipo == "result":
+        resultado = " ".join(str(evento.get("result") or "").split())
+        return ("= " + resultado[:120]) if resultado else None
+    return None
 
 
 def ejecutar_real(tarea, worktree, prompt, timeout_seg):
     exe = shutil.which("claude")
     if not exe:
         raise RuntimeError("claude CLI no esta en PATH: el ejecutor real no puede correr")
-    rc, salida, err = _corre(
-        [exe, "-p", prompt, "--model", "opus", "--permission-mode", "acceptEdits"],
-        cwd=worktree, timeout=timeout_seg)
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    try:
+        proc = subprocess.Popen(
+            [exe, "-p", prompt, "--model", "opus", "--permission-mode", "acceptEdits",
+             "--output-format", "stream-json", "--verbose"],
+            cwd=worktree, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
+    except OSError as error:
+        raise RuntimeError("claude -p no arranco: %s" % error)
+    verdugo = threading.Timer(timeout_seg, proc.kill)
+    verdugo.start()
+    try:
+        # El stdout del agente, teeado EN VIVO a su consola: el mapa lo va
+        # leyendo mientras el agente trabaja. flush por linea a proposito.
+        with io.open(_log_consola(worktree), "a", encoding="utf-8") as fh:
+            fh.write("[%s] $ agente %s\n" % (time.strftime("%H:%M:%S"), tarea["id"]))
+            fh.flush()
+            for cruda in proc.stdout:
+                try:
+                    evento = json.loads(cruda.decode("utf-8", "replace"))
+                except ValueError:
+                    continue
+                linea = _linea_consola(evento)
+                if linea:
+                    marca = time.strftime("[%H:%M:%S] ")
+                    fh.write("".join(marca + l + "\n" for l in linea.split("\n")))
+                    fh.flush()
+        err = proc.stderr.read()
+        rc = proc.wait()
+    finally:
+        verdugo.cancel()
     if rc != 0:
-        raise RuntimeError("claude -p salio %d: %s" % (rc, (_texto(err) or _texto(salida))[:300]))
+        raise RuntimeError("claude -p salio %d: %s" % (rc, _texto(err)[:300]))
 
 
 def componer_prompt(tarea, hechos_enrutados, extra=""):

@@ -377,3 +377,20 @@ def test_los_cambios_del_agente_viajan_al_payload(tmp_path):
     }]}
     salida = viz.render_graph_cloud(symbols.analyze(root), actividad=act)
     assert '"cambios": ["lib.nucleo.suma: (a, b) -> (a, b, extra)"]' in salida
+
+
+def test_la_consola_del_agente_viaja_al_payload_y_hay_terminal(tmp_path):
+    """La terminal del lienzo muestra el stdout del agente; sin consola en el
+    payload no habria nada que anclar encima de sus nodos."""
+    from galaxybrain import symbols
+
+    root = _proyecto(tmp_path)
+    act = {"base": "abc1234", "por_nodo": {}, "cruces": [], "agentes": [{
+        "nombre": "rama_a", "nodos": [], "vecinos": [], "hace_seg": 1,
+        "fuera_del_mapa": 0, "base": "abc1234", "misma_base": True,
+        "consola": ["[02:13:05] > Edit lib/nucleo.py"],
+    }]}
+    salida = viz.render_graph_cloud(symbols.analyze(root), actividad=act)
+    assert '"consola": ["[02:13:05] > Edit lib/nucleo.py"]' in salida
+    assert 'id="terminales"' in salida
+    assert "parpadeo" in salida
