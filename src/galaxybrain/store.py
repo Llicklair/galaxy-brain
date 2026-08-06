@@ -340,6 +340,35 @@ def is_ephemeral(entry):
     return (entry.get("where") or "").strip().startswith("<")
 
 
+def es_exploracion(entry):
+    """¿La captura apunta a algo que NO es código de un proyecto?
+
+    Más ancho que `is_ephemeral`: además de `<string>`/`<stdin>`, cuenta las
+    capturas sin sitio (`where` vacío o `?`, donde no hay nada que abrir) y los
+    scripts que viven en el TEMPORAL del sistema — las sondas y bancos de los
+    agentes. El discriminante sigue siendo un hecho (la ruta), no una intención.
+
+    Existe para el termómetro de lectura: no leer exploración es correcto, y
+    contarla como abandono infla el denominador. Medido el 6-ago-2026: 47 de 55
+    capturas del histórico eran exploración, y el "13 de 55 leídas" escondía un
+    6/6 en el código real (docs/pruebas-de-uso.md).
+    """
+    if is_ephemeral(entry):
+        return True
+    where = (entry.get("where") or "").strip()
+    if not where or where == "?":
+        return True
+    fichero = where.rsplit(":", 1)[0] if ":" in where[2:] else where
+    try:
+        import tempfile
+
+        tmp = os.path.normcase(os.path.abspath(tempfile.gettempdir()))
+        ruta = os.path.normcase(os.path.abspath(fichero))
+        return ruta == tmp or ruta.startswith(tmp + os.sep)
+    except (OSError, ValueError):
+        return False
+
+
 def summarize(entries):
     """Agrupa el histórico por firma (tipo + sitio) y cuenta ocurrencias.
 

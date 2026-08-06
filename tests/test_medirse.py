@@ -194,3 +194,45 @@ def test_el_gate_del_precommit_se_apunta_con_apellido(gb_home, capsys, tmp_path)
     cli.main(["graph", str(tmp_path), "--gate"])
     capsys.readouterr()
     assert store.uso_stats() == {"graph --gate": 1}
+
+
+def test_exploracion_separa_temporal_efimero_y_sin_sitio():
+    """Mas ancho que is_ephemeral: el temporal del sistema (sondas de agentes)
+    y las capturas sin sitio tampoco son codigo de proyecto. La ruta es el
+    hecho; la intencion no se adivina."""
+    import os
+    import tempfile
+
+    assert store.es_exploracion({"where": "<string>:1"})
+    assert store.es_exploracion({"where": None})
+    assert store.es_exploracion({"where": "?"})
+    sonda = os.path.join(tempfile.gettempdir(), "sonda", "x.py") + ":3"
+    assert store.es_exploracion({"where": sonda})
+    assert not store.es_exploracion({"where": os.path.join("src", "a.py") + ":7"})
+    assert not store.es_exploracion({"where": os.path.abspath(os.path.join("proyecto", "a.py")) + ":7"})
+
+
+def test_el_termometro_separa_codigo_de_exploracion(gb_home, capsys):
+    """El '13 de 55 leidas' escondia un 6/6 en codigo real (investigacion del
+    6-ago, docs/pruebas-de-uso.md): el status separa el denominador para que el
+    termometro lea senal y no ruido."""
+    import os
+    import tempfile
+
+    from galaxybrain import cli
+
+    ident = _captura(gb_home, "real")  # /proyecto/a.py -> codigo
+    registro = {
+        "id": "sonda",
+        "ts": "2026-08-01T03:00:00+02:00",
+        "exception": {"type": "ValueError", "message": "x"},
+        "process": {"project": "/proyecto"},
+        "frames": [{"file": os.path.join(tempfile.gettempdir(), "s", "b.py"), "line": 1, "function": "f"}],
+    }
+    store.write(registro)
+    store.mark_read(ident)
+
+    assert cli.main(["status"]) == 0
+    salida = capsys.readouterr().out
+    assert "1/1 en codigo de proyecto" in salida
+    assert "0/1 exploracion" in salida

@@ -1834,6 +1834,19 @@ def cmd_status(args):
         detalle = "%d de %d leidas" % (leidas, capturas)
         if aperturas > leidas:
             detalle += " (%d aperturas)" % aperturas
+        # El denominador, separado: exploracion (python -c, stdin, scripts del
+        # temporal) no se lee y ESTA BIEN no leerla; mezclarla con el codigo de
+        # proyecto inflaba la sensacion de abandono (medido 6-ago-2026: "13 de
+        # 55" escondia un 6/6 en codigo real — docs/pruebas-de-uso.md).
+        entradas = [e for e in store.read_index() if e.get("id")]
+        ids_leidas = store.read_ids()
+        codigo = [e for e in entradas if not store.es_exploracion(e)]
+        cod_leidas = sum(1 for e in codigo if e["id"] in ids_leidas)
+        expl = len(entradas) - len(codigo)
+        if codigo and expl:
+            detalle += " — %d/%d en codigo de proyecto · %d/%d exploracion" % (
+                cod_leidas, len(codigo), leidas - cod_leidas, expl,
+            )
         if not leidas:
             detalle += " — ninguna se ha mirado todavia"
         emit("  capturas leidas    : %s" % detalle)
