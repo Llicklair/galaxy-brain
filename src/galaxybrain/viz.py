@@ -44,6 +44,7 @@ se abre con doble clic. No es purismo — la regla de cero dependencias existe p
 para romperla.
 """
 
+import hashlib as _hashlib
 import html as _html
 import math
 
@@ -623,6 +624,13 @@ def render_graph_cloud(
     # mismo fichero — el que cambia es el dato, no la funcion.
     if procedencia:
         pie = "%s  ·  %s" % (procedencia, pie) if pie else procedencia
+
+    # La procedencia del MOTOR, no solo del dato: el hash de la plantilla en el
+    # pie. Se persiguio media hora a un fantasma (un hook regenerando el mapa
+    # con bytecode rancio) porque el HTML no decia QUE codigo lo genero; con
+    # esto, dos generadores desfasados se delatan a simple vista.
+    motor = _hashlib.sha1(_NUBE.encode("utf-8")).hexdigest()[:8]
+    pie = "%s  ·  motor %s" % (pie, motor) if pie else "motor %s" % motor
 
     return _NUBE % {
         "title": _html.escape(title),

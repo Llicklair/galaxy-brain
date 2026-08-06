@@ -459,3 +459,15 @@ def test_la_consola_de_errores_tiene_su_propio_panel(tmp_path):
     assert 'id="errores"' in salida
     assert 'id="btnErrores"' in salida
     assert "consola de errores" in salida
+
+
+def test_el_pie_lleva_el_motor_que_genero_el_mapa(tmp_path):
+    """Media hora persiguiendo un fantasma (un hook pisando el mapa con
+    bytecode rancio) porque el HTML no decia QUE codigo lo genero. El hash de
+    la plantilla en el pie delata a cualquier generador desfasado al instante."""
+    import re
+
+    from galaxybrain import symbols
+
+    salida = viz.render_graph_cloud(symbols.analyze(_proyecto(tmp_path)))
+    assert re.search(r"motor [0-9a-f]{8}", salida)
