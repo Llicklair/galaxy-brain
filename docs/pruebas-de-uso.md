@@ -10,6 +10,31 @@ mismo detalle que los positivos, o más.
 
 ---
 
+## 2026-08-06 · La 4ª rebanada: ¿sobra la señal preventiva? — NO, y el porqué es mejor que la pregunta
+
+Hipótesis (del dataset de 5 tiradas): la señal preventiva va ignorada 4/4 y el rechazo corrige 4/4 —
+si el rechazo basta, la señal es coste sin efecto. Criterio escrito ANTES de la primera tirada:
+4 tiradas reales con `--sin-senal` (derivar y verificar igual, despachar sin señal; los hechos van
+solo en el rechazo); si el rechazo corrige ≥3/4, la señal sale del despacho por defecto.
+
+Resultado (actas 20:21–20:47): infracción 4/4 —como con señal— pero **el rechazo solo corrigió
+2/4**. En las dos tiradas fallidas, B mantuvo sus llamadas contra la firma vieja **después** de un
+rechazo que traía los hechos retenidos Y las llamadas exactas; la unión salió roja y la red aguantó
+(nunca se mergea). Con señal: corrección 4/4 (4 con dato).
+
+**Lectura, y es el hallazgo:** la señal no se obedece al escribir (4/4 ignorada en los dos brazos),
+pero **prima la corrección** — un rechazo que confirma algo ya visto corrige siempre; un rechazo que
+es la primera noticia corrige la mitad de las veces. La señal no es una orden que fracasa: es el
+contexto que hace obedecible el rechazo. Se queda en el despacho por defecto.
+
+Honestidad estadística: n=4 por brazo; 4/4 contra 2/4 no separa con significancia (Fisher ~0,43).
+El criterio pre-escrito decide igual —2/4 < 3/4— y decide en la dirección conservadora. Si algún
+día se reabre, hacen falta más tiradas, no más opinión.
+
+De propina, el dato que faltaba del punto 3 de la lista de refinado: **los dos primeros B que
+ignoran también el rechazo** (antes 1/1 corregía). La contención funcionó las dos veces: unión roja,
+sin merge, acta con las infracciones exactas.
+
 ## 2026-08-06 · Por qué no se lee la consola — la investigación del 13/55 (regla 10)
 
 El termómetro decía «capturas leídas: 13 de 55» y la obligación era investigar, no blindar. Cruzado
