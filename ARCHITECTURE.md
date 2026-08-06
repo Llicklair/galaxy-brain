@@ -18,6 +18,15 @@ No juzga: **reporta hechos.** Una excepción es un hecho. El estado en el moment
 hecho. La forma del grafo de imports es un hecho. Lo que un diff le hizo a los tests es un hecho.
 Reportar hechos no necesita juicio, y por eso puede ser instantáneo y no equivocarse de forma cara.
 
+Y los hechos necesitan un sitio donde aterrizar: **el grafo**, símbolos y módulos derivados del
+código en cada mirada, nunca declarados ni mantenidos a mano. Una captura se ancla a su nodo y
+enseña a sus llamantes; un diff es una onda sobre las aristas; la actividad de un agente es
+presencia sobre nodos; el suelo y el embudo viajan en la cabecera del mapa; el gate del pre-commit
+y la selección de tests salen de sus aristas. La columna vertebral es el grafo; la consola de
+errores fue la primera capa que lo demostró. (Respaldo medido el 6-ago-2026: `graph`←5 y
+`symbols`←4 son, tras `cli`, lo más importado del paquete; 10 de 15 comandos derivan del grafo; la
+maquinaria del grafo es ~44% del código frente a ~14% del núcleo de captura.)
+
 ---
 
 ## La plantilla (validada por el uso)
@@ -43,11 +52,13 @@ Regla derivada, y es la que decide la supervivencia a los meses:
 Una sola herramienta, `gb`, con una sola filosofía. Los comandos caen en familias; un comando nuevo
 tiene que caer en una de ellas o no entra:
 
+- **Qué forma tiene** — `graph · symbols · calls`. **La columna vertebral.** El mapa de acoplamiento
+  (imports, ciclos, hotspots), el grafo de símbolos (quién llama a quién, con su cobertura) y la
+  consulta puntual (`calls`: llamantes y llamados de un símbolo con fichero:línea, también como hook
+  de búsqueda). Las demás familias aterrizan sus hechos sobre estos nodos.
 - **Dónde petó y con qué estado** — `last · list · show · on · off · status`. La consola de errores:
-  captura excepciones no capturadas y el estado alrededor, para no reproducir el fallo a mano.
-- **Qué forma tiene** — `graph · symbols · calls`. El mapa de acoplamiento (imports, ciclos, hotspots),
-  el grafo de símbolos (quién llama a quién, con su cobertura) y la consulta puntual (`calls`:
-  llamantes y llamados de un símbolo con fichero:línea, también como hook de búsqueda).
+  captura excepciones no capturadas y el estado alrededor, para no reproducir el fallo a mano. Cada
+  captura se ancla a su nodo del grafo y `show` enseña sus llamantes.
 - **Qué le hizo cada cambio** — `check · tests`. Qué tocó un diff en los tests y en el acoplamiento
   (`check`), y qué tests hay que correr por lo que cambió (`tests`: el cierre de llamantes desde los
   símbolos del diff, con la suite entera como respuesta ante cualquier duda). `tests --run` es la

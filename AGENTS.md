@@ -1,7 +1,10 @@
 # galaxy-brain — contexto para agentes
 
-Una sola herramienta, `gb`: cuando algo peta te dice dónde y con qué estado, sin
-reproducirlo a mano. Python puro, stdlib, cero modelos en el camino caliente.
+Una sola herramienta, `gb`: deriva del código un grafo de símbolos y módulos y hace
+aterrizar sobre sus nodos todo hecho determinista que haga mejor al agente — dónde
+petó (con su estado), qué tocó cada cambio, qué falta de base. El grafo es la columna
+vertebral; la consola de errores fue la primera capa encima. Python puro, stdlib,
+cero modelos en el camino caliente.
 Las reglas de verdad viven en [CLAUDE.md](CLAUDE.md) (reglas duras y workflow),
 [ARCHITECTURE.md](ARCHITECTURE.md) (ley de diseño) y [SCOPE.md](SCOPE.md) (qué
 queda fuera). Esto es el arranque ejecutable; ante conflicto, mandan aquellos.

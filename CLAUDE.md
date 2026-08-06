@@ -7,13 +7,17 @@ el alcance y lo que queda fuera, en [SCOPE.md](SCOPE.md); la evidencia, en
 
 En una frase, lo que hace:
 
-> **Cuando algo peta, te dice dónde y con qué estado, sin que tengas que reproducirlo a mano.**
+> **Deriva del código un grafo de símbolos y módulos —quién llama a quién, qué importa qué— y hace
+> aterrizar sobre sus nodos todo hecho determinista que haga mejor al agente.**
 
-Esa es la columna: la consola de errores. Alrededor, la misma disciplina aplicada a otros hechos
-deterministas sobre tu código — qué forma tiene (`graph`/`symbols`), qué le hizo cada cambio
-(`check`), qué le falta de base (`floor`), qué se aprendió entre repos (`memory`). **Una sola
-herramienta, `gb`**, un paquete Python, cero modelos en el camino, cero dependencias fuera de la
-librería estándar.
+Esa es la columna vertebral: **el grafo** (`graph`/`symbols`/`calls`), siempre derivado, nunca
+declarado ni mantenido a mano — y las reglas de entorno que lo protegen (presupuestos de latencia,
+gates solo sobre hechos, cero modelos en el camino caliente). Lo demás son capas que aterrizan
+sobre sus nodos: la consola de errores fue la primera (cuando algo peta, te dice dónde y con qué
+estado sin reproducirlo a mano — y cada captura trae su nodo y sus llamantes); después la onda de
+cada cambio (`check`/`tests`/`delta`), el suelo (`floor`, en la cabecera del mapa) y la memoria
+cross-repo (`memory`). **Una sola herramienta, `gb`**, un paquete Python, cero modelos en el
+camino, cero dependencias fuera de la librería estándar.
 
 Idioma: español para los documentos de decisión (coherencia). Inglés para cualquier cosa que llegue
 a publicarse. Hoy no se publica nada.
