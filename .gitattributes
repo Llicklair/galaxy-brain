@@ -1,0 +1,5 @@
+# LF en el repo Y en el working tree, decidido por git y no por el autocrlf de
+# cada maquina: toda una sesion de "LF will be replaced by CRLF" era git
+# anunciando que iba a deshacer lo que .editorconfig manda. text=auto deja que
+# git detecte los binarios (hay un .jpg en docs/) en vez de declararlos a mano.
+* text=auto eol=lf
