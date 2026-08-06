@@ -225,3 +225,27 @@ def test_la_firma_del_motor_cambia_si_un_py_cambia(tmp_path):
     despues = cli._codigo_del_motor(str(base))
     assert antes != despues
     assert cli._codigo_del_motor(str(tmp_path / "no-existe")) == ()
+
+
+def test_la_firma_de_actividad_ve_worktrees_y_consolas(tmp_path):
+    """Los agentes trabajan en OTRO arbol: sin esta firma, la sonda del watch
+    (solo .py del proyecto) dejo el lienzo mudo durante tres tandas enteras del
+    bucle (6-ago, reportado mirando el mapa en vivo). Worktree que aparece,
+    consola que crece y worktree que se recoge: los tres mueven la firma."""
+    root = str(tmp_path)
+    assert cli._firma_actividad(root) == ()
+
+    base = os.path.join(root, ".claude", "worktrees")
+    os.makedirs(os.path.join(base, "bucle-A"))
+    con_worktree = cli._firma_actividad(root)
+    assert con_worktree
+
+    log = os.path.join(base, "bucle-A.consola.log")
+    with open(log, "w", encoding="utf-8") as handle:
+        handle.write("linea\n")
+    con_consola = cli._firma_actividad(root)
+    assert con_consola != con_worktree
+
+    with open(log, "a", encoding="utf-8") as handle:
+        handle.write("otra\n")
+    assert cli._firma_actividad(root) != con_consola

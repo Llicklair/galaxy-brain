@@ -1073,6 +1073,28 @@ def _firma_capas(root):
     return marcas
 
 
+def _firma_actividad(root):
+    """La actividad de agentes, a golpe de stat: las entradas de
+    `.claude/worktrees/` (worktrees y sus consolas tee-adas, que crecen linea a
+    linea). La sonda solo miraba los .py del proyecto y una tirada ENTERA del
+    bucle paso sin pintarse (6-ago-2026, reportado mirando el mapa en vivo):
+    los agentes trabajan en OTRO arbol, y su rastro es este directorio, no el
+    codigo. El tick sigue sin pagar subprocesos."""
+    base = os.path.join(root, ".claude", "worktrees")
+    try:
+        nombres = sorted(os.listdir(base))
+    except OSError:
+        return ()
+    marcas = []
+    for nombre in nombres:
+        try:
+            st = os.stat(os.path.join(base, nombre))
+        except OSError:
+            continue
+        marcas.append((nombre, st.st_size, int(st.st_mtime)))
+    return tuple(marcas)
+
+
 def _ruta_candado(destino):
     import hashlib
 
@@ -1215,13 +1237,18 @@ def _vigilar(root, args):
                      "me apago para no servir un mapa viejo (relanzame)")
                 return 0
             _latir(candado)
-            actual = (_firma_py(root), _firma_capas(root))
+            actual = (_firma_py(root), _firma_capas(root), _firma_actividad(root))
             if actual != anterior:
+                # La actividad NO es forma: los agentes cambian consolas y
+                # worktrees sin tocar un simbolo del proyecto, y el guard de
+                # forma-igual se comia justo esas regeneraciones — el lienzo
+                # se quedo mudo durante tres tandas enteras del bucle.
+                cambio_actividad = anterior is not None and actual[2] != anterior[2]
                 anterior = actual
                 report = symbols_mod.analyze(root, since=args.since)
                 if not report["root_error"]:
                     grafo = graph_mod.analyze(root)
-                    if not _html_forma_igual(root, destino, report, grafo):
+                    if cambio_actividad or not _html_forma_igual(root, destino, report, grafo):
                         try:
                             # Misma escritura atomica que en los one-shot: aqui
                             # es donde MAS importa, el watch reescribe a menudo.
