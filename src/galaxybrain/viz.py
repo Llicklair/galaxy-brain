@@ -732,7 +732,7 @@ _NUBE = """<!doctype html>
            padding:5px 0}
   #consola .cab,#errores .cab{position:sticky;top:0;display:flex;justify-content:space-between;
            align-items:center;padding:3px 10px;background:var(--panel);
-           border-bottom:1px solid var(--linea);color:var(--suave)}
+           border-bottom:1px solid var(--linea);color:var(--suave);cursor:move}
   #consola .cab b,#errores .cab b{cursor:pointer;padding:0 5px;font-weight:700;user-select:none}
   #consola .cab b:hover,#errores .cab b:hover{color:var(--tinta)}
   #consola .fila,#errores .fila{padding:2px 10px;display:flex;gap:7px;align-items:baseline}
@@ -1282,6 +1282,40 @@ function calculaCercaAg(){
 // y vive anclada al nodo del agente — una sola pieza por agente, donde opera.
 function fmtHace(s){ return s==null ? '' : (s<90 ? s+'s' : Math.round(s/60)+'m'); }
 
+// Cualquier panel con cabecera se arrastra por ella y recuerda donde lo dejaste
+// (por pestaña): dos consolas fijas en esquinas acaban superpuestas en cuanto
+// la ventana encoge — la posicion es de quien mira, como la talla.
+function hazArrastrable(el, clave){
+  let pos=null;
+  try{ pos=JSON.parse(sessionStorage.getItem(clave)||'null'); }catch(_){}
+  function aplica(){
+    if(!pos) return;
+    el.style.left=pos[0]+'px'; el.style.top=pos[1]+'px';
+    el.style.right='auto'; el.style.bottom='auto';
+  }
+  aplica();
+  let arr=null;
+  el.addEventListener('mousedown', ev=>{
+    const cab=ev.target && ev.target.closest ? ev.target.closest('.cab') : null;
+    if(!cab || (ev.target.dataset && ev.target.dataset.acc)) return;
+    const r=el.getBoundingClientRect();
+    arr={dx:ev.clientX-r.left, dy:ev.clientY-r.top};
+    window._arrastrandoTerm=true;  // la recarga tampoco interrumpe este arrastre
+    ev.preventDefault();
+  });
+  addEventListener('mousemove', ev=>{
+    if(!arr) return;
+    pos=[Math.max(0,ev.clientX-arr.dx), Math.max(0,ev.clientY-arr.dy)];
+    aplica();
+  });
+  addEventListener('mouseup', ()=>{
+    if(!arr) return;
+    arr=null;
+    window._arrastrandoTerm=false;
+    try{ sessionStorage.setItem(clave, JSON.stringify(pos)); }catch(_){}
+  });
+}
+
 // ---- consola de actividad ---------------------------------------------------
 // "Lo que van haciendo" en lo que se puede saber sin que nadie lo declare: cada
 // recarga compara la instantanea actual (AGENTES + que nodo toca quien) con la
@@ -1390,6 +1424,7 @@ const CMEM='gb-mapa-consola';
   document.getElementById('btnConsola').addEventListener('click', ()=>{
     abierto=!abierto; guarda(); pintaConsola();
   });
+  hazArrastrable(consolaEl, 'gb-mapa-consola-pos');
   pintaConsola();
 
   // ---- terminales de agente: su consola cmd, anclada encima de sus nodos ----
@@ -1588,9 +1623,14 @@ const CMEM='gb-mapa-consola';
   const EMEM='gb-mapa-errores';
   let est=null; try{ est=JSON.parse(sessionStorage.getItem(EMEM)||'null'); }catch(_){}
   let abierto = est ? est.abierto!==0 : true;
-  function guarda(){ try{ sessionStorage.setItem(EMEM, JSON.stringify({abierto:abierto?1:0})); }catch(_){} }
+  const TAME=[[300,'22vh'],[380,'32vh'],[520,'55vh']];
+  let tamE = (est && typeof est.tam==='number') ? est.tam : 1;
+  function guarda(){ try{ sessionStorage.setItem(EMEM,
+    JSON.stringify({abierto:abierto?1:0, tam:tamE})); }catch(_){} }
   function pinta(){
     if(!(CAPTURAS||[]).length || !abierto){ erroresEl.style.display='none'; return; }
+    erroresEl.style.width=TAME[tamE][0]+'px';
+    erroresEl.style.maxHeight=TAME[tamE][1];
     const filas=(CAPTURAS||[]).map(c=>
       '<div class="fila"><span class="hora">'+escapa((c.ts||'').slice(11,19))+'</span>'+
       '<span class="quien" style="color:'+(c.leida?'var(--suave)':'#f87171')+'">'+
@@ -1599,14 +1639,21 @@ const CMEM='gb-mapa-consola';
       '<span class="detalle">'+(c.leida?'leida':'SIN LEER')+
       ' · gb show '+escapa(String(c.id).slice(0,8))+'</span></div>').join('');
     erroresEl.innerHTML='<div class="cab"><span>consola de errores · '+(SIN_LEER||0)+
-      ' sin leer</span><span><b data-acc="cerrar" title="ocultar">&#10005;</b></span></div>'+filas;
+      ' sin leer</span><span><b data-acc="emenos" title="mas pequena">&#8722;</b>'+
+      '<b data-acc="emas" title="mas grande">+</b>'+
+      '<b data-acc="cerrar" title="ocultar">&#10005;</b></span></div>'+filas;
     erroresEl.style.display='block';
   }
   erroresEl.addEventListener('click', ev=>{
     const acc=ev.target&&ev.target.dataset?ev.target.dataset.acc:null;
-    if(acc==='cerrar'){ abierto=false; guarda(); pinta(); }
+    if(!acc) return;
+    if(acc==='cerrar') abierto=false;
+    else if(acc==='emenos') tamE=Math.max(0, tamE-1);
+    else if(acc==='emas') tamE=Math.min(TAME.length-1, tamE+1);
+    guarda(); pinta();
   });
   btn.addEventListener('click', ()=>{ abierto=!abierto; guarda(); pinta(); });
+  hazArrastrable(erroresEl, 'gb-mapa-errores-pos');
   pinta();
 })();
 
