@@ -710,20 +710,6 @@ _NUBE = """<!doctype html>
   #ficha .cerrar:hover{color:var(--tinta)}
   #ficha .pista{display:block;margin-top:7px;padding-top:6px;
                 border-top:1px solid var(--linea);color:var(--suave);font-size:10px}
-  /* El panel de agentes: el roster de la sala de control. Un clic en un agente
-     atenua todo el mapa menos su onda (sus nodos + un salto por las aristas). */
-  #agentes{position:fixed;top:92px;right:12px;z-index:6;background:var(--panel);
-           border:1px solid var(--linea);border-radius:6px;min-width:215px;max-width:300px;
-           font:11px ui-monospace,Consolas,monospace;display:none;padding:4px 0}
-  #agentes .cab{padding:3px 10px 5px;color:var(--suave);border-bottom:1px solid var(--linea)}
-  #agentes .ag{display:flex;gap:7px;align-items:center;padding:4px 10px;cursor:pointer}
-  #agentes .ag:hover{background:rgba(124,92,255,.09)}
-  #agentes .ag.foco{background:rgba(124,92,255,.18)}
-  #agentes .punto{width:8px;height:8px;border-radius:50%%;flex:none}
-  #agentes .nom{font-weight:700;color:var(--tinta);flex:1;overflow:hidden;
-                text-overflow:ellipsis;white-space:nowrap}
-  #agentes .datos{color:var(--suave);flex:none}
-  #agentes .aviso{padding:0 10px 3px 25px;color:#f59e0b}
   /* La consola de actividad: el VIDEO, donde el mapa es la foto. Cada recarga
      deriva eventos comparando la instantanea actual con la anterior (guardada
      en el navegador): toco, solto, creo, se cruzo. Hechos con hora. */
@@ -752,7 +738,11 @@ _NUBE = """<!doctype html>
         cursor:pointer;box-shadow:0 6px 20px rgba(0,0,0,.5)}
   #terminales .tcab{font-weight:700;margin-bottom:1px;font-size:10px;
         display:flex;align-items:center;gap:4px}
-  #terminales .tbot{margin-left:auto}
+  #terminales .tdat{margin-left:auto;color:var(--suave);font-weight:400;font-size:9px}
+  #terminales .tav{color:#f59e0b;font-size:9px;white-space:nowrap;overflow:hidden;
+        text-overflow:ellipsis}
+  #terminales .term.foco{border-color:#7c5cff;box-shadow:0 8px 24px rgba(0,0,0,.6)}
+  #terminales .tbot{margin-left:6px}
   #terminales .tcab b{cursor:pointer;color:var(--suave);font-weight:700;
         padding:0 3px;user-select:none}
   #terminales .tcab b:hover{color:#fff}
@@ -775,7 +765,6 @@ _NUBE = """<!doctype html>
 <div id="ficha"></div>
 <div id="terminales"></div>
 <div id="consola"></div>
-<div id="agentes"></div>
 <div id="pie">%(pie)s</div>
 <script>
 // ================= datos =================
@@ -1243,7 +1232,7 @@ function recupera(){
   }
   // El foco por agente tambien sobrevive al refresco — y si el agente ya no
   // esta (commiteo, o su worktree se fue), se suelta sin decir nada.
-  if(s.af && AGENTES[s.af]){ agenteFoco=s.af; calculaCercaAg(); pintaPanel(); }
+  if(s.af && AGENTES[s.af]){ agenteFoco=s.af; calculaCercaAg(); }
 }
 addEventListener('beforeunload', recuerda);
 
@@ -1261,37 +1250,9 @@ function calculaCercaAg(){
     if(base.has(par[1])) cercaAg.add(par[0]);
   }
 }
-const panelAg=document.getElementById('agentes');
+// El panel de agentes se retiro (6-ago): su tarjeta se FUSIONO con la terminal
+// y vive anclada al nodo del agente — una sola pieza por agente, donde opera.
 function fmtHace(s){ return s==null ? '' : (s<90 ? s+'s' : Math.round(s/60)+'m'); }
-function pintaPanel(){
-  const nombres=Object.keys(AGENTES).sort();
-  const fichaEl=document.getElementById('ficha');
-  if(!nombres.length){ panelAg.style.display='none'; fichaEl.style.top='92px'; return; }
-  let h='<div class="cab">agentes ('+nombres.length+')'+(agenteFoco?' &middot; foco: clic para soltar':'')+'</div>';
-  for(const nom of nombres){
-    const a=AGENTES[nom];
-    h+='<div class="ag'+(agenteFoco===nom?' foco':'')+'" data-ag="'+escapa(nom)+'">'+
-       '<span class="punto" style="background:'+a.c+'"></span>'+
-       '<span class="nom">'+escapa(nom)+'</span>'+
-       '<span class="datos">'+(a.nodos||0)+'n'+(a.hace!=null?' &middot; '+fmtHace(a.hace):'')+'</span></div>';
-    if(!a.misma) h+='<div class="aviso">&#9888; parte de otra base ('+escapa(a.base)+')</div>';
-    else if(a.fuera) h+='<div class="aviso" style="color:var(--suave)">'+a.fuera+' fichero(s) sin sitio en el mapa</div>';
-  }
-  panelAg.innerHTML=h;
-  panelAg.style.display='block';
-  // La ficha se recoloca debajo del panel para no taparse mutuamente.
-  fichaEl.style.top=(92+panelAg.offsetHeight+8)+'px';
-}
-panelAg.addEventListener('click', ev=>{
-  let el=ev.target;
-  while(el && el!==panelAg && !(el.dataset && el.dataset.ag)) el=el.parentNode;
-  const nom=(el && el.dataset) ? el.dataset.ag : null;
-  if(!nom) return;
-  agenteFoco = (agenteFoco===nom) ? null : nom;
-  calculaCercaAg(); recuerda(); pintaPanel();
-  if(window._pintaConsola) window._pintaConsola();  // el foco filtra tambien la consola
-});
-pintaPanel();
 
 // ---- consola de actividad ---------------------------------------------------
 // "Lo que van haciendo" en lo que se puede saber sin que nadie lo declare: cada
@@ -1420,15 +1381,21 @@ const CMEM='gb-mapa-consola';
     const a=AGENTES[t.nom]; if(!a) return;
     const vivo = a.hace!=null && a.hace<120;
     t.el.style.width=TAMT[tamT][0]+'px';
-    t.el.innerHTML='<div class="tcab" style="color:'+a.c+'">&#9679; '+escapa(t.nom)+
+    t.el.className='term'+(agenteFoco===t.nom?' foco':'');
+    // La tarjeta y la terminal son UNA pieza: cabecera con los datos del
+    // agente (lo que era el panel) y debajo su consola, si habla.
+    let h='<div class="tcab" style="color:'+a.c+'">&#9679; '+escapa(t.nom)+
+      '<span class="tdat">'+(a.nodos||0)+'n'+(a.hace!=null?' &middot; '+fmtHace(a.hace):'')+'</span>'+
       '<span class="tbot"><b data-acc="tmenos" title="mas pequena">&#8722;</b>'+
-      '<b data-acc="tmas" title="mas grande">+</b></span></div>'+
-      a.consola.slice(-TAMT[tamT][1]).map(l=>'<div class="tl">'+escapa(l)+'</div>').join('')+
+      '<b data-acc="tmas" title="mas grande">+</b></span></div>';
+    if(!a.misma) h+='<div class="tav">&#9888; parte de otra base ('+escapa(a.base)+')</div>';
+    else if(a.fuera) h+='<div class="tav" style="color:var(--suave)">'+a.fuera+' fichero(s) sin sitio en el mapa</div>';
+    h+=(a.consola||[]).slice(-TAMT[tamT][1]).map(l=>'<div class="tl">'+escapa(l)+'</div>').join('')+
       (vivo?'<span class="cur" style="color:'+a.c+'">&#9612;</span>':'');
+    t.el.innerHTML=h;
   }
   for(const nom of Object.keys(AGENTES).sort()){
     const a=AGENTES[nom];
-    if(!(a.consola||[]).length) continue;
     let idx=null;
     for(const n of NODOS){ if((n.ag||[]).indexOf(nom)>=0){ idx=IDXN[n.id]; break; } }
     const el=document.createElement('div');
@@ -1481,7 +1448,8 @@ const CMEM='gb-mapa-consola';
     const nom=(el && el.dataset) ? el.dataset.ag : null;
     if(!nom) return;
     agenteFoco=(agenteFoco===nom)?null:nom;
-    calculaCercaAg(); recuerda(); pintaPanel(); pintaConsola();
+    calculaCercaAg(); recuerda(); pintaConsola();
+    for(const t of TERMS) renderTerm(t);  // el foco se ve en la tarjeta
   });
   if(TERMS.length){
     (function animaTerms(){

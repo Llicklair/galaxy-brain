@@ -332,17 +332,19 @@ def test_un_docstring_con_cierre_de_script_no_rompe_la_pagina(tmp_path):
     assert "\u003c/script>" in cuerpo
 
 
-def test_el_panel_de_agentes_existe_y_su_logica_es_condicional(tmp_path):
-    """El contenedor viaja siempre (el JS lo llena solo si hay agentes); el
-    payload sin actividad llega vacio, asi que el panel no puede inventarse
-    un roster."""
+def test_la_tarjeta_del_agente_vive_en_el_nodo_no_en_un_panel(tmp_path):
+    """El panel de agentes se retiro (6-ago): tarjeta y terminal son UNA pieza
+    anclada al nodo del agente. El contenedor de tarjetas viaja siempre (el JS
+    lo llena solo si hay agentes); el payload sin actividad llega vacio, asi
+    que no puede inventarse un roster."""
     import json as _json
     import re
 
     from galaxybrain import symbols
 
     salida = viz.render_graph_cloud(symbols.analyze(_proyecto(tmp_path)))
-    assert '<div id="agentes"></div>' in salida
+    assert '<div id="agentes"></div>' not in salida
+    assert '<div id="terminales"></div>' in salida
     agentes = _json.loads(re.search(r"const AGENTES = (\{.*?\});", salida, re.S).group(1))
     assert agentes == {}
 
