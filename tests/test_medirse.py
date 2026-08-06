@@ -236,3 +236,22 @@ def test_el_termometro_separa_codigo_de_exploracion(gb_home, capsys):
     salida = capsys.readouterr().out
     assert "1/1 en codigo de proyecto" in salida
     assert "0/1 exploracion" in salida
+
+
+def test_la_vara_del_temporal_es_del_sistema_no_del_entorno(monkeypatch):
+    """Un subproceso que redefine TMP (sandbox, runner) no puede mover el
+    termometro: el mismo historico contaba 12 o 25 capturas 'de codigo' segun
+    quien preguntara (medido 6-ago-2026). La vara canonica del SO se queda
+    aunque gettempdir() apunte a otro sitio."""
+    import os as _os
+    import tempfile as _tempfile
+
+    if _os.name == "nt":
+        canonico = _os.path.join(_os.environ.get("LOCALAPPDATA") or
+                                 _os.path.expanduser(r"~\AppData\Local"), "Temp")
+    else:
+        canonico = "/tmp"
+    sonda = _os.path.join(canonico, "claude", "scratchpad", "x.py") + ":3"
+
+    monkeypatch.setattr(_tempfile, "gettempdir", lambda: _os.path.join(canonico, "otro-tmp"))
+    assert store.es_exploracion({"where": sonda})

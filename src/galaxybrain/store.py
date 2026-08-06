@@ -360,13 +360,39 @@ def es_exploracion(entry):
         return True
     fichero = where.rsplit(":", 1)[0] if ":" in where[2:] else where
     try:
-        import tempfile
-
-        tmp = os.path.normcase(os.path.abspath(tempfile.gettempdir()))
         ruta = os.path.normcase(os.path.abspath(fichero))
-        return ruta == tmp or ruta.startswith(tmp + os.sep)
+        return any(ruta == raiz or ruta.startswith(raiz + os.sep)
+                   for raiz in _raices_temporales())
     except (OSError, ValueError):
         return False
+
+
+def _raices_temporales():
+    """Dónde viven los temporales: gettempdir() del entorno actual MÁS las
+    raíces canónicas del SO. Solo gettempdir() no basta: un subproceso que
+    redefine TMP (un sandbox, un runner) mueve la vara y el MISMO store cuenta
+    distinto según quién pregunte — medido el 6-ago-2026: 12 o 25 capturas 'de
+    código' sobre el mismo histórico. La vara tiene que ser del sistema, no del
+    entorno de quien mira."""
+    import tempfile
+
+    raices = [tempfile.gettempdir()]
+    if os.name == "nt":
+        local = os.environ.get("LOCALAPPDATA")
+        if local:
+            raices.append(os.path.join(local, "Temp"))
+        raices.append(os.path.expanduser(os.path.join("~", "AppData", "Local", "Temp")))
+    else:
+        raices.extend(["/tmp", "/var/tmp"])
+    unicas = []
+    for raiz in raices:
+        try:
+            raiz = os.path.normcase(os.path.abspath(raiz))
+        except (OSError, ValueError):
+            continue
+        if raiz not in unicas:
+            unicas.append(raiz)
+    return unicas
 
 
 def summarize(entries):
