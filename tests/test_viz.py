@@ -448,3 +448,14 @@ def test_sin_capturas_ni_suelo_el_mapa_calla(tmp_path):
     salida = viz.render_graph_cloud(symbols.analyze(_proyecto(tmp_path)))
     assert "const CAPTURAS = [];" in salida
     assert "suelo:" not in salida
+
+
+def test_la_consola_de_errores_tiene_su_propio_panel(tmp_path):
+    """Separada de la de actividad A PROPOSITO: se probo mezclarlas y una
+    tirada entierra las capturas bajo los toca/escribe (6-ago)."""
+    from galaxybrain import symbols
+
+    salida = viz.render_graph_cloud(symbols.analyze(_proyecto(tmp_path)))
+    assert 'id="errores"' in salida
+    assert 'id="btnErrores"' in salida
+    assert "consola de errores" in salida

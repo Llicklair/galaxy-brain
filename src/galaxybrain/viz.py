@@ -730,16 +730,22 @@ _NUBE = """<!doctype html>
            border:1px solid var(--linea);border-radius:6px;width:410px;max-height:38vh;
            overflow-y:auto;font:11px ui-monospace,Consolas,monospace;display:none;
            padding:5px 0}
-  #consola .cab{position:sticky;top:0;display:flex;justify-content:space-between;
+  #consola .cab,#errores .cab{position:sticky;top:0;display:flex;justify-content:space-between;
            align-items:center;padding:3px 10px;background:var(--panel);
            border-bottom:1px solid var(--linea);color:var(--suave)}
-  #consola .cab b{cursor:pointer;padding:0 5px;font-weight:700;user-select:none}
-  #consola .cab b:hover{color:var(--tinta)}
-  #consola .fila{padding:2px 10px;display:flex;gap:7px;align-items:baseline}
-  #consola .hora{color:var(--suave);flex:none}
-  #consola .quien{font-weight:700;flex:none}
-  #consola .que{color:var(--tinta);flex:none}
-  #consola .detalle{color:var(--suave);word-break:break-all}
+  #consola .cab b,#errores .cab b{cursor:pointer;padding:0 5px;font-weight:700;user-select:none}
+  #consola .cab b:hover,#errores .cab b:hover{color:var(--tinta)}
+  #consola .fila,#errores .fila{padding:2px 10px;display:flex;gap:7px;align-items:baseline}
+  #consola .hora,#errores .hora{color:var(--suave);flex:none}
+  #consola .quien,#errores .quien{font-weight:700;flex:none}
+  #consola .que,#errores .que{color:var(--tinta);flex:none}
+  #consola .detalle,#errores .detalle{color:var(--suave);word-break:break-all}
+  /* La consola de ERRORES, separada de la de actividad a proposito: mezclarlas
+     enterraba las capturas bajo los toca/escribe de una tirada (6-ago). */
+  #errores{position:fixed;bottom:34px;right:12px;z-index:5;background:var(--panel);
+           border:1px solid var(--linea);border-radius:6px;width:380px;max-height:32vh;
+           overflow-y:auto;font:11px ui-monospace,Consolas,monospace;display:none;
+           padding:5px 0}
   #pie{position:fixed;bottom:12px;right:12px;z-index:5;
        font:10px ui-monospace,Consolas,monospace;color:var(--suave);max-width:40vw;text-align:right}
   /* La terminal del agente: su consola cmd EN VIVO, anclada encima de sus
@@ -776,12 +782,14 @@ _NUBE = """<!doctype html>
   <button id="btnPausa" title="pausar/reanudar la fisica">&#9208;</button>
   <button id="btnEncaja" title="reencuadrar">&#8862;</button>
   <button id="btnConsola" title="consola de actividad de los agentes">&#8801;</button>
+  <button id="btnErrores" title="consola de errores (capturas de gb)">&#9888;</button>
   <span class="leyenda">%(leyenda)s</span>
 </header>
 <canvas id="lienzo"></canvas>
 <div id="ficha"></div>
 <div id="terminales"></div>
 <div id="consola"></div>
+<div id="errores"></div>
 <div id="pie">%(pie)s</div>
 <script>
 // ================= datos =================
@@ -1329,20 +1337,8 @@ const CMEM='gb-mapa-consola';
   for(const e of eventosEntre(est && est.snap, ahora))
     log.push({h:hora, c: e.t==='CRUCE' ? '#ffffff' : ((AGENTES[e.a]||{}).c||'#94a3b8'),
               a:e.a, t:e.t, d:e.d});
-  // La consola de errores, POR DEFECTO y en movimiento: cada captura nueva es
-  // un evento `peta` en rojo con su nodo y su `gb show`. La capa estatica que
-  // habia que saber mirar acumulo 18 sin leer; el feed no pide que nadie mire.
-  const CAPM='gb-mapa-capturas-vistas';
-  let capVistas={};
-  try{ capVistas=JSON.parse(sessionStorage.getItem(CAPM)||'{}')||{}; }catch(_){}
-  for(const c of (CAPTURAS||[])){
-    if(!c.id || capVistas[c.id]) continue;
-    capVistas[c.id]=1;
-    log.push({h:hora, c:'#f87171', a:c.nodo||c.donde||'?', t:'peta',
-              d:(c.tipo||'?')+(c.leida?'':' · SIN LEER')
-                +' · gb show '+String(c.id).slice(0,8)});
-  }
-  try{ sessionStorage.setItem(CAPM, JSON.stringify(capVistas)); }catch(_){}
+  // Las capturas NO entran a este feed: se probo y una tirada las entierra
+  // bajo los toca/escribe. Viven en su propia consola de errores (#errores).
   while(log.length>200) log.shift();
   let abierto = est ? est.abierto!==0 : true;
   // Tres tallas, no un resize libre: anclada abajo-izquierda, el asa nativa de
@@ -1356,21 +1352,12 @@ const CMEM='gb-mapa-consola';
   }
   guarda();
   function pintaConsola(){
-    // El recuento de capturas sin leer se deriva FRESCO en cada recarga: un
-    // evento de una sola pasada se entierra bajo la actividad de una tirada;
-    // una fila fija no — y desaparece sola cuando se leen (regla 9).
-    const sinLeer=SIN_LEER || (CAPTURAS||[]).filter(c=>!c.leida).length;
-    if((!log.length && !sinLeer) || !abierto){ consolaEl.style.display='none'; return; }
+    if(!log.length || !abierto){ consolaEl.style.display='none'; return; }
     // La consola DE un agente: el foco del panel filtra tambien aqui (un CRUCE
     // en el que participa cuenta como suyo). Sin foco, la de todos.
     const filas = agenteFoco
       ? log.filter(e=>e.a===agenteFoco || e.a.split(' + ').indexOf(agenteFoco)>=0)
       : log;
-    const aviso = sinLeer
-      ? '<div class="fila"><span class="quien" style="color:#f87171">consola</span>'+
-        '<span class="que">'+sinLeer+' captura(s) sin leer</span>'+
-        '<span class="detalle">los `peta` rojos del feed traen su gb show · gb list para el embudo</span></div>'
-      : '';
     consolaEl.style.width=TAM[tam][0]+'px';
     consolaEl.style.maxHeight=TAM[tam][1];
     consolaEl.innerHTML =
@@ -1379,7 +1366,7 @@ const CMEM='gb-mapa-consola';
         : 'actividad (hechos derivados)')+'</span>'+
       '<span><b data-acc="menos" title="mas pequena">&#8722;</b>'+
       '<b data-acc="mas" title="mas grande">+</b>'+
-      '<b data-acc="cerrar" title="ocultar">&#10005;</b></span></div>'+aviso+
+      '<b data-acc="cerrar" title="ocultar">&#10005;</b></span></div>'+
       (filas.length ? filas.map(e=>
       '<div class="fila"><span class="hora">'+e.h+'</span>'+
       '<span class="quien" style="color:'+e.c+'">'+escapa(e.a)+'</span>'+
@@ -1440,7 +1427,19 @@ const CMEM='gb-mapa-consola';
       '<b data-acc="tmas" title="mas grande">+</b></span></div>';
     if(!a.misma) h+='<div class="tav">&#9888; parte de otra base ('+escapa(a.base)+')</div>';
     else if(a.fuera) h+='<div class="tav" style="color:var(--suave)">'+a.fuera+' fichero(s) sin sitio en el mapa</div>';
-    const visibles=(a.consola||[]).slice(0,t.reveladas).slice(-TAMT[tamT][1]);
+    let visibles=(a.consola||[]).slice(0,t.reveladas).slice(-TAMT[tamT][1]);
+    if(!(a.consola||[]).length){
+      // Sin stdout tee-ado (p. ej. el arbol principal, que no tiene orquestador):
+      // la tarjeta enseña sus hechos de firma; si tampoco hay (el mapa canonico
+      // se deriva de ese mismo arbol), que nodos toca. Nunca muda.
+      visibles=(a.cambios||[]).slice(-TAMT[tamT][1]);
+      if(!visibles.length){
+        const mios=NODOS.filter(n=>(n.ag||[]).indexOf(t.nom)>=0).map(n=>n.id);
+        visibles=mios.length
+          ? ['toca: '+mios.slice(0,3).join(', ')+(mios.length>3?' +'+(mios.length-3):'')]
+          : ['(sin consola tee-ada ni cambios de firma)'];
+      }
+    }
     h+=visibles.map((l,i)=>
       '<div class="tl'+(cayendo && i===visibles.length-1?' nueva':'')+'">'+escapa(l)+'</div>').join('')+
       (vivo?'<span class="cur" style="color:'+a.c+'">&#9612;</span>':'');
@@ -1576,6 +1575,39 @@ const CMEM='gb-mapa-consola';
       requestAnimationFrame(animaTerms);
     })();
   }
+})();
+
+// ---- consola de errores -----------------------------------------------------
+// Separada de la de actividad A PROPOSITO: se probo mezclarlas y una tirada
+// entierra las capturas bajo los toca/escribe. Una fila por captura, el estado
+// de lectura en el color, y el gb show exacto. El boton &#9888; la abre/cierra.
+(function(){
+  const erroresEl=document.getElementById('errores');
+  const btn=document.getElementById('btnErrores');
+  if(!erroresEl || !btn) return;
+  const EMEM='gb-mapa-errores';
+  let est=null; try{ est=JSON.parse(sessionStorage.getItem(EMEM)||'null'); }catch(_){}
+  let abierto = est ? est.abierto!==0 : true;
+  function guarda(){ try{ sessionStorage.setItem(EMEM, JSON.stringify({abierto:abierto?1:0})); }catch(_){} }
+  function pinta(){
+    if(!(CAPTURAS||[]).length || !abierto){ erroresEl.style.display='none'; return; }
+    const filas=(CAPTURAS||[]).map(c=>
+      '<div class="fila"><span class="hora">'+escapa((c.ts||'').slice(11,19))+'</span>'+
+      '<span class="quien" style="color:'+(c.leida?'var(--suave)':'#f87171')+'">'+
+      escapa(c.nodo||c.donde||'?')+'</span>'+
+      '<span class="que">'+escapa(c.tipo||'?')+'</span>'+
+      '<span class="detalle">'+(c.leida?'leida':'SIN LEER')+
+      ' · gb show '+escapa(String(c.id).slice(0,8))+'</span></div>').join('');
+    erroresEl.innerHTML='<div class="cab"><span>consola de errores · '+(SIN_LEER||0)+
+      ' sin leer</span><span><b data-acc="cerrar" title="ocultar">&#10005;</b></span></div>'+filas;
+    erroresEl.style.display='block';
+  }
+  erroresEl.addEventListener('click', ev=>{
+    const acc=ev.target&&ev.target.dataset?ev.target.dataset.acc:null;
+    if(acc==='cerrar'){ abierto=false; guarda(); pinta(); }
+  });
+  btn.addEventListener('click', ()=>{ abierto=!abierto; guarda(); pinta(); });
+  pinta();
 })();
 
 // La recarga automatica, por JS y con modales: se APLAZA mientras se escribe
