@@ -488,3 +488,26 @@ def test_la_nube_sella_su_generacion_y_la_onda_envejece(tmp_path):
 
     con_sello = viz.render_graph_cloud(report, gen_ts=1754500000.9)
     assert "GEN_TS = 1754500000;" in con_sello
+
+
+def test_las_dos_puertas_dicen_que_es_EL_mapa_y_delatan_copias(tmp_path, gb_home, capsys, monkeypatch):
+    """gb graph --html y gb symbols --html escriben el MISMO lienzo unificado;
+    en uso real (7-ago) fabricaron dos copias gemelas que envejecian por
+    separado. Las dos puertas lo dicen, y la segunda delata a la primera."""
+    from galaxybrain import cli
+
+    root = _proyecto(tmp_path)
+    monkeypatch.chdir(root)
+    uno = str(tmp_path / "uno.html")
+    otro = str(tmp_path / "otro.html")
+
+    assert cli.main(["symbols", "--html", uno]) == 0
+    salida = capsys.readouterr().out
+    assert "un solo lienzo" in salida
+    assert "OTRO mapa vivo" not in salida  # primera copia: nada que delatar
+
+    assert cli.main(["graph", "--html", otro]) == 0
+    salida = capsys.readouterr().out
+    assert "un solo lienzo" in salida
+    assert "OTRO mapa vivo" in salida
+    assert "uno.html" in salida

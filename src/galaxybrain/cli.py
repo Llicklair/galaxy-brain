@@ -488,11 +488,70 @@ def _html_registrar_forma(root, destino, report, graph_report, refresco=0):
     try:
         cache.parent.mkdir(parents=True, exist_ok=True)
         cache.write_text(
-            json.dumps({"forma": forma, "refresco": refresco}, ensure_ascii=False),
+            json.dumps(
+                {
+                    "forma": forma,
+                    "refresco": refresco,
+                    # Root y destino EN el registro (la clave del fichero es un
+                    # hash opaco): sin esto no se puede responder "¿que otros
+                    # mapas tiene este proyecto?" — y dos puertas al mismo
+                    # lienzo fabricaron dos copias divergentes en uso real
+                    # (7-ago, docs/pruebas-de-uso.md).
+                    "root": os.path.normcase(os.path.abspath(root)),
+                    "destino": os.path.normcase(os.path.abspath(destino)),
+                },
+                ensure_ascii=False,
+            ),
             encoding="utf-8",
         )
     except OSError:
         pass
+
+
+def _otros_mapas_vivos(root, destino):
+    """Otros mapas YA generados para este mismo proyecto que siguen en disco.
+
+    Son el mismo lienzo unificado con otro nombre: dos ficheros envejecen por
+    separado y uno acaba sirviendo un mapa fantasma. Derivado del registro de
+    formas — nada cableado. Las entradas antiguas sin root/destino no pueden
+    verse (se enriquecen al regenerar). Devuelve [(ruta, mtime_texto)].
+    """
+    raiz = os.path.normcase(os.path.abspath(root))
+    este = os.path.normcase(os.path.abspath(destino))
+    otros = []
+    base = config.home() / "html-shape"
+    try:
+        nombres = sorted(os.listdir(base))
+    except OSError:
+        return otros
+    for nombre in nombres:
+        if not nombre.endswith(".json"):
+            continue
+        try:
+            entrada = json.loads((base / nombre).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        ruta = entrada.get("destino")
+        if not ruta or entrada.get("root") != raiz or ruta == este:
+            continue
+        try:
+            st = os.stat(ruta)
+        except OSError:
+            continue  # ya no existe: no hay copia que envejezca
+        cuando = datetime.datetime.fromtimestamp(st.st_mtime).strftime("%Y-%m-%d %H:%M")
+        otros.append((ruta, cuando))
+    return otros
+
+
+def _emit_mapa_escrito(root, destino, puerta):
+    """El mensaje de las dos puertas del mapa, unificado: dicen que es EL mapa
+    y delatan las copias vivas. La ilusion de 'grafo de modulos' vs 'grafo de
+    simbolos' costo dos ficheros gemelos en uso real."""
+    emit("el mapa en %s — un solo lienzo (modulos + simbolos + llamadas); "
+         "%s escribe este mismo mapa" % (destino, puerta))
+    for ruta, cuando in _otros_mapas_vivos(root, destino):
+        emit("  ojo: este proyecto ya tiene OTRO mapa vivo en %s (del %s) — es el "
+             "mismo lienzo; dos ficheros envejecen por separado" % (ruta, cuando))
 
 
 def _html_refresco_recordado(root, destino, report, graph_report):
@@ -1009,7 +1068,7 @@ def cmd_graph(args):
             sys.stderr.write("[gb graph] no pude escribir %s (%s)\n" % (destino, error))
             return 2
         _html_registrar_forma(root, destino, simbolos, report, refresco)
-        emit("mapa escrito en %s" % destino)
+        _emit_mapa_escrito(root, destino, "gb symbols --html")
         if args.open:
             _abrir(destino)
         return 1 if report.get("root_error") else 0
@@ -1480,7 +1539,7 @@ def cmd_symbols(args):
             sys.stderr.write("[gb symbols] no pude escribir %s (%s)\n" % (destino, error))
             return 2
         _html_registrar_forma(root, destino, report, grafo, refresco)
-        emit("mapa de simbolos en %s" % destino)
+        _emit_mapa_escrito(root, destino, "gb graph --html")
         if args.open:
             _abrir(destino)
         return 0
