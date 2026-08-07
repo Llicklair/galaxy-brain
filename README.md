@@ -115,6 +115,27 @@ were not looking does not have to be reproduced. `last · list · show · on · 
 module and symbol graphs, the call query, the diff's blast wave, the project's missing scaffolding,
 and the facts that outlive a session. `graph · symbols · calls · check · floor · memory`
 
+### The hot path, drawn
+
+<p align="center">
+  <img src="assets/arquitectura.png" alt="galaxy-brain architecture: observed run, deterministic capture, raw facts, graph/floor, agent" width="100%">
+</p>
+
+The six boxes across the top are the real hot path and they are exactly what ships: an observed
+Python process (`gb on`), capture through the three native hooks — `sys.excepthook`,
+`threading.excepthook`, `sys.unraisablehook` — raw append-only facts in `~/.galaxy-brain`, the
+derived graph plus the floor, and an agent that reads facts instead of guessing. No model is
+consulted anywhere in that row; the budget under it (&lt;1 s per edit, &lt;10 s per commit) is
+architecture, not aspiration. The certainty ladder and the fact/proxy/human split are rule 11 in
+picture form: only facts gate, patterns inform.
+
+<sub><b>What the diagram draws ahead of the code:</b> the <i>adaptive learning</i> loop (offline
+replay, hypothesis, graph generations) and the catalogue of <i>known LLM error patterns</i> as
+built-in detectors do not exist in v0.3.0 — they are design intent. Today `gb delta` reports
+classic errors a diff introduced, and the "actas" box belongs to the loop runner in
+<code>bucle/</code>, deliberately outside <code>gb</code> (<a href="ARCHITECTURE.md">gb provides,
+it does not orchestrate</a>). Everything else in the poster is shipped and measured.</sub>
+
 ---
 
 ## Wired into the agent
@@ -632,3 +653,14 @@ change each, with behavior changes and documentation changes kept apart.
 | [CLAUDE.md](CLAUDE.md) | The contract for agents working in this repo |
 
 Decision documents are in Spanish for coherence; anything published is in English.
+
+---
+
+<p align="center">
+  <img src="assets/hero-brain.png" alt="galaxy-brain" width="420">
+</p>
+
+<p align="center">
+  <sub><b>Facts first. Reasoning after.</b><br>
+  We do not make the model smarter. We make the system less vulnerable to its mistakes.</sub>
+</p>
