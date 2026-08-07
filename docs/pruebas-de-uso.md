@@ -10,6 +10,26 @@ mismo detalle que los positivos, o más.
 
 ---
 
+## 2026-08-07 · La consola se capturó a sí misma — y el criterio de la familia se completa: 3/3
+
+`emit()` reventaba con `OSError [Errno 22]` cuando el consumidor del pipe cerraba antes
+(`gb ... | head`): en Windows la tubería rota no es `BrokenPipeError` sino `OSError(EINVAL)`, y el
+except solo cubría Unicode. **gb capturó su propio crash** en el otro repo, el aviso viajó en el
+feedback, y el fix salió de `gb show 20260807T024900-efcedd`: los locales traían el stream, el
+`text=''` y el errno exactos — **cero reproducciones, causa a la vista**. Es el tercer fallo real
+resuelto leyendo el estado sin re-ejecutar: el criterio «resolver ≥3 fallos leyendo el estado» pasa
+de 2/3 a **3/3**, y este ni siquiera fue dirigido — fue la herramienta pagándose a sí misma.
+
+Cura con la lección de frontera del propio feedback («cargar tenía diez llamantes»): la clase
+entera, no la ruta — `emit()` y `emit_utf8()` comparten `_es_tuberia_rota` (EPIPE + EINVAL) y
+`_apagar_stdout` (devnull, que además evita el «Exception ignored» del flush al salir). Un OSError
+que NO sea tubería (disco lleno) se sigue viendo: tragárselo sería mentir en verde. Test de ambos
+lados.
+
+De propina, la captura destapó un roce más: `gb show <id>` desde otro cwd decía «no encuentro» —
+el scope por proyecto negaba un id **globalmente único** a quien lo tenía en la mano. Ahora, si no
+está en el proyecto actual, se entrega global (la ficha ya dice de quién es).
+
 ## 2026-08-07 · Feedback de uso real (3ª ronda): el grafo indexaba lo que el .gitignore excluye
 
 El otro repo tenía `pytest-of-*/` y `tmp*/` en su `.gitignore` (git los marcaba `!!` correctamente)
