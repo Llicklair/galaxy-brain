@@ -511,3 +511,28 @@ def test_las_dos_puertas_dicen_que_es_EL_mapa_y_delatan_copias(tmp_path, gb_home
     assert "un solo lienzo" in salida
     assert "OTRO mapa vivo" in salida
     assert "uno.html" in salida
+
+
+def test_html_sin_valor_escribe_LA_referencia_en_la_raiz(tmp_path, gb_home, capsys, monkeypatch):
+    """La convencion al defecto (7-ago): `--html` sin fichero escribe mapa.html
+    en la carpeta principal del proyecto — a la altura del README, porque ese
+    fichero es la referencia desde la que se trabaja. Desde un subdirectorio,
+    tambien: la raiz la da el .git, no el cwd."""
+    import os
+    import subprocess
+
+    from galaxybrain import cli
+
+    root = _proyecto(tmp_path)
+    subprocess.run(["git", "init", "-q"], cwd=root, check=True, capture_output=True)
+    sub = os.path.join(root, "src")
+    monkeypatch.chdir(sub if os.path.isdir(sub) else root)
+
+    assert cli.main(["symbols", root, "--html"]) == 0
+    assert os.path.exists(os.path.join(root, "mapa.html"))
+    assert "mapa.html" in capsys.readouterr().out
+
+    # la ruta explicita sigue mandando
+    otro = str(tmp_path / "explicito.html")
+    assert cli.main(["symbols", root, "--html", otro]) == 0
+    assert os.path.exists(otro)

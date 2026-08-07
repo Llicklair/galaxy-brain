@@ -543,6 +543,25 @@ def _otros_mapas_vivos(root, destino):
     return otros
 
 
+#: Sentinela de `--html` sin valor: un objeto, no una cadena, para no chocar
+#: jamas con un nombre de fichero real del usuario.
+_MAPA_POR_DEFECTO = object()
+
+
+def _destino_mapa(valor):
+    """El destino del mapa. Sin valor explicito, LA CONVENCION: `mapa.html` en
+    la carpeta principal del proyecto — a la altura del README, porque ese
+    fichero es LA REFERENCIA desde la que se trabaja (decision de Marcos,
+    7-ago, tras el episodio de los gemelos: un solo nombre, un solo sitio, y
+    N sesiones dejan de fabricar copias). La ruta explicita sigue mandando."""
+    if valor is not None and valor is not _MAPA_POR_DEFECTO:
+        return os.path.abspath(valor)
+    from .capture import _project_root
+
+    raiz = _project_root(os.getcwd()) or os.getcwd()
+    return os.path.join(raiz, "mapa.html")
+
+
 def _emit_mapa_escrito(root, destino, puerta):
     """El mensaje de las dos puertas del mapa, unificado: dicen que es EL mapa
     y delatan las copias vivas. La ilusion de 'grafo de modulos' vs 'grafo de
@@ -1027,7 +1046,7 @@ def cmd_graph(args):
         # Un solo grafo. `graph --html` y `symbols --html` llevan a la MISMA
         # pagina: modulos, simbolos, imports y llamadas en un lienzo. Antes eran
         # dos ficheros del mismo sujeto que habia que juntar de cabeza.
-        destino = os.path.abspath(args.html)
+        destino = _destino_mapa(args.html)
         simbolos = symbols_mod.analyze(root)
         # Modo mantenimiento (ver cmd_symbols): no crea, solo refresca lo que hay.
         refresco = args.refresco
@@ -1265,7 +1284,7 @@ def _vigilar(root, args):
     from . import symbols as symbols_mod
     from . import viz
 
-    destino = os.path.abspath(args.html)
+    destino = _destino_mapa(args.html)
     intervalo = max(1, args.intervalo)
     refresco = args.refresco or 5  # en watch el auto-refresh tiene sentido por defecto
     anterior = None
@@ -1473,7 +1492,7 @@ def cmd_symbols(args):
         if not args.html:
             sys.stderr.write("[gb symbols] --watch necesita --html <fichero>\n")
             return 2
-        if getattr(args, "if_changed", False) and not os.path.exists(os.path.abspath(args.html)):
+        if getattr(args, "if_changed", False) and not os.path.exists(_destino_mapa(args.html)):
             # El fichero es el opt-in (mismo contrato que el mantenimiento): un
             # hook global puede lanzar esto en CADA repo y solo vigila donde TU
             # ya generaste el mapa a mano.
@@ -1491,7 +1510,7 @@ def cmd_symbols(args):
         from . import graph as graph_mod
         from . import viz
 
-        destino = os.path.abspath(args.html)
+        destino = _destino_mapa(args.html)
         grafo = graph_mod.analyze(root)
         refresco = args.refresco
         if getattr(args, "if_changed", False):
@@ -2050,7 +2069,10 @@ def build_parser():
     graph_p.add_argument(
         "--html",
         metavar="FICHERO",
-        help="escribir el mapa como HTML autocontenido (sin dependencias ni CDN)",
+        nargs="?",
+        const=_MAPA_POR_DEFECTO,
+        help="escribir el mapa (HTML autocontenido); sin FICHERO: mapa.html en la "
+             "carpeta principal, que es LA referencia de trabajo",
     )
     graph_p.add_argument(
         "--refresco",
@@ -2085,7 +2107,14 @@ def build_parser():
         "symbols", help="grafo de simbolos: quien llama a quien, con su cobertura"
     )
     syms.add_argument("path", nargs="?", default=".", help="raiz del proyecto")
-    syms.add_argument("--html", metavar="FICHERO", help="escribirlo como HTML autocontenido")
+    syms.add_argument(
+        "--html",
+        metavar="FICHERO",
+        nargs="?",
+        const=_MAPA_POR_DEFECTO,
+        help="escribirlo como HTML autocontenido; sin FICHERO: mapa.html en la "
+             "carpeta principal, que es LA referencia de trabajo",
+    )
     syms.add_argument("--capas", action="store_true", help="vista por capas en vez de nube")
     syms.add_argument(
         "--if-changed",
