@@ -10,6 +10,22 @@ mismo detalle que los positivos, o más.
 
 ---
 
+## 2026-08-07 · Feedback de uso real (3ª ronda): el grafo indexaba lo que el .gitignore excluye
+
+El otro repo tenía `pytest-of-*/` y `tmp*/` en su `.gitignore` (git los marcaba `!!` correctamente)
+y el grafo los indexó igual: módulos sueltos «sin describir, sin llamadas ni imports», conteo
+inflado (56) y mapa desincronizado en cuanto pytest rotaba sus temporales. Es la regla 6 aplicada al
+propio escáner: la lista de ruido cableada (`__pycache__`, `.venv`…) es folklore; el `.gitignore`
+del proyecto es el **hecho declarado**, y gb no lo leía.
+
+Cura en el único walker (`_iter_py_files`, que alimenta a graph Y symbols): `git ls-files -co
+--exclude-standard -z` — trackeados + nuevos sin trackear, MENOS lo ignorado. El matiz que hace mal
+el `git ls-files` a secas que proponía el reporte: **lo nuevo sin trackear DEBE verse** (la capa de
+obra y la actividad viven de ello); lo que sobra es solo lo ignorado. `-z` para que el quoting de
+git no esconda rutas con acentos (la trampa cp1252, prima de la del 5-ago). Sin git no hay hecho que
+leer: cinturón cableado como siempre, y se indexa todo. Un subprocess por analyze (~30 ms, en
+presupuesto); el tick del watch no pasa por aquí.
+
 ## 2026-08-07 · «Fracaso absoluto»: el grafo desplegado y CERO actividad visible — el mapa no tenía pulso
 
 Feedback de uso real, segunda ronda del otro repo: una sesión entera de trabajo de verdad (barrido
