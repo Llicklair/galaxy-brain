@@ -1,0 +1,59 @@
+{
+  "inicio": "2026-08-06 21:25:06",
+  "modo": "real",
+  "tareas": [
+    "A",
+    "B"
+  ],
+  "entregas": {
+    "B": [
+      "(rechazo por adopcion)"
+    ]
+  },
+  "senal_retenida": {
+    "B": [
+      "experimento.nucleo.calcula: (a, b) -> (a, b, base)"
+    ]
+  },
+  "sin_senal": false,
+  "aviso_desfase": true,
+  "despachos": {
+    "A": [
+      "Tu directorio de trabajo es el actual (un worktree preparado). Trabaja SOLO aqui.\n\nEn experimento/nucleo.py, cambia el contrato de `calcula`: añade un TERCER parámetro posicional OBLIGATORIO `base` (SIN valor por defecto) y usa `a * base + b` en vez de `a * 10 + b`. Actualiza los llamantes que EXISTEN: experimento/capa.py (que `procesa` pase base=10 para conservar el comportamiento). NO toques nada fuera de experimento/.\n\nTRAMPA DE ENTORNO: un .pth pre-importa galaxybrain desde el checkout principal. Corre pytest con PYTHONPATH=<este-dir>;<este-dir>/src desde este directorio. NO commitees, NO push."
+    ],
+    "B": [
+      "Tu directorio de trabajo es el actual (un worktree preparado). Trabaja SOLO aqui.\n\nAVISO DEL ENRUTADOR: hay otros worktrees en vuelo que pueden cambiar contratos que tu arbol todavia no ve; que tu pytest local salga verde no lo descarta. Escribe pensando en el arbol donde aterriza tu trabajo.\n\nAñade a tests/test_experimento_uso.py entre 2 y 3 tests nuevos que amplíen la cobertura del banco: al menos uno más de `experimento.capa.procesa` (caso borde: lista vacía o un solo par), y al menos UNO que llame DIRECTAMENTE a `experimento.nucleo.calcula` verificando su aritmética. Lee el código del banco en tu directorio para escribir contra lo que hay. NO toques nada fuera de tests/test_experimento_uso.py. Corre `python -m pytest tests/test_experimento_uso.py -q` y reporta el resultado TAL CUAL salga.\n\nTRAMPA DE ENTORNO: un .pth pre-importa galaxybrain desde el checkout principal. Corre pytest con PYTHONPATH=<este-dir>;<este-dir>/src desde este directorio. NO commitees, NO push.",
+      "Tu directorio de trabajo es el actual (un worktree preparado). Trabaja SOLO aqui.\n\nAVISO DEL ENRUTADOR: hay otros worktrees en vuelo que pueden cambiar contratos que tu arbol todavia no ve; que tu pytest local salga verde no lo descarta. Escribe pensando en el arbol donde aterriza tu trabajo.\n\nAñade a tests/test_experimento_uso.py entre 2 y 3 tests nuevos que amplíen la cobertura del banco: al menos uno más de `experimento.capa.procesa` (caso borde: lista vacía o un solo par), y al menos UNO que llame DIRECTAMENTE a `experimento.nucleo.calcula` verificando su aritmética. Lee el código del banco en tu directorio para escribir contra lo que hay. NO toques nada fuera de tests/test_experimento_uso.py. Corre `python -m pytest tests/test_experimento_uso.py -q` y reporta el resultado TAL CUAL salga.\n\nTRAMPA DE ENTORNO: un .pth pre-importa galaxybrain desde el checkout principal. Corre pytest con PYTHONPATH=<este-dir>;<este-dir>/src desde este directorio. NO commitees, NO push.\n\nRECHAZO DEL BUCLE: tu diff llama contra una firma que otro worktree en vuelo acaba de cambiar. Los hechos:\n- experimento.nucleo.calcula: (a, b) -> (a, b, base)\nLas llamadas exactas:\ntests/test_experimento_uso.py:20: calcula(2 posicional(es)) no encaja en la firma nueva (a, b, base)\ntests/test_experimento_uso.py:21: calcula(2 posicional(es)) no encaja en la firma nueva (a, b, base)\ntests/test_experimento_uso.py:22: calcula(2 posicional(es)) no encaja en la firma nueva (a, b, base)\ntests/test_experimento_uso.py:23: calcula(2 posicional(es)) no encaja en la firma nueva (a, b, base)"
+    ]
+  },
+  "adopcion": {
+    "B": [
+      "tests/test_experimento_uso.py:20: calcula(2 posicional(es)) no encaja en la firma nueva (a, b, base)",
+      "tests/test_experimento_uso.py:21: calcula(2 posicional(es)) no encaja en la firma nueva (a, b, base)",
+      "tests/test_experimento_uso.py:22: calcula(2 posicional(es)) no encaja en la firma nueva (a, b, base)",
+      "tests/test_experimento_uso.py:23: calcula(2 posicional(es)) no encaja en la firma nueva (a, b, base)"
+    ]
+  },
+  "reintentos": 1,
+  "veredicto": "verde",
+  "lectura_ramas": {
+    "bucle-B": "coordinada"
+  },
+  "pasos": [
+    "lanzada A (0 hecho(s) en el despacho)",
+    "derivados de A: ['experimento.nucleo.calcula: (a, b) -> (a, b, base)']",
+    "señal retenida a B: 1 hecho(s)",
+    "lanzada B (0 hecho(s) en el despacho, 1 retenido(s))",
+    "derivados de B: ['tests.test_experimento_uso.test_calcula_aritmetica: (no existia) -> ()', 'tests.test_experimento_uso.test_procesa_lista_vacia: (no existia) -> ()', 'tests.test_experimento_uso.test_procesa_un_solo_par: (no existia) -> ()']",
+    "adopcion de B: 4 llamada(s) contra la señal",
+    "reintento de B por adopcion: limpio",
+    "union: VERDE (exit 1; ramas rojas: ['bucle-B'])"
+  ],
+  "cola_union": "5) ========================\r\n--- bucle-A (solo) ---\r\narbol limpio en 976c7d1 + tu diff\r\n$ -m pytest tests/test_abrir.py tests/test_actividad.py tests/test_aislado.py tests/test_autoinstall.py tests/test_bucle.py tests/test_calls.py tests/test_changes.py tests/test_ciclo.py tests/test_delta.py tests/test_end_to_end.py tests/test_experimento_uso.py tests/test_floor_subdirectorio.py tests/test_graph_coverage.py tests/test_graph_delta.py tests/test_impacted.py tests/test_obra.py tests/test_onda.py tests/test_primer_dia.py tests/test_project_detection.py tests/test_symbols.py tests/test_viz_js_valido.py tests/test_watch.py\r\n--- bucle-B (solo) ---\r\narbol limpio en 976c7d1 + tu diff\r\n$ -m pytest tests/test_abrir.py tests/test_actividad.py tests/test_aislado.py tests/test_autoinstall.py tests/test_bucle.py tests/test_calls.py tests/test_changes.py tests/test_ciclo.py tests/test_delta.py tests/test_end_to_end.py tests/test_experimento_uso.py tests/test_floor_subdirectorio.py tests/test_graph_coverage.py tests/test_graph_delta.py tests/test_impacted.py tests/test_obra.py tests/test_onda.py tests/test_primer_dia.py tests/test_project_detection.py tests/test_symbols.py tests/test_viz_js_valido.py tests/test_watch.py\r\n--- union de 2 rama(s) sobre 976c7d1 ---\r\n$ -m pytest tests/test_abrir.py tests/test_actividad.py tests/test_aislado.py tests/test_autoinstall.py tests/test_bucle.py tests/test_calls.py tests/test_changes.py tests/test_ciclo.py tests/test_delta.py tests/test_end_to_end.py tests/test_experimento_uso.py tests/test_floor_subdirectorio.py tests/test_graph_coverage.py tests/test_graph_delta.py tests/test_impacted.py tests/test_obra.py tests/test_onda.py tests/test_primer_dia.py tests/test_project_detection.py tests/test_symbols.py tests/test_viz_js_valido.py tests/test_watch.py\r\n\r\n  ok     bucle-A\r\n  ROJA   bucle-B\r\n  ok     union\r\n\r\nRESCATE ACCIDENTAL: la union pasa, pero estas ramas no se sostienen solas:\r\n  bucle-B\r\nsu verde lo puso otra rama, no su propio trabajo.\r\n",
+  "capturas_durante": [],
+  "diffs": {
+    "A": "diff --git a/experimento/capa.py b/experimento/capa.py\nindex 0908f0e..56abfb4 100644\n--- a/experimento/capa.py\n+++ b/experimento/capa.py\n@@ -7,5 +7,5 @@ def procesa(valores):\n     \"\"\"Suma calcula() sobre una lista de pares.\"\"\"\n     total = 0\n     for a, b in valores:\n-        total += calcula(a, b)\n+        total += calcula(a, b, base=10)\n     return total\ndiff --git a/experimento/nucleo.py b/experimento/nucleo.py\nindex cfbd5ff..96ff75d 100644\n--- a/experimento/nucleo.py\n+++ b/experimento/nucleo.py\n@@ -1,6 +1,6 @@\n \"\"\"La funcion cuyo contrato va a romperse a proposito.\"\"\"\n \n \n-def calcula(a, b):\n+def calcula(a, b, base):\n     \"\"\"Combina dos valores. El contrato que A va a cambiar.\"\"\"\n-    return a * 10 + b\n+    return a * base + b\n",
+    "B": "diff --git a/tests/test_experimento_uso.py b/tests/test_experimento_uso.py\nindex 448271c..43d23d4 100644\n--- a/tests/test_experimento_uso.py\n+++ b/tests/test_experimento_uso.py\n@@ -1,7 +1,23 @@\n \"\"\"Tests del banco del enrutador. Desechables, como el banco.\"\"\"\n \n from experimento.capa import procesa\n+from experimento.nucleo import calcula\n \n \n def test_procesa_suma_pares():\n     assert procesa([(1, 2), (3, 4)]) == 12 + 34\n+\n+\n+def test_procesa_lista_vacia():\n+    assert procesa([]) == 0\n+\n+\n+def test_procesa_un_solo_par():\n+    assert procesa([(5, 3)]) == 53\n+\n+\n+def test_calcula_aritmetica_con_base():\n+    \"\"\"Verifica la firma nueva (a, b, base) del arbol destino.\"\"\"\n+    assert calcula(2, 5, base=10) == 25\n+    assert calcula(3, 7, base=100) == 307\n+    assert calcula(0, 4, base=10) == 4\n"
+  },
+  "fin": "2026-08-06 21:33:55"
+}

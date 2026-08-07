@@ -1,0 +1,33 @@
+{
+  "_nota": "RESTAURADA el 6-ago-2026 desde la lectura integra del fichero al inicio de la sesion: el original (.claude/bucle-acta.json) fue pisado por la tirada de las 00:15 — el defecto exacto que motivo acumular las actas. Contenido transcrito tal cual se leyo; el campo 'adopcion' no existe porque esta tirada corrio con el bucle v0, anterior a la verificacion de adopcion.",
+  "inicio": "2026-08-05 22:40:12",
+  "modo": "real",
+  "tareas": [
+    "A",
+    "B"
+  ],
+  "entregas": {
+    "B": [
+      "experimento.nucleo.calcula: (a, b) -> (a, b, base)",
+      "(cola del fallo de union)"
+    ]
+  },
+  "reintentos": 1,
+  "veredicto": "roja",
+  "lectura_ramas": {},
+  "pasos": [
+    "lanzada A (0 hecho(s) enrutado(s))",
+    "derivados de A: ['experimento.nucleo.calcula: (a, b) -> (a, b, base)']",
+    "lanzada B (1 hecho(s) enrutado(s))",
+    "derivados de B: ['tests.test_experimento_uso.test_calcula_aritmetica: (no existia) -> ()', 'tests.test_experimento_uso.test_procesa_lista_vacia: (no existia) -> ()', 'tests.test_experimento_uso.test_procesa_un_solo_par: (no existia) -> ()']",
+    "union: ROJA (exit 1; ramas rojas: [])",
+    "reintento de B",
+    "union: ROJA (exit 1; ramas rojas: [])"
+  ],
+  "cola_union": "====\r\nFAILED tests/test_experimento_uso.py::test_calcula_aritmetica - TypeError: ca...\r\n================== 1 failed, 264 passed in 70.12s (0:01:10) ===================\r\n--- bucle-A (solo) ---\r\narbol limpio en 5f46cfb + tu diff\r\n$ -m pytest tests/test_abrir.py tests/test_actividad.py tests/test_aislado.py tests/test_autoinstall.py tests/test_bucle.py tests/test_calls.py tests/test_changes.py tests/test_ciclo.py tests/test_delta.py tests/test_end_to_end.py tests/test_experimento_uso.py tests/test_floor_subdirectorio.py tests/test_graph_coverage.py tests/test_graph_delta.py tests/test_impacted.py tests/test_obra.py tests/test_onda.py tests/test_primer_dia.py tests/test_project_detection.py tests/test_symbols.py tests/test_viz_js_valido.py tests/test_watch.py\r\n--- bucle-B (solo) ---\r\narbol limpio en 5f46cfb + tu diff\r\n$ -m pytest tests/test_abrir.py tests/test_actividad.py tests/test_aislado.py tests/test_autoinstall.py tests/test_bucle.py tests/test_calls.py tests/test_changes.py tests/test_ciclo.py tests/test_delta.py tests/test_end_to_end.py tests/test_experimento_uso.py tests/test_floor_subdirectorio.py tests/test_graph_coverage.py tests/test_graph_delta.py tests/test_impacted.py tests/test_obra.py tests/test_onda.py tests/test_primer_dia.py tests/test_project_detection.py tests/test_symbols.py tests/test_viz_js_valido.py tests/test_watch.py\r\n--- union de 2 rama(s) sobre 5f46cfb ---\r\n$ -m pytest tests/test_abrir.py tests/test_actividad.py tests/test_aislado.py tests/test_autoinstall.py tests/test_bucle.py tests/test_calls.py tests/test_changes.py tests/test_ciclo.py tests/test_delta.py tests/test_end_to_end.py tests/test_experimento_uso.py tests/test_floor_subdirectorio.py tests/test_graph_coverage.py tests/test_graph_delta.py tests/test_impacted.py tests/test_obra.py tests/test_onda.py tests/test_primer_dia.py tests/test_project_detection.py tests/test_symbols.py tests/test_viz_js_valido.py tests/test_watch.py\r\n\r\n  ok     bucle-A\r\n  ok     bucle-B\r\n  ROJA   union\r\n",
+  "diffs": {
+    "A": "diff --git a/experimento/capa.py b/experimento/capa.py\nindex 0908f0e..cd46496 100644\n--- a/experimento/capa.py\n+++ b/experimento/capa.py\n@@ -7,5 +7,5 @@ def procesa(valores):\n     \"\"\"Suma calcula() sobre una lista de pares.\"\"\"\n     total = 0\n     for a, b in valores:\n-        total += calcula(a, b)\n+        total += calcula(a, b, 10)\n     return total\ndiff --git a/experimento/nucleo.py b/experimento/nucleo.py\nindex cfbd5ff..96ff75d 100644\n--- a/experimento/nucleo.py\n+++ b/experimento/nucleo.py\n@@ -1,6 +1,6 @@\n \"\"\"La funcion cuyo contrato va a romperse a proposito.\"\"\"\n \n \n-def calcula(a, b):\n+def calcula(a, b, base):\n     \"\"\"Combina dos valores. El contrato que A va a cambiar.\"\"\"\n-    return a * 10 + b\n+    return a * base + b\n",
+    "B": "diff --git a/tests/test_experimento_uso.py b/tests/test_experimento_uso.py\nindex 448271c..d536412 100644\n--- a/tests/test_experimento_uso.py\n+++ b/tests/test_experimento_uso.py\n@@ -1,7 +1,23 @@\n \"\"\"Tests del banco del enrutador. Desechables, como el banco.\"\"\"\n \n from experimento.capa import procesa\n+from experimento.nucleo import calcula\n \n \n def test_procesa_suma_pares():\n     assert procesa([(1, 2), (3, 4)]) == 12 + 34\n+\n+\n+def test_procesa_lista_vacia():\n+    assert procesa([]) == 0\n+\n+\n+def test_procesa_un_solo_par():\n+    assert procesa([(5, 7)]) == 57\n+\n+\n+def test_calcula_aritmetica():\n+    assert calcula(3, 4) == 34\n+    assert calcula(0, 0) == 0\n+    assert calcula(0, 9) == 9\n+    assert calcula(9, 0) == 90\n"
+  },
+  "fin": "2026-08-05 22:52:36"
+}

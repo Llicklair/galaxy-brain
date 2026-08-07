@@ -1,6 +1,11 @@
 node_modules/
 dist/
 *.log
+
+# Del arnés de proyecto viaja lo compartible (.claude/settings.json, .claude/actas);
+# lo local de cada máquina y lo transitorio de las tiradas, no.
+.claude/settings.local.json
+.claude/worktrees/
 .env
 .env.*
 .DS_Store
