@@ -10,6 +10,46 @@ mismo detalle que los positivos, o más.
 
 ---
 
+## 2026-08-07 · La sonda del caso caro: la consola CUMPLE su promesa — y el aviso se adopta solo
+
+La mitad no demostrada del proyecto era la promesa fundacional: «te dice dónde y con qué estado,
+sin reproducir». Sonda A/B dirigida, con el caso construido para ser IMPOSIBLE de reproducir, no
+solo caro: un consolidador muere procesando un stream efímero (el productor ya no existe, los
+eventos no se persisten); la causa es un evento de esquema v2 (`importe_eur` en vez de `importe`)
+que mete `None` en el saldo; el `TypeError` estalla lejos de la causa y **no contiene el valor** —
+el evento culpable solo vive en los locales capturados. Dos brazos idénticos; en B el crash ocurrió
+con la captura apagada (queda el traceback en un log), en G capturado. El prompt NO menciona gb en
+ninguno: la única diferencia del mundo de G es la línea del aviso al final del crash.log. Corrector
+oculto fuera del alcance; criterio escrito antes.
+
+**Primer intento INVALIDADO, y se cuenta:** dejé la clave de corrección en un directorio hermano y
+el primer agente-B se salió del «trabaja SOLO aquí», la encontró y entregó el asesino exacto que no
+podía conocer. Doble lección: la trampa se sella antes de fiarse de la lectura (la báscula, otra
+vez), y **el agente desobedece el límite de directorio a la primera** — dato de harness por sí
+solo. Reconstruida estanca: semilla solo en conversación, respuesta fuera de todo disco,
+transcript stream-json para auditar lecturas.
+
+**Resultado (n=1 por brazo, se dice):**
+
+| | B2 (sin estado) | G (con la captura) |
+|---|---|---|
+| siguió el aviso del crash | — | **sí, espontáneo** (`gb show <id>`, sin que nadie le hablara de gb) |
+| fix mínimo (no peta) | sí | sí |
+| fix COMPLETO (v2 se suma, el requisito) | **no** — descartó los v2 con un WARN, justo lo prohibido | **sí** |
+| diagnóstico del evento asesino | «usuario: valor desconocido» | **exacto: id 149, fede, ajuste, v2, 62,50 €** (verificado contra la semilla) |
+| reproducciones | 1 (el crash original; nada que reproducir) | **0** |
+
+Auditoría de transcripts: los dos agentes trabajaron estancos; B2 dedujo todo lo deducible del
+traceback y no pudo más — la información no existía en su mundo. G convirtió el estado en el fix
+que el requisito pedía y en la identidad exacta del evento, sin ejecutar nada.
+
+**Lectura:** el mecanismo completo de la consola queda demostrado en su caso de valor — captura →
+aviso → adopción espontánea → estado → fix imposible de otro modo. El criterio de la familia
+(«resolver ≥3 fallos leyendo el estado sin re-ejecutar») pasa de 1/3 a **2/3**, con la honestidad
+de siempre: esto es dirigido (el escenario lo construimos), n=1, y la adopción espontánea *en la
+vida real* sigue midiéndose con el termómetro, no con sondas. Lo que la sonda cierra es la duda de
+mecanismo: cuando el caso caro llegue, la consola paga.
+
 ## 2026-08-06 · «No veo la actividad de los bucles» — el watch era ciego a los agentes
 
 Reportado por Marcos mirando el mapa en vivo durante las tandas: tres tandas enteras del bucle (8
