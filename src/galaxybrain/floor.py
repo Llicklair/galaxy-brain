@@ -521,10 +521,22 @@ def scaffold(root):
         hechos.append({"path": ".gitignore", "action": "ya-cubria mapa.html"})
     else:
         try:
-            with open(os.path.join(root, ".gitignore"), "a", encoding="utf-8") as handle:
+            # Respetar el EOL del fichero que se edita: añadir lineas LF a un
+            # .gitignore CRLF lo deja w/mixed (cazado con `git ls-files --eol`
+            # en uso real, 7-ago). El olfato va en BYTES — leerlo en modo texto
+            # traduce los \r\n antes de poder verlos — y newline="" apaga la
+            # traduccion al escribir: el EOL lo decide el fichero, no la
+            # plataforma.
+            try:
+                with open(os.path.join(root, ".gitignore"), "rb") as crudo_f:
+                    crudo = crudo_f.read()
+            except OSError:
+                crudo = b""
+            eol = "\r\n" if b"\r\n" in crudo else "\n"
+            with open(os.path.join(root, ".gitignore"), "a", encoding="utf-8", newline="") as handle:
                 if contenido and not contenido.endswith("\n"):
-                    handle.write("\n")
-                handle.write("# el mapa de gb es derivado: lo reescribe el watch\nmapa.html\n")
+                    handle.write(eol)
+                handle.write("# el mapa de gb es derivado: lo reescribe el watch" + eol + "mapa.html" + eol)
             hechos.append({"path": ".gitignore", "action": "mapa.html ignorado"})
         except OSError as error:
             hechos.append({"path": ".gitignore", "action": "error: %s" % error})

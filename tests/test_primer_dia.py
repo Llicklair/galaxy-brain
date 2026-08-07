@@ -171,3 +171,19 @@ def test_init_deja_el_mapa_fuera_de_git(tmp_path):
         handle.write("docs/mapa.html\n")
     hechos = {h["path"]: h["action"] for h in floor.scaffold(otro)}
     assert hechos[".gitignore"] == "mapa.html ignorado"
+
+
+def test_el_ignore_del_mapa_respeta_el_eol_del_fichero(tmp_path):
+    """Añadir lineas LF a un .gitignore CRLF lo deja w/mixed — cazado con
+    `git ls-files --eol` en uso real (7-ago). El EOL lo decide el fichero que
+    se edita, no la plataforma."""
+    root = _repo(tmp_path)
+    with open(os.path.join(root, ".gitignore"), "wb") as handle:
+        handle.write(b"*.log\r\n")
+
+    floor.scaffold(root)
+    with open(os.path.join(root, ".gitignore"), "rb") as handle:
+        datos = handle.read()
+    assert b"\r\nmapa.html\r\n" in b"\r\n" + datos
+    # ni una sola linea con EOL distinto: todos los \n van precedidos de \r
+    assert datos.count(b"\n") == datos.count(b"\r\n")
