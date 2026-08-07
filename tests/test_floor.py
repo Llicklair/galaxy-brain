@@ -165,11 +165,14 @@ def test_init_deja_los_imprescindibles(tmp_path):
     root = str(tmp_path)
     hechos = floor.scaffold(root)
 
-    # los ficheros imprescindibles MAS el enganche del pre-commit (7-ago: la
-    # conexion no se sugiere, se hace — y sin git, se dice en vez de callar)
-    assert {h["path"] for h in hechos} == set(floor.SCAFFOLD_FILES) | {"core.hooksPath"}
-    assert all(h["action"] == "creado" for h in hechos if h["path"] != "core.hooksPath")
+    # los ficheros imprescindibles MAS el enganche del pre-commit y el ignore
+    # del mapa (7-ago: la conexion no se sugiere, se hace; y el mapa derivado
+    # no puede vivir ensuciando el arbol)
+    extras = {"core.hooksPath", ".gitignore"}
+    assert {h["path"] for h in hechos} == set(floor.SCAFFOLD_FILES) | extras
+    assert all(h["action"] == "creado" for h in hechos if h["path"] not in extras)
     assert [h["action"] for h in hechos if h["path"] == "core.hooksPath"] == ["sin-git"]
+    assert [h["action"] for h in hechos if h["path"] == ".gitignore"] == ["mapa.html ignorado"]
     for rel in floor.SCAFFOLD_FILES:
         assert os.path.exists(os.path.join(root, *rel.split("/")))
 

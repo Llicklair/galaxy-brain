@@ -511,6 +511,23 @@ def scaffold(root):
             hechos.append({"path": "core.hooksPath", "action": "enganchado"})
         else:
             hechos.append({"path": "core.hooksPath", "action": "no-pude"})
+
+    # El mapa de la raiz es un artefacto DERIVADO que el watch reescribe cada
+    # vez que algo cambia: sin esta linea, todo repo con el arnes vive con el
+    # arbol sucio («mapa.html baila en cada git status» — reporte de uso real,
+    # 7-ago). Aditivo, nunca pisa: si la linea exacta ya esta, no se toca.
+    contenido = _read(root, ".gitignore")
+    if any(linea.strip() == "mapa.html" for linea in contenido.splitlines()):
+        hechos.append({"path": ".gitignore", "action": "ya-cubria mapa.html"})
+    else:
+        try:
+            with open(os.path.join(root, ".gitignore"), "a", encoding="utf-8") as handle:
+                if contenido and not contenido.endswith("\n"):
+                    handle.write("\n")
+                handle.write("# el mapa de gb es derivado: lo reescribe el watch\nmapa.html\n")
+            hechos.append({"path": ".gitignore", "action": "mapa.html ignorado"})
+        except OSError as error:
+            hechos.append({"path": ".gitignore", "action": "error: %s" % error})
     return hechos
 
 

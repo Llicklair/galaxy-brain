@@ -142,3 +142,32 @@ def test_init_respeta_un_hookspath_ajeno(tmp_path):
     salida = subprocess.run(["git", "config", "core.hooksPath"], cwd=root,
                             capture_output=True, text=True)
     assert salida.stdout.strip() == "mis-hooks"
+
+
+def test_init_deja_el_mapa_fuera_de_git(tmp_path):
+    """El mapa de la raiz lo reescribe el watch: trackeado, el arbol vive sucio
+    («mapa.html baila en cada git status» — reporte de uso real, 7-ago). --init
+    lo ignora de forma ADITIVA: crea o añade la linea, jamas pisa lo que hay."""
+    root = _repo(tmp_path)
+    with open(os.path.join(root, ".gitignore"), "w", encoding="utf-8") as handle:
+        handle.write("*.log\n")
+
+    hechos = {h["path"]: h["action"] for h in floor.scaffold(root)}
+    assert hechos[".gitignore"] == "mapa.html ignorado"
+    with open(os.path.join(root, ".gitignore"), encoding="utf-8") as handle:
+        contenido = handle.read()
+    assert "*.log" in contenido          # lo que habia, intacto
+    assert "\nmapa.html\n" in "\n" + contenido
+
+    # idempotente: la segunda pasada no duplica la linea
+    hechos = {h["path"]: h["action"] for h in floor.scaffold(root)}
+    assert hechos[".gitignore"] == "ya-cubria mapa.html"
+    with open(os.path.join(root, ".gitignore"), encoding="utf-8") as handle:
+        assert handle.read().count("mapa.html") == 1
+
+    # y una ruta DISTINTA que contiene el nombre no cuenta como cubierta
+    otro = _repo(tmp_path / "b")
+    with open(os.path.join(otro, ".gitignore"), "w", encoding="utf-8") as handle:
+        handle.write("docs/mapa.html\n")
+    hechos = {h["path"]: h["action"] for h in floor.scaffold(otro)}
+    assert hechos[".gitignore"] == "mapa.html ignorado"
