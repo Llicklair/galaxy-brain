@@ -12,6 +12,7 @@ codigo. Un comando nuevo tiene que caer en una de ellas, o no entra:
 
 import argparse
 import datetime
+import errno
 import json
 import os
 import sys
@@ -54,12 +55,47 @@ def emit(text):
     la herramienta rompiendose justo en el momento en que la necesitas.
     Se pierde un caracter, no el registro.
     """
+    if _STDOUT_ROTO:
+        return
     stream = sys.stdout
     try:
-        stream.write(text + "\n")
-    except UnicodeEncodeError:
-        encoding = getattr(stream, "encoding", None) or "utf-8"
-        stream.write(text.encode(encoding, "replace").decode(encoding, "replace") + "\n")
+        try:
+            stream.write(text + "\n")
+        except UnicodeEncodeError:
+            encoding = getattr(stream, "encoding", None) or "utf-8"
+            stream.write(text.encode(encoding, "replace").decode(encoding, "replace") + "\n")
+    except (BrokenPipeError, OSError) as error:
+        if not _es_tuberia_rota(error):
+            raise
+        _apagar_stdout()
+
+
+#: El destino murio (un `| head` que cerro antes): se calla y se sigue — el
+#: trabajo del comando no depende de que alguien siga leyendo. La consola se
+#: capturo A SI MISMA rompiendose aqui (7-ago, 20260807T024900-efcedd) y el fix
+#: salio leyendo ese estado con `gb show`, sin reproducir: el ciclo entero.
+_STDOUT_ROTO = False
+
+
+def _es_tuberia_rota(error):
+    """En POSIX el pipe cerrado es BrokenPipeError; en Windows llega como
+    OSError(EINVAL) — el matiz exacto que el except de emit no cubria."""
+    return isinstance(error, BrokenPipeError) or getattr(error, "errno", None) in (
+        errno.EPIPE,
+        errno.EINVAL,
+    )
+
+
+def _apagar_stdout():
+    """Redirigir stdout a devnull ademas de callarse: sin esto, el flush del
+    interprete al salir vuelve a tropezar con la tuberia muerta y ensucia la
+    salida con un 'Exception ignored'."""
+    global _STDOUT_ROTO
+    _STDOUT_ROTO = True
+    try:
+        sys.stdout = open(os.devnull, "w", encoding="utf-8")
+    except OSError:
+        pass
 
 
 def emit_utf8(text):
@@ -71,12 +107,21 @@ def emit_utf8(text):
     escribe en bytes al buffer para no depender del locale de la consola (cp1252
     en Windows mutila acentos y flechas). Se cae a emit() si no hay buffer.
     """
+    if _STDOUT_ROTO:
+        return
     buffer = getattr(sys.stdout, "buffer", None)
     if buffer is None:
         emit(text)
         return
-    buffer.write((text + "\n").encode("utf-8", "replace"))
-    buffer.flush()
+    try:
+        buffer.write((text + "\n").encode("utf-8", "replace"))
+        buffer.flush()
+    except (BrokenPipeError, OSError) as error:
+        # La misma frontera que emit(): curar la clase, no la ruta que peto —
+        # la leccion de los diez llamantes de `cargar` (libreta, 7-ago).
+        if not _es_tuberia_rota(error):
+            raise
+        _apagar_stdout()
 
 
 def _style(args):
@@ -980,6 +1025,12 @@ def cmd_list(args):
 
 def cmd_show(args):
     record = store.load(args.id, project=_project_filter(args))
+    if record is None:
+        # Un id es GLOBALMENTE unico: negarselo a quien lo tiene en la mano
+        # porque el cwd es otro proyecto es hostil (paso en uso real, 7-ago: el
+        # aviso de un crash de live code, ilegible desde galaxy-brain sin
+        # --all). Se entrega — la ficha ya dice de que proyecto es.
+        record = store.load(args.id, project=None)
     if record is None:
         emit("no encuentro ninguna captura con id '%s'" % args.id)
         return 1

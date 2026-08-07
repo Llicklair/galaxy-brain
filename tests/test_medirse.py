@@ -255,3 +255,62 @@ def test_la_vara_del_temporal_es_del_sistema_no_del_entorno(monkeypatch):
 
     monkeypatch.setattr(_tempfile, "gettempdir", lambda: _os.path.join(canonico, "otro-tmp"))
     assert store.es_exploracion({"where": sonda})
+
+
+def test_emit_sobrevive_a_la_tuberia_muerta(monkeypatch):
+    """`gb ... | head` cierra el consumidor antes de tiempo; en Windows eso no
+    es BrokenPipeError sino OSError(EINVAL), y emit solo cubria Unicode. La
+    consola se capturo A SI MISMA rompiendose aqui (20260807T024900-efcedd) y
+    el fix salio de leer ese estado con gb show, sin reproducir."""
+    import errno as _errno
+    import io
+    import sys as _sys
+
+    from galaxybrain import cli
+
+    monkeypatch.setattr(cli, "_STDOUT_ROTO", False)
+    escrituras = []
+
+    class Rota(io.StringIO):
+        def write(self, texto):
+            escrituras.append(texto)
+            raise OSError(_errno.EINVAL, "Invalid argument")
+
+    monkeypatch.setattr(_sys, "stdout", Rota())
+    cli.emit("hola")            # no lanza: la tuberia murio, el comando sigue
+    assert len(escrituras) == 1
+    cli.emit("adios")           # y no vuelve a intentarlo
+    assert len(escrituras) == 1
+    assert cli._STDOUT_ROTO
+
+
+def test_emit_no_se_traga_otros_oserror(monkeypatch):
+    """Solo la tuberia rota se perdona: un disco lleno u otro OSError real
+    tiene que verse — tragarselo seria mentir en verde."""
+    import io
+    import sys as _sys
+
+    import pytest
+
+    from galaxybrain import cli
+
+    monkeypatch.setattr(cli, "_STDOUT_ROTO", False)
+
+    class Llena(io.StringIO):
+        def write(self, texto):
+            raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(_sys, "stdout", Llena())
+    with pytest.raises(OSError):
+        cli.emit("hola")
+
+
+def test_show_entrega_un_id_de_otro_proyecto(gb_home, capsys):
+    """Un id es globalmente unico: pedirlo desde otro cwd no puede acabar en
+    'no encuentro' (paso en uso real, 7-ago, con el aviso de un crash ajeno)."""
+    from galaxybrain import cli
+
+    ident = _captura(gb_home, "ajena", project="/otro/proyecto")
+    assert cli.main(["show", ident]) == 0
+    salida = capsys.readouterr().out
+    assert "ValueError" in salida
