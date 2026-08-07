@@ -10,6 +10,43 @@ mismo detalle que los positivos, o más.
 
 ---
 
+## 2026-08-07 · El banco de replay: 13/13 — y el aprendizaje adaptativo, acotado con datos
+
+El póster de arquitectura dibuja un ciclo de *aprendizaje adaptativo* (recolectar → agrupar →
+hipótesis → replay → comparar generaciones → consolidar o revertir). Antes de construirlo se miró
+qué materia prima existe: **14 actas con sus diffs guardados, 67 infracciones registradas… de 2
+escenarios**, y **cero violaciones de frontera vivas** en el repo. Veredicto escrito antes de
+teclear: sólo una de las cinco cajas es viable hoy.
+
+- **Viable y construido: el banco de replay** (paso 4). `bucle/replay.py` rehace el árbol que vio
+  el verificador desde los diffs grabados y corre **la misma función** de verificación —
+  refactorizada para compartir parser (`lineas_de_diff`) e inyectar el mapa de líneas. Cero cuota,
+  cero agentes, milisegundos.
+- **Aún no: clustering → hipótesis** (pasos 1-3). Con un solo patrón repetido 67 veces, la máquina
+  propondría exactamente lo que ya se descubrió a mano el 5-ago. Se abre cuando el corpus tenga
+  variedad, y la variedad la trae el uso.
+- **Nunca así: generaciones del grafo con rollback** (pasos 5-6). Versionar Gn/Gn+1 implica
+  persistir el grafo como fuente de verdad — lo que VISION.md prohíbe desde que se borró GitNexus.
+  La corrección que sale de la propia ley: **lo aprendible no es el grafo, es el ruleset** (las
+  fronteras y los checks son declarados, y eso sí se versiona). El grafo se sigue derivando.
+
+**Criterio, escrito antes: reproducir el veredicto grabado en ≥13 de 14, y que un verificador roto
+falle ruidosamente. Resultado: 13/13 de los casos con verdad de campo** (2 de ellos controles
+positivos con final sucio: cazarlos de menos sería falso negativo; los 11 limpios, falso positivo),
+**+ prueba de mutación en verde** — cegar `firma_admite` pone el banco rojo. Un banco que no puede
+fallar no mide nada.
+
+Tres cosas que el banco descubrió sobre sí mismo mientras se construía, todas reales: (1) la verdad
+de campo **no** son las infracciones del acta — el acta anota las del primer intento y el diff
+guardado es el estado final tras el rechazo; se deriva de los pasos; (2) el acta v0 del 5-ago no
+tiene verdad de campo, y forzarla sería inventar un veredicto: se clasifica aparte, y ahí el replay
+demuestra algo mejor — **el verificador de hoy habría cazado las 4 llamadas que aquella tirada dejó
+pasar**; (3) reconstruir desde el blob post-imagen es una lotería (`git add -N` no escribe el
+objeto): se rehace desde el pre-blob commiteado + `git apply`. Y una trampa de entorno: `bucle/` no
+es paquete, así que bajo pytest `import bucle` cae en un namespace package y el módulo real nunca
+llega — carga por ruta, y el test comparte instancia para que la mutación alcance al código que
+corre.
+
 ## 2026-08-07 · El sello «+sin-commitear» con árbol limpio, RESUELTO — y no era el EOL: era Heisenberg
 
 El reporte confirmó la reproducción con datos de campaña (`git ls-files --eol`: 91 ficheros i/lf
