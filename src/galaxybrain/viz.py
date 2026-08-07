@@ -1453,7 +1453,9 @@ const CMEM='gb-mapa-consola';
       : '<div class="fila"><span class="detalle">'+(agenteFoco
           ? '(sin eventos registrados de '+escapa(agenteFoco)+')'
           : '(0 eventos: se derivan comparando instantaneas entre recargas — '+
-            'apareceran en cuanto un agente toque el arbol)')+'</span></div>');
+            'hacen falta DOS cosas: trabajo en el arbol y el mapa latiendo '+
+            '(gb symbols --html --watch --fondo). Una sola regeneracion al '+
+            'final siempre dira cero)')+'</span></div>');
     consolaEl.style.display='block';
     consolaEl.scrollTop=consolaEl.scrollHeight;
   }

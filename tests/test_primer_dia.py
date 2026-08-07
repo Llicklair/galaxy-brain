@@ -57,6 +57,11 @@ def test_init_cablea_el_arnes_del_agente(tmp_path):
     assert "gb graph --context" in texto
     assert "gb graph --context --if-changed" in texto
     assert "gb calls --hook" in texto
+    # El pulso del mapa, de serie: sin un watch vivo, la capa de actividad dice
+    # cero aunque haya trabajo — una sesion entera paso invisible el 7-ago
+    # ("fracaso absoluto", feedback real). --fondo vuelve al instante (hook) y
+    # el candado evita duplicados entre sesiones.
+    assert "gb symbols --html --watch --fondo" in texto
 
 
 def test_init_no_pisa_un_settings_existente(tmp_path):

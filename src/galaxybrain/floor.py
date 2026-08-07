@@ -407,7 +407,8 @@ def _plantilla_claude_settings():
       {
         "matcher": "",
         "hooks": [
-          { "type": "command", "command": "gb graph --context", "timeout": 15 }
+          { "type": "command", "command": "gb graph --context", "timeout": 15 },
+          { "type": "command", "command": "gb symbols --html --watch --fondo --refresco 3", "timeout": 15 }
         ]
       }
     ],
