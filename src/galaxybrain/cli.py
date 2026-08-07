@@ -1113,26 +1113,29 @@ def cmd_graph(args):
             # recarga que caiga en mitad de un open("w") directo ve el fichero
             # truncado — pagina en blanco (visto en uso real, 4-ago). Con el
             # replace se ve el mapa viejo o el nuevo, nunca el hueco.
+            # Renderizar ANTES de abrir el temporal: el sello pregunta a git, y
+            # nuestro propio .tmp contaba como suciedad — '+sin-commitear' con el
+            # arbol limpio (el Heisenberg del sello; cazado en uso real, 7-ago,
+            # tercera reproduccion, con la pista EOL descartada con datos).
+            html_mapa = viz.render_graph_cloud(
+                simbolos,
+                title="mapa · %s" % os.path.basename(root),
+                graph_report=report,
+                procedencia=_procedencia(root),
+                refresco=refresco,
+                gen_ts=time.time(),
+                # El ciclo del error viaja como los demas extras: el cli
+                # lo computa (aqui, no en cada frame del navegador) y el
+                # renderizador solo dibuja. Informa, no bloquea.
+                ciclo=_ciclo_para_mapa(root, simbolos),
+                tocados=_tocados_para_mapa(root, simbolos),
+                actividad=_actividad_para_mapa(root, simbolos),
+                capturas=_capturas_para_mapa(root, simbolos),
+                suelo=_suelo_para_mapa(root),
+                sin_leer=_capturas_sin_leer(root),
+            )
             with open(destino + _tmp_sufijo(), "w", encoding="utf-8") as handle:
-                handle.write(
-                    viz.render_graph_cloud(
-                        simbolos,
-                        title="mapa · %s" % os.path.basename(root),
-                        graph_report=report,
-                        procedencia=_procedencia(root),
-                        refresco=refresco,
-                        gen_ts=time.time(),
-                        # El ciclo del error viaja como los demas extras: el cli
-                        # lo computa (aqui, no en cada frame del navegador) y el
-                        # renderizador solo dibuja. Informa, no bloquea.
-                        ciclo=_ciclo_para_mapa(root, simbolos),
-                        tocados=_tocados_para_mapa(root, simbolos),
-                        actividad=_actividad_para_mapa(root, simbolos),
-                        capturas=_capturas_para_mapa(root, simbolos),
-                        suelo=_suelo_para_mapa(root),
-                        sin_leer=_capturas_sin_leer(root),
-                    )
-                )
+                handle.write(html_mapa)
             _reemplaza_html(destino + _tmp_sufijo(), destino)
         except OSError as error:
             sys.stderr.write("[gb graph] no pude escribir %s (%s)\n" % (destino, error))
@@ -1381,28 +1384,31 @@ def _vigilar(root, args):
                         try:
                             # Misma escritura atomica que en los one-shot: aqui
                             # es donde MAS importa, el watch reescribe a menudo.
+                            # Renderizar ANTES de abrir el temporal: el sello pregunta a git, y
+                            # nuestro propio .tmp contaba como suciedad — '+sin-commitear' con el
+                            # arbol limpio (el Heisenberg del sello; cazado en uso real, 7-ago,
+                            # tercera reproduccion, con la pista EOL descartada con datos).
+                            html_mapa = viz.render_graph_cloud(
+                                report,
+                                title="mapa · %s" % os.path.basename(root),
+                                capas=args.capas,
+                                graph_report=grafo,
+                                procedencia=_procedencia(root),
+                                refresco=refresco,
+                                gen_ts=time.time(),
+                                # La capa de cambio se recomputa por
+                                # REGENERACION, no por tick: un git
+                                # status (~30 ms) entra en presupuesto
+                                # aqui; en _sonda_cambio no.
+                                ciclo=_ciclo_para_mapa(root, report),
+                                tocados=_tocados_para_mapa(root, report),
+                                actividad=_actividad_para_mapa(root, report),
+                                capturas=_capturas_para_mapa(root, report),
+                                suelo=_suelo_para_mapa(root),
+                                sin_leer=_capturas_sin_leer(root),
+                            )
                             with open(destino + _tmp_sufijo(), "w", encoding="utf-8") as handle:
-                                handle.write(
-                                    viz.render_graph_cloud(
-                                        report,
-                                        title="mapa · %s" % os.path.basename(root),
-                                        capas=args.capas,
-                                        graph_report=grafo,
-                                        procedencia=_procedencia(root),
-                                        refresco=refresco,
-                                        gen_ts=time.time(),
-                                        # La capa de cambio se recomputa por
-                                        # REGENERACION, no por tick: un git
-                                        # status (~30 ms) entra en presupuesto
-                                        # aqui; en _sonda_cambio no.
-                                        ciclo=_ciclo_para_mapa(root, report),
-                                        tocados=_tocados_para_mapa(root, report),
-                                        actividad=_actividad_para_mapa(root, report),
-                                        capturas=_capturas_para_mapa(root, report),
-                                        suelo=_suelo_para_mapa(root),
-                                        sin_leer=_capturas_sin_leer(root),
-                                    )
-                                )
+                                handle.write(html_mapa)
                             _reemplaza_html(destino + _tmp_sufijo(), destino)
                             _html_registrar_forma(root, destino, report, grafo, refresco)
                             emit("  actualizado %s" % _procedencia(root).split(" desde ")[0])
@@ -1579,31 +1585,34 @@ def cmd_symbols(args):
             if not refresco:
                 refresco = _html_refresco_recordado(root, destino, report, grafo)
         try:
+            # Renderizar ANTES de abrir el temporal: el sello pregunta a git, y
+            # nuestro propio .tmp contaba como suciedad — '+sin-commitear' con el
+            # arbol limpio (el Heisenberg del sello; cazado en uso real, 7-ago,
+            # tercera reproduccion, con la pista EOL descartada con datos).
+            html_mapa = viz.render_graph_cloud(
+                report,
+                title="%s · %s"
+                % ("capas" if args.capas else "mapa", os.path.basename(root)),
+                capas=args.capas,
+                # Un solo grafo: modulos, simbolos, imports y llamadas en
+                # el mismo lienzo. Antes salian dos ficheros que habia que
+                # juntar de cabeza, y eso era el fallo de diseno.
+                graph_report=grafo,
+                procedencia=_procedencia(root),
+                refresco=refresco,
+                gen_ts=time.time(),
+                ciclo=_ciclo_para_mapa(root, report),
+                tocados=_tocados_para_mapa(root, report),
+                actividad=_actividad_para_mapa(root, report),
+                # Mismos extras que el mapa de `graph`: es LA MISMA
+                # pagina — un mapa regenerado por aqui sin capturas
+                # diria "0 capturas" habiendo 18, y eso es mentir.
+                capturas=_capturas_para_mapa(root, report),
+                suelo=_suelo_para_mapa(root),
+                sin_leer=_capturas_sin_leer(root),
+            )
             with open(destino + _tmp_sufijo(), "w", encoding="utf-8") as handle:
-                handle.write(
-                    viz.render_graph_cloud(
-                        report,
-                        title="%s · %s"
-                        % ("capas" if args.capas else "mapa", os.path.basename(root)),
-                        capas=args.capas,
-                        # Un solo grafo: modulos, simbolos, imports y llamadas en
-                        # el mismo lienzo. Antes salian dos ficheros que habia que
-                        # juntar de cabeza, y eso era el fallo de diseno.
-                        graph_report=grafo,
-                        procedencia=_procedencia(root),
-                        refresco=refresco,
-                        gen_ts=time.time(),
-                        ciclo=_ciclo_para_mapa(root, report),
-                        tocados=_tocados_para_mapa(root, report),
-                        actividad=_actividad_para_mapa(root, report),
-                        # Mismos extras que el mapa de `graph`: es LA MISMA
-                        # pagina — un mapa regenerado por aqui sin capturas
-                        # diria "0 capturas" habiendo 18, y eso es mentir.
-                        capturas=_capturas_para_mapa(root, report),
-                        suelo=_suelo_para_mapa(root),
-                        sin_leer=_capturas_sin_leer(root),
-                    )
-                )
+                handle.write(html_mapa)
             _reemplaza_html(destino + _tmp_sufijo(), destino)
         except OSError as error:
             sys.stderr.write("[gb symbols] no pude escribir %s (%s)\n" % (destino, error))

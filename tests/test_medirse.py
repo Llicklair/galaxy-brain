@@ -314,3 +314,35 @@ def test_show_entrega_un_id_de_otro_proyecto(gb_home, capsys):
     assert cli.main(["show", ident]) == 0
     salida = capsys.readouterr().out
     assert "ValueError" in salida
+
+
+def test_el_sello_no_se_ensucia_con_su_propio_temporal(tmp_path, gb_home, monkeypatch):
+    """El Heisenberg del sello (7-ago, tercera reproduccion en uso real): el
+    .tmp del mapa se abria ANTES de computar la procedencia, git veia un
+    untracked fabricado por gb y el sello estampaba '+sin-commitear' con el
+    arbol limpio. Renderizar primero, abrir despues."""
+    import os as _os
+    import subprocess
+
+    from galaxybrain import cli
+
+    root = str(tmp_path / "repo")
+    _os.makedirs(root)
+    subprocess.run(["git", "init", "-q"], cwd=root, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.email", "t@t"], cwd=root, check=True)
+    subprocess.run(["git", "config", "user.name", "t"], cwd=root, check=True)
+    with open(_os.path.join(root, "app.py"), "w", encoding="utf-8") as handle:
+        handle.write("X = 1\n")
+    with open(_os.path.join(root, ".gitignore"), "w", encoding="utf-8") as handle:
+        handle.write("mapa.html\n")
+    subprocess.run(["git", "add", "-A"], cwd=root, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-q", "-m", "inicial"], cwd=root, check=True, capture_output=True)
+
+    monkeypatch.chdir(root)
+    assert cli.main(["symbols", root, "--html"]) == 0
+    with open(_os.path.join(root, "mapa.html"), encoding="utf-8") as handle:
+        html = handle.read()
+    # el sello sucio es '+sin-commitear' (con el +): a secas tambien vive en un
+    # comentario JS del template y daria falso rojo sobre un mapa limpio
+    assert "+sin-commitear" not in html
+    assert "generado el" in html
