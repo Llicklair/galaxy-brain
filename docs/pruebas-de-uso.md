@@ -10,6 +10,25 @@ mismo detalle que los positivos, o más.
 
 ---
 
+## 2026-08-07 · Feedback de uso real (otro repo): dos puertas al mismo mapa fabrican dos mapas
+
+En el arranque en frío sobre otro proyecto, la sesión de allí generó `grafo-modulos.html` con
+`gb graph --html` y `grafo-simbolos.html` con `gb symbols --html` — 153.957 y 153.958 bytes: **el
+mismo lienzo unificado, un byte de diferencia (el sello GEN_TS)**. Desde la unificación, los dos
+comandos renderizan EL mapa; dos destinos son dos copias que envejecen por separado. El agente de
+allí mordió el anzuelo entero («regenero el de símbolos con el comando correcto») pese a que ambos
+títulos decían `mapa · src`. Tercer fichero en escena: un `mapa.html` del 2-ago, obsoleto,
+confundiendo — el pie con procedencia existe justo para eso, pero solo si alguien lo abre.
+
+Lo positivo del mismo episodio: el frío funcionó — gb pintó 20 módulos de un repo ajeno sin
+configurar nada, rápido y sin errores.
+
+**Propuesta (pendiente de decisión):** al escribir `--html`, decir en la salida que es EL mapa
+unificado (p. ej. «el mismo lienzo que produce gb graph/symbols --html: un fichero por proyecto
+evita copias que envejecen»), y valorar si `graph --html` y `symbols --html` deben seguir siendo
+dos puertas. No se cablea nada por repo (regla 6): es cuestión de qué dice la herramienta, no de
+adivinar rutas.
+
 ## 2026-08-07 · La sonda del caso caro: la consola CUMPLE su promesa — y el aviso se adopta solo
 
 La mitad no demostrada del proyecto era la promesa fundacional: «te dice dónde y con qué estado,
