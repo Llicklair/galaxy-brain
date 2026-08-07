@@ -2,12 +2,9 @@ node_modules/
 dist/
 *.log
 
-# Del arnés de proyecto viaja lo compartible (.claude/actas); lo local de cada
-# máquina y lo transitorio de las tiradas, no. settings.json se ignora POR AHORA:
-# mezcla los hooks del arnés (portables) con permissions acumuladas de esta
-# máquina (ruta absoluta dentro), y el clasificador impide limpiarlo desde el
-# agente — el día que se limpie a mano, quitar esta línea y commitearlo.
-.claude/settings.json
+# Del arnés de proyecto viaja lo compartible (.claude/settings.json con los
+# hooks, .claude/actas); lo local de cada máquina (settings.local.json) y lo
+# transitorio de las tiradas, no.
 .claude/settings.local.json
 .claude/worktrees/
 .env
