@@ -114,3 +114,31 @@ def test_el_contexto_cuenta_las_capturas_sin_leer(tmp_path):
     assert cli._capturas_sin_leer(root) == 1
     store.mark_read(registro["id"], project=root)
     assert cli._capturas_sin_leer(root) == 0
+
+
+def test_init_engancha_el_precommit_solo(tmp_path):
+    """La conexion no se sugiere: se hace. 'Acuerdate del git config' fallo en
+    uso real el mismo dia que se estreno el arnes (7-ago: hook creado, inactivo,
+    y lo tuvo que sugerir el LLM — la norma va en el defecto, no en el prompt)."""
+    root = _repo(tmp_path)
+    hechos = {h["path"]: h["action"] for h in floor.scaffold(root)}
+    assert hechos["core.hooksPath"] == "enganchado"
+    salida = subprocess.run(["git", "config", "core.hooksPath"], cwd=root,
+                            capture_output=True, text=True)
+    assert salida.stdout.strip() == ".githooks"
+
+    # idempotente: la segunda pasada lo encuentra hecho
+    hechos = {h["path"]: h["action"] for h in floor.scaffold(root)}
+    assert hechos["core.hooksPath"] == "ya-enganchado"
+
+
+def test_init_respeta_un_hookspath_ajeno(tmp_path):
+    """Nunca pisar: si el proyecto ya enruta sus hooks a otro sitio, gb no se
+    lo roba — lo dice, y la pista manual queda solo para este caso."""
+    root = _repo(tmp_path)
+    subprocess.run(["git", "config", "core.hooksPath", "mis-hooks"], cwd=root, check=True)
+    hechos = {h["path"]: h["action"] for h in floor.scaffold(root)}
+    assert hechos["core.hooksPath"] == "respetado: mis-hooks"
+    salida = subprocess.run(["git", "config", "core.hooksPath"], cwd=root,
+                            capture_output=True, text=True)
+    assert salida.stdout.strip() == "mis-hooks"

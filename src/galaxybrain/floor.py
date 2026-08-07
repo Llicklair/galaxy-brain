@@ -491,6 +491,26 @@ def scaffold(root):
             hechos.append({"path": rel, "action": "creado"})
         except OSError as error:
             hechos.append({"path": rel, "action": "error: %s" % error})
+
+    # El enganche, AUTOMATICO: un pre-commit sin core.hooksPath es decoracion, y
+    # "acuerdate del git config" fallo en uso real el mismo dia que se estreno el
+    # arnes (7-ago: el hook existia, inactivo, y lo tuvo que sugerir el LLM — la
+    # inversion exacta de la norma-en-el-defecto). --init ES el si explicito del
+    # usuario; la salvaguarda es no pisar: un hooksPath ajeno se respeta y se dice.
+    from . import graph as graph_mod
+
+    if graph_mod._git(root, "rev-parse", "--git-dir") is None:
+        hechos.append({"path": "core.hooksPath", "action": "sin-git"})
+    else:
+        actual = (graph_mod._git(root, "config", "core.hooksPath") or "").strip()
+        if actual == ".githooks":
+            hechos.append({"path": "core.hooksPath", "action": "ya-enganchado"})
+        elif actual:
+            hechos.append({"path": "core.hooksPath", "action": "respetado: %s" % actual})
+        elif graph_mod._git(root, "config", "core.hooksPath", ".githooks") is not None:
+            hechos.append({"path": "core.hooksPath", "action": "enganchado"})
+        else:
+            hechos.append({"path": "core.hooksPath", "action": "no-pude"})
     return hechos
 
 

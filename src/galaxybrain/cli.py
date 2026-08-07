@@ -1608,8 +1608,11 @@ def cmd_floor(args):
             return 1
         for hecho in floor.scaffold(root):
             emit("  %-9s %s" % (hecho["action"], hecho["path"]))
-            if hecho["path"].endswith("pre-commit") and hecho["action"] == "creado":
-                emit("            enganchalo una vez: git config core.hooksPath .githooks")
+            # El enganche es automatico desde el 7-ago; la pista solo queda para
+            # los casos en que NO se pudo o no se debio (hooksPath ajeno).
+            if hecho["path"] == "core.hooksPath" and hecho["action"].startswith(("respetado", "no-pude", "sin-git")):
+                emit("            el pre-commit de gb queda SIN enganchar; a mano: "
+                     "git config core.hooksPath .githooks")
         emit("")
     report = floor.analyze(root, run_tests=args.time)
     if args.json:
