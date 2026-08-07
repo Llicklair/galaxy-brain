@@ -10,6 +10,27 @@ mismo detalle que los positivos, o más.
 
 ---
 
+## 2026-08-07 · El sello «+sin-commitear» con árbol limpio, RESUELTO — y no era el EOL: era Heisenberg
+
+El reporte confirmó la reproducción con datos de campaña (`git ls-files --eol`: 91 ficheros i/lf
+w/crlf, porcelain vacío) e hipotetizó EOL. La pista era real como estado del repo pero **no era la
+causa**: `_procedencia` ya pregunta a `git status --porcelain` — el camino correcto — y el sucio
+era NUESTRO. El `with open(destino + .tmp)` se abría ANTES de evaluar el render que computa el
+sello, así que cuando el sello preguntaba a git, el propio temporal del mapa ya existía como
+untracked (y `mapa.html.tmp-<pid>` no casa con la línea `mapa.html` del ignore). **El sello se
+ensuciaba a sí mismo al medir.** Explica las tres reproducciones: todas durante una regeneración.
+
+Cura: renderizar ANTES de abrir el temporal, en los tres sitios que escriben el mapa. Verificado en
+limpio con espía sobre `_git` (porcelain vacío en las tres sondas, sello sin `+`). Doble ración de
+Heisenberg durante la caza: el primer espía se metió DENTRO del repo y se delató a sí mismo como
+`?? espia.py`; y el primer test acusaba a un mapa limpio porque `sin-commitear` (sin el `+`)
+también vive en un comentario JS del template.
+
+Y la segunda mitad del reporte, curada aparte: `floor --init` añadía líneas LF a un `.gitignore`
+CRLF (w/mixed) — el olfato del EOL va ahora en bytes (leer en texto traduce los `\r\n` antes de
+poder verlos, la trampa dentro de la trampa) y `newline=""` al escribir: el EOL lo decide el
+fichero, no la plataforma.
+
 ## 2026-08-07 · El balance de una sesión real completa — qué es gb cuando se usa de verdad
 
 Reporte íntegro de la sesión del otro repo (sin tocar gb). **Dónde ayudó, medido:** (1) el mapa
