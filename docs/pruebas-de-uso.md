@@ -10,6 +10,33 @@ mismo detalle que los positivos, o más.
 
 ---
 
+## 2026-08-07 · El balance de una sesión real completa — qué es gb cuando se usa de verdad
+
+Reporte íntegro de la sesión del otro repo (sin tocar gb). **Dónde ayudó, medido:** (1) el mapa
+señaló el problema que abrió la sesión (los módulos sueltos destaparon los artefactos de pytest y,
+de rebote, el bug del .gitignore del propio gb); (2) el embudo de `gb list` fue el plan de trabajo
+— el aviso de arranque dio la primera tarea y cada firma (fichero:línea, conteo, antigüedad) fue un
+repro concreto para verificar el cierre de 5 barridos: «está arreglado, medido» en vez de «creo»;
+(3) `gb show` con locales diagnosticó el OSError del pipe sin repro manual; (4) las fronteras
+hicieron VERIFICABLE un diseño (19 reglas nuevas, 203→222, vigiladas por el gate en cada commit);
+(5) el pre-commit compuesto bloqueó de facto commitear roto un refactor de 16 ficheros, y la onda
+(«14 símbolos, max 14 llamantes») dio un resumen de blast-radius que antes no existía.
+
+**Dónde NO ayudó, y es identidad, no fallo:** los bugs nuevos del día no los encontró gb — salieron
+de barrido activo. gb documenta crashes que ocurren y verifica cierres; no encuentra lo que aún no
+ha ocurrido. Es la regla 2 (reporta hechos, no juzga): el detector proactivo de clases de error es
+otra herramienta y se integra por referencia (ast-grep/semgrep, capas ortogonales). La frase del
+reporte que resume el producto: **«yo barro, él captura y los gates sellan — commits con evidencia
+en vez de commits con fe».**
+
+**Fricción reportada y curada en el acto:** «mapa.html baila en el worktree cada 3 segundos» — gb
+escribía el artefacto derivado sin excluirlo de git. `floor --init` garantiza ahora la línea
+`mapa.html` en el `.gitignore` (aditiva, idempotente, jamás pisa; una ruta distinta que contiene el
+nombre no cuenta como cubierta). En repos donde ya está trackeado hace falta además el
+`git rm --cached mapa.html` — decisión de cada repo. **Pendiente anotado:** el sello
+`+sin-commitear` con árbol limpio (hipótesis EOL/autocrlf; ese repo no tiene `.gitattributes`) — se
+verifica allí antes de tocar nada aquí.
+
 ## 2026-08-07 · La consola se capturó a sí misma — y el criterio de la familia se completa: 3/3
 
 `emit()` reventaba con `OSError [Errno 22]` cuando el consumidor del pipe cerraba antes
