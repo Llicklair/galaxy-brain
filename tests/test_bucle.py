@@ -18,6 +18,15 @@ _spec = importlib.util.spec_from_file_location("bucle", _RUTA)
 bucle = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(bucle)
 
+# El banco de replay, por ruta y apuntado a ESTA instancia del orquestador: sin
+# esto cada uno cargaria la suya y la prueba de mutacion no llegaria al codigo
+# que corre (bucle/ no es paquete: `import bucle` cae en un namespace package).
+_RUTA_REPLAY = os.path.join(os.path.dirname(__file__), "..", "bucle", "replay.py")
+_spec_r = importlib.util.spec_from_file_location("replay_del_banco", _RUTA_REPLAY)
+replay = importlib.util.module_from_spec(_spec_r)
+_spec_r.loader.exec_module(replay)
+replay.bucle = bucle
+
 
 # --- interpretar: coordinada vs rescatada ------------------------------------
 
@@ -378,3 +387,103 @@ def test_los_modos_de_despacho_son_excluyentes():
         raise AssertionError("argparse debia rechazar los modos combinados")
     except SystemExit as e:
         assert e.code == 2
+
+
+# --- el banco de replay: el verificador contra las tiradas ya vividas ---------
+
+
+def _repo_con_tirada(tmp_path):
+    """Un repo real con el caso del banco: A rompe la firma, B llama a la vieja.
+    Devuelve (root, diff, hecho) — el diff tal y como lo guarda un acta."""
+    import subprocess
+
+    root = str(tmp_path / "repo")
+    os.makedirs(os.path.join(root, "tests"), exist_ok=True)
+    def escribe(rel, texto):
+        ruta = os.path.join(root, *rel.split("/"))
+        os.makedirs(os.path.dirname(ruta), exist_ok=True)
+        with open(ruta, "w", encoding="utf-8") as fh:
+            fh.write(texto)
+
+    subprocess.run(["git", "init", "-q"], cwd=root, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.email", "t@t"], cwd=root, check=True)
+    subprocess.run(["git", "config", "user.name", "t"], cwd=root, check=True)
+    escribe("nucleo.py", "def calcula(a, b):\n    return a * 10 + b\n")
+    escribe("tests/test_uso.py", "from nucleo import calcula\n")
+    subprocess.run(["git", "add", "-A"], cwd=root, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-q", "-m", "base"], cwd=root, check=True,
+                   capture_output=True)
+    # A rompe el contrato y B escribe contra la firma VIEJA
+    escribe("nucleo.py", "def calcula(a, b, base):\n    return a * base + b\n")
+    escribe("tests/test_uso.py", "from nucleo import calcula\n\n\ndef test_x():\n"
+                                 "    assert calcula(3, 4) == 34\n")
+    subprocess.run(["git", "add", "-N", "."], cwd=root, check=True, capture_output=True)
+    diff = subprocess.run(["git", "diff", "HEAD"], cwd=root, check=True,
+                          capture_output=True).stdout.decode("utf-8", "replace")
+    return root, diff, "nucleo.calcula: (a, b) -> (a, b, base)"
+
+
+def test_el_banco_reproduce_una_infraccion_grabada(tmp_path):
+    """El banco rehace el arbol desde los blobs del diff (cat-file) y corre EL
+    verificador de verdad — cero cuota, cero agentes."""
+    root, diff, hecho = _repo_con_tirada(tmp_path)
+    acta = {
+        "inicio": "sintetica",
+        "tareas": ["B"],
+        "entregas": {"B": [hecho]},
+        "diffs": {"B": diff},
+        "adopcion": {"B": ["tests/test_uso.py:5: ..."]},
+        "pasos": ["adopcion de B: 1 llamada(s) contra la señal"],  # rechazo, sin reintento
+    }
+    (fila,) = replay.replay_acta(acta, root=root)
+    assert fila["irrecuperables"] == []
+    assert len(fila["obtenido"]) == 1
+    assert "tests/test_uso.py:5" in fila["obtenido"][0]
+
+
+def test_el_banco_SE_PONE_ROJO_si_el_verificador_se_rompe(tmp_path, monkeypatch):
+    """La prueba de que el banco sirve: mutar el verificador para que deje
+    escapar la infraccion tiene que hacerlo FALLAR. Un banco que no puede
+    ponerse rojo no esta midiendo nada."""
+    root, diff, hecho = _repo_con_tirada(tmp_path)
+    acta = {
+        "inicio": "sintetica",
+        "tareas": ["B"],
+        "entregas": {"B": [hecho]},
+        "diffs": {"B": diff},
+        "adopcion": {"B": ["tests/test_uso.py:5: no encaja"]},
+        "pasos": ["adopcion de B: 1 llamada(s) contra la señal"],
+    }
+    (sano,) = replay.replay_acta(acta, root=root)
+    assert sano["ok"] is True or len(sano["obtenido"]) == 1
+
+    monkeypatch.setattr(bucle, "firma_admite", lambda *a, **k: True)  # el verificador, ciego
+    (roto,) = replay.replay_acta(acta, root=root)
+    assert roto["obtenido"] == []
+    assert roto["ok"] is False  # falso negativo cazado por el banco
+
+
+def test_la_verdad_de_campo_sale_de_los_pasos_del_acta():
+    """El acta anota las infracciones del PRIMER intento y guarda el diff FINAL:
+    cual de los dos toca lo dicen los pasos, no una suposicion."""
+    limpio = {"adopcion": {"B": ["x"]},
+              "pasos": ["adopcion de B: 1", "reintento de B por adopcion: limpio"]}
+    assert replay.esperado_del_final(limpio, "B") == []
+
+    quedan = {"adopcion": {"B": ["vieja", replay.MARCA_REINTENTO, "sigue"]},
+              "pasos": ["adopcion de B: 1", "reintento de B por adopcion: 1 infraccion(es) aun"]}
+    assert replay.esperado_del_final(quedan, "B") == ["sigue"]
+
+    sin_reintento = {"adopcion": {"B": ["vieja"]}, "pasos": ["adopcion de B: 1"]}
+    assert replay.esperado_del_final(sin_reintento, "B") == ["vieja"]
+
+    nunca = {"adopcion": {}, "pasos": ["lanzada B (1 hecho(s) en el despacho)"]}
+    assert replay.esperado_del_final(nunca, "B") == []
+
+
+def test_los_hechos_del_replay_incluyen_la_señal_RETENIDA():
+    """Los brazos sin señal preventiva retienen los hechos: el banco tiene que
+    verificar con ellos igual, o los daria todos por limpios."""
+    acta = {"entregas": {"B": ["(rechazo por adopcion)"]},
+            "senal_retenida": {"B": ["nucleo.calcula: (a, b) -> (a, b, base)"]}}
+    assert replay.hechos_de(acta, "B") == ["nucleo.calcula: (a, b) -> (a, b, base)"]

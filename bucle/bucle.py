@@ -150,13 +150,14 @@ def firma_admite(sig_texto, n_posicionales, nombres_kw, posible_metodo=False):
     return False
 
 
-def lineas_anadidas(worktree):
-    """fichero -> lineas nuevas segun `git diff HEAD -U0` del worktree. El
-    `add -N` mete los ficheros recien creados en el diff sin stagearlos."""
-    _corre(["git", "add", "-N", "."], cwd=worktree)
-    rc, salida, _ = _corre(["git", "diff", "HEAD", "-U0"], cwd=worktree)
+def lineas_de_diff(texto):
+    """fichero -> numeros de linea del lado NUEVO, leidos de las cabeceras @@.
+
+    Vive aparte para que el banco de replay (replay.py) lea un diff GUARDADO
+    con este mismo parser: un banco que reimplementa lo que valida no valida
+    nada."""
     mapa, fichero = {}, None
-    for linea in _texto(salida).splitlines():
+    for linea in texto.splitlines():
         if linea.startswith("+++ b/"):
             fichero = linea[6:].strip()
         elif linea.startswith("+++ "):
@@ -169,11 +170,22 @@ def lineas_anadidas(worktree):
     return mapa
 
 
-def llamadas_contra_firma_vieja(worktree, hechos):
+def lineas_anadidas(worktree):
+    """fichero -> lineas nuevas segun `git diff HEAD -U0` del worktree. El
+    `add -N` mete los ficheros recien creados en el diff sin stagearlos."""
+    _corre(["git", "add", "-N", "."], cwd=worktree)
+    _rc, salida, _err = _corre(["git", "diff", "HEAD", "-U0"], cwd=worktree)
+    return lineas_de_diff(_texto(salida))
+
+
+def llamadas_contra_firma_vieja(worktree, hechos, lineas=None):
     """Las llamadas AÑADIDAS por el agente que no encajan en la firma nueva del
     hecho entregado — la verificacion de adopcion de v1: estatica, sin modelo,
     antes de la union. Devuelve las infracciones (fichero:linea y por que), no
-    un veredicto: son la señal exacta del rechazo. `*args`/`**kw` no se acusan."""
+    un veredicto: son la señal exacta del rechazo. `*args`/`**kw` no se acusan.
+
+    `lineas` (fichero -> nums) se inyecta para replayar un diff ya grabado
+    contra un arbol reconstruido; por defecto se derivan del worktree vivo."""
     objetivos = {}
     for hecho in hechos:
         try:
@@ -185,7 +197,8 @@ def llamadas_contra_firma_vieja(worktree, hechos):
     if not objetivos:
         return []
     infracciones = []
-    for fichero, lineas in sorted(lineas_anadidas(worktree).items()):
+    mapa_lineas = lineas_anadidas(worktree) if lineas is None else lineas
+    for fichero, lineas in sorted(mapa_lineas.items()):
         if not fichero.endswith(".py"):
             continue
         try:
