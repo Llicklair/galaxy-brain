@@ -62,13 +62,41 @@ def _is_nested_project(path):
     return any(os.path.exists(os.path.join(path, marker)) for marker in PROJECT_MARKERS)
 
 
+def _py_no_ignorados(root):
+    """Los .py que el proyecto NO ignora, según su propio git: `ls-files -co
+    --exclude-standard` = trackeados + nuevos sin trackear, MENOS lo que el
+    .gitignore excluye. Es el hecho declarado del proyecto (regla 6), no la
+    lista cableada — que queda de cinturón para repos sin git (devuelve None y
+    el walker no cambia). `-z` para que el quoting de git no esconda rutas con
+    acentos. Un subprocess por analyze (~30 ms, dentro de presupuesto); el tick
+    del watch no pasa por aquí.
+
+    Feedback de uso real (7-ago): un repo con `pytest-of-*/` y `tmp*/` en su
+    .gitignore los vio pintados como módulos sueltos — mapa inflado y
+    desincronizado en cuanto pytest rotaba sus temporales. Ojo al matiz que
+    hace mal `ls-files` a secas: los módulos nuevos sin trackear DEBEN verse
+    (la capa de obra y la actividad viven de ellos); lo que sobra es solo lo
+    ignorado.
+    """
+    salida = _git(root, "ls-files", "-co", "--exclude-standard", "-z")
+    if salida is None:
+        return None
+    permitidos = set()
+    for linea in salida.split("\0"):
+        if linea.endswith(".py"):
+            permitidos.add(os.path.normcase(os.path.abspath(os.path.join(root, linea))))
+    return permitidos
+
+
 def _iter_py_files(root, skip, include_nested=False, skipped=None):
     """Los .py de ESTE proyecto bajo `root`.
 
-    Poda los subproyectos anidados (ver PROJECT_MARKERS) salvo `include_nested`.
-    Lo podado se acumula en `skipped` para poder DECIRLO: una gate que reduce su
-    cobertura en silencio miente en verde, que es justo lo que no puede pasar.
+    Poda los subproyectos anidados (ver PROJECT_MARKERS) salvo `include_nested`,
+    y respeta el .gitignore del proyecto (ver _py_no_ignorados). Lo podado se
+    acumula en `skipped` para poder DECIRLO: una gate que reduce su cobertura en
+    silencio miente en verde, que es justo lo que no puede pasar.
     """
+    permitidos = _py_no_ignorados(root)
     for dirpath, dirnames, filenames in os.walk(root):
         keep = []
         for name in dirnames:
@@ -82,8 +110,12 @@ def _iter_py_files(root, skip, include_nested=False, skipped=None):
             keep.append(name)
         dirnames[:] = keep
         for name in filenames:
-            if name.endswith(".py"):
-                yield os.path.join(dirpath, name)
+            if not name.endswith(".py"):
+                continue
+            full = os.path.join(dirpath, name)
+            if permitidos is not None and os.path.normcase(os.path.abspath(full)) not in permitidos:
+                continue  # lo ignora el .gitignore del proyecto: basura temporal
+            yield full
 
 
 def module_name(path, root):

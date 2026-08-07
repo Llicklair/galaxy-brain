@@ -168,3 +168,32 @@ def test_cli_graph_gate_falla_con_ciclo_y_pasa_sin_el(tmp_path):
 
     assert cli.main(["graph", root, "--gate", "--color", "never"]) == 1  # ciclo -> gate falla
     assert cli.main(["graph", root, "--color", "never"]) == 0            # por defecto solo muestra
+
+
+def test_el_gitignore_del_proyecto_manda_sobre_el_walker(tmp_path):
+    """Feedback de uso real (7-ago): pytest-of-*/ y tmp*/ IGNORADOS por el
+    .gitignore del proyecto salian pintados como modulos sueltos — mapa inflado
+    y desincronizado al rotar los temporales. El .gitignore es el hecho
+    declarado (regla 6); la lista cableada queda de cinturon para repos sin
+    git. Y el matiz que importa: lo NUEVO sin trackear SI se ve (la obra y la
+    actividad viven de ello) — solo sobra lo ignorado."""
+    import subprocess
+
+    root = str(tmp_path / "repo")
+    os.makedirs(root, exist_ok=True)
+    subprocess.run(["git", "init", "-q"], cwd=root, check=True, capture_output=True)
+    _write(root, ".gitignore", "basura/\n")
+    _write(root, "real.py", "X = 1\n")
+    _write(root, "nuevo.py", "Y = 2\n")  # sin trackear, NO ignorado: debe verse
+    _write(root, "basura/tmpmod.py", "Z = 3\n")  # ignorado: fuera del mapa
+
+    report = graph.analyze(root)
+    assert "real" in report["fan_in"]
+    assert "nuevo" in report["fan_in"]
+    assert not any("basura" in m for m in report["fan_in"])
+
+    # sin git no hay hecho que leer: se indexa todo, como siempre
+    # (hermano del repo, no dentro — o el .gitignore del padre lo alcanzaria)
+    suelto = str(tmp_path / "sin-git")
+    _write(suelto, "basura/tmpmod.py", "Z = 3\n")
+    assert any("basura" in m for m in graph.analyze(suelto)["fan_in"])
