@@ -213,17 +213,27 @@ def context(project: str | None = None) -> str | None:
     out = [
         "# galaxy-brain global memory (cross-repo) — recall more with `gb memory recall <query>`",
         "",
+        # El ancla contra la mezcla (pedido por Marcos, 7-ago): estas notas
+        # viajan entre repos, y una que hable de OTRO proyecto inyectada aqui se
+        # leia como si fuera de este. Se dice el proyecto abierto, se declara la
+        # regla de lectura, y las ajenas del indice van marcadas.
+        "PROYECTO ABIERTO: %s. Estas notas son del usuario/maquina y viajan entre "
+        "repos: cuando una nombra un repositorio, habla de ESE repositorio — no lo "
+        "confundas con el abierto." % (proj or "(sin proyecto)"),
+        "",
         "Index (" + str(len(notes)) + " note(s)):",
     ]
     for n in notes:
-        out.append(f"- {n.name} [{n.scope}] — {n.description}")
+        ajena = n.scope.startswith("project:") and n.scope != "project:" + proj
+        marca = " (OTRO repo)" if ajena else ""
+        out.append(f"- {n.name} [{n.scope}]{marca} — {n.description}")
     avisos = _aviso_rotas(notes)
     if avisos:
         out.append("")
         out.extend(avisos)
     if full:
         out.append("")
-        out.append("Loaded in full (always + this project):")
+        out.append("Loaded in full (always + proyecto abierto '%s'):" % (proj or "?"))
         for n in full:
             out.append("")
             out.append(f"### {n.name}  [{n.type}/{n.scope}]")

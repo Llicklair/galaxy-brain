@@ -270,3 +270,20 @@ def test_la_nota_en_mayusculas_no_es_invisible(vault):
     (vault / "GRITADA.MD").write_text("---\nname: gritada\n---\n\ncuerpo\n",
                                       encoding="utf-8")
     assert [n.name for n in memory.all_notes()] == ["gritada"]
+
+
+def test_context_ancla_el_proyecto_y_marca_las_notas_ajenas(vault):
+    """Las notas viajan entre repos y una que hable de OTRO proyecto se leia
+    como si fuera del abierto (pedido en uso real, 7-ago). El payload declara
+    el proyecto abierto, la regla de lectura, y marca las ajenas del indice."""
+    write_note(vault, "de-aqui", description="del proyecto demo", scope="project:demo")
+    write_note(vault, "de-otro", description="de otro repo", scope="project:ajeno")
+    write_note(vault, "siempre", description="identidad", scope="always")
+
+    payload = memory.context(project="demo")
+    assert "PROYECTO ABIERTO: demo" in payload
+    assert "habla de ESE repositorio" in payload
+    assert "- de-otro [project:ajeno] (OTRO repo)" in payload
+    assert "- de-aqui [project:demo] —" in payload      # la propia, sin marca
+    assert "proyecto abierto 'demo'" in payload          # el full tambien ancla
+    assert "de otro repo" in payload                      # el indice la lista igual
