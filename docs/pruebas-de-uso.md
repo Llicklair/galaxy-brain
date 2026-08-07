@@ -10,6 +10,29 @@ mismo detalle que los positivos, o más.
 
 ---
 
+## 2026-08-07 · «Fracaso absoluto»: el grafo desplegado y CERO actividad visible — el mapa no tenía pulso
+
+Feedback de uso real, segunda ronda del otro repo: una sesión entera de trabajo de verdad (barrido
+de CLI, 3 bugs reales, 6 commits) con el mapa abierto — y la capa de actividad a cero todo el rato.
+El panel encima mentía: «aparecerán en cuanto un agente toque el árbol», y el agente tocó el árbol
+toda la noche.
+
+Diagnóstico, y no es el de anoche: la actividad **ya sabía** pintar la sesión directa (el árbol
+principal con cambios sin commitear cuenta como agente en `instantanea`), y los eventos se derivan
+comparando instantáneas entre recargas. Lo que no hubo fue **pulso**: nadie lanzó un watch en ese
+repo, el mapa se regeneró UNA vez al final (todo ya commiteado → 0 obra, 0 agentes, 0 eventos, por
+definición), y el HTML abierto recargaba un fichero que nadie refrescaba. La ironía: `--fondo`
+existía exactamente para esto — su docstring dice «para el hook de SessionStart» — y nunca se
+cableó en la plantilla del arnés.
+
+Cura: (1) `floor --init` añade al arnés de proyecto el hook de SessionStart
+`gb symbols --html --watch --fondo --refresco 3` — vuelve al instante, el candado evita duplicados
+entre sesiones, borrar el mapa lo apaga, y con la convención nueva escribe LA referencia de la
+raíz: **mapa vivo de serie en cualquier repo con arnés, sin acordarse de nada**; (2) el texto del
+panel vacío deja de mentir: dice que hacen falta DOS cosas — trabajo en el árbol Y el mapa
+latiendo. Límite honesto: `--init` nunca pisa un settings existente, así que los repos ya
+scaffoldeados (el del feedback) tienen que añadir el hook a mano o re-init sin settings.
+
 ## 2026-08-07 · Feedback de uso real (otro repo): dos puertas al mismo mapa fabrican dos mapas
 
 En el arranque en frío sobre otro proyecto, la sesión de allí generó `grafo-modulos.html` con
