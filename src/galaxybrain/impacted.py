@@ -34,6 +34,22 @@ FICHEROS_GLOBALES = ("conftest.py", "pytest.ini", "tox.ini", "setup.cfg", "pypro
 MARCAS_OPACAS = ("subprocess", "Popen", "runpy", "os.system", "os.spawn", "multiprocessing")
 
 
+def _sin_licencia_para_estrechar(grafo):
+    """Los lenguajes del informe que NO pueden estrechar la seleccion, o "".
+
+    Solo aplica al motor multilenguaje, que declara `lenguajes` en su informe. La
+    via Python no lo declara y no se toca: es el motor maduro, con su propio
+    banco (42/42 sin verdes falsos) y su propia caida segura.
+    """
+    presentes = grafo.get("lenguajes")
+    if not presentes:
+        return ""
+    from . import lenguajes as tabla
+
+    faltan = [i for i in presentes if not tabla.LENGUAJES.get(i, {}).get("tia")]
+    return ", ".join(sorted(faltan))
+
+
 def _es_test(qual, nodo):
     """Un test que pytest COLECCIONA de verdad.
 
@@ -212,6 +228,17 @@ def analyze(root, rev_range=None, staged=False, worktree=False, skip=None,
         report["todo"] = True
         report["motivo"] = motivo
         return report
+
+    # Estrechar exige LICENCIA. Un grafo de llamadas incompleto no cuesta ahorro,
+    # cuesta un verde falso: si falta una arista, los tests que llegaban por ahi
+    # se caen de la seleccion y la suite reducida pasa con el arbol roto. Solo
+    # los lenguajes cuyo banco lo midio con rojos reales la tienen (ADR 0009,
+    # criterio de aborto 1); el resto corre entero y se dice por que.
+    sin_licencia = _sin_licencia_para_estrechar(grafo)
+    if sin_licencia:
+        return correr_todo(
+            "%s: su grafo de llamadas no esta medido lo bastante completo como para "
+            "estrechar sin arriesgar un verde falso, asi que se corre todo" % sin_licencia)
 
     if worktree:
         # Lo que hay escrito en disco y todavia no esta en el indice: el estado

@@ -228,11 +228,23 @@ def _es_cabecera(line, section):
             or re.match(r"^[ab]/", target) is not None)
 
 
-#: Extensiones de código fuente que el diff puede mapear a símbolos. `.py` es la
-#: vía de la stdlib; el resto llegó con el motor de JS/TS (ADR 0009). Vive aquí y
-#: no en cada llamador para que añadir un lenguaje sea UNA línea, no una caza por
-#: el repo — que es como se queda un filtro desincronizado del motor que lo usa.
-EXTENSIONES_FUENTE = (".py", ".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx")
+def _extensiones_fuente():
+    """Las extensiones que el diff puede mapear a símbolos: `.py` de la vía de la
+    stdlib más las que declare la tabla multilenguaje (ADR 0009).
+
+    Se DERIVA en vez de escribirse. La primera versión era una lista a mano con
+    `.py` y las de JS, y al abrir el catálogo a 17 lenguajes se quedó vieja al
+    instante: el banco de Rust dio 0 % de ahorro porque ningún hunk de un `.rs`
+    entraba, y las 7 roturas caían a "corre la suite entera" — seguro y sin
+    valor. Es el mismo fallo que se acababa de arreglar en el aviso de frontera:
+    dos listas de lo mismo divergen, y la que se queda vieja miente en silencio.
+    """
+    from . import lenguajes
+
+    return tuple(sorted({".py"} | set(lenguajes.POR_EXTENSION)))
+
+
+EXTENSIONES_FUENTE = _extensiones_fuente()
 
 
 def _hunks_py(text, extensiones=EXTENSIONES_FUENTE):

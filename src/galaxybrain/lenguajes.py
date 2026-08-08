@@ -46,15 +46,40 @@ _COMUNES = frozenset(("print", "println", "printf", "len", "append", "make", "ne
 
 #: `$FN($$$)` casa cualquier invocación; decidir cuáles se pueden resolver es
 #: trabajo de después, con nombres. Casi todos los lenguajes lo comparten.
-LLAMADA = "$FN($$$)"
+LLAMADA = ("$FN($$$)",)
+
+#: Rust necesita más: el cuerpo de un macro es un árbol de TOKENS, no una
+#: expresión, así que `$FN($$$)` no ve `iva()` dentro de `assert!(iva() > 0.0)`
+#: — y el código de test idiomático en Rust es todo `assert_eq!`. Medido el
+#: 9-ago: sin esto, CERO aristas desde los tests y `gb tests` caía a la suite
+#: entera en las 7 roturas del banco. Los dos patrones extra son coincidencias
+#: de AST de verdad (ast-grep liga `$FN` dentro del macro), no rascado de texto:
+#: no pueden fabricar una arista que no exista.
+LLAMADA_RUST = ("$FN($$$)", "$M!($FN($$$), $$$)", "$M!($FN($$$))")
 
 
 def _lang(ag, extensiones, simbolos, imports=(), llamada=LLAMADA, globales=_COMUNES,
-          resolucion=None, sufijos_test=(), dirs_test=("test", "tests"), carencias=()):
+          resolucion=None, sufijos_test=(), dirs_test=("test", "tests"), carencias=(),
+          tia=False):
+    """Una entrada de la tabla.
+
+    `tia` es una LICENCIA, y por eso su defecto es False: dice que el grafo de
+    llamadas de este lenguaje se midió lo bastante completo como para ESTRECHAR
+    la selección de tests. Sin ella, `gb tests` corre la suite entera.
+
+    El motivo es que un grafo incompleto no cuesta ahorro, cuesta un verde falso:
+    si falta una arista, los tests que llegaban por ahí se caen de la selección y
+    la suite reducida pasa con el árbol roto. Se midió en Rust el 9-ago — la
+    llamada dentro de `format!("...", emitir(xs))` es invisible, y con ella se
+    caía `tests/informe` de los impactados por `iva`. No dio verde falso de puro
+    azar (todos los tests recorrían la cadena), y esa clase de suerte no se deja
+    suelta (ADR 0009, criterio de aborto 1).
+    """
     return {
         "ag": ag, "extensiones": extensiones, "simbolos": simbolos, "imports": imports,
         "llamada": llamada, "globales": globales, "resolucion": resolucion,
         "sufijos_test": sufijos_test, "dirs_test": dirs_test, "carencias": carencias,
+        "tia": tia,
     }
 
 
@@ -78,7 +103,7 @@ LENGUAJES = {
          ("class", "class $NAME { $$$ }")),
         ('import { $$$ } from "$SRC"', 'import $NAME from "$SRC"',
          'import * as $NAME from "$SRC"', 'import "$SRC"', 'require("$SRC")'),
-        globales=_JS_GLOBALES, resolucion="ruta",
+        globales=_JS_GLOBALES, resolucion="ruta", tia=True,
         sufijos_test=(".test", ".spec"), dirs_test=("test", "tests", "__tests__", "spec"),
     ),
     "ts": _lang(
@@ -95,7 +120,7 @@ LENGUAJES = {
          ("class", "export class $NAME { $$$ }"),
          ("class", "class $NAME { $$$ }")),
         ('import { $$$ } from "$SRC"', 'import $NAME from "$SRC"', 'import "$SRC"'),
-        globales=_JS_GLOBALES, resolucion="ruta",
+        globales=_JS_GLOBALES, resolucion="ruta", tia=True,
         sufijos_test=(".test", ".spec"), dirs_test=("test", "tests", "__tests__", "spec"),
     ),
     "tsx": _lang(
@@ -126,8 +151,11 @@ LENGUAJES = {
          ("function", "fn $NAME($$$) { $$$ }"),
          ("class", "pub struct $NAME { $$$ }")),
         ("use $SRC;",),
-        resolucion="paquete",
+        llamada=LLAMADA_RUST, resolucion="paquete",
         dirs_test=("tests",),
+        carencias=("las llamadas dentro de un macro solo se ven en las formas "
+                   "`m!(f(..))` y `m!(f(..), ..)`: el cuerpo de un macro es un arbol de "
+                   "tokens, no una expresion, asi que `assert!(f() > 0)` es invisible",),
     ),
     "java": _lang(
         "java", (".java",),
@@ -475,16 +503,22 @@ def analyze(root):
         modulos[nombre] = fichero
         por_fichero[os.path.abspath(fichero)] = (nombre, lang)
 
+    # La marca que lee la seleccion de tests, por FICHERO: significa "este nodo
+    # vive en algo que el runner colecciona". Va en el modulo Y en sus simbolos,
+    # y las dos mitades hacen falta: en JS el caso es una lambda anonima dentro
+    # de `test(...)` y la arista sale del modulo, pero en Rust `#[test] fn t()`
+    # es un simbolo con nombre y la arista sale de EL — marcando solo el modulo,
+    # la cadena llegaba a `tests.carrito.t`, no lo reconocia como test y el
+    # fichero se caia de la seleccion (medido montando el banco de Rust, 9-ago).
+    de_test = {}
     for nombre, fichero in sorted(modulos.items()):
         cfg = LENGUAJES[lenguaje_de(fichero)]
+        rel = os.path.relpath(fichero, root)
+        de_test[rel] = es_fichero_de_test(fichero, root, cfg)
         informe["nodes"].append({
             "qual": nombre, "kind": "module", "module": nombre, "doc": "",
-            "file": os.path.relpath(fichero, root), "line": 1, "end": None, "sig": "",
-            # La marca que lee la seleccion de tests. Va en el nodo del MODULO
-            # porque en casi ningun lenguaje el caso es un simbolo: suele ser una
-            # llamada dentro del fichero, y el fichero es lo unico que un runner
-            # sabe recibir.
-            "test": es_fichero_de_test(fichero, root, cfg),
+            "file": rel, "line": 1, "end": None, "sig": "",
+            "test": de_test[rel],
         })
 
     # --- simbolos ---
@@ -506,10 +540,11 @@ def analyze(root):
                     continue          # una definicion casa con varios patrones
                 vistos.add(clave)
                 qual = "%s.%s" % (modulo, nombre) if modulo else nombre
+                rel = os.path.relpath(fichero, root)
                 informe["nodes"].append({
                     "qual": qual, "kind": kind, "module": modulo, "doc": "",
-                    "file": os.path.relpath(fichero, root), "line": linea,
-                    "end": _fin(m), "sig": "",
+                    "file": rel, "line": linea, "end": _fin(m), "sig": "",
+                    "test": de_test.get(rel, False),
                 })
                 informe["edges"].append([modulo, qual, "DEFINES"])
                 definidos.setdefault(nombre, []).append(qual)
@@ -551,7 +586,19 @@ def analyze(root):
         cfg = LENGUAJES[lang]
         if not cfg["llamada"]:
             continue                    # declarado en `carencias`, no disimulado
-        for m in _corre(ruta_ag, cfg["llamada"], cfg["ag"], root):
+        # Varios patrones por lenguaje, deduplicando por (fichero, linea, nombre):
+        # una misma llamada puede casar con dos formas y contarla dos veces
+        # inflaria el denominador de resolucion.
+        vistas = set()
+        candidatas = []
+        for patron in cfg["llamada"]:
+            for m in _corre(ruta_ag, patron, cfg["ag"], root):
+                clave = (m.get("file"), _linea(m), _meta(m, "FN"))
+                if clave in vistas:
+                    continue
+                vistas.add(clave)
+                candidatas.append(m)
+        for m in candidatas:
             llamado = (_meta(m, "FN") or "").strip()
             fichero = os.path.abspath(os.path.join(root, m.get("file", "")))
             entrada = por_fichero.get(fichero)

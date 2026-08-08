@@ -167,6 +167,40 @@ def test_la_arista_de_import_sale_donde_la_resolucion_es_un_hecho(tmp_path, lang
     assert ("b", "a") in aristas, "%s: %s" % (lang, aristas)
 
 
+# --- la licencia para estrechar la seleccion de tests ------------------------
+
+
+def test_la_licencia_para_estrechar_es_opt_in():
+    """`tia` por defecto False. Un lenguaje nuevo NO puede estrechar el dia que
+    entra en la tabla: primero su banco con rojos reales, despues la licencia."""
+    from galaxybrain import lenguajes as tabla
+
+    concedidas = {i for i, cfg in tabla.LENGUAJES.items() if cfg["tia"]}
+    assert concedidas == {"js", "ts"}, (
+        "solo js/ts tienen banco medido (0 falsos verdes, cascada exacta, 52%% de "
+        "ahorro con node --test). Concedidas ahora: %s" % sorted(concedidas)
+    )
+
+
+def test_sin_licencia_la_seleccion_corre_todo_y_lo_dice():
+    """El contrato que evita el verde falso. Rust lo motivo: la llamada dentro de
+    `format!("...", emitir(xs))` es invisible, y con ella se caia un test de los
+    impactados — sin dar verde falso solo porque todos recorrian la cadena."""
+    from galaxybrain import impacted
+
+    assert impacted._sin_licencia_para_estrechar({"lenguajes": ["rust"]}) == "rust"
+    assert impacted._sin_licencia_para_estrechar({"lenguajes": ["js"]}) == ""
+    assert impacted._sin_licencia_para_estrechar({"lenguajes": ["js", "go"]}) == "go"
+
+
+def test_la_via_python_no_pasa_por_la_licencia():
+    """El motor maduro tiene su propio banco (42/42) y su propia caida segura:
+    su informe no declara `lenguajes` y no se toca."""
+    from galaxybrain import impacted
+
+    assert impacted._sin_licencia_para_estrechar({"nodes": [], "edges": []}) == ""
+
+
 @necesita_astgrep
 def test_un_import_de_terceros_no_fabrica_arista(tmp_path):
     """Un paquete externo no es codigo de este proyecto: su arista no diria nada
