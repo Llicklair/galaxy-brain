@@ -32,6 +32,27 @@ EXTENSIONES = {
 #: Directorios que nunca son código del proyecto.
 SKIP = frozenset(("node_modules", "dist", "build", "coverage", ".next", "out", "vendor"))
 
+#: Cómo se reconoce un fichero de test en JS/TS. La convención la conoce ESTE
+#: módulo, no la selección de tests: en JS los casos no son funciones nombradas
+#: sino llamadas a `test()`/`it()`, así que lo seleccionable es el fichero.
+#: Cubre lo que usan vitest, jest y `node --test` sin configurar nada.
+SUFIJOS_TEST = (".test", ".spec", "_test")
+DIRS_TEST = ("test", "tests", "__tests__", "spec")
+
+
+def es_fichero_de_test(ruta, raiz):
+    """¿Este fichero lo colecciona un runner de JS?
+
+    Mismo criterio que la vía Python y por el mismo motivo: seleccionar algo que
+    el runner NO colecciona devuelve "no tests ran", que en un gate se lee igual
+    de verde que "todo pasó".
+    """
+    rel = os.path.relpath(ruta, raiz).replace("\\", "/")
+    base = os.path.splitext(os.path.basename(rel))[0]
+    if base.endswith(SUFIJOS_TEST):
+        return True
+    return any(parte in DIRS_TEST for parte in os.path.dirname(rel).split("/"))
+
 #: Patrones de DEFINICIÓN. Se corren todos y se deduplica por (fichero, línea):
 #: `export function f(){}` casa tanto con el patrón exportado como con el simple,
 #: y contar dos veces el mismo símbolo inflaría el grafo.
@@ -137,6 +158,14 @@ def _meta(match, nombre):
 
 def _linea(match):
     return match.get("range", {}).get("start", {}).get("line", 0) + 1
+
+
+def _fin(match):
+    """Ultima linea del simbolo. NO es cosmetica: sin ella la seleccion de tests
+    no puede decidir si un hunk del diff cae DENTRO de una funcion, se queda sin
+    semillas y cae a "corre la suite entera" — seguro, pero con 0% de ahorro.
+    Medido en el banco de JS antes de ponerla: 7 de 7 roturas caian a todo."""
+    return match.get("range", {}).get("end", {}).get("line", 0) + 1
 
 
 # --- nombres de modulo ------------------------------------------------------
@@ -258,6 +287,10 @@ def analyze(root, lenguajes=("js", "ts")):
         informe["nodes"].append({
             "qual": nombre, "kind": "module", "module": nombre, "doc": "",
             "file": os.path.relpath(fichero, root), "line": 1, "end": None, "sig": "",
+            # La marca que lee la seleccion de tests. Va en el nodo del MODULO
+            # porque en JS el caso no es un simbolo: es una llamada dentro del
+            # fichero, y el fichero es lo unico que un runner sabe recibir.
+            "test": es_fichero_de_test(fichero, root),
         })
 
     por_fichero = {os.path.abspath(f): module_name(f, root) for f in ficheros}
@@ -284,7 +317,7 @@ def analyze(root, lenguajes=("js", "ts")):
                 informe["nodes"].append({
                     "qual": qual, "kind": kind, "module": modulo, "doc": "",
                     "file": os.path.relpath(fichero, root), "line": linea,
-                    "end": None, "sig": "",
+                    "end": _fin(m), "sig": "",
                 })
                 informe["edges"].append([modulo, qual, "DEFINES"])
                 definidos.setdefault(nombre, []).append(qual)
@@ -306,6 +339,23 @@ def analyze(root, lenguajes=("js", "ts")):
         informe["edges"].append([origen, destino, "IMPORTS"])
 
     # --- llamadas ---
+    # Los tramos de cada fichero, para saber DENTRO DE QUE simbolo cae una
+    # llamada. Sin esto la arista sale del modulo y la cadena transitiva se
+    # corta: `iva <- carrito` y ahi se acaba, porque nadie "llama" a un modulo.
+    # Medido en el banco: con aristas de modulo, romper `iva` seleccionaba 1 test
+    # de los 5 que dependen de el — no daba falso verde solo porque la rotura era
+    # dura, que es exactamente la clase de suerte que no se puede dejar suelta.
+    tramos = {}
+    for n in informe["nodes"]:
+        if n["kind"] != "module" and n.get("end"):
+            tramos.setdefault(n["file"], []).append((n["line"], n["end"], n["qual"]))
+
+    def _envuelve(rel, linea, modulo):
+        """El simbolo mas INTERNO que contiene esa linea, o el modulo si ninguno
+        (codigo a nivel de fichero: un import, una constante, un side effect)."""
+        dentro = [t for t in tramos.get(rel, []) if t[0] <= linea <= t[1]]
+        return min(dentro, key=lambda t: t[1] - t[0])[2] if dentro else modulo
+
     sin_resolver = {}
     for lenguaje in lenguajes_reales:
         for m in _corre(ruta, PATRON_LLAMADA, lenguaje, root):
@@ -334,7 +384,8 @@ def analyze(root, lenguajes=("js", "ts")):
                 sin_resolver["nombre-ambiguo"] = sin_resolver.get("nombre-ambiguo", 0) + 1
                 continue
             informe["calls_resolved"] += 1
-            informe["edges"].append([origen_mod, candidatos[0], "CALLS"])
+            origen = _envuelve(os.path.relpath(fichero, root), _linea(m), origen_mod)
+            informe["edges"].append([origen, candidatos[0], "CALLS"])
 
     informe["unresolved"] = sin_resolver
     informe["not_covered"] = [

@@ -1817,7 +1817,7 @@ def cmd_tests(args):
         return _corre_union(root)
 
     report = impacted.analyze(root, args.range, staged=args.staged,
-                              worktree=args.worktree)
+                              worktree=args.worktree, grafo=_analiza_simbolos(root))
     if args.json:
         emit(json.dumps(report, ensure_ascii=False, indent=2))
     else:

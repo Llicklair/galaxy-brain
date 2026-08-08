@@ -43,6 +43,13 @@ def _es_test(qual, nodo):
     — "no tests ran", que en un gate se lee igual de verde que "todo pasó".
     Ese detalle falseó la primera medición de esta idea.
     """
+    # Un motor puede MARCAR sus tests, y entonces manda su marca: en JS/TS los
+    # casos no son funciones nombradas sino llamadas a `test()`/`it()` dentro de
+    # un fichero, asi que el nodo que se puede seleccionar es el modulo. Quien
+    # conoce esa convencion es el motor, no este modulo — cablearla aqui obligaria
+    # a tocar la seleccion cada vez que entre un lenguaje (ADR 0009).
+    if nodo.get("test"):
+        return True
     if not qual.startswith("tests."):
         return False
     if nodo.get("kind") != "function":
@@ -160,7 +167,7 @@ def _simbolos_tocados(nodes, rangos):
 
 
 def analyze(root, rev_range=None, staged=False, worktree=False, skip=None,
-            include_nested=False):
+            include_nested=False, grafo=None):
     """Qué tests correr por lo que cambió, y por qué esos.
 
     Devuelve siempre `motivo` y `total`: la selección sin su motivo no se puede
@@ -184,8 +191,12 @@ def analyze(root, rev_range=None, staged=False, worktree=False, skip=None,
         report["range_error"] = "la raiz no existe o no es un directorio: %s" % root
         return report
 
-    grafo = symbols.analyze(root, skip=skip or symbols.DEFAULT_SKIP,
-                            include_nested=include_nested)
+    # `grafo` inyectable por la misma razon que `graph.analyze(constructor=...)`:
+    # la seleccion razona sobre nodos y aristas, no sobre un lenguaje, asi que
+    # quien elige motor es la CLI y este modulo no conoce a ninguno (ADR 0009).
+    if grafo is None:
+        grafo = symbols.analyze(root, skip=skip or symbols.DEFAULT_SKIP,
+                                include_nested=include_nested)
     if grafo.get("root_error"):
         report["range_error"] = grafo["root_error"]
         return report

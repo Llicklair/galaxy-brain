@@ -228,13 +228,23 @@ def _es_cabecera(line, section):
             or re.match(r"^[ab]/", target) is not None)
 
 
-def _hunks_py(text):
-    """{ruta: [(inicio, fin)]} de los hunks del diff, para TODOS los `.py`.
+#: Extensiones de código fuente que el diff puede mapear a símbolos. `.py` es la
+#: vía de la stdlib; el resto llegó con el motor de JS/TS (ADR 0009). Vive aquí y
+#: no en cada llamador para que añadir un lenguaje sea UNA línea, no una caza por
+#: el repo — que es como se queda un filtro desincronizado del motor que lo usa.
+EXTENSIONES_FUENTE = (".py", ".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx")
+
+
+def _hunks_py(text, extensiones=EXTENSIONES_FUENTE):
+    """{ruta: [(inicio, fin)]} de los hunks del diff, para TODO el código fuente.
 
     `parse_diff` mira solo ficheros de test porque su trabajo son las señales;
-    esto mira el rango `+c,d` de cada hunk en cualquier `.py`, que es lo que la
+    esto mira el rango `+c,d` de cada hunk en cualquier fuente, que es lo que la
     onda necesita. Un hunk de solo borrado (`+c,0`) toca el punto c: el símbolo
     alrededor sigue afectado aunque no haya líneas nuevas.
+
+    Conserva el nombre `_hunks_py` a propósito: lo llaman `impacted` y la onda, y
+    renombrarlo por cosmética es un diff grande sin un solo cambio de conducta.
     """
     rangos = {}
     actual = None
@@ -244,7 +254,7 @@ def _hunks_py(text):
             actual = None
             if target != "/dev/null":
                 ruta = re.sub(r"^b/", "", target)
-                if ruta.endswith(".py"):
+                if ruta.endswith(extensiones):
                     actual = rangos.setdefault(ruta, [])
             continue
         if actual is None:

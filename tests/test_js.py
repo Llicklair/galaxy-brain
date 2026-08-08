@@ -86,8 +86,13 @@ def test_resuelve_las_llamadas_que_puede_y_declara_el_resto(proyecto_js):
     informe = js.analyze(proyecto_js)
 
     llamadas = {(e[0], e[1]) for e in informe["edges"] if e[2] == "CALLS"}
-    assert ("factura", "carrito.total") in llamadas
-    assert ("carrito", "carrito.subtotal") in llamadas
+    # La arista sale de la FUNCION que llama, no de su modulo: si saliera del
+    # modulo la cadena transitiva se cortaria (nadie "llama" a un modulo) y la
+    # seleccion de tests perderia los impactos indirectos. Medido en el banco de
+    # JS: con aristas de modulo, romper el simbolo mas profundo seleccionaba 1
+    # test de los 5 que dependian de el.
+    assert ("factura.emitir", "carrito.total") in llamadas
+    assert ("carrito.total", "carrito.subtotal") in llamadas
     # y el techo, declarado igual que en Python (ADR 0008): `xs.reduce(...)`
     assert informe["unresolved"].get("atributo-de-variable")
     assert any("inventada" in linea for linea in informe["not_covered"])
@@ -199,6 +204,35 @@ def test_el_delta_no_soportado_se_declara_en_vez_de_ignorarse(proyecto_js):
     informe = cli._analiza_simbolos(proyecto_js, since="HEAD~1")
 
     assert any("--since" in linea for linea in informe["not_covered"])
+
+
+@necesita_astgrep
+def test_la_seleccion_de_tests_sigue_la_cadena_indirecta(tmp_path):
+    """Criterio 6, la parte que casi se cuela: el test que NO importa el simbolo
+    roto pero llega a el por un tercero.
+
+    En el banco con `node --test` esto da 0 falsos verdes y 52% de ahorro; aqui
+    se fija la propiedad estructural que lo hace posible, que es la unica que se
+    puede comprobar sin un runner de JS instalado.
+    """
+    from galaxybrain import impacted
+
+    root = str(tmp_path / "cadena")
+    _escribe(root, "src/iva.js", "export function iva() { return 0.21; }\n")
+    _escribe(root, "src/carrito.js",
+             'import { iva } from "./iva.js";\n'
+             "export function total(xs) { return xs * (1 + iva()); }\n")
+    _escribe(root, "test/carrito.test.js",
+             'import { total } from "../src/carrito.js";\ntest("t", () => total(1));\n')
+
+    informe = js.analyze(root)
+    nodes = {n["qual"]: n for n in informe["nodes"]}
+    llamantes = impacted._llamantes(informe["edges"])
+
+    # el test NO menciona `iva`, pero llega por carrito.total
+    alcanzan, _truncado = impacted.tests_que_alcanzan(nodes, llamantes, ["iva.iva"])
+    assert "carrito.test" in {q.rsplit(".", 1)[0] if "." in q else q for q in alcanzan} \
+        or any("carrito.test" in q for q in alcanzan), alcanzan
 
 
 @necesita_astgrep
