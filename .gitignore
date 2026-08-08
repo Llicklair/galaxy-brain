@@ -19,3 +19,12 @@ mapa*.html
 *.map.html
 *.html.tmp
 nube*.html
+
+# Temporales de las herramientas, en la raiz del repo: pytest (tmp_path), el
+# aterrizaje de `gb tests --union` y los mkdtemp de scripts que ponen TMPDIR
+# aqui. Sin esta linea ensucian `git status` y, antes del walker que respeta
+# .gitignore, entraban al grafo como modulos fantasma — el mismo caso que
+# reporto otro repo el 7-ago.
+pytest-of-*/
+gb-union-*/
+tmp*/
