@@ -21,13 +21,34 @@ material en el mismo segundo.
 
 | | |
 |---|---|
-| **Lenguaje** | Python. Uno. |
+| **Lenguaje (grafo)** | Python, con `ast` de la stdlib · JS/TS, con `ast-grep` **por referencia**. Dos motores. |
+| **Lenguaje (consola)** | Python. Uno. |
 | **Runtime** | Ejecución local. Uno. |
 | **Fallo (consola)** | Excepciones no capturadas. Uno. |
 
-Cualquier cuarto elemento en esa tabla es scope creep, no una mejora. La consola captura excepciones
-no capturadas; las familias de análisis (`graph`, `symbols`, `calls`, `check`, `tests`, `delta`,
-`floor`) leen fuente Python. Un solo lenguaje de punta a punta.
+Cualquier elemento nuevo en esa tabla es scope creep, no una mejora.
+
+#### Por qué el grafo lleva dos lenguajes y la consola uno
+
+No es una inconsistencia, son dos costes distintos. El grafo necesita **un parser**, y eso se integra
+por referencia sin tocar el resto ([regla 7](ARCHITECTURE.md)): el 74 % del código —el mapa, la CLI,
+el almacén, el suelo— opera sobre el grafo ya derivado y no se entera del lenguaje. La consola
+necesita **un enganche al runtime**, y `sys.excepthook` no tiene equivalente portable: capturar
+crashes de Node es otro proyecto, no una extensión de este.
+
+Consecuencia declarada, para que nadie la descubra usándolo: **un usuario de JS tiene grafo, onda y
+suelo; no tiene consola.** Y necesita instalar `ast-grep` — gb se sigue instalando sin dependencias,
+pero la capa JS depende de un binario externo detectado y verificado, nunca vendorizado.
+
+El razonamiento completo y sus criterios de aborto, en
+[ADR 0009](docs/adr/0009-multilenguaje-por-referencia.md). Un **tercer** lenguaje repite el mismo
+proceso: se discute aquí antes de tocar código, y no antes de que el segundo esté medido en uso real.
+
+#### La conducta en la frontera, que es permanente
+
+Siempre habrá un lenguaje que gb no parsea, así que esto no es andamiaje temporal: **sobre código que
+no ha leído, gb no da veredictos.** Ni "sin señales", ni "no encontrado". Dice qué lenguaje ve y que
+no lo ha mirado. Se aplica igual el día que se soporten diez lenguajes.
 
 Los catorce comandos, por familia — si uno nuevo no cae en ninguna, no entra
 ([ARCHITECTURE.md](ARCHITECTURE.md) regla 4):

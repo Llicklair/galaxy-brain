@@ -23,6 +23,7 @@ frameworks lo hacen" no es una razón. Cada ADR lleva su sección de evidencia c
 | [0006](0006-gb-provee-no-orquesta.md) | `gb` provee; no orquesta |
 | [0007](0007-el-abandono-se-investiga.md) | El abandono se investiga; está prohibido blindarlo |
 | [0008](0008-el-grafo-declara-su-techo.md) | El grafo declara su techo en vez de rellenarlo |
+| [0009](0009-multilenguaje-por-referencia.md) | El grafo se abre a JS/TS con un parser externo por referencia |
 
 Una decisión que se revierte **no se borra**: se marca `Estado: sustituida por NNNN` y se escribe la
 nueva. El registro de lo que se probó y no funcionó vale tanto como el de lo que quedó.
