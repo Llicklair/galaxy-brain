@@ -24,7 +24,7 @@ which is why it can be instant and cannot fail in expensive ways.
 orchestration. The graph here is a graph <b>of your code</b> — modules, symbols, call edges, parsed
 from the AST.</sub>
 
-<sub>v0.3.0 · 641 tests · 11.3k LOC source / 9.8k LOC tests · clean gate · ruff · Python ≥ 3.9 · zero runtime dependencies · CLI output is in Spanish today</sub>
+<sub>v0.4.0 · 646 tests · 11.4k LOC source / 9.9k LOC tests · clean gate · ruff · Python ≥ 3.9 · zero runtime dependencies · CLI output is in Spanish today</sub>
 
 ---
 

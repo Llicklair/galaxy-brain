@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "galaxy-brain"
-version = "0.3.0"
+version = "0.4.0"
 description = "Cuando algo peta, te dice donde y con que estado, sin que tengas que reproducirlo a mano."
 readme = "README.md"
 requires-python = ">=3.9"
