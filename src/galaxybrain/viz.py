@@ -545,18 +545,17 @@ def render_graph_cloud(
         )
 
     if _agentes_js:
-        # Cada agente vivo, con SU color y la marca del lienzo (aro solido).
-        # Sin esta entrada, un aro lima pulsante es ruido: la marca mas nueva
-        # del mapa seria la unica sin explicar. Tope 4, como la paleta; los
-        # nombres se escapan porque vienen del sistema de ficheros.
+        # Las marcas del lienzo se explican, pero los NOMBRES no entran aqui.
+        #
+        # La leyenda es el vocabulario del mapa —modulo, clase, funcion, metodo,
+        # import, llamada, ciclo— y un vocabulario que cambia segun quien este
+        # trabajando deja de ser vocabulario: cada agente que entraba o salia
+        # reescribia la fila y movia de sitio lo estable (reportado en uso real,
+        # 8-ago). Quien es cada color ya lo dice SU tarjeta, que es donde el
+        # nombre significa algo. Aqui solo se explica la marca, una vez.
         vivos = sorted(_agentes_js)
-        esc_html = lambda s: s.replace("&", "&amp;").replace("<", "&lt;")  # noqa: E731
-        leyenda += "".join(
-            '<span><i class="agente" style="color:%s"></i>%s</span>'
-            % (_agentes_js[n]["c"], esc_html(n)) for n in vivos[:4]
-        )
-        if len(vivos) > 4:
-            leyenda += "<span>+%d agente(s) mas</span>" % (len(vivos) - 4)
+        leyenda += '<span class="efimero"><i class="agente" style="color:%s"></i>' \
+                   'agente (su color, en su tarjeta)</span>' % _agentes_js[vivos[0]]["c"]
         if len(vivos) > 1:
             # El aro blanco solo puede aparecer con dos o mas agentes vivos, asi
             # que la entrada solo existe entonces (una leyenda que explica marcas
@@ -713,6 +712,9 @@ _NUBE = """<!doctype html>
   .leyenda{display:flex;gap:10px;flex-wrap:wrap;margin-left:auto;
            font:10px ui-monospace,Consolas,monospace;color:var(--suave)}
   .leyenda span{display:flex;align-items:center;gap:4px}
+  /* Lo EFIMERO (quien trabaja ahora) va detras de una linea: el vocabulario
+     del mapa no se mezcla con quien esta de paso. */
+  .leyenda span.efimero{border-left:1px solid var(--linea);padding-left:10px;margin-left:2px}
   .leyenda i{width:8px;height:8px;border-radius:50%%;display:inline-block}
   /* Cada entrada se dibuja CON LA MARCA QUE USA EL LIENZO. Con todas como punto
      relleno, la leyenda prometia un nodo naranja solido para "capturada" y lo que

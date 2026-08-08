@@ -292,11 +292,14 @@ def test_la_leyenda_lista_cada_agente_vivo_con_su_color(tmp_path):
     informe = symbols.analyze(root)
 
     con_uno = viz.render_graph_cloud(informe, actividad=act1)
-    assert '<i class="agente" style="color:%s"></i>rama_a' % viz._COLOR_AGENTE[0] in con_uno
-    assert "2+ a la vez" not in con_uno          # con un agente no hay cruce posible
+    leyenda_uno = con_uno.split('class="leyenda"')[1].split("</div>")[0]
+    assert 'class="agente"' in leyenda_uno        # la marca SI se explica
+    assert "rama_a" not in leyenda_uno            # el nombre NO: vive en su tarjeta
+    assert "2+ a la vez" not in con_uno           # con un agente no hay cruce posible
 
     con_dos = viz.render_graph_cloud(informe, actividad=act2)
-    assert '<i class="agente" style="color:%s"></i>rama_b' % viz._COLOR_AGENTE[1] in con_dos
+    leyenda_dos = con_dos.split('class="leyenda"')[1].split("</div>")[0]
+    assert "rama_b" not in leyenda_dos
     assert "2+ a la vez" in con_dos
 
     sin_agentes = viz.render_graph_cloud(informe)
@@ -304,7 +307,12 @@ def test_la_leyenda_lista_cada_agente_vivo_con_su_color(tmp_path):
 
 
 def test_el_nombre_de_un_agente_no_inyecta_html(tmp_path):
-    """El nombre viene del sistema de ficheros: se escapa, no se confia."""
+    """El nombre viene del sistema de ficheros: se escapa, no se confia.
+
+    Desde que el nombre salio de la leyenda (8-ago) ya no viaja como HTML sino
+    dentro del payload JSON de su tarjeta — la proteccion sigue siendo
+    obligatoria, solo cambia por que via: `_en_script` lo deja inerte.
+    """
     from galaxybrain import symbols
 
     act = {"base": "x", "agentes": [
@@ -312,8 +320,8 @@ def test_el_nombre_de_un_agente_no_inyecta_html(tmp_path):
          "fuera_del_mapa": 0, "base": "x", "misma_base": True}],
         "por_nodo": {}, "cruces": []}
     salida = viz.render_graph_cloud(symbols.analyze(_proyecto(tmp_path)), actividad=act)
-    assert "<img src=x>" not in salida
-    assert "&lt;img src=x>" in salida
+    assert "<img src=x>" not in salida            # nunca crudo
+    assert "\\u003cimg src=x>" in salida          # inerte dentro del <script>
 
 
 def test_un_docstring_con_cierre_de_script_no_rompe_la_pagina(tmp_path):
@@ -536,3 +544,38 @@ def test_html_sin_valor_escribe_LA_referencia_en_la_raiz(tmp_path, gb_home, caps
     otro = str(tmp_path / "explicito.html")
     assert cli.main(["symbols", root, "--html", otro]) == 0
     assert os.path.exists(otro)
+
+
+def test_la_leyenda_de_simbolos_no_cambia_con_los_agentes(tmp_path):
+    """El vocabulario del mapa (modulo/clase/funcion/metodo, import, llamada)
+    es el mismo trabaje quien trabaje. Antes cada agente metia su NOMBRE en la
+    fila y movia de sitio lo estable (reportado en uso real, 8-ago); el nombre
+    vive en su tarjeta, que es donde significa algo."""
+    from galaxybrain import symbols
+
+    report = symbols.analyze(_proyecto(tmp_path))
+    actividad = {
+        "base": "abc1234",
+        "agentes": [
+            {"nombre": "pepita", "nodos": [], "vecinos": [], "ficheros": 1,
+             "hace_seg": 5, "cambios": [], "consola": [], "base": "abc1234",
+             "misma_base": True, "fuera_del_mapa": 0, "ruta": "x"},
+            {"nombre": "juanito", "nodos": [], "vecinos": [], "ficheros": 1,
+             "hace_seg": 5, "cambios": [], "consola": [], "base": "abc1234",
+             "misma_base": True, "fuera_del_mapa": 0, "ruta": "y"},
+        ],
+        "por_nodo": {}, "cruces": [], "motivo": "",
+    }
+    con = viz.render_graph_cloud(report, actividad=actividad)
+    sin = viz.render_graph_cloud(report)
+
+    # los nombres NO estan en la leyenda (si en el payload de las tarjetas)
+    leyenda_con = con.split('class="leyenda"')[1].split("</div>")[0]
+    assert "pepita" not in leyenda_con
+    assert "juanito" not in leyenda_con
+    assert '"pepita"' in con  # su tarjeta si lo lleva
+
+    # y la parte estable del vocabulario es identica con y sin agentes
+    for termino in ("module", "class", "function", "method"):
+        assert termino in leyenda_con
+        assert termino in sin.split('class="leyenda"')[1].split("</div>")[0]
