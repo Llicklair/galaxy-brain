@@ -9,6 +9,27 @@ import datetime
 import os
 import sys
 
+from . import graph
+
+
+def _aviso_sin_codigo_leido(report):
+    """La frase que sustituye a un veredicto cuando no se ha leido nada, o None.
+
+    Regla: un "sin senales" / "no encontrado" solo se puede afirmar sobre codigo
+    que se ha analizado. Si no se analizo ni un modulo y ademas hay fuente de
+    otro lenguaje delante, lo honesto es decir QUE hay y que no se ha mirado —
+    "no lo veo" y "no esta" son afirmaciones distintas.
+
+    Devuelve None cuando si se leyo Python (el veredicto es legitimo) y tambien
+    cuando no hay nada de otro lenguaje que excusar: un aviso de mas es ruido,
+    y el ruido es lo que hace que un informe deje de leerse.
+    """
+    coupling = report.get("coupling") or {}
+    if coupling.get("modules"):
+        return None
+    root = report.get("root")
+    return graph.frase_no_leido(root) if root else None
+
 RESET = "\033[0m"
 DIM = "\033[2m"
 BOLD = "\033[1m"
@@ -266,6 +287,12 @@ def render_changes(report, style, brief=False):
     onda = report.get("onda") or []
 
     if brief and not flags:
+        # El brief es lo que ve un pre-commit, asi que es la puerta donde un
+        # "sin senales" falso hace mas dano: aprueba el commit sin haber abierto
+        # un fichero. Si no se leyo nada, se dice aqui tambien.
+        aviso = _aviso_sin_codigo_leido(report)
+        if aviso:
+            return style("[gb check] SIN COMPROBAR: %s" % aviso, YELLOW)
         # La onda entra en la unica linea del brief como recuento, no como lista:
         # el hook no puede volverse el informe largo que el brief existe para evitar.
         onda_txt = (
@@ -303,7 +330,18 @@ def render_changes(report, style, brief=False):
                 if sample:
                     lines.append("      %s" % style("p.ej. `%s`" % sample[:100], DIM))
     else:
-        lines.append(style("Sin senales.", DIM))
+        # "Sin senales" es un VEREDICTO, y solo se puede dar sobre lo que se ha
+        # leido. Sobre un repo sin Python analizable gb no ha mirado nada, y
+        # devolver el verde ahi es la mentira que la regla 9 prohibe: alguien
+        # engancha esto en un pre-commit de un repo JS y tiene una gate que
+        # aprueba sin abrir un fichero. Cazado probando gb en un proyecto JS
+        # (8-ago) con un cambio de comportamiento real —el IVA del 21% al 10%—
+        # que salio "Sin senales".
+        aviso = _aviso_sin_codigo_leido(report)
+        if aviso:
+            lines.append(style("SIN COMPROBAR: %s" % aviso, YELLOW))
+        else:
+            lines.append(style("Sin senales.", DIM))
     lines.append("")
 
     coupling = report.get("coupling")

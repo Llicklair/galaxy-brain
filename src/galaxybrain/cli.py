@@ -1469,7 +1469,7 @@ def cmd_calls(args):
     La pregunta puntual que antes respondia una herramienta externa (GitNexus),
     ahora sobre el indice propio de `symbols`: cero procesos ajenos, cero deps.
     """
-    from . import symbols
+    from . import graph, symbols
 
     if args.hook:
         return _calls_hook()
@@ -1487,6 +1487,14 @@ def cmd_calls(args):
         emit(json.dumps(resultado, ensure_ascii=False, indent=2))
         return 0
     if not resultado["matches"]:
+        # "No esta" y "no lo veo" son afirmaciones distintas, y aqui se confundian:
+        # sobre un proyecto JS, `gb calls total` respondia "nada llamado 'total'"
+        # teniendo `total` delante, en src/carrito.js (probado 8-ago). Si no se
+        # analizo ni un simbolo, lo que corresponde es declarar el limite.
+        sin_leer = graph.frase_no_leido(root) if not report["nodes"] else None
+        if sin_leer:
+            emit("no puedo responder: %s" % sin_leer)
+            return 1
         emit("nada llamado '%s' en %s" % (args.simbolo, root))
         # Devolver material tambien al fallar: los cualificados que CONTIENEN el
         # texto son casi siempre lo que se buscaba con el nombre a medias.

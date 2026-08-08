@@ -62,6 +62,51 @@ def _is_nested_project(path):
     return any(os.path.exists(os.path.join(path, marker)) for marker in PROJECT_MARKERS)
 
 
+#: Codigo que gb hoy NO lee, por extension. Sirve para una sola cosa: poder decir
+#: QUE hay en vez de solo que no hay Python. "No lo veo" y "no esta" son
+#: afirmaciones distintas, y confundirlas es como se fabrica un veredicto falso.
+OTROS_LENGUAJES = {
+    ".js": "JavaScript", ".mjs": "JavaScript", ".cjs": "JavaScript", ".jsx": "JavaScript",
+    ".ts": "TypeScript", ".tsx": "TypeScript",
+    ".go": "Go", ".rs": "Rust", ".java": "Java", ".kt": "Kotlin",
+    ".rb": "Ruby", ".php": "PHP", ".cs": "C#", ".swift": "Swift", ".c": "C", ".cpp": "C++",
+}
+
+
+def lenguajes_no_leidos(root, tope=2000):
+    """Cuenta el codigo bajo `root` cuyo lenguaje gb no analiza, por lenguaje.
+
+    Existe para que un repo sin Python reciba "veo JavaScript y no lo leo" en vez
+    del silencio, que se lee como "aqui no hay nada". Barrido acotado (`tope`) y
+    solo por extension: es una PISTA para redactar el aviso, no un analisis — y
+    por eso no entra en ningun veredicto.
+    """
+    cuenta = {}
+    vistos = 0
+    for _dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if d not in DEFAULT_SKIP and not d.startswith(".")]
+        for name in filenames:
+            lenguaje = OTROS_LENGUAJES.get(os.path.splitext(name)[1].lower())
+            if lenguaje:
+                cuenta[lenguaje] = cuenta.get(lenguaje, 0) + 1
+            vistos += 1
+            if vistos >= tope:
+                return cuenta
+    return cuenta
+
+
+def frase_no_leido(root):
+    """Una linea que nombra lo que hay y admite que no se lee, o None si no
+    procede. `None` importa: sobre un repo Python vacio de verdad no hay nada
+    que excusar, y un aviso de mas tambien es ruido."""
+    cuenta = lenguajes_no_leidos(root)
+    if not cuenta:
+        return None
+    partes = ["%s (%d fichero%s)" % (leng, n, "s" if n != 1 else "")
+              for leng, n in sorted(cuenta.items(), key=lambda kv: -kv[1])[:3]]
+    return "veo %s — hoy gb solo analiza Python, asi que NO he mirado ese codigo" % ", ".join(partes)
+
+
 def _py_no_ignorados(root):
     """Los .py que el proyecto NO ignora, según su propio git: `ls-files -co
     --exclude-standard` = trackeados + nuevos sin trackear, MENOS lo que el
