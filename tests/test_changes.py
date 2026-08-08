@@ -675,6 +675,58 @@ def test_el_rename_dentro_del_patron_de_tests_no_levanta_nada():
     assert changes.test_signals(changes.parse_diff(diff)) == []
 
 
+# --- FIRMA_CAMBIADA_SIN_LLAMANTES ------------------------------------------
+
+
+def test_cambiar_firma_sin_tocar_llamantes_sale(tmp_path):
+    """El caso positivo: la firma de una funcion cambia y ningun llamante
+    resuelto fue tocado en el diff. Es un HECHO del AST + grafo."""
+    root = _repo(tmp_path)
+    _write(root, "lib.py", "def helper(x):\n    return x\n")
+    _write(root, "app.py", "from lib import helper\n\ndef main():\n    return helper(1)\n")
+    _commit(root, "base")
+    # Cambia la firma de helper: aniade un parametro.
+    _write(root, "lib.py", "def helper(x, y):\n    return x\n")
+    _commit(root, "cambia firma sin tocar llamante")
+
+    report = changes.analyze(root, "HEAD~1..HEAD")
+    assert "FIRMA_CAMBIADA_SIN_LLAMANTES" in _senales(report)
+    flag = next(f for f in report["flags"] if f["signal"] == "FIRMA_CAMBIADA_SIN_LLAMANTES")
+    assert "lib.helper" in flag["detail"]
+    assert "app.main" in flag["evidence"]
+
+
+def test_cambiar_firma_Y_actualizar_llamante_no_sale(tmp_path):
+    """El control negativo: si el llamante se toca, la senal NO debe salir.
+    Un detector que no sabe callarse fabrica los falsos positivos que acaban
+    en --no-verify."""
+    root = _repo(tmp_path)
+    _write(root, "lib.py", "def helper(x):\n    return x\n")
+    _write(root, "app.py", "from lib import helper\n\ndef main():\n    return helper(1)\n")
+    _commit(root, "base")
+    # Cambia la firma Y actualiza el llamante.
+    _write(root, "lib.py", "def helper(x, y):\n    return x\n")
+    _write(root, "app.py", "from lib import helper\n\ndef main():\n    return helper(1, y=2)\n")
+    _commit(root, "cambia firma y actualiza llamante")
+
+    report = changes.analyze(root, "HEAD~1..HEAD")
+    assert "FIRMA_CAMBIADA_SIN_LLAMANTES" not in _senales(report)
+
+
+def test_firma_cambiada_sale_con_staged(tmp_path):
+    """La senal tiene que funcionar tambien con --staged, que es el modo que
+    usa el pre-commit."""
+    root = _repo(tmp_path)
+    _write(root, "lib.py", "def helper(x):\n    return x\n")
+    _write(root, "app.py", "from lib import helper\n\ndef main():\n    return helper(1)\n")
+    _commit(root, "base")
+    _write(root, "lib.py", "def helper(x, y):\n    return x\n")
+    _run(root, "git", "add", "-A")
+
+    report = changes.analyze(root, staged=True)
+    assert "FIRMA_CAMBIADA_SIN_LLAMANTES" in _senales(report)
+
+
 def test_la_linea_borrada_que_empieza_por_dos_guiones_se_cuenta():
     """El contenido "-- ..." borrado sale en el diff como "---...": el filtro
     antiguo lo confundia con la cabecera y lo infracontaba."""
@@ -688,3 +740,30 @@ def test_la_linea_borrada_que_empieza_por_dos_guiones_se_cuenta():
     )
     removed = changes.parse_diff(diff)["tests/test_sql.py"]["removed"]
     assert "-- comentario sql borrado" in removed
+
+
+def test_un_parametro_con_default_NO_levanta_la_senal(tmp_path):
+    """Añadir `eco=False` no rompe a ningun llamante: no tocarlos es lo
+    CORRECTO. Antes la señal cantaba igual y sobre historia real dio 3 de 3
+    avisos ciertos pero inaccionables (8-ago) — exactamente el ruido que manda
+    una revision a --no-verify."""
+    root = _repo(tmp_path)
+    _write(root, "lib.py", "def helper(x):\n    return x\n")
+    _write(root, "app.py", "from lib import helper\n\ndef main():\n    return helper(1)\n")
+    _commit(root, "base")
+    _write(root, "lib.py", "def helper(x, eco=False):\n    return x\n")
+    _commit(root, "parametro nuevo CON default: retrocompatible")
+
+    assert "FIRMA_CAMBIADA_SIN_LLAMANTES" not in _senales(changes.analyze(root, "HEAD~1..HEAD"))
+
+
+def test_la_frontera_de_lo_que_rompe_una_llamada():
+    """Lo que decide la señal, aislado: obligatorio nuevo o parametro que se va.
+    Con *args/**kwargs no se razona barato y no se acusa (falso negativo antes
+    que falso positivo)."""
+    rompe = changes._firma_rompe_llamadas
+    assert rompe("(a, b)", "(a, b, base)")            # obligatorio nuevo
+    assert rompe("(a, b)", "(a)")                     # desaparece uno
+    assert not rompe("(a, b)", "(a, b, eco=False)")   # retrocompatible
+    assert not rompe("(a, b)", "(a, b)")              # igual
+    assert not rompe("(a, **kw)", "(a, b, **kw)")     # no se razona: no se acusa

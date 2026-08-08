@@ -293,7 +293,7 @@ def render_changes(report, style, brief=False):
     lines.append("")
 
     if flags:
-        lines.append(style("SENALES sobre los tests (proxies: justifica cada una, no bloquean):", BOLD))
+        lines.append(style("SENALES del cambio (justifica cada una, no bloquean):", BOLD))
         for flag in flags:
             lines.append(
                 "  %s [%s] %s" % (style("!", YELLOW), flag["signal"], flag["file"])
@@ -303,7 +303,7 @@ def render_changes(report, style, brief=False):
                 if sample:
                     lines.append("      %s" % style("p.ej. `%s`" % sample[:100], DIM))
     else:
-        lines.append(style("Sin senales de ablandamiento en los tests.", DIM))
+        lines.append(style("Sin senales.", DIM))
     lines.append("")
 
     coupling = report.get("coupling")

@@ -18,6 +18,7 @@ tests BORRADO ENTERO produce `+++ /dev/null` y el parser antiguo lo saltaba,
 justo el amaño más descarado de todos.
 """
 
+import ast
 import datetime
 import os
 import re
@@ -26,6 +27,7 @@ import re
 # codificacion que lleva dentro (utf-8 + errors=replace, core.quotePath=false) se
 # aprendio a base de fallos reales y tiene que ser la misma en los dos sitios.
 from . import store
+from .graph import _BOM, module_name
 from .graph import _git as _git_output
 
 TEST_FILE = re.compile(
@@ -255,7 +257,7 @@ def _hunks_py(text):
     return rangos
 
 
-def _onda_del_diff(root, diff):
+def _onda_del_diff(root, diff, informe=None):
     """Los símbolos que el diff TOCA y cuántos les llaman — la onda del cambio.
 
     Intersección de los rangos `+c,d` con el `[line, end]` de cada def del grafo
@@ -267,9 +269,13 @@ def _onda_del_diff(root, diff):
     rangos = _hunks_py(diff)
     if not rangos:
         return []
+    # El import va FUERA del `if`: `symbols` se usa mas abajo pase lo que pase,
+    # y dejarlo dentro lo volvia inalcanzable justo en el camino nuevo (el que
+    # recibe el informe ya calculado). 26 tests en rojo por una indentacion.
     from . import symbols
 
-    informe = symbols.analyze(root)
+    if informe is None:
+        informe = symbols.analyze(root)
     if informe.get("root_error"):
         return []
     entrantes, _salientes = symbols._indice_llamadas(informe)
@@ -301,6 +307,121 @@ def _onda_del_diff(root, diff):
     tocados = [t for t in tocados if t["qual"] not in con_metodo_tocado]
     tocados.sort(key=lambda t: (-t["callers"], t["qual"]))
     return tocados
+
+
+def _firma_rompe_llamadas(vieja, nueva):
+    """¿La firma nueva invalida llamadas que la vieja aceptaba?
+
+    Añadir `eco=False` NO rompe a nadie: el llamante que no lo pasa sigue siendo
+    correcto, y no tocarlo es lo acertado. Señalarlo igual convierte la señal en
+    ruido en cada cambio retrocompatible — y el ruido es lo que manda una
+    revisión a `--no-verify` (regla 11). Solo son hechos accionables: **un
+    parámetro nuevo SIN default** (las llamadas viejas se quedan cortas) y **un
+    parámetro que desaparece** (las que lo pasaban sobran).
+
+    Conservador a propósito: con `*args`/`**kwargs` de por medio no se razona
+    barato, así que no se acusa. Falso negativo > falso positivo (propiedad 5).
+    """
+    def _params(firma):
+        cuerpo = (firma or "").strip()
+        if cuerpo.startswith("(") and cuerpo.endswith(")"):
+            cuerpo = cuerpo[1:-1]
+        return [p.strip() for p in cuerpo.split(",") if p.strip()]
+
+    viejos, nuevos = _params(vieja), _params(nueva)
+    if any(p.startswith("*") for p in viejos + nuevos):
+        return False
+    nombre = lambda p: p.split("=")[0].split(":")[0].strip()  # noqa: E731
+    v_nombres = {nombre(p) for p in viejos}
+    for p in nuevos:
+        if nombre(p) not in v_nombres and "=" not in p:
+            return True                      # obligatorio nuevo: las viejas se quedan cortas
+    return any(nombre(p) not in {nombre(q) for q in nuevos} for p in viejos)
+
+
+def _firmas_cambiadas_sin_llamantes(root, diff, base_ref, informe):
+    """Funciones cuya firma (parametros) cambio sin tocar ningun llamante resuelto.
+
+    Hecho derivable del AST mas el grafo, no heuristica: la firma vieja sale de
+    git, la nueva del AST actual, y los llamantes del grafo de simbolos. INFORMA,
+    no bloquea (regla 9): un parametro con default puede ser un cambio
+    intencionalmente retrocompatible, pero el hecho de que los call-sites no se
+    actualizaron sigue siendo informacion.
+    """
+    rangos = _hunks_py(diff)
+    if not rangos:
+        return []
+    if informe.get("root_error"):
+        return []
+
+    from . import symbols
+
+    entrantes, _ = symbols._indice_llamadas(informe)
+
+    # Simbolos tocados por el diff (misma interseccion que _onda_del_diff).
+    normal = {
+        os.path.normcase(ruta.replace("/", os.sep)): tramos
+        for ruta, tramos in rangos.items()
+    }
+    tocados = set()
+    for nodo in informe["nodes"]:
+        if nodo["kind"] == "module":
+            continue
+        tramos = normal.get(os.path.normcase(nodo.get("file") or ""))
+        if not tramos:
+            continue
+        inicio, fin = nodo.get("line"), nodo.get("end")
+        if not inicio or not fin:
+            continue
+        if any(a <= fin and inicio <= b for a, b in tramos):
+            tocados.add(nodo["qual"])
+
+    # Firmas viejas del baseline de git.
+    firmas_viejas = {}
+    for ruta_diff in rangos:
+        texto = _git_output(root, "show", "%s:%s" % (base_ref, ruta_diff))
+        if not texto:
+            continue
+        abs_path = os.path.join(os.path.abspath(root), *ruta_diff.split("/"))
+        mod = module_name(abs_path, root)
+        if not mod:
+            continue
+        try:
+            tree = ast.parse(texto.lstrip(_BOM), filename=ruta_diff)
+        except (SyntaxError, ValueError, RecursionError, MemoryError):
+            continue
+        es_pkg = os.path.basename(ruta_diff) == "__init__.py"
+        old_info = symbols._scan_module(mod, tree, es_pkg)
+        firmas_viejas.update(old_info["sigs"])
+
+    if not firmas_viejas:
+        return []
+
+    # Comparar firmas y comprobar llamantes.
+    flags = []
+    for nodo in informe["nodes"]:
+        if nodo["kind"] not in ("function", "method"):
+            continue
+        qual = nodo["qual"]
+        sig_nueva = nodo.get("sig", "")
+        sig_vieja = firmas_viejas.get(qual)
+        if sig_vieja is None or sig_nueva == sig_vieja:
+            continue
+        if not _firma_rompe_llamadas(sig_vieja, sig_nueva):
+            continue   # retrocompatible: no tocar a los llamantes es CORRECTO
+        llamantes = entrantes.get(qual, set())
+        if not llamantes:
+            continue
+        if any(c in tocados for c in llamantes):
+            continue
+        flags.append({
+            "file": nodo.get("file", ""),
+            "signal": "FIRMA_CAMBIADA_SIN_LLAMANTES",
+            "detail": "%s: firma cambio de %s a %s, %d llamante(s) sin tocar"
+                      % (qual, sig_vieja, sig_nueva, len(llamantes)),
+            "evidence": sorted(llamantes)[:3],
+        })
+    return flags
 
 
 def test_signals(files):
@@ -456,7 +577,15 @@ def analyze(root, rev_range=None, skip=None, include_nested=False, staged=False)
     report["flags"] = test_signals(files)
     report["covered"].append("ficheros de test tocados en %s" % label)
 
-    report["onda"] = _onda_del_diff(root, diff)
+    # Con --staged la baseline es HEAD: se compara lo que va a entrar contra lo
+    # ultimo commiteado.  Se calcula antes porque lo usan la onda, la firma y el
+    # acoplamiento.
+    base = "HEAD" if staged else (rev_range.split("..")[0] or None)
+
+    from . import symbols as _sym
+    _informe = _sym.analyze(root)
+
+    report["onda"] = _onda_del_diff(root, diff, informe=_informe)
     if report["onda"]:
         report["covered"].append("la onda del diff: simbolos tocados y sus llamantes")
         report["not_covered"].append(
@@ -464,9 +593,11 @@ def analyze(root, rev_range=None, skip=None, include_nested=False, staged=False)
             "despacho dinamico no suman (gb symbols declara cuanto queda fuera)"
         )
 
-    # Con --staged la baseline es HEAD: se compara lo que va a entrar contra lo
-    # ultimo commiteado.
-    base = "HEAD" if staged else (rev_range.split("..")[0] or None)
+    if base and not _informe.get("root_error"):
+        firma_flags = _firmas_cambiadas_sin_llamantes(
+            root, diff, base, _informe,
+        )
+        report["flags"].extend(firma_flags)
     if base:
         coupling = graph.analyze(
             root,
