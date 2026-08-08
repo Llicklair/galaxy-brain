@@ -10,6 +10,51 @@ mismo detalle que los positivos, o más.
 
 ---
 
+## 2026-08-08 · Roturas SUTILES (mutación): 0/20 falsos verdes — y lo que encontró en el repo ajeno
+
+Cierra el hueco que dejó escrito la entrada de abajo: *«las 22 roturas son duras; no dicen nada
+sobre contratos sutiles»*. 20 mutaciones semánticas sobre `guardia` —`==`→`!=`, `True`→`False`,
+`<=`→`<`, `+`→`-`— que **no petan**: el código sigue corriendo y solo responde mal.
+
+Detalle de método que decide el experimento: la mutación se aplica con **cirugía de texto sobre el
+span exacto del operador**, no con `ast.unparse`. Reescribir el fichero entero cambiaría todas las
+líneas, el diff sería total, `gb tests` seleccionaría todo y la prueba **se aprobaría sola**. Así el
+diff es de un carácter, que es el caso difícil. (mutmut no corre en Windows nativo; de ahí el bicho
+a mano.)
+
+**Resultado sobre gb: 0 falsos verdes de 20.** Acumulado con la tanda de abajo, **42/42**.
+
+**Y la honestidad, que aquí pesa más que el número:** 17 de las 20 selecciones fueron la suite
+entera. Un cambio en `auditoria.py` o `generador.py` toca módulos que importa medio repo, así que
+esta tanda mide **corrección, no ahorro** — el ahorro lo mide la de abajo (2–9 ficheros de 20, y
+1 test de 235 en el extremo). Un 0/20 sin este párrafo se leería como una victoria que no es.
+
+**Lo que encontró en el repo ajeno, que no es un hallazgo sobre gb: 11 de 20 mutantes SOBREVIVEN.**
+Verificado a mano el más serio, y no es equivalente — en `auditoria.verificar`, la rama del enlace
+roto:
+
+```
+intacto  → Veredicto(intacta=False, motivo='el enlace previo no cuadra')   ✓
+mutado   → Veredicto(intacta=True,  motivo='el enlace previo no cuadra')   ← se contradice
+suite    → VERDE
+```
+
+Un log con el campo `previo` mentido y el `hash` consistente **es alcanzable** (se construyó) y no lo
+cubre ningún test: `test_alterar_el_contenido` dispara la guarda del hash y
+`test_borrar_una_entrada_intermedia` la del `seq`, así que a esa rama no llega nadie. Hueco real del
+invariante 7 de guardia. Igual con `frozen=True` en `Estado` y `Entrada`: voltearlo no lo nota nadie,
+y esas inmutabilidades son premisa del diseño.
+
+**El error de método, apuntado porque casi invalida la tanda:** una sonda a mano daba resultados
+imposibles (el veredicto no cambiaba bajo una mutación que sí estaba en disco). Causa: `$PWD` en
+git-bash devuelve `/c/Users/...`, que el Python de Windows no interpreta, así que `PYTHONPATH` no
+valía nada y `import guardia` caía en el **repo principal** por el editable install — se estaba
+midiendo código sin mutar. El script usaba rutas Windows y no le afecta. Lo cerró imprimir
+`modulo.__file__`. Regla que queda: **al medir sobre un worktree, verificar de dónde importa Python
+antes de creerse un resultado.**
+
+---
+
 ## 2026-08-08 · El techo del 40% puesto a prueba en código ajeno: **22/22 sin un solo verde falso**
 
 El grafo resuelve el **38%** de las llamadas candidatas en gb y el **40%** en `guardia`. Que el número
