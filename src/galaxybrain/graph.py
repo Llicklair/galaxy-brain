@@ -85,7 +85,16 @@ def _py_no_ignorados(root):
     for linea in salida.split("\0"):
         if linea.endswith(".py"):
             permitidos.add(os.path.normcase(os.path.abspath(os.path.join(root, linea))))
-    return permitidos
+    # Una lista vacia no es informacion, es su AUSENCIA: filtrar por ella solo
+    # puede dar un grafo de cero nodos, y darlo EN SILENCIO. Pasa cuando la raiz
+    # analizada esta ella misma ignorada — apuntar a algo ES pedirlo, asi que el
+    # objetivo explicito gana sobre el .gitignore del repo que lo envuelve, igual
+    # que `git add -f`. Cazado usando gb sobre gb (8-ago): `gb symbols <dir>`
+    # sobre una carpeta con un .py dentro devolvio 0 nodos y ni una palabra del
+    # motivo, por una regla `pytest-of-*/` heredada del repo padre.
+    # Cuando la raiz SI tiene codigo del proyecto la lista nunca sale vacia, asi
+    # que el caso que motivo el filtro (7-ago) queda intacto.
+    return permitidos or None
 
 
 def _iter_py_files(root, skip, include_nested=False, skipped=None):

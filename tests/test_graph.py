@@ -197,3 +197,29 @@ def test_el_gitignore_del_proyecto_manda_sobre_el_walker(tmp_path):
     suelto = str(tmp_path / "sin-git")
     _write(suelto, "basura/tmpmod.py", "Z = 3\n")
     assert any("basura" in m for m in graph.analyze(suelto)["fan_in"])
+
+
+def test_apuntar_a_una_raiz_ignorada_la_analiza_igual(tmp_path):
+    """El objetivo que se nombra a dedo gana sobre el .gitignore que lo envuelve.
+
+    Cazado usando gb sobre gb (8-ago): `gb symbols <dir>` sobre una carpeta con
+    un .py dentro devolvio CERO nodos y ni una palabra del motivo — la regla
+    `pytest-of-*/` del repo padre vaciaba la lista de permitidos y el walker se
+    quedaba sin nada que recorrer. Un grafo vacio que se lee como "aqui no hay
+    nada" es la mentira en verde que este modulo existe para no contar; y
+    apuntar a una carpeta ES pedirla, igual que `git add -f`.
+    """
+    import subprocess
+
+    root = str(tmp_path / "repo")
+    os.makedirs(root, exist_ok=True)
+    subprocess.run(["git", "init", "-q"], cwd=root, check=True, capture_output=True)
+    _write(root, ".gitignore", "basura/\n")
+    _write(root, "real.py", "X = 1\n")
+    _write(root, "basura/tmpmod.py", "Z = 3\n")
+
+    # desde la raiz del repo sigue ignorandose (la conducta del 7-ago, intacta)
+    assert not any("basura" in m for m in graph.analyze(root)["fan_in"])
+
+    # pero apuntando A la carpeta ignorada, su codigo se ve
+    assert "tmpmod" in graph.analyze(os.path.join(root, "basura"))["fan_in"]
