@@ -10,6 +10,52 @@ mismo detalle que los positivos, o más.
 
 ---
 
+## 2026-08-08 · La capa ambiental del grafo, medida por fin — **PLANO, y es el negativo más caro del proyecto**
+
+El 71% de gb no lo teclea nadie: 869 `graph --context` + 93 `calls --hook` en 7 días, inyectados por
+hooks. Nunca se había medido si eso cambia **lo que el agente escribe**. Sonda A/B de una sola
+variable (el grafo entra en contexto o no; `GB_DISABLE=1` en ambos brazos para que la consola no
+contamine), 3 rondas por brazo, criterio escrito antes.
+
+**La trampa, validada antes de gastar cuota** (la lección de la báscula, esta vez cumplida): símbolo
+objetivo llamado `total` → grep da **92 líneas** de ruido y el grafo **3 llamantes exactos**,
+distinguiendo el método homónimo de otra clase; los tests visibles solo cubren el módulo objetivo,
+así que el camino perezoso deja **`pytest` VERDE con los 3 llamantes rotos** (medido). Hooks
+verificados con centinela en `claude -p` headless: disparan.
+
+**Resultado: 3/3 llamantes actualizados en los SEIS casos. Cero rotos en ambos brazos.**
+
+| brazo | ≥2 llamantes actualizados | media | rotos | búsquedas |
+|---|---|---|---|---|
+| CON grafo | 3/3 rondas | 3,00 | 0 | 1–2 |
+| SIN grafo | 3/3 rondas | 3,00 | 0 | 1–2 |
+
+Los transcripts son casi idénticos: un grep, leer los 3 llamantes, editarlos. **El agente sin grafo
+no cayó en la trampa porque no la necesitó** — a esta escala, un grep le basta. La manipulación fue
+real (el mapa aparece en el contexto del brazo CON, verificado en el transcript); simplemente no
+cambió nada. Nota honesta: `calls --hook` no llegó a inyectar ficha en ninguna ronda — el patrón que
+grepeó el agente no parecía un símbolo, así que el hook corrió mudo.
+
+**Lo que esto dice, sin adornarlo:** en una tarea de contrato roto sobre ~20 módulos, la capa
+ambiental del grafo **no cambia el resultado ni el coste de descubrimiento**. Es un negativo caro:
+es la pieza de mayor volumen de uso del proyecto.
+
+**Lo que NO dice:** que el grafo no sirva. Dice que a esta escala el agente ya es diligente. La
+hipótesis que sobrevive es de escala y ambigüedad — repos donde grep deja de escalar (cientos de
+módulos, nombres comunes, llamadas por atributo). Con un matiz que hay que decir en contra propia:
+gb declara **3.218 `atributo-de-variable` sin resolver** en su propio repo, así que en el caso
+dinámico el grafo tampoco ayudaría. Medirlo es la siguiente sonda, no una excusa para esta.
+
+**Y el patrón que ya son tres medidas apuntando al mismo sitio:** el valor demostrado de gb está en
+**verificación y contención** (rechazo determinista 4/4, consola 3/3 sobre crashes irreproducibles,
+TIA 20–97%, gates de ciclos y fronteras), no en **autoría**. Coincide con el reporte de uso real
+—«no es detector primario: red de seguridad + verificación de cierre»— y con la propia filosofía del
+póster: *no hacemos al modelo más inteligente*. La sonda de hoy es el dato que faltaba para decirlo
+sin fe: **gb no hace que el agente escriba mejor; hace que lo que escriba mal salga caro de colar.**
+
+Límites: n=3 por brazo, un escenario, repo sintético de 20 módulos, un modelo. Mide un mecanismo, no
+una media.
+
 ## 2026-08-07 · El banco de replay: 13/13 — y el aprendizaje adaptativo, acotado con datos
 
 El póster de arquitectura dibuja un ciclo de *aprendizaje adaptativo* (recolectar → agrupar →
