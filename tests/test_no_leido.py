@@ -107,14 +107,20 @@ def test_con_modulos_python_leidos_el_veredicto_es_legitimo(tmp_path):
 # --- calls: "no esta" vs "no lo veo" -----------------------------------------
 
 
-def test_calls_sobre_js_declara_el_limite_en_vez_de_negar(tmp_path, capsys):
-    root = _repo_js(tmp_path)
+def test_calls_sobre_un_lenguaje_no_soportado_declara_el_limite(tmp_path, capsys):
+    """Go, no JS: desde el ADR 0009 la capa JS existe y `gb calls` ahi RESPONDE
+    (lo fija tests/test_js.py). Este test guarda el invariante permanente, que
+    es lo de la frontera — siempre habra un lenguaje sin motor, y sobre ese no
+    se niega la existencia de un simbolo que no se ha buscado."""
+    root = str(tmp_path / "app")
+    _escribe(root, "go.mod", "module ejemplo\n")
+    _escribe(root, "main.go", "package main\n\nfunc Total(x int) int { return x * 2 }\n")
 
-    codigo = cli.main(["calls", "total", root])
+    codigo = cli.main(["calls", "Total", root])
 
     salida = capsys.readouterr().out
     assert "nada llamado" not in salida
-    assert "no puedo responder" in salida and "JavaScript" in salida
+    assert "no puedo responder" in salida and "Go" in salida
     assert codigo == 1
 
 

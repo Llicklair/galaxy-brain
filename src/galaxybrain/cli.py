@@ -1463,6 +1463,26 @@ def _vigilar(root, args):
     return 0
 
 
+def _analiza_simbolos(root):
+    """El grafo de simbolos de `root`, con el motor que corresponda.
+
+    La eleccion vive AQUI y no dentro de los motores: la CLI es lo que compone,
+    y asi `symbols` (stdlib `ast`) y `js` (ast-grep por referencia) no se
+    conocen entre si. Dos motores que conviven, no uno generico peor que ambos
+    (ADR 0009).
+
+    Python manda cuando hay Python: es el motor maduro y el unico sin
+    dependencia externa. La via JS entra solo cuando no habia nada que analizar
+    — nunca pisa un resultado bueno.
+    """
+    from . import js, symbols
+
+    informe = symbols.analyze(root)
+    if informe.get("nodes") or not js.hay_codigo(root):
+        return informe
+    return js.analyze(root)
+
+
 def cmd_calls(args):
     """Quien llama a un simbolo y a quien llama el, con fichero:linea.
 
@@ -1478,7 +1498,7 @@ def cmd_calls(args):
         sys.stderr.write("[gb calls] dime un simbolo (nombre pelado o cualificado)\n")
         return 2
     root = os.path.abspath(args.path or ".")
-    report = symbols.analyze(root)
+    report = _analiza_simbolos(root)
     if report["root_error"]:
         sys.stderr.write("[gb calls] %s\n" % report["root_error"])
         return 1
