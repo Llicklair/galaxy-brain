@@ -68,9 +68,24 @@ def _is_nested_project(path):
 OTROS_LENGUAJES = {
     ".js": "JavaScript", ".mjs": "JavaScript", ".cjs": "JavaScript", ".jsx": "JavaScript",
     ".ts": "TypeScript", ".tsx": "TypeScript",
-    ".go": "Go", ".rs": "Rust", ".java": "Java", ".kt": "Kotlin",
+    ".go": "Go", ".rs": "Rust", ".java": "Java", ".kt": "Kotlin", ".kts": "Kotlin",
     ".rb": "Ruby", ".php": "PHP", ".cs": "C#", ".swift": "Swift", ".c": "C", ".cpp": "C++",
+    ".scala": "Scala", ".ex": "Elixir", ".exs": "Elixir", ".lua": "Lua", ".dart": "Dart",
+    # los que NINGUN motor de gb lee hoy: son los que de verdad producen el aviso
+    ".hs": "Haskell", ".erl": "Erlang", ".clj": "Clojure", ".ml": "OCaml", ".pl": "Perl",
+    ".r": "R", ".jl": "Julia", ".groovy": "Groovy", ".ps1": "PowerShell", ".vb": "VB",
+    ".f90": "Fortran", ".sql": "SQL", ".sh": "Shell", ".zig": "Zig", ".nim": "Nim",
 }
+
+
+def _extensiones_leidas():
+    """Las que SI tienen motor. Se consulta la tabla en vez de mantener una
+    segunda lista: dos listas de lo mismo divergen, y la que se queda vieja
+    acaba diciendo "no leo Go" cuando Go ya se lee (pasó el 9-ago, al abrir el
+    catálogo multilenguaje con este aviso todavía apuntando a JS)."""
+    from . import lenguajes
+
+    return set(lenguajes.POR_EXTENSION)
 
 
 def lenguajes_no_leidos(root, tope=2000):
@@ -83,10 +98,12 @@ def lenguajes_no_leidos(root, tope=2000):
     """
     cuenta = {}
     vistos = 0
+    leidas = _extensiones_leidas()
     for _dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = [d for d in dirnames if d not in DEFAULT_SKIP and not d.startswith(".")]
         for name in filenames:
-            lenguaje = OTROS_LENGUAJES.get(os.path.splitext(name)[1].lower())
+            ext = os.path.splitext(name)[1].lower()
+            lenguaje = OTROS_LENGUAJES.get(ext) if ext not in leidas else None
             if lenguaje:
                 cuenta[lenguaje] = cuenta.get(lenguaje, 0) + 1
             vistos += 1
@@ -104,7 +121,8 @@ def frase_no_leido(root):
         return None
     partes = ["%s (%d fichero%s)" % (leng, n, "s" if n != 1 else "")
               for leng, n in sorted(cuenta.items(), key=lambda kv: -kv[1])[:3]]
-    return "veo %s — hoy gb solo analiza Python, asi que NO he mirado ese codigo" % ", ".join(partes)
+    return ("veo %s — gb todavia no tiene motor para ese lenguaje, asi que NO he mirado "
+            "ese codigo" % ", ".join(partes))
 
 
 def _py_no_ignorados(root):

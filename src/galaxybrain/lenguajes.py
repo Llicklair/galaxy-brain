@@ -1,0 +1,608 @@
+"""El grafo de cualquier lenguaje, derivado con `ast-grep` por referencia (ADR 0009).
+
+Devuelve **la misma forma de informe** que el motor de Python (`symbols.analyze`):
+`nodes`, `edges`, contadores de llamadas y `unresolved` por causa. Ese es el punto
+entero — el 74 % del código de gb (el mapa, la CLI, el almacén, el suelo) opera
+sobre el grafo ya derivado y no debe enterarse del lenguaje.
+
+Todo lo específico de un lenguaje vive en `LENGUAJES`, una tabla de datos: sus
+extensiones, los patrones que reconocen una definición, un import y una llamada,
+su vocabulario de runtime y su convención de ficheros de test. El motor de abajo
+no menciona ningún lenguaje. Añadir uno es una entrada en la tabla; si hiciera
+falta tocar el motor, la tabla estaría mal diseñada.
+
+**Los patrones no se suponen, se miden.** Cada entrada tiene su sonda en
+`sonda()`, que extrae de un fuente mínimo y comprueba qué sale de verdad — así
+"soportamos N lenguajes" es una afirmación verificable en cualquier momento y no
+una lista de buenas intenciones. Lo que una sonda no consigue se escribe en
+`carencias`, se enseña al usuario y no se disimula.
+
+Límites comunes, dichos de frente igual que en la vía Python (ADR 0008): es
+análisis ESTÁTICO por patrón. No resuelve llamadas sobre variables
+(`obj.metodo()`), no sigue carga dinámica ni reexports, y no distingue dos
+símbolos homónimos salvo por el import que los trae. Todo eso **se cuenta y se
+declara**; no se adivina.
+"""
+
+import json
+import os
+import shutil
+import subprocess
+
+#: Vocabulario de runtime que no son símbolos del proyecto. Equivale a los
+#: builtins de Python: se excluye del denominador para que el porcentaje de
+#: resolución signifique algo.
+_JS_GLOBALES = frozenset((
+    "console", "require", "setTimeout", "setInterval", "clearTimeout", "clearInterval",
+    "fetch", "parseInt", "parseFloat", "isNaN", "String", "Number", "Boolean", "Array",
+    "Object", "JSON", "Math", "Date", "Promise", "Error", "Symbol", "Map", "Set",
+    "RegExp", "encodeURIComponent", "decodeURIComponent", "structuredClone",
+    "describe", "it", "test", "expect", "beforeEach", "afterEach", "beforeAll",
+    "afterAll", "vi", "jest", "assert",
+))
+
+_COMUNES = frozenset(("print", "println", "printf", "len", "append", "make", "new",
+                      "panic", "assert", "require", "test", "it", "describe", "expect"))
+
+#: `$FN($$$)` casa cualquier invocación; decidir cuáles se pueden resolver es
+#: trabajo de después, con nombres. Casi todos los lenguajes lo comparten.
+LLAMADA = "$FN($$$)"
+
+
+def _lang(ag, extensiones, simbolos, imports=(), llamada=LLAMADA, globales=_COMUNES,
+          resolucion=None, sufijos_test=(), dirs_test=("test", "tests"), carencias=()):
+    return {
+        "ag": ag, "extensiones": extensiones, "simbolos": simbolos, "imports": imports,
+        "llamada": llamada, "globales": globales, "resolucion": resolucion,
+        "sufijos_test": sufijos_test, "dirs_test": dirs_test, "carencias": carencias,
+    }
+
+
+#: `resolucion` dice cómo se convierte el especificador de un import en un módulo
+#: del proyecto:
+#:   "ruta"    -> `./x`, `../x/y`: se resuelve contra el disco (JS, Ruby, PHP, Lua…)
+#:   "paquete" -> `app.util`, `proj/pkg`: se casa por sufijo contra los módulos que
+#:                EXISTEN en el árbol. No inventa nada: sin módulo real, no hay arista.
+#:   None      -> este lenguaje no tiene resolución fiable; se declara y no se finge.
+LENGUAJES = {
+    "js": _lang(
+        "js", (".js", ".mjs", ".cjs", ".jsx"),
+        (("function", "export function $NAME($$$) { $$$ }"),
+         ("function", "function $NAME($$$) { $$$ }"),
+         ("function", "export default function $NAME($$$) { $$$ }"),
+         ("function", "export const $NAME = ($$$) => { $$$ }"),
+         ("function", "const $NAME = ($$$) => { $$$ }"),
+         ("function", "export async function $NAME($$$) { $$$ }"),
+         ("function", "async function $NAME($$$) { $$$ }"),
+         ("class", "export class $NAME { $$$ }"),
+         ("class", "class $NAME { $$$ }")),
+        ('import { $$$ } from "$SRC"', 'import $NAME from "$SRC"',
+         'import * as $NAME from "$SRC"', 'import "$SRC"', 'require("$SRC")'),
+        globales=_JS_GLOBALES, resolucion="ruta",
+        sufijos_test=(".test", ".spec"), dirs_test=("test", "tests", "__tests__", "spec"),
+    ),
+    "ts": _lang(
+        # El `: $RET` NO es opcional en TS: sin el, `export function f(): number`
+        # no casa y el lenguaje entero salia con cero simbolos. Lo caza la sonda
+        # de conformidad, que es justo para lo que existe.
+        "ts", (".ts",),
+        (("function", "export function $NAME($$$): $RET { $$$ }"),
+         ("function", "function $NAME($$$): $RET { $$$ }"),
+         ("function", "export function $NAME($$$) { $$$ }"),
+         ("function", "function $NAME($$$) { $$$ }"),
+         ("function", "export const $NAME = ($$$) => { $$$ }"),
+         ("function", "export async function $NAME($$$): $RET { $$$ }"),
+         ("class", "export class $NAME { $$$ }"),
+         ("class", "class $NAME { $$$ }")),
+        ('import { $$$ } from "$SRC"', 'import $NAME from "$SRC"', 'import "$SRC"'),
+        globales=_JS_GLOBALES, resolucion="ruta",
+        sufijos_test=(".test", ".spec"), dirs_test=("test", "tests", "__tests__", "spec"),
+    ),
+    "tsx": _lang(
+        "tsx", (".tsx",),
+        (("function", "export function $NAME($$$): $RET { $$$ }"),
+         ("function", "export function $NAME($$$) { $$$ }"),
+         ("function", "function $NAME($$$) { $$$ }"),
+         ("function", "export const $NAME = ($$$) => { $$$ }"),
+         ("class", "export class $NAME { $$$ }")),
+        ('import { $$$ } from "$SRC"', 'import $NAME from "$SRC"'),
+        globales=_JS_GLOBALES, resolucion="ruta",
+        sufijos_test=(".test", ".spec"), dirs_test=("test", "tests", "__tests__"),
+    ),
+    "go": _lang(
+        "go", (".go",),
+        (("function", "func $NAME($$$) $RET { $$$ }"),
+         ("function", "func $NAME($$$) { $$$ }"),
+         ("class", "type $NAME struct { $$$ }")),
+        ('import "$SRC"',),
+        resolucion="paquete",
+        sufijos_test=("_test",),
+    ),
+    "rust": _lang(
+        "rust", (".rs",),
+        (("function", "pub fn $NAME($$$) -> $RET { $$$ }"),
+         ("function", "pub fn $NAME($$$) { $$$ }"),
+         ("function", "fn $NAME($$$) -> $RET { $$$ }"),
+         ("function", "fn $NAME($$$) { $$$ }"),
+         ("class", "pub struct $NAME { $$$ }")),
+        ("use $SRC;",),
+        resolucion="paquete",
+        dirs_test=("tests",),
+    ),
+    "java": _lang(
+        "java", (".java",),
+        (("class", "public class $NAME { $$$ }"),
+         ("class", "class $NAME { $$$ }"),
+         ("method", "public $RET $NAME($$$) { $$$ }"),
+         ("method", "private $RET $NAME($$$) { $$$ }"),
+         ("method", "protected $RET $NAME($$$) { $$$ }")),
+        ("import $SRC;",),
+        resolucion="paquete",
+        sufijos_test=("Test", "Tests"), dirs_test=("test", "tests"),
+    ),
+    "kotlin": _lang(
+        "kotlin", (".kt", ".kts"),
+        (("function", "fun $NAME($$$): $RET { $$$ }"),
+         ("function", "fun $NAME($$$) { $$$ }"),
+         ("class", "class $NAME { $$$ }")),
+        ("import $SRC",),
+        resolucion="paquete",
+        sufijos_test=("Test",), dirs_test=("test", "tests"),
+    ),
+    "swift": _lang(
+        "swift", (".swift",),
+        (("function", "func $NAME($$$) -> $RET { $$$ }"),
+         ("function", "func $NAME($$$) { $$$ }"),
+         ("class", "class $NAME { $$$ }")),
+        ("import $SRC",),
+        sufijos_test=("Test", "Tests"), dirs_test=("test", "tests"),
+        carencias=("los imports son modulos del sistema, no ficheros: sin grafo de modulos",),
+    ),
+    "ruby": _lang(
+        "ruby", (".rb",),
+        (("function", "def $NAME($$$)"),
+         ("function", "def $NAME"),
+         ("class", "class $NAME\n  $$$\nend")),
+        ("require_relative '$SRC'", 'require_relative "$SRC"'),
+        resolucion="ruta-local",
+        sufijos_test=("_test", "_spec"), dirs_test=("test", "tests", "spec"),
+    ),
+    "php": _lang(
+        "php", (".php",),
+        (("function", "function $NAME($$$) { $$$ }"),
+         ("class", "class $NAME { $$$ }")),
+        ("require_once '$SRC'", "require '$SRC'", "include '$SRC'"),
+        resolucion="ruta-local",
+        sufijos_test=("Test",), dirs_test=("test", "tests"),
+    ),
+    "lua": _lang(
+        "lua", (".lua",),
+        (("function", "function $NAME($$$) $$$ end"),
+         ("function", "local function $NAME($$$) $$$ end")),
+        ('require("$SRC")', "require '$SRC'"),
+        resolucion="paquete",
+        sufijos_test=("_test", "_spec"), dirs_test=("test", "tests", "spec"),
+    ),
+    "scala": _lang(
+        "scala", (".scala",),
+        (("function", "def $NAME($$$): $RET = $$$"),
+         ("class", "class $NAME { $$$ }"),
+         ("class", "object $NAME { $$$ }")),
+        ("import $SRC",),
+        resolucion="paquete",
+        sufijos_test=("Test", "Spec"), dirs_test=("test", "tests"),
+    ),
+    "elixir": _lang(
+        "elixir", (".ex", ".exs"),
+        (("function", "def $NAME($$$), do: $$$"),
+         ("function", "def $NAME($$$)"),
+         ("class", "defmodule $NAME do $$$ end")),
+        (),
+        sufijos_test=("_test",), dirs_test=("test", "tests"),
+        carencias=("`alias`/`import` de Elixir sin resolver: sin grafo de modulos",),
+    ),
+    "csharp": _lang(
+        "csharp", (".cs",),
+        (("class", "class $NAME { $$$ }"),
+         ("class", "public class $NAME { $$$ }")),
+        ("using $SRC;",),
+        llamada=None, resolucion="paquete",
+        sufijos_test=("Test", "Tests"), dirs_test=("test", "tests"),
+        # Se probaron 5 patrones de metodo (`public $RET $NAME(...)`, `$MOD $RET
+        # $NAME(...)`, `$RET $NAME(...)`, ...) y ninguno caza (medido 8-ago).
+        # Sin metodos no hay destino que resolver, asi que TAMPOCO se cuentan las
+        # llamadas: contarlas hundiria el porcentaje de resolucion con ruido y
+        # daria a entender que hay grafo de llamadas donde no lo hay.
+        carencias=("los METODOS no se extraen: ningun patron medido los caza (8-ago), "
+                   "asi que solo hay clases y modulos — sin grafo de llamadas",),
+    ),
+    "c": _lang(
+        "c", (".c", ".h"),
+        (("function", "$RET $NAME($$$) { $$$ }"),),
+        (),
+        llamada=None,
+        sufijos_test=("_test",), dirs_test=("test", "tests"),
+        carencias=("las LLAMADAS no se extraen: `$FN($$$)` no casa (medido 8-ago). "
+                   "Hay simbolos, no hay aristas de llamada",),
+    ),
+    "cpp": _lang(
+        "cpp", (".cpp", ".cc", ".cxx", ".hpp"),
+        (),
+        (),
+        sufijos_test=("_test",), dirs_test=("test", "tests"),
+        carencias=("las DEFINICIONES no se extraen: `$RET $NAME($$$) { $$$ }` no casa "
+                   "(medido 8-ago). Sin simbolos no hay grafo utilizable",),
+    ),
+    "dart": _lang(
+        "dart", (".dart",),
+        (("function", "$RET $NAME($$$) { $$$ }"),
+         ("function", "$RET $NAME($$$) => $$$;")),
+        ("import '$SRC';",),
+        llamada=None, resolucion="ruta",
+        sufijos_test=("_test",), dirs_test=("test", "tests"),
+        carencias=("las LLAMADAS no se extraen: `$FN($$$)` no casa (medido 8-ago)",),
+    ),
+}
+
+#: Lo que NO se declara soportado aunque `ast-grep` lo acepte: sin patrones
+#: medidos, incluirlo seria prometer un grafo que no existe.
+SIN_SOPORTE = ("html", "css", "json", "yaml", "bash", "haskell", "nix", "solidity")
+
+#: Directorios que nunca son código del proyecto, en ningún lenguaje.
+SKIP = frozenset(("node_modules", "dist", "build", "coverage", ".next", "out", "vendor",
+                  "target", "bin", "obj", "_build", "deps", "Pods", "__pycache__"))
+
+#: Extensión -> id de lenguaje. Derivado de la tabla: una sola fuente.
+POR_EXTENSION = {ext: nombre for nombre, cfg in LENGUAJES.items() for ext in cfg["extensiones"]}
+
+
+def lenguaje_de(ruta):
+    return POR_EXTENSION.get(os.path.splitext(ruta)[1].lower())
+
+
+def carencias_de(ids):
+    """Lo que los lenguajes presentes NO pueden hacer, para poder decirlo."""
+    fuera = []
+    for i in sorted(set(ids)):
+        for texto in LENGUAJES[i]["carencias"]:
+            fuera.append("%s: %s" % (i, texto))
+    return fuera
+
+
+# --- el binario: detectar, y verificar EJECUTANDO (regla 7) ------------------
+
+
+def binario():
+    """Ruta del ejecutable de ast-grep, o None.
+
+    `shutil.which` y no confiar en el PATH del shell: en Windows ast-grep es un
+    shim `.CMD` de npm y `subprocess(["ast-grep", ...])` da WinError 2 aunque en
+    la terminal funcione. Es el 'instalado != funcional' de la regla 7, y se
+    reprodujo el 8-ago montando el primer proyecto JS.
+    """
+    for nombre in ("ast-grep", "sg"):
+        ruta = shutil.which(nombre)
+        if ruta:
+            return ruta
+    return None
+
+
+def disponible():
+    """(ruta, version) si el binario responde de verdad, o (None, motivo).
+
+    Detectarlo no basta: se ejecuta. Un shim roto o un binario de otra
+    arquitectura existen en el PATH y no sirven.
+    """
+    ruta = binario()
+    if not ruta:
+        return None, "ast-grep no esta instalado (https://ast-grep.github.io)"
+    try:
+        p = subprocess.run([ruta, "--version"], capture_output=True, timeout=20)
+    except (OSError, subprocess.SubprocessError) as error:
+        return None, "ast-grep esta en el PATH pero no ejecuta: %s" % error
+    if p.returncode != 0:
+        return None, "ast-grep responde con error al invocarlo"
+    return ruta, p.stdout.decode("utf-8", "replace").strip()
+
+
+def _corre(ruta, patron, lenguaje, raiz):
+    """Una pasada de ast-grep, ya parseada. Lista vacía si algo falla: un patrón
+    que no casa nada y un patrón mal escrito dan lo mismo aquí, y por eso los
+    contadores del informe declaran cuánto se vio — no se infiere."""
+    try:
+        p = subprocess.run(
+            [ruta, "run", "-p", patron, "-l", lenguaje, "--json=compact", raiz],
+            capture_output=True, timeout=180,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return []
+    salida = p.stdout.decode("utf-8", "replace").strip()
+    if not salida:
+        return []
+    try:
+        datos = json.loads(salida)
+    except ValueError:
+        return []
+    return datos if isinstance(datos, list) else []
+
+
+def _meta(match, nombre):
+    return (match.get("metaVariables", {}).get("single", {}).get(nombre, {}) or {}).get("text")
+
+
+def _linea(match):
+    return match.get("range", {}).get("start", {}).get("line", 0) + 1
+
+
+def _fin(match):
+    """Última línea del símbolo. NO es cosmética: sin ella la selección de tests
+    no puede decidir si un hunk del diff cae DENTRO de una función, se queda sin
+    semillas y cae a "corre la suite entera" — seguro, pero con 0 % de ahorro.
+    Medido en el banco de JS antes de ponerla: 7 de 7 roturas caían a todo."""
+    return match.get("range", {}).get("end", {}).get("line", 0) + 1
+
+
+# --- ficheros, módulos y tests ----------------------------------------------
+
+
+def es_fichero_de_test(ruta, raiz, cfg):
+    """¿Este fichero lo colecciona el runner del lenguaje?
+
+    Mismo criterio que la vía Python y por el mismo motivo: seleccionar algo que
+    el runner NO colecciona devuelve "no tests ran", que en un gate se lee igual
+    de verde que "todo pasó".
+    """
+    rel = os.path.relpath(ruta, raiz).replace("\\", "/")
+    base = os.path.splitext(os.path.basename(rel))[0]
+    if cfg["sufijos_test"] and base.endswith(tuple(cfg["sufijos_test"])):
+        return True
+    partes = os.path.dirname(rel).split("/")
+    return any(p in cfg["dirs_test"] for p in partes)
+
+
+def module_name(ruta, raiz):
+    """Nombre punteado de un fichero, con el mismo criterio que la vía Python:
+    relativo a la raíz, sin extensión, descontando `src/` para que
+    `src/carrito.js` sea `carrito` y no `src.carrito`."""
+    rel = os.path.relpath(ruta, raiz).replace("\\", "/")
+    partes = [p for p in rel.split("/") if p and p != "."]
+    if partes and partes[0] == "src":
+        partes = partes[1:]
+    if not partes:
+        return ""
+    partes[-1] = os.path.splitext(partes[-1])[0]
+    if partes[-1] in ("index", "mod", "__init__"):
+        partes = partes[:-1]
+    return ".".join(partes)
+
+
+def _ficheros(raiz):
+    """[(ruta, id_de_lenguaje)] del código que este motor sabe mirar."""
+    fuera = []
+    for dirpath, dirnames, filenames in os.walk(raiz):
+        dirnames[:] = [d for d in dirnames if d not in SKIP and not d.startswith(".")]
+        for name in filenames:
+            if name.endswith(".d.ts"):
+                continue
+            lang = lenguaje_de(name)
+            if lang:
+                fuera.append((os.path.join(dirpath, name), lang))
+    return fuera
+
+
+def hay_codigo(raiz):
+    """¿Hay algo que este motor pueda mirar? Barato, sin invocar el binario."""
+    return bool(_ficheros(raiz))
+
+
+def _resuelve(especificador, fichero, raiz, modulos, modo):
+    """El módulo interno al que apunta un import, o None si es externo.
+
+    Solo se devuelve un módulo que EXISTE en el árbol. Un paquete de terceros no
+    es código de este proyecto y su arista no dice nada del acoplamiento propio;
+    y un destino inventado sería una arista falsa, que es peor que ninguna.
+    """
+    if modo in ("ruta", "ruta-local"):
+        # "ruta" exige el punto inicial porque en JS/TS un especificador pelado
+        # es un PAQUETE (`react`), no un fichero. "ruta-local" no lo exige porque
+        # en Ruby y PHP `require_relative 'a'` si es el fichero de al lado — y
+        # tratarlos igual dejaba a los dos sin una sola arista (medido por la
+        # sonda de conformidad, 8-ago).
+        if modo == "ruta" and not especificador.startswith("."):
+            return None
+        destino = os.path.normpath(os.path.join(os.path.dirname(fichero), especificador))
+        candidatos = [destino] + [destino + ext for ext in POR_EXTENSION]
+        candidatos += [os.path.join(destino, base + ext)
+                       for base in ("index", "mod") for ext in POR_EXTENSION]
+        for cand in candidatos:
+            nombre = module_name(cand, raiz)
+            if nombre in modulos:
+                return nombre
+        return None
+    if modo == "paquete":
+        # `app/util`, `app.util`, `crate::app::util` -> se casa por SUFIJO contra
+        # los modulos reales. Sin coincidencia, no hay arista.
+        limpio = especificador.strip('"\'').replace("::", ".").replace("/", ".")
+        partes = [p for p in limpio.split(".") if p]
+        for i in range(len(partes)):
+            cand = ".".join(partes[i:])
+            if cand in modulos:
+                return cand
+        return None
+    return None
+
+
+# --- el analisis ------------------------------------------------------------
+
+
+def analyze(root):
+    """El informe, con la MISMA forma que `symbols.analyze` de la vía Python.
+
+    `root_error` no vacío significa "no he podido mirar" y ningún consumidor debe
+    leerlo como "no hay nada": es la distinción que la Fase 0 dejó fijada.
+    """
+    root = os.path.abspath(root)
+    informe = {
+        "root": root, "root_error": "", "nodes": [], "edges": [], "errors": [],
+        "calls_total": 0, "calls_candidates": 0, "calls_resolved": 0, "calls_builtin": 0,
+        "unresolved": {}, "not_covered": [], "since": None, "baseline_ok": None,
+        "new_nodes": [], "gone_nodes": [], "new_calls": [], "motor": "ast-grep",
+        "lenguajes": [],
+    }
+    if not os.path.isdir(root):
+        informe["root_error"] = "no existe: %s" % root
+        return informe
+
+    ficheros = _ficheros(root)
+    if not ficheros:
+        informe["root_error"] = "ni un fichero de un lenguaje soportado bajo %s" % root
+        return informe
+
+    ruta_ag, detalle = disponible()
+    if not ruta_ag:
+        informe["root_error"] = detalle
+        return informe
+    informe["motor"] = detalle
+    presentes = sorted({lang for _f, lang in ficheros})
+    informe["lenguajes"] = presentes
+
+    modulos = {}
+    por_fichero = {}
+    for fichero, lang in ficheros:
+        nombre = module_name(fichero, root)
+        if not nombre:
+            continue
+        modulos[nombre] = fichero
+        por_fichero[os.path.abspath(fichero)] = (nombre, lang)
+
+    for nombre, fichero in sorted(modulos.items()):
+        cfg = LENGUAJES[lenguaje_de(fichero)]
+        informe["nodes"].append({
+            "qual": nombre, "kind": "module", "module": nombre, "doc": "",
+            "file": os.path.relpath(fichero, root), "line": 1, "end": None, "sig": "",
+            # La marca que lee la seleccion de tests. Va en el nodo del MODULO
+            # porque en casi ningun lenguaje el caso es un simbolo: suele ser una
+            # llamada dentro del fichero, y el fichero es lo unico que un runner
+            # sabe recibir.
+            "test": es_fichero_de_test(fichero, root, cfg),
+        })
+
+    # --- simbolos ---
+    definidos = {}
+    vistos = set()
+    for lang in presentes:
+        cfg = LENGUAJES[lang]
+        for kind, patron in cfg["simbolos"]:
+            for m in _corre(ruta_ag, patron, cfg["ag"], root):
+                nombre = _meta(m, "NAME")
+                fichero = os.path.abspath(os.path.join(root, m.get("file", "")))
+                entrada = por_fichero.get(fichero)
+                if not nombre or entrada is None or entrada[1] != lang:
+                    continue
+                modulo = entrada[0]
+                linea = _linea(m)
+                clave = (fichero, linea, nombre)
+                if clave in vistos:
+                    continue          # una definicion casa con varios patrones
+                vistos.add(clave)
+                qual = "%s.%s" % (modulo, nombre) if modulo else nombre
+                informe["nodes"].append({
+                    "qual": qual, "kind": kind, "module": modulo, "doc": "",
+                    "file": os.path.relpath(fichero, root), "line": linea,
+                    "end": _fin(m), "sig": "",
+                })
+                informe["edges"].append([modulo, qual, "DEFINES"])
+                definidos.setdefault(nombre, []).append(qual)
+
+    # --- imports ---
+    aristas = set()
+    for lang in presentes:
+        cfg = LENGUAJES[lang]
+        for patron in cfg["imports"]:
+            for m in _corre(ruta_ag, patron, cfg["ag"], root):
+                especificador = _meta(m, "SRC")
+                fichero = os.path.abspath(os.path.join(root, m.get("file", "")))
+                entrada = por_fichero.get(fichero)
+                if not especificador or entrada is None or entrada[1] != lang:
+                    continue
+                destino = _resuelve(especificador, fichero, root, modulos, cfg["resolucion"])
+                if destino and destino != entrada[0]:
+                    aristas.add((entrada[0], destino))
+    for origen, destino in sorted(aristas):
+        informe["edges"].append([origen, destino, "IMPORTS"])
+
+    # --- llamadas ---
+    # Los tramos de cada fichero, para saber DENTRO DE QUE simbolo cae una
+    # llamada. Sin esto la arista sale del modulo y la cadena transitiva se
+    # corta: nadie "llama" a un modulo. Medido en el banco de JS: con aristas de
+    # modulo, romper el simbolo mas profundo seleccionaba 1 test de los 5 que
+    # dependian de el — y no daba falso verde solo porque la rotura era dura.
+    tramos = {}
+    for n in informe["nodes"]:
+        if n["kind"] != "module" and n.get("end"):
+            tramos.setdefault(n["file"], []).append((n["line"], n["end"], n["qual"]))
+
+    def _envuelve(rel, linea, modulo):
+        dentro = [t for t in tramos.get(rel, []) if t[0] <= linea <= t[1]]
+        return min(dentro, key=lambda t: t[1] - t[0])[2] if dentro else modulo
+
+    sin_resolver = {}
+    for lang in presentes:
+        cfg = LENGUAJES[lang]
+        if not cfg["llamada"]:
+            continue                    # declarado en `carencias`, no disimulado
+        for m in _corre(ruta_ag, cfg["llamada"], cfg["ag"], root):
+            llamado = (_meta(m, "FN") or "").strip()
+            fichero = os.path.abspath(os.path.join(root, m.get("file", "")))
+            entrada = por_fichero.get(fichero)
+            if not llamado or entrada is None or entrada[1] != lang:
+                continue
+            informe["calls_total"] += 1
+            if llamado in cfg["globales"]:
+                informe["calls_builtin"] += 1
+                continue
+            informe["calls_candidates"] += 1
+            if not llamado.isidentifier():
+                # `obj.metodo()`, `f()()`, `a[b]()`: exigen inferencia de tipos.
+                # El MISMO techo que la via Python y por el mismo motivo — una
+                # arista inventada es peor que una arista ausente (ADR 0008).
+                sin_resolver["atributo-de-variable"] = sin_resolver.get("atributo-de-variable", 0) + 1
+                continue
+            candidatos = definidos.get(llamado)
+            if not candidatos:
+                sin_resolver["nombre-desconocido"] = sin_resolver.get("nombre-desconocido", 0) + 1
+                continue
+            if len(candidatos) > 1:
+                sin_resolver["nombre-ambiguo"] = sin_resolver.get("nombre-ambiguo", 0) + 1
+                continue
+            informe["calls_resolved"] += 1
+            origen = _envuelve(os.path.relpath(fichero, root), _linea(m), entrada[0])
+            informe["edges"].append([origen, candidatos[0], "CALLS"])
+
+    informe["unresolved"] = sin_resolver
+    informe["not_covered"] = [
+        "llamadas sobre variables (`obj.metodo()`): exigen inferencia de tipos. Se cuentan, "
+        "no se adivinan — una arista inventada es peor que una arista ausente",
+        "reexports, carga dinamica y alias: invisibles al patron",
+        "homonimos en modulos distintos: se cuentan aparte en vez de elegir uno",
+    ] + carencias_de(presentes)
+    return informe
+
+
+def build_graph(root, skip=None, include_nested=False, skipped=None):
+    """(nodes, edges, errors) de imports, con la MISMA firma que `graph.build_graph`.
+
+    Existe para inyectarse en `graph.analyze(constructor=...)`: así los ciclos, las
+    fronteras y el fan-in/out se calculan con el código que ya estaba probado, en
+    vez de con una segunda copia peor. Un `.gb-boundaries` funciona igual sobre un
+    proyecto Go o Ruby, que es justo lo que se busca.
+    """
+    informe = analyze(root)
+    if informe["root_error"]:
+        return set(), {}, {"": informe["root_error"]}
+    nodes = {n["qual"] for n in informe["nodes"] if n["kind"] == "module"}
+    edges = {}
+    for origen, destino, tipo in informe["edges"]:
+        if tipo == "IMPORTS":
+            edges.setdefault(origen, set()).add(destino)
+    return nodes, edges, {}

@@ -1,6 +1,6 @@
-"""El motor de JS/TS: mismo informe, otro parser (ADR 0009).
+"""El motor multilenguaje: mismo informe, otro parser (ADR 0009).
 
-La condicion de calidad NO es cubrir mucho JavaScript — es que lo que devuelva
+La condicion de calidad NO es cubrir muchos lenguajes — es que lo que devuelva
 tenga la MISMA forma que la via Python y declare su techo igual de bien. Un
 segundo motor que miente distinto que el primero es peor que no tener segundo
 motor.
@@ -14,10 +14,10 @@ import os
 
 import pytest
 
-from galaxybrain import cli, js
+from galaxybrain import cli, lenguajes
 
 necesita_astgrep = pytest.mark.skipif(
-    not js.binario(), reason="ast-grep no instalado; la capa JS es opcional (ADR 0009)"
+    not lenguajes.binario(), reason="ast-grep no instalado; la capa multilenguaje es opcional (ADR 0009)"
 )
 
 
@@ -47,7 +47,7 @@ def proyecto_js(tmp_path):
 def test_devuelve_la_misma_forma_que_la_via_python(proyecto_js):
     """Si esto se rompe, el mapa, la CLI y el suelo se enteran del lenguaje —
     que es exactamente lo que el diseno evita."""
-    informe = js.analyze(proyecto_js)
+    informe = lenguajes.analyze(proyecto_js)
 
     for clave in ("root", "root_error", "nodes", "edges", "calls_total",
                   "calls_candidates", "calls_resolved", "calls_builtin",
@@ -62,7 +62,7 @@ def test_devuelve_la_misma_forma_que_la_via_python(proyecto_js):
 def test_encuentra_los_simbolos_una_sola_vez(proyecto_js):
     """`export function f` casa con dos patrones a la vez; contarlo dos veces
     inflaria el grafo con simbolos fantasma."""
-    informe = js.analyze(proyecto_js)
+    informe = lenguajes.analyze(proyecto_js)
 
     funciones = [n["qual"] for n in informe["nodes"] if n["kind"] == "function"]
     assert sorted(funciones) == ["carrito.subtotal", "carrito.total", "factura.emitir"]
@@ -76,14 +76,14 @@ def test_la_arista_de_import_solo_cuenta_lo_interno(tmp_path):
     _escribe(root, "src/a.js", 'import { x } from "./b.js";\nimport React from "react";\n')
     _escribe(root, "src/b.js", "export function x() { return 1; }\n")
 
-    aristas = [(e[0], e[1]) for e in js.analyze(root)["edges"] if e[2] == "IMPORTS"]
+    aristas = [(e[0], e[1]) for e in lenguajes.analyze(root)["edges"] if e[2] == "IMPORTS"]
 
     assert aristas == [("a", "b")], "react es externo: su arista no dice nada del acoplamiento propio"
 
 
 @necesita_astgrep
 def test_resuelve_las_llamadas_que_puede_y_declara_el_resto(proyecto_js):
-    informe = js.analyze(proyecto_js)
+    informe = lenguajes.analyze(proyecto_js)
 
     llamadas = {(e[0], e[1]) for e in informe["edges"] if e[2] == "CALLS"}
     # La arista sale de la FUNCION que llama, no de su modulo: si saliera del
@@ -104,26 +104,26 @@ def test_resuelve_las_llamadas_que_puede_y_declara_el_resto(proyecto_js):
 def test_sin_ast_grep_lo_dice_y_no_revienta(proyecto_js, monkeypatch):
     """Criterio 4 del alcance: sin el binario la capa se degrada DECLARANDO.
     Un informe vacio y mudo aqui seria el mismo fallo que la Fase 0 cerro."""
-    monkeypatch.setattr(js, "binario", lambda: None)
+    monkeypatch.setattr(lenguajes, "binario", lambda: None)
 
-    informe = js.analyze(proyecto_js)
+    informe = lenguajes.analyze(proyecto_js)
 
     assert informe["root_error"] and "ast-grep" in informe["root_error"]
     assert informe["nodes"] == []
 
 
 def test_una_raiz_sin_js_lo_dice(tmp_path):
-    informe = js.analyze(str(tmp_path))
+    informe = lenguajes.analyze(str(tmp_path))
 
-    assert "ni un fichero JS/TS" in informe["root_error"]
-    assert not js.hay_codigo(str(tmp_path))
+    assert "ni un fichero de un lenguaje soportado" in informe["root_error"]
+    assert not lenguajes.hay_codigo(str(tmp_path))
 
 
 def test_node_modules_no_es_codigo_del_proyecto(tmp_path):
     root = str(tmp_path / "app")
     _escribe(root, "node_modules/lib/index.js", "export function x() {}\n")
 
-    assert not js.hay_codigo(root)
+    assert not lenguajes.hay_codigo(root)
 
 
 # --- nombres de modulo, con el mismo criterio que Python ---------------------
@@ -131,9 +131,9 @@ def test_node_modules_no_es_codigo_del_proyecto(tmp_path):
 
 def test_el_nombre_de_modulo_descuenta_src_y_index(tmp_path):
     root = str(tmp_path)
-    assert js.module_name(os.path.join(root, "src", "carrito.js"), root) == "carrito"
-    assert js.module_name(os.path.join(root, "src", "cosas", "index.js"), root) == "cosas"
-    assert js.module_name(os.path.join(root, "lib", "util.ts"), root) == "lib.util"
+    assert lenguajes.module_name(os.path.join(root, "src", "carrito.js"), root) == "carrito"
+    assert lenguajes.module_name(os.path.join(root, "src", "cosas", "index.js"), root) == "cosas"
+    assert lenguajes.module_name(os.path.join(root, "lib", "util.ts"), root) == "lib.util"
 
 
 # --- el despacho: Python manda cuando hay Python -----------------------------
@@ -163,7 +163,7 @@ def test_el_ciclo_de_imports_se_detecta_igual_en_js(proyecto_js):
     hubiera una segunda deteccion de ciclos aqui, tarde o temprano divergiria."""
     from galaxybrain import graph
 
-    limpio = graph.analyze(proyecto_js, constructor=js.build_graph)
+    limpio = graph.analyze(proyecto_js, constructor=lenguajes.build_graph)
     assert limpio["modules"] == 2 and limpio["cycles"] == []
 
     # se cierra el ciclo: factura ya importaba carrito
@@ -171,7 +171,7 @@ def test_el_ciclo_de_imports_se_detecta_igual_en_js(proyecto_js):
              'import { emitir } from "./factura.js";\n'
              "export function total(xs) { return emitir(xs); }\n")
 
-    conciclo = graph.analyze(proyecto_js, constructor=js.build_graph)
+    conciclo = graph.analyze(proyecto_js, constructor=lenguajes.build_graph)
     assert [sorted(c) for c in conciclo["cycles"]] == [["carrito", "factura"]]
 
 
@@ -225,7 +225,7 @@ def test_la_seleccion_de_tests_sigue_la_cadena_indirecta(tmp_path):
     _escribe(root, "test/carrito.test.js",
              'import { total } from "../src/carrito.js";\ntest("t", () => total(1));\n')
 
-    informe = js.analyze(root)
+    informe = lenguajes.analyze(root)
     nodes = {n["qual"]: n for n in informe["nodes"]}
     llamantes = impacted._llamantes(informe["edges"])
 

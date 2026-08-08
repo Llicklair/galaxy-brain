@@ -1472,19 +1472,19 @@ def _constructor_de_grafo(root):
     None —y no `graph.build_graph`— deja intacto el camino por defecto: quien no
     tenga JS no paga ni una comprobacion de mas.
     """
-    from . import graph, js
+    from . import graph, lenguajes
 
-    if not js.hay_codigo(root):
+    if not lenguajes.hay_codigo(root):
         return None
     nodes, _edges, _errores = graph.build_graph(root)
-    return None if nodes else js.build_graph
+    return None if nodes else lenguajes.build_graph
 
 
 def _analiza_simbolos(root, since=None):
     """El grafo de simbolos de `root`, con el motor que corresponda.
 
     La eleccion vive AQUI y no dentro de los motores: la CLI es lo que compone,
-    y asi `symbols` (stdlib `ast`) y `js` (ast-grep por referencia) no se
+    y asi `symbols` (stdlib `ast`) y `lenguajes` (ast-grep por referencia) no se
     conocen entre si. Dos motores que conviven, no uno generico peor que ambos
     (ADR 0009).
 
@@ -1492,12 +1492,12 @@ def _analiza_simbolos(root, since=None):
     dependencia externa. La via JS entra solo cuando no habia nada que analizar
     — nunca pisa un resultado bueno.
     """
-    from . import js, symbols
+    from . import lenguajes, symbols
 
     informe = symbols.analyze(root, since=since)
-    if informe.get("nodes") or not js.hay_codigo(root):
+    if informe.get("nodes") or not lenguajes.hay_codigo(root):
         return informe
-    informe = js.analyze(root)
+    informe = lenguajes.analyze(root)
     if since and not informe["root_error"]:
         # Ignorar una bandera en silencio es mentir por omision: el usuario la
         # escribio esperando un delta y recibiria un informe absoluto sin saberlo.
