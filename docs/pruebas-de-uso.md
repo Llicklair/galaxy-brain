@@ -10,6 +10,72 @@ mismo detalle que los positivos, o más.
 
 ---
 
+## 2026-08-08 · El techo del 40% puesto a prueba en código ajeno: **22/22 sin un solo verde falso**
+
+El grafo resuelve el **38%** de las llamadas candidatas en gb y el **40%** en `guardia`. Que el número
+se repita en un repo que no es nuestro dice que no es un defecto de gb: es el techo del análisis
+estático de Python sin tipos. El 60% restante es `atributo-de-variable` (`obj.metodo()`), 3328 casos
+aquí y 348 allí.
+
+Ese techo **solo puede hacer daño en un sitio**: `gb tests`. Si el grafo no ve un llamante puede
+seleccionar de MENOS, y seleccionar de menos da verde con el árbol roto. El argumento de diseño era
+que los consumidores degradan hacia el silencio; esto lo convierte en medición.
+
+**Protocolo** (worktree desechable sobre `guardia`, 22 tiradas): inyectar `raise RuntimeError` al
+inicio del cuerpo de una función → `gb tests --worktree --json` → correr **solo** su selección →
+correr la suite entera → si la entera es roja y la selección verde, es un falso verde.
+
+| Objetivos | Selección típica | Falsos verdes |
+|---|---|---|
+| 8 símbolos **con** llamantes resueltos | 2–9 de 20 ficheros | **0** |
+| 14 símbolos **invisibles** (cero llamantes resueltos) | **20 de 20** | **0** |
+
+Lo que hace válido el resultado es la segunda fila: ante un símbolo que no ve, gb **no concluye "0
+tests", concluye "córrelo todo"**. Y lo que impide que el 22/22 sea trampa es la primera: sí
+discrimina, no está aprobando el examen seleccionándolo todo siempre. El extremo, en
+`transporte.extraer_json`: `1 de 235 test(s) (0%) en 2 fichero(s)` — **un test de 235, y era el que
+fallaba**.
+
+**Códigos de salida, que es lo que consume un hook:** roja+`--run` → 1 · roja+`--run --isolated` → 1 ·
+verde+`--run` → 0 · sin `--run` (solo lista) → 0. `--isolated` —reconstruir HEAD+diff en un árbol
+limpio— **no se había ejecutado nunca fuera de este repo** y funcionó a la primera sobre layout
+`src/`. Era el candidato más probable a romperse.
+
+**Las dos honestidades:**
+
+1. La suite de `guardia` tarda **7,3 s**; un fichero suelto, 1,16 s. Ahí el TIA no ahorra nada útil.
+   Esto prueba **corrección**, no utilidad en ese repo — el ahorro importa en suites lentas.
+2. Las 22 roturas son **duras** (excepción inmediata). No dice nada sobre roturas sutiles: un
+   contrato que devuelve mal un valor sin petar.
+
+**Y de propina, un bug real cazado de rebote — el mejor de la tanda.** Al correr la suite de gb en un
+shell sin `TMPDIR`, pytest puso sus temporales DENTRO del repo y **101 tests se pusieron rojos**. No
+era una regresión: era `_py_no_ignorados` topándose con la regla `pytest-of-*/` del propio
+`.gitignore`. Reducido a mano, el síntoma limpio es peor de lo que parecía:
+
+```
+$ gb symbols pytest-of-Marcos/.../pkg     # 1 fichero .py dentro
+llamadas: 0 resueltas de 0 candidatas (0%)
+```
+
+**Cero nodos y ni una palabra del motivo.** Pedir una carpeta a dedo y recibir un grafo vacío se lee
+como «aquí no hay nada» — exactamente la mentira en verde que el docstring de `_iter_py_files` dice
+no poder contar. La cura no cuesta un subprocess: **una lista de permitidos vacía no es información,
+es su ausencia**, así que se descarta el filtro. Apuntar a una carpeta ES pedirla, como `git add -f`;
+y con código del proyecto bajo la raíz la lista nunca sale vacía, luego el caso del 7-ago queda
+intacto. Fijado con un test que se pone rojo al deshacer la línea.
+
+Vale la pena decir de dónde salió: **no lo encontró ningún test de los 654, lo encontró un entorno
+raro**. Séptima vez que el hueco lo destapa el uso y no la suite.
+
+**Consecuencia: no se toca el grafo.** Subir del 40% exigiría inferencia de tipos (medido: pyrefly,
+37/37 falsos positivos sobre código sin anotar) o resolución heurística por nombre, que metería
+aristas inventadas en una **gate** — prohibido por la regla 9. La única vía compatible con la ley
+sería evidencia de runtime (`coverage --contexts`) como capa aparte, y **su disparador es un caso
+medido donde el techo cueste algo**. Hoy, tras 22 intentos de fabricarlo, ese caso no existe.
+
+---
+
 ## 2026-08-08 · Tres fricciones reportadas mirando trabajar a un agente, y sus curas
 
 Sesión de observación: un agente real trabajando sobre galaxy-brain en un worktree, con el mapa
