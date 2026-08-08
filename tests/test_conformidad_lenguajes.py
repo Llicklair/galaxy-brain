@@ -176,9 +176,10 @@ def test_la_licencia_para_estrechar_es_opt_in():
     from galaxybrain import lenguajes as tabla
 
     concedidas = {i for i, cfg in tabla.LENGUAJES.items() if cfg["tia"]}
-    assert concedidas == {"js", "ts"}, (
-        "solo js/ts tienen banco medido (0 falsos verdes, cascada exacta, 52%% de "
-        "ahorro con node --test). Concedidas ahora: %s" % sorted(concedidas)
+    assert concedidas == {"js", "ts", "go"}, (
+        "solo js/ts (node --test) y go (go test) tienen banco medido: 0 falsos verdes, "
+        "cascada exacta y 52%% de ahorro en los dos. Concedidas ahora: %s"
+        % sorted(concedidas)
     )
 
 
@@ -190,7 +191,8 @@ def test_sin_licencia_la_seleccion_corre_todo_y_lo_dice():
 
     assert impacted._sin_licencia_para_estrechar({"lenguajes": ["rust"]}) == "rust"
     assert impacted._sin_licencia_para_estrechar({"lenguajes": ["js"]}) == ""
-    assert impacted._sin_licencia_para_estrechar({"lenguajes": ["js", "go"]}) == "go"
+    assert impacted._sin_licencia_para_estrechar({"lenguajes": ["js", "go"]}) == ""
+    assert impacted._sin_licencia_para_estrechar({"lenguajes": ["go", "java"]}) == "java"
 
 
 def test_la_via_python_no_pasa_por_la_licencia():
@@ -199,6 +201,47 @@ def test_la_via_python_no_pasa_por_la_licencia():
     from galaxybrain import impacted
 
     assert impacted._sin_licencia_para_estrechar({"nodes": [], "edges": []}) == ""
+
+
+@necesita_astgrep
+def test_resuelve_la_llamada_cualificada_entre_modulos(tmp_path):
+    """`paquete.Funcion()` es la forma NORMAL de llamar fuera del modulo propio
+    en Go, Java, C#, Kotlin y Scala. Descartarla dejaba su grafo de llamadas
+    practicamente vacio: en el banco de Go, cero aristas entre paquetes.
+
+    Se resuelve como los imports —casando contra simbolos que EXISTEN— y solo si
+    hay exactamente uno. El control de abajo es la otra mitad: un prefijo que no
+    es un modulo del proyecto (una variable) NO fabrica arista."""
+    root = str(tmp_path / "go")
+    os.makedirs(os.path.join(root, "iva"), exist_ok=True)
+    os.makedirs(os.path.join(root, "carrito"), exist_ok=True)
+    with open(os.path.join(root, "iva", "iva.go"), "w", encoding="utf-8") as fh:
+        fh.write("package iva\n\nfunc Iva() float64 { return 0.21 }\n")
+    with open(os.path.join(root, "carrito", "carrito.go"), "w", encoding="utf-8") as fh:
+        fh.write('package carrito\n\nimport "bench/iva"\n\n'
+                 "func Total(x float64) float64 { return x * iva.Iva() }\n")
+
+    llamadas = {(e[0], e[1]) for e in lenguajes.analyze(root)["edges"] if e[2] == "CALLS"}
+
+    assert ("carrito.carrito.Total", "iva.iva.Iva") in llamadas, llamadas
+
+
+@necesita_astgrep
+def test_un_prefijo_que_no_es_modulo_no_fabrica_arista(tmp_path):
+    """`xs.reduce(...)` en JS: el prefijo es una VARIABLE, no un modulo. Sigue
+    contando como techo, que es donde debe quedarse — una arista inventada es
+    peor que una arista ausente (ADR 0008)."""
+    root = str(tmp_path / "js")
+    os.makedirs(root, exist_ok=True)
+    with open(os.path.join(root, "a.js"), "w", encoding="utf-8") as fh:
+        fh.write("export function reduce(x) { return x; }\n"
+                 "export function suma(xs) { return xs.reduce((a, b) => a + b, 0); }\n")
+
+    informe = lenguajes.analyze(root)
+    llamadas = {(e[0], e[1]) for e in informe["edges"] if e[2] == "CALLS"}
+
+    assert ("a.suma", "a.reduce") not in llamadas, "resolvio un metodo de variable"
+    assert informe["unresolved"].get("atributo-de-variable")
 
 
 @necesita_astgrep

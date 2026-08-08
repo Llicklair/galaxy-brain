@@ -140,7 +140,7 @@ LENGUAJES = {
          ("function", "func $NAME($$$) { $$$ }"),
          ("class", "type $NAME struct { $$$ }")),
         ('import "$SRC"',),
-        resolucion="paquete",
+        resolucion="paquete", tia=True,
         sufijos_test=("_test",),
     ),
     "rust": _lang(
@@ -423,6 +423,31 @@ def hay_codigo(raiz):
     return bool(_ficheros(raiz))
 
 
+def _por_cualificado(llamado, definidos, por_modulo):
+    """Los símbolos que pueden ser el destino de `prefijo.Nombre()`, o None.
+
+    `None` significa "esto no es una llamada cualificada que yo pueda tratar" —
+    `obj.metodo()`, `f()()`, `a[b]()`— y se cuenta como techo. Una lista vacía
+    significa que sí lo parecía y no casó con nada real, que también es techo.
+
+    La regla es la misma que la de los imports: el prefijo tiene que coincidir
+    con el ÚLTIMO segmento de un módulo que existe. `iva.Iva()` resuelve a
+    `iva.Iva` si hay un módulo `iva` (o `a.b.iva`) que define `Iva`. En Go, Java,
+    C#, Kotlin y Scala esa es la forma normal de llamar fuera del módulo propio;
+    en JS o Python el mismo texto suele ser una variable, y por eso no casa con
+    ningún módulo y se queda en el techo, que es donde debe quedarse.
+    """
+    if llamado.count(".") != 1:
+        return None
+    prefijo, nombre = llamado.split(".")
+    if not prefijo.isidentifier() or not nombre.isidentifier():
+        return None
+    posibles = definidos.get(nombre)
+    if not posibles:
+        return None
+    return [q for q in posibles if por_modulo.get(q, "").split(".")[-1] == prefijo]
+
+
 def _resuelve(especificador, fichero, raiz, modulos, modo):
     """El módulo interno al que apunta un import, o None si es externo.
 
@@ -522,7 +547,8 @@ def analyze(root):
         })
 
     # --- simbolos ---
-    definidos = {}
+    definidos = {}          # nombre pelado -> [qual, ...]
+    por_modulo = {}         # qual -> modulo que lo define (para llamadas cualificadas)
     vistos = set()
     for lang in presentes:
         cfg = LENGUAJES[lang]
@@ -548,6 +574,7 @@ def analyze(root):
                 })
                 informe["edges"].append([modulo, qual, "DEFINES"])
                 definidos.setdefault(nombre, []).append(qual)
+                por_modulo[qual] = modulo
 
     # --- imports ---
     aristas = set()
@@ -610,10 +637,29 @@ def analyze(root):
                 continue
             informe["calls_candidates"] += 1
             if not llamado.isidentifier():
-                # `obj.metodo()`, `f()()`, `a[b]()`: exigen inferencia de tipos.
-                # El MISMO techo que la via Python y por el mismo motivo — una
-                # arista inventada es peor que una arista ausente (ADR 0008).
-                sin_resolver["atributo-de-variable"] = sin_resolver.get("atributo-de-variable", 0) + 1
+                # Llamada CUALIFICADA (`paquete.Funcion()`): en Go, Java, C#,
+                # Kotlin y Scala es la forma normal de llamar a otro modulo, asi
+                # que descartarla dejaba su grafo de llamadas practicamente
+                # vacio. Se resuelve como los imports: casando contra simbolos
+                # que EXISTEN, y solo si hay exactamente uno. Sin coincidencia o
+                # con varias, no hay arista — el prefijo puede ser una variable
+                # (`obj.metodo()`) y adivinar seria inventarsela (ADR 0008).
+                candidatos = _por_cualificado(llamado, definidos, por_modulo)
+                if not candidatos:
+                    # None: no era una llamada cualificada tratable.
+                    # []:   lo parecia y no caso con ningun simbolo real — el
+                    #       prefijo era una variable (`xs.reduce(...)`).
+                    # Las dos son techo, y las dos se cuentan; indexar aqui una
+                    # lista vacia reventaba con IndexError (cazado por su test).
+                    sin_resolver["atributo-de-variable"] = \
+                        sin_resolver.get("atributo-de-variable", 0) + 1
+                    continue
+                if len(candidatos) > 1:
+                    sin_resolver["nombre-ambiguo"] = sin_resolver.get("nombre-ambiguo", 0) + 1
+                    continue
+                informe["calls_resolved"] += 1
+                origen = _envuelve(os.path.relpath(fichero, root), _linea(m), entrada[0])
+                informe["edges"].append([origen, candidatos[0], "CALLS"])
                 continue
             candidatos = definidos.get(llamado)
             if not candidatos:
