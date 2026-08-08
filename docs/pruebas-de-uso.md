@@ -10,6 +10,39 @@ mismo detalle que los positivos, o más.
 
 ---
 
+## 2026-08-08 · Tres fricciones reportadas mirando trabajar a un agente, y sus curas
+
+Sesión de observación: un agente real trabajando sobre galaxy-brain en un worktree, con el mapa
+delante. Lo que salió no fue del código sino del **uso**, que es donde este proyecto encuentra sus
+bugs:
+
+1. **«Los procesos me flickean en el cmd.»** El watch en `--fondo` se lanzaba con
+   `DETACHED_PROCESS` — o sea SIN consola — y como llama a `git` en cada regeneración, Windows le
+   creaba una ventana a cada hijo. Con un agente trabajando, el escritorio parpadeaba cada 3 s.
+   Cura: `CREATE_NO_WINDOW`, que da una consola oculta que los hijos heredan.
+
+2. **«Se añadió a la leyenda de símbolos el nombre del agente, y debería ser inmutable.»** Tiene
+   razón: la leyenda es el **vocabulario del mapa** (módulo, clase, función, método, import,
+   llamada, ciclo) y un vocabulario que se reescribe según quién esté trabajando deja de serlo —
+   cada agente que entraba o salía movía de sitio lo estable. Cura: la marca se explica una vez y
+   los nombres se quedan en su tarjeta, que es donde significan algo, detrás de un separador que
+   marca dónde acaba lo estable y empieza lo efímero. Nota de seguridad: al sacar el nombre del
+   HTML, el escape ya no lo hace `html.escape` sino `_en_script` (viaja en el payload JSON de la
+   tarjeta) — la protección sigue, cambia la vía, y el test lo fija por la vía nueva.
+
+3. **«Hemos gastado demasiados prompts hasta llegar aquí; esto debería ser más ágil.»** La crítica
+   más profunda de la sesión. Ver a un agente trabajar sobre el mapa exigía cinco pasos y un script
+   desechable: crear el worktree, escribir un lanzador que teee el stdout a `<worktree>.consola.log`,
+   arrancar el watch, encontrar la ruta del mapa, lanzar. Cura: **`python bucle/agente.py "la tarea"`**
+   — crea el worktree con nombre derivado de la tarea, asegura el watch, imprime la ruta del mapa,
+   teea la consola en vivo y al terminar deja el diff **sin commitear y sin mergear**. Vive en
+   `bucle/` porque gb provee y no orquesta (regla 4).
+
+De propina, un falso positivo mío: di por «colgado» al agente tras 3 minutos sin línea nueva en la
+consola. No lo estaba — estuvo 5 min 45 s pensando tras leer tres ficheros grandes. Mi lanzador no
+guardaba transcript crudo, así que no podía distinguir «pensando» de «tee atascado»; el de `bucle/`
+sí imprime en vivo.
+
 ## 2026-08-08 · Sonda v2 (el fallo a profundidad 2): la información estaba delante las 3 veces y se usó 1
 
 La v1 salió plana con una crítica válida: el fallo estaba a profundidad 1 y un `grep` lo resolvía, así
