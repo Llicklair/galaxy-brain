@@ -10,6 +10,30 @@ mismo detalle que los positivos, o más.
 
 ---
 
+## 2026-08-08 · `gb check` contra 67 commits ajenos: **2 señales, 0 acusaciones falsas** — la regla 9 medida
+
+La capa que más riesgo tiene de gritar sin motivo, sobre historia que no es nuestra: los 67 commits
+de `guardia`, uno a uno.
+
+**Resultado: 2 commits con señal (3 %), ambos `SKIP_ADDED`, ambos ciertos.** Cero `ASSERT_WEAKENED`,
+cero tests borrados, cero señales de firma. Los dos marcadores existen todavía hoy y son
+`@pytest.mark.skipif(not os.environ.get("GUARDIA_SMOKE_LLM"))` — smoke tests que invocan un LLM real
+y gastan cuota. Decisión legítima, no defecto.
+
+**Y ahí está la validación de la regla 9, que es lo que importa:** la señal es **cierta pero benigna**.
+Si `SKIP_ADDED` bloqueara, este repo habría comido dos `--no-verify` en su historia — y a partir del
+segundo, la gate entera deja de leerse. Informar y devolver es lo que la mantiene puesta. Es el mismo
+patrón que ya obligó a afinar `FIRMA_CAMBIADA_SIN_LLAMANTES` (3/3 ciertos e inaccionables).
+
+**El error de método, otra vez el mismo, y por eso se escribe:** el primer barrido dio **0 de 67** y
+casi lo doy por bueno. Leía `d['signals']`; la clave real es `d['flags']` — el instrumento estaba
+mudo, igual que con `edge_list` esta misma mañana. Lo cazó un **control positivo**: debilitar una
+aserción real y borrar un test en un worktree desechable, y comprobar que `gb check --staged`
+dispara las 2 señales esperadas. Regla que queda: **un cero no se reporta sin control positivo**. Un
+instrumento mudo y un repo limpio dan exactamente la misma cifra.
+
+---
+
 ## 2026-08-08 · Roturas SUTILES (mutación): 0/20 falsos verdes — y lo que encontró en el repo ajeno
 
 Cierra el hueco que dejó escrito la entrada de abajo: *«las 22 roturas son duras; no dicen nada
