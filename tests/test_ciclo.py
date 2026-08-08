@@ -362,3 +362,29 @@ def test_list_pendientes_no_combina_con_all(tmp_path, capsys, monkeypatch):
     monkeypatch.chdir(_repo(tmp_path))
     assert cli.main(["list", "--pendientes", "--all"]) == 2
     assert "no combina" in capsys.readouterr().out
+
+
+def test_la_cola_tampoco_lleva_exploracion(tmp_path, capsys, monkeypatch):
+    """--pendientes es lo que hay que TRABAJAR: fuera las sondas del temporal y
+    las capturas sin sitio. En el triaje del 8-ago, 6 de 8 firmas 'pendientes'
+    eran scripts de scratchpad. La libreta (sin la bandera) las sigue viendo:
+    son parte del registro, no de la cola."""
+    import tempfile
+
+    root = _repo(tmp_path)
+    real = _write(root, "vivo.py")
+    _commit(root, "inicial")
+    _captura(root, real, _ahora() + datetime.timedelta(minutes=5))
+    sonda = os.path.join(tempfile.gettempdir(), "fuera-del-repo", "probe.py")
+    _captura(root, sonda, _ahora() + datetime.timedelta(minutes=5))
+    monkeypatch.chdir(root)
+
+    assert cli.main(["list", "--pendientes", "--color", "never"]) == 0
+    cola = capsys.readouterr().out
+    assert "vivo.py" in cola
+    assert "probe.py" not in cola
+    assert "1 captura(s) fuera del proyecto" in cola
+
+    # y la libreta completa las sigue enseñando: apartar no es borrar
+    assert cli.main(["list", "--color", "never"]) == 0
+    assert "probe.py" in capsys.readouterr().out

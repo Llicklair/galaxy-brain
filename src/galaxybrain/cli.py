@@ -945,6 +945,23 @@ def cmd_last(args):
     return 0
 
 
+def _fichero_del_proyecto(entrada, raiz):
+    """¿El fichero de esta captura vive DENTRO del arbol del proyecto?
+
+    Sin sitio (un `?`) o fuera del arbol -> no hay nada que arreglar aqui. Se
+    compara normalizado, que en Windows la caja y los separadores mienten."""
+    donde = (entrada.get("where") or "").strip()
+    if not donde or donde == "?" or donde.startswith("<"):
+        return False
+    fichero = donde.rsplit(":", 1)[0] if ":" in donde[2:] else donde
+    try:
+        ruta = os.path.normcase(os.path.abspath(fichero))
+        base = os.path.normcase(os.path.abspath(raiz))
+    except (OSError, ValueError):
+        return False
+    return ruta == base or ruta.startswith(base + os.sep)
+
+
 def cmd_list(args):
     # Se lee todo el histórico para poder contar; el límite se aplica al final,
     # a las firmas agrupadas (o a las líneas si es --chrono).
@@ -966,9 +983,22 @@ def cmd_list(args):
     # repasarlas una y otra vez es justo el desgaste que la libreta debia evitar.
     # Se aplica ANTES de la bifurcacion texto/json, como el filtro de efimeros:
     # misma bandera, mismas firmas en ambas salidas.
-    controladas = 0
+    controladas = exploracion = 0
     if getattr(args, "pendientes", False):
         raiz = _project_filter(args)
+        # La cola es lo que hay que TRABAJAR: solo ficheros DE ESTE PROYECTO.
+        # Un script de scratchpad ejecutado con el cwd aqui se archiva con este
+        # proyecto, pero su fichero vive en el temporal — y no hay nada que
+        # arreglar en el (triaje del 8-ago: 6 de las 8 firmas "pendientes" eran
+        # sondas mias). La pregunta no es "¿esta en el temporal?" —un proyecto
+        # legitimo puede vivir ahi, como los repos de los tests— sino "¿es
+        # codigo de este arbol?". Se dice cuantas se apartan: ocultar en
+        # silencio se lee como "esto es todo lo que hay".
+        if raiz and not args.efimeros:
+            de_aqui = [e for e in entries if _fichero_del_proyecto(e, raiz)]
+            exploracion = len(entries) - len(de_aqui)
+            entries = de_aqui
+
         if raiz is None:
             # El estado en-silencio se deriva del git de UN proyecto; con --all
             # no hay uno del que derivarlo.
@@ -1017,6 +1047,14 @@ def cmd_list(args):
             style(
                 "\n(%d firma(s) en silencio fuera del listado: controladas — "
                 "sin --pendientes se ven)" % controladas,
+                render.DIM,
+            )
+        )
+    if exploracion:
+        emit(
+            style(
+                "\n(%d captura(s) fuera del proyecto: viven en otro arbol, aqui no "
+                "hay nada que arreglar — sin --pendientes se ven)" % exploracion,
                 render.DIM,
             )
         )
