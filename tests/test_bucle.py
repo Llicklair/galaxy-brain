@@ -487,3 +487,20 @@ def test_los_hechos_del_replay_incluyen_la_señal_RETENIDA():
     acta = {"entregas": {"B": ["(rechazo por adopcion)"]},
             "senal_retenida": {"B": ["nucleo.calcula: (a, b) -> (a, b, base)"]}}
     assert replay.hechos_de(acta, "B") == ["nucleo.calcula: (a, b) -> (a, b, base)"]
+
+
+# --- el lanzador de UN agente: la friccion medida en uso real ----------------
+
+
+def test_el_nombre_del_worktree_sale_de_la_tarea():
+    """La tarjeta del mapa se llama como lo que el agente hace: sin nombre que
+    inventar, un paso menos que teclear."""
+    _RUTA_AG = os.path.join(os.path.dirname(__file__), "..", "bucle", "agente.py")
+    _spec_a = importlib.util.spec_from_file_location("agente_del_banco", _RUTA_AG)
+    agente = importlib.util.module_from_spec(_spec_a)
+    _spec_a.loader.exec_module(agente)
+
+    assert agente._nombre_por_defecto("arregla el parser de firmas") == "arregla-el-parser"
+    assert agente._nombre_por_defecto("¡¿!!") == "agente"          # nunca vacio
+    # y la consola va AL LADO del worktree, que es donde gb la busca
+    assert agente.log_consola("/x/y/mi-wt") == os.path.normpath("/x/y/mi-wt") + ".consola.log"
