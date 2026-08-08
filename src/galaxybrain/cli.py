@@ -1108,6 +1108,7 @@ def cmd_graph(args):
         boundaries=args.boundaries,
         smells=args.smells,
         include_nested=args.include_nested,
+        constructor=_constructor_de_grafo(root),
     )
     if args.context:
         return _graph_context(report, root, args.if_changed)
@@ -1463,7 +1464,23 @@ def _vigilar(root, args):
     return 0
 
 
-def _analiza_simbolos(root):
+def _constructor_de_grafo(root):
+    """El extractor de imports que le toca a `root`, o None para el de Python.
+
+    Misma ley que `_analiza_simbolos`: Python manda cuando hay Python, y la via
+    JS entra solo donde el motor maduro no tenia nada que analizar. Devolver
+    None —y no `graph.build_graph`— deja intacto el camino por defecto: quien no
+    tenga JS no paga ni una comprobacion de mas.
+    """
+    from . import graph, js
+
+    if not js.hay_codigo(root):
+        return None
+    nodes, _edges, _errores = graph.build_graph(root)
+    return None if nodes else js.build_graph
+
+
+def _analiza_simbolos(root, since=None):
     """El grafo de simbolos de `root`, con el motor que corresponda.
 
     La eleccion vive AQUI y no dentro de los motores: la CLI es lo que compone,
@@ -1477,10 +1494,18 @@ def _analiza_simbolos(root):
     """
     from . import js, symbols
 
-    informe = symbols.analyze(root)
+    informe = symbols.analyze(root, since=since)
     if informe.get("nodes") or not js.hay_codigo(root):
         return informe
-    return js.analyze(root)
+    informe = js.analyze(root)
+    if since and not informe["root_error"]:
+        # Ignorar una bandera en silencio es mentir por omision: el usuario la
+        # escribio esperando un delta y recibiria un informe absoluto sin saberlo.
+        informe["not_covered"].append(
+            "el delta (`--since`) todavia no existe en la via JS/TS: esto es el estado "
+            "ACTUAL, no lo que cambio desde %s" % since
+        )
+    return informe
 
 
 def cmd_calls(args):
@@ -1627,7 +1652,7 @@ def cmd_symbols(args):
             return _watch_en_fondo()
         return _vigilar(root, args)
 
-    report = symbols.analyze(root, since=args.since)
+    report = _analiza_simbolos(root, since=args.since)
     if report["root_error"]:
         sys.stderr.write("[gb symbols] %s\n" % report["root_error"])
         return 1

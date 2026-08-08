@@ -148,6 +148,59 @@ def test_un_repo_mixto_usa_el_motor_de_python(tmp_path):
     assert any(n["qual"].endswith("f") for n in informe["nodes"])
 
 
+# --- el grafo: la topologia se reutiliza, no se reimplementa ----------------
+
+
+@necesita_astgrep
+def test_el_ciclo_de_imports_se_detecta_igual_en_js(proyecto_js):
+    """El criterio que decide si `build_graph` inyectado sirve: los ciclos los
+    calcula el codigo de `graph`, ya probado, con aristas que pone `js`. Si
+    hubiera una segunda deteccion de ciclos aqui, tarde o temprano divergiria."""
+    from galaxybrain import graph
+
+    limpio = graph.analyze(proyecto_js, constructor=js.build_graph)
+    assert limpio["modules"] == 2 and limpio["cycles"] == []
+
+    # se cierra el ciclo: factura ya importaba carrito
+    _escribe(proyecto_js, "src/carrito.js",
+             'import { emitir } from "./factura.js";\n'
+             "export function total(xs) { return emitir(xs); }\n")
+
+    conciclo = graph.analyze(proyecto_js, constructor=js.build_graph)
+    assert [sorted(c) for c in conciclo["cycles"]] == [["carrito", "factura"]]
+
+
+@necesita_astgrep
+def test_gb_graph_sobre_js_no_da_el_falso_cero(proyecto_js, capsys):
+    """Antes del ADR 0009 esto respondia `0 modulos` con su aviso. Ahora
+    responde de verdad — el aviso sigue existiendo para los lenguajes sin
+    motor, que es lo que fija tests/test_no_leido.py."""
+    assert cli.main(["graph", proyecto_js]) == 0
+
+    salida = capsys.readouterr().out
+    assert "2 modulos" in salida
+    assert "ni un modulo analizado" not in salida
+
+
+@necesita_astgrep
+def test_symbols_declara_su_techo_en_js(proyecto_js, capsys):
+    """Criterio 2: no basta con listar; hay que decir cuanto NO se resuelve."""
+    assert cli.main(["symbols", proyecto_js]) == 0
+
+    salida = capsys.readouterr().out
+    assert "atributo-de-variable" in salida
+    assert "una arista inventada es peor" in salida
+
+
+@necesita_astgrep
+def test_el_delta_no_soportado_se_declara_en_vez_de_ignorarse(proyecto_js):
+    """Ignorar una bandera en silencio es mentir por omision: quien escribe
+    `--since` espera un delta y recibiria el estado absoluto sin enterarse."""
+    informe = cli._analiza_simbolos(proyecto_js, since="HEAD~1")
+
+    assert any("--since" in linea for linea in informe["not_covered"])
+
+
 @necesita_astgrep
 def test_gb_calls_nombra_a_los_llamantes_en_js(proyecto_js, capsys):
     codigo = cli.main(["calls", "total", proyecto_js])

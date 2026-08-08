@@ -196,6 +196,28 @@ def hay_codigo(raiz):
     return bool(_ficheros(raiz))
 
 
+def build_graph(root, skip=None, include_nested=False, skipped=None):
+    """(nodes, edges, errors) de imports, con la MISMA firma que `graph.build_graph`.
+
+    Existe para inyectarse en `graph.analyze(constructor=...)`: así los ciclos, las
+    fronteras y el fan-in/out se calculan con el código que ya estaba probado, en
+    vez de con una segunda copia peor. Un `.gb-boundaries` funciona igual sobre un
+    proyecto JS, que es justo lo que se busca.
+
+    `errors` lleva el motivo cuando no se pudo mirar — un grafo vacío y mudo aquí
+    seria el mismo fallo que la Fase 0 cerró.
+    """
+    informe = analyze(root)
+    if informe["root_error"]:
+        return set(), {}, {"": informe["root_error"]}
+    nodes = {n["qual"] for n in informe["nodes"] if n["kind"] == "module"}
+    edges = {}
+    for origen, destino, tipo in informe["edges"]:
+        if tipo == "IMPORTS":
+            edges.setdefault(origen, set()).add(destino)
+    return nodes, edges, {}
+
+
 # --- el analisis ------------------------------------------------------------
 
 

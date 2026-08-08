@@ -758,7 +758,8 @@ def overengineering(root, skip=DEFAULT_SKIP, include_nested=False):
     return out
 
 
-def analyze(root, skip=DEFAULT_SKIP, since=None, boundaries=None, smells=False, include_nested=False):
+def analyze(root, skip=DEFAULT_SKIP, since=None, boundaries=None, smells=False,
+            include_nested=False, constructor=None):
     """El informe del acoplamiento del proyecto.
 
     Con `since` (ref de git) añade el delta de acoplamiento cíclico NUEVO. Con un
@@ -768,13 +769,19 @@ def analyze(root, skip=DEFAULT_SKIP, since=None, boundaries=None, smells=False, 
     `root_error` y `skipped_nested` existen por el invariante 4: analizar una raíz
     que no está, o quedarse sin módulos porque todo era subproyecto, NO puede salir
     en verde. Una gate que cubre cero y calla es peor que no tenerla.
+
+    `constructor` inyecta OTRO extractor de (nodes, edges, errors) con esta misma
+    firma — así la vía JS/TS aporta sus aristas y toda la topología de aquí abajo
+    (ciclos, fronteras, fan-in/out, delta) se reutiliza tal cual, en vez de
+    duplicarse peor en un segundo módulo (ADR 0009). Este módulo NO conoce al otro
+    motor: quien elige es la CLI, que es lo que compone.
     """
     root_error = None
     if not os.path.isdir(root):
         root_error = "la raiz no existe o no es un directorio: %s" % root
 
     skipped_nested = []
-    nodes, edges, errors = build_graph(root, skip, include_nested, skipped_nested)
+    nodes, edges, errors = (constructor or build_graph)(root, skip, include_nested, skipped_nested)
     fan_out = {mod: len(deps) for mod, deps in edges.items()}
     fan_in = {mod: 0 for mod in nodes}
     for deps in edges.values():
