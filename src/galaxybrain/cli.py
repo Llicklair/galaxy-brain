@@ -1294,9 +1294,15 @@ def _watch_en_fondo():
         "stderr": subprocess.DEVNULL,
     }
     if os.name == "nt":
-        # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP: sin consola y sin morir
-        # con el padre. En POSIX, sesion nueva.
-        kwargs["creationflags"] = 0x00000008 | 0x00000200
+        # CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP: consola OCULTA (no
+        # ausente) y sin morir con el padre. En POSIX, sesion nueva.
+        #
+        # Antes era DETACHED_PROCESS, y ahi estaba el bug reportado en uso real
+        # (8-ago): un proceso sin consola que lanza `git` hace que Windows le
+        # cree una a cada hijo — y el watch llama a git en CADA regeneracion,
+        # asi que con un agente trabajando el escritorio parpadeaba cada 3 s.
+        # Con una consola oculta, los hijos la HEREDAN y no abren ninguna.
+        kwargs["creationflags"] = 0x08000000 | 0x00000200
     else:
         kwargs["start_new_session"] = True
     subprocess.Popen(orden, **kwargs)

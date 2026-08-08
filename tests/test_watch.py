@@ -249,3 +249,33 @@ def test_la_firma_de_actividad_ve_worktrees_y_consolas(tmp_path):
     with open(log, "a", encoding="utf-8") as handle:
         handle.write("otra\n")
     assert cli._firma_actividad(root) != con_consola
+
+
+def test_el_watch_en_fondo_no_abre_ventanas(monkeypatch):
+    """Windows: un proceso DETACHED (sin consola) que lanza `git` hace que el SO
+    le cree una ventana a cada hijo — y el watch llama a git en cada
+    regeneracion, asi que con un agente trabajando el escritorio parpadeaba
+    cada 3 s (reportado en uso real, 8-ago). CREATE_NO_WINDOW le da una consola
+    OCULTA que los hijos heredan."""
+    import subprocess
+    import sys
+
+    capturado = {}
+
+    class _Popen:
+        def __init__(self, orden, **kwargs):
+            capturado["orden"] = orden
+            capturado["kwargs"] = kwargs
+
+    monkeypatch.setattr(subprocess, "Popen", _Popen)
+    monkeypatch.setattr(sys, "argv", ["gb", "symbols", "--html", "--watch", "--fondo"])
+    assert cli._watch_en_fondo() == 0
+
+    assert "--fondo" not in capturado["orden"]  # el hijo no vuelve a relanzarse
+    if os.name == "nt":
+        flags = capturado["kwargs"]["creationflags"]
+        assert flags & 0x08000000, "falta CREATE_NO_WINDOW: los hijos abriran ventana"
+        assert not flags & 0x00000008, "DETACHED_PROCESS es justo lo que provoca el parpadeo"
+        assert flags & 0x00000200  # sin morir con el Ctrl+C del padre
+    else:
+        assert capturado["kwargs"]["start_new_session"] is True
