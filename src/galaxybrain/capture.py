@@ -150,6 +150,24 @@ def describe_chain(exc, max_depth=3):
     return chain
 
 
+def _origen_sintaxis(exc):
+    """`fichero:linea` de un SyntaxError, que no deja frame propio.
+
+    El interprete no llego a ejecutar el fichero, asi que no hay traza que
+    apunte a el — pero la excepcion trae `filename` y `lineno`. Devuelve None
+    para cualquier otra cosa: aqui no se inventa un sitio, se lee el que la
+    excepcion ya sabe. Nunca lanza (regla 9: esto corre mientras un programa
+    ajeno se muere)."""
+    try:
+        fichero = getattr(exc, "filename", None)
+        if not fichero:
+            return None
+        linea = getattr(exc, "lineno", None)
+        return "%s:%s" % (fichero, linea) if linea else str(fichero)
+    except BaseException:  # noqa: BLE001
+        return None
+
+
 def _message(exc):
     # S2: el mensaje puede llevar un secreto con forma clave=valor
     # (`ValueError(f"bad token={t}")`). Redacción por nombre. Cubre también la
@@ -240,6 +258,13 @@ def build_record(exc_type, exc, tb, source="excepthook", thread=None):
             "module": getattr(exc_type, "__module__", None),
             "message": _message(exc),
             "chain": describe_chain(exc),
+            # Un SyntaxError NO deja frame del fichero culpable —el interprete
+            # ni llego a ejecutarlo— pero SI sabe cual es: lo lleva en `filename`
+            # y `lineno`. Sin esto la captura se archivaba con sitio "?" y se
+            # colaba en la cola de pendientes sin decir de donde venia (7 casos
+            # en el triaje del 8-ago, todos de scripts por stdin). Derivar el
+            # dato que la excepcion ya trae, no adivinarlo.
+            "origen": _origen_sintaxis(exc),
         },
         "frames": frames,
         "frames_trimmed": trimmed,

@@ -197,3 +197,35 @@ def test_un_id_nulo_en_el_indice_no_revienta_la_carga(gb_home):
     buena = next(e for e in store.read_index() if e.get("id"))
     assert store.load(buena["id"][:8]) is not None
     assert store.load("id-que-no-existe") is None
+
+
+def test_un_syntaxerror_dice_de_que_fichero_viene(gb_home):
+    """Un SyntaxError no deja frame —el interprete no llego a ejecutar el
+    fichero— pero la excepcion SI sabe cual es. Sin esto se archivaba con sitio
+    "?" y, como un `?` puede ser un fichero real, escapaba al filtro de
+    efimeros: 7 scripts por stdin acabaron en la cola de pendientes sin decir de
+    donde venian (triaje del 8-ago)."""
+    registro = {
+        "ts": "2026-08-08T10:00:00+02:00",
+        "exception": {"type": "SyntaxError", "message": "unterminated string literal",
+                      "origen": "<stdin>:24"},
+        "process": {"project": "/proyecto"},
+        "frames": [],
+    }
+    assert store.write(registro) is not None
+    (entrada,) = store.read_index()
+    assert entrada["where"] == "<stdin>:24"
+    # y ahora el filtro de efimeros SI puede verlo por lo que es
+    assert store.is_ephemeral(entrada)
+
+
+def test_sin_origen_ni_frames_el_sitio_sigue_siendo_desconocido(gb_home):
+    """No se inventa: si la excepcion no sabe de donde viene, se dice."""
+    registro = {
+        "ts": "2026-08-08T10:00:00+02:00",
+        "exception": {"type": "RuntimeError", "message": "x"},
+        "process": {"project": "/proyecto"},
+        "frames": [],
+    }
+    store.write(registro)
+    assert store.read_index()[0]["where"] is None

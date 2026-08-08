@@ -264,7 +264,11 @@ def _headline_frame(record):
             return "%s:%s" % (frame.get("file"), frame.get("line"))
     if frames:
         return "%s:%s" % (frames[-1].get("file"), frames[-1].get("line"))
-    return None
+    # Sin frames: un SyntaxError no llega a ejecutar el fichero, pero la propia
+    # excepcion sabe cual es. Antes se archivaba con sitio "?" y ademas escapaba
+    # al filtro de efimeros —un `?` puede ser un fichero real— asi que un script
+    # por stdin acababa en la cola de pendientes sin decir de donde venia.
+    return (record.get("exception") or {}).get("origen")
 
 
 def parse_ts(value):
