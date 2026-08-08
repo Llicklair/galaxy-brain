@@ -10,6 +10,46 @@ mismo detalle que los positivos, o más.
 
 ---
 
+## 2026-08-08 · Sonda v2 (el fallo a profundidad 2): la información estaba delante las 3 veces y se usó 1
+
+La v1 salió plana con una crítica válida: el fallo estaba a profundidad 1 y un `grep` lo resolvía, así
+que el grafo no podía ganar. La v2 mueve el fallo a **profundidad 2**, donde grep se acaba: `total()`
+pasa a incluir IVA y hay **4 consumidores de segundo nivel** que ya lo aplicaban por su cuenta — si
+nadie los toca, cobran el IVA dos veces. Validado antes de tirar: el camino perezoso deja `pytest`
+**VERDE** y los cuatro cobrando 36,60 € en vez de 30,25. `grep "total"` da 112 líneas;
+`gb calls total --depth 2` da los 4 consumidores exactos.
+
+**Ronda 1, espectacular y engañosa:** con grafo → 4/4 correctos y suite verde; sin grafo → los 4
+rotos y suite roja. Con cadena causal en el transcript (evento 8: el hook de SessionStart nombra
+`contabilidad`, `facturas.envio`, `informes.anual` antes de que el agente tocara nada). **Rondas 2 y
+3: no replica.** Ambos brazos fallan. Marcador final **CON 1/3 · SIN 0/3** — no discrimina.
+
+**Y la medida que sí dice algo, porque es intra-brazo y no depende de la comparación:**
+
+| ronda | ¿el mapa le nombró el nivel 2? | ¿lo leyó? | ¿lo arregló? |
+|---|---|---|---|
+| 1 CON | sí | 4/4 | 4/4 |
+| 2 CON | **sí** | 0/4 | 0/4 |
+| 3 CON | **sí** | 0/4 | 0/4 |
+
+**El hecho estuvo en su contexto las tres veces y actuó sobre él una.** Eso no es un dato sobre el
+grafo: es el mismo dato que el bucle ya había medido desde otro ángulo — **la señal preventiva en
+contexto se ignora** (allí 12/12; aquí 2/3) **y lo que corrige es la arista determinista** (allí el
+rechazo, 4/4). Dos instrumentos independientes midiendo la misma ley.
+
+**Lo que se lleva el proyecto, y es accionable:** el valor del grafo no se entrega **inyectando
+contexto**, se entrega **gateando y rechazando**. `graph --gate` bloquea, `tests` selecciona, el
+verificador de adopción rechaza — los tres actúan. `graph --context` sugiere, y sugerir es un lever
+débil aunque el hecho sea exacto y esté delante. La forma correcta para el hallazgo de esta sonda no
+es "que el mapa lo nombre" sino **"cambiaste la firma de un símbolo con N llamantes transitivos sin
+tocarlos" como hecho en el pre-commit**. Eso ya no es un póster: es la regla 11 del proyecto
+confirmada por experimento.
+
+**Defecto de método, declarado:** la v1 fue demasiado fácil (los dos brazos aciertan, techo) y la v2
+demasiado difícil (los dos fallan 2/3, suelo). Ninguna de las dos cae en la zona que discrimina. La
+sonda que lo haría necesita una tarea que el brazo sin ayuda resuelva ~la mitad de las veces, y no
+se ha encontrado. n=3 por brazo y por versión.
+
 ## 2026-08-08 · La capa ambiental del grafo, medida por fin — **PLANO, y es el negativo más caro del proyecto**
 
 El 71% de gb no lo teclea nadie: 869 `graph --context` + 93 `calls --hook` en 7 días, inyectados por
