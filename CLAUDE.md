@@ -63,6 +63,10 @@ a publicarse. Hoy no se publica nada.
 - Antes de commitear: la suite en verde (`python -m pytest tests/ -q`) y el gate limpio
   (`gb graph src --gate`). El pre-commit ([.githooks/pre-commit](.githooks/pre-commit)) corre ambos
   más `gb check --staged`; engánchalo una vez con `git config core.hooksPath .githooks`.
+- **Al subir versión: remedir los números del README** (tests, LOC) — se miden, no se estiman. El
+  badge describe una release, no el árbol de trabajo, así que no se gatea en cada commit: gatear
+  cosmética fabrica el `--no-verify` que la regla 11 persigue. Llegaron a decir 445 tests con 641
+  reales (8-ago); un número viejo es una mentira que el lector no puede detectar.
 - Para saber **quién llama a un símbolo** — o qué rompes al tocarlo — `gb calls <símbolo> [--depth 2]`
   antes de grepear o abrir ficheros a mano. Al buscar con Grep/Glob el hook ya inyecta las fichas de
   los símbolos que casan (fichero:línea + cuentas); el detalle se pide al grafo, no se re-descubre

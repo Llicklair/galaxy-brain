@@ -24,7 +24,7 @@ which is why it can be instant and cannot fail in expensive ways.
 orchestration. The graph here is a graph <b>of your code</b> — modules, symbols, call edges, parsed
 from the AST.</sub>
 
-<sub>v0.3.0 · 445 tests · 8.4k LOC source / 6.4k LOC tests · clean gate · ruff · Python ≥ 3.9 · zero runtime dependencies · CLI output is in Spanish today</sub>
+<sub>v0.3.0 · 641 tests · 11.3k LOC source / 9.8k LOC tests · clean gate · ruff · Python ≥ 3.9 · zero runtime dependencies · CLI output is in Spanish today</sub>
 
 ---
 
@@ -107,13 +107,18 @@ declared yourself.
 
 Both are the same discipline — exact answers about your code — pointed in different directions:
 
-**Backward, at what already happened.** The error console: an uncaught exception anywhere in your
-Python environment is recorded with the state around it, so the failure that happened once while you
-were not looking does not have to be reproduced. `last · list · show · on · off · status`
+**The backbone: the graph.** Modules and symbols derived from the AST on every look — never
+declared, never maintained by hand. Who calls what, what imports what, with file:line.
+`graph · symbols · calls`
 
-**Forward, at what you are about to touch.** The shape of the code and what changes do to it: the
-module and symbol graphs, the call query, the diff's blast wave, the project's missing scaffolding,
-and the facts that outlive a session. `graph · symbols · calls · check · floor · memory`
+**Everything else lands on its nodes.** Backward, at what already happened: the error console
+records an uncaught exception anywhere in your Python environment with the state around it — and
+anchors it to its node and its callers, so the failure that happened once while you were not looking
+does not have to be reproduced. `last · list · show · on · off · status`
+
+Forward, at what you are about to touch: the blast wave of a diff and the tests it selects, the
+classic errors a change *added*, the project's missing scaffolding, and the facts that outlive a
+session. `check · tests · delta · floor · memory`
 
 ### The hot path, drawn
 
@@ -129,12 +134,16 @@ consulted anywhere in that row; the budget under it (&lt;1 s per edit, &lt;10 s 
 architecture, not aspiration. The certainty ladder and the fact/proxy/human split are rule 11 in
 picture form: only facts gate, patterns inform.
 
-<sub><b>What the diagram draws ahead of the code:</b> the <i>adaptive learning</i> loop (offline
-replay, hypothesis, graph generations) and the catalogue of <i>known LLM error patterns</i> as
-built-in detectors do not exist in v0.3.0 — they are design intent. Today `gb delta` reports
-classic errors a diff introduced, and the "actas" box belongs to the loop runner in
-<code>bucle/</code>, deliberately outside <code>gb</code> (<a href="ARCHITECTURE.md">gb provides,
-it does not orchestrate</a>). Everything else in the poster is shipped and measured.</sub>
+<sub><b>What the diagram draws ahead of the code:</b> of the <i>adaptive learning</i> loop, only the
+<b>replay bench</b> ships (<code>bucle/replay.py</code>: it re-runs the recorded runs against the
+current verifier — 13/13 reproduce, and blinding the verifier turns it red). Clustering and
+hypothesis generation do not exist, and <b>graph generations with rollback never will</b>: versioning
+the graph means persisting it as the source of truth, which this project banned — what is learnable
+is the <i>ruleset</i>, not the graph. The catalogue of <i>known LLM error patterns</i> as built-in
+detectors is likewise design intent; today `gb delta` reports classic errors a diff introduced, and
+the "actas" box belongs to the loop runner in <code>bucle/</code>, deliberately outside
+<code>gb</code> (<a href="ARCHITECTURE.md">gb provides, it does not orchestrate</a>). Everything else
+in the poster is shipped and measured.</sub>
 
 ---
 

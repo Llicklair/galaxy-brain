@@ -7,12 +7,15 @@ la evidencia, en [docs/research-report.md](docs/research-report.md) y [docs/prue
 
 ## La frase
 
-> **Cuando algo peta, te dice dónde y con qué estado, sin que tengas que reproducirlo a mano.**
+> **Deriva del código un grafo de símbolos y módulos —quién llama a quién, qué importa qué— y hace
+> aterrizar sobre sus nodos todo hecho determinista que haga mejor al agente.**
 
-Esa es la columna: la consola de errores. El resto de la herramienta son **hechos deterministas
-sobre tu código en el mismo espíritu** — qué forma tiene, qué le hizo cada cambio, qué le falta de
-base, qué se aprendió entre repos. Ninguno emite veredictos; todos devuelven material en el mismo
-segundo.
+Esa es la columna vertebral: **el grafo** (`graph`/`symbols`/`calls`), siempre derivado, nunca
+declarado ni mantenido a mano. Lo demás son capas que aterrizan sobre sus nodos: la consola de
+errores fue la primera (cuando algo peta, te dice dónde y con qué estado sin reproducirlo — y cada
+captura trae su nodo y sus llamantes), después la onda de cada cambio (`check`/`tests`/`delta`), el
+suelo (`floor`) y la memoria cross-repo (`memory`). Ninguno emite veredictos; todos devuelven
+material en el mismo segundo.
 
 ### Alcance duro
 
@@ -23,8 +26,19 @@ segundo.
 | **Fallo (consola)** | Excepciones no capturadas. Uno. |
 
 Cualquier cuarto elemento en esa tabla es scope creep, no una mejora. La consola captura excepciones
-no capturadas; las familias de análisis (`graph`, `symbols`, `check`, `floor`) leen fuente Python.
-Un solo lenguaje de punta a punta.
+no capturadas; las familias de análisis (`graph`, `symbols`, `calls`, `check`, `tests`, `delta`,
+`floor`) leen fuente Python. Un solo lenguaje de punta a punta.
+
+Los catorce comandos, por familia — si uno nuevo no cae en ninguna, no entra
+([ARCHITECTURE.md](ARCHITECTURE.md) regla 4):
+
+| Familia | Comandos |
+|---|---|
+| **Qué forma tiene** (la columna) | `graph` · `symbols` · `calls` |
+| Dónde petó y con qué estado | `last` · `list` · `show` · `on` · `off` · `status` |
+| Qué le hizo cada cambio | `check` · `tests` · `delta` |
+| Qué le falta de base | `floor` |
+| Qué se aprendió, cross-repo | `memory` |
 
 #### Un tipo de fallo, tres puertas de salida
 
