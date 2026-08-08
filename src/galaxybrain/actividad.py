@@ -21,7 +21,7 @@ import ast
 import os
 import time
 
-from . import aislado
+from . import aislado, changes, impacted
 from . import graph as graph_mod
 from . import symbols as symbols_mod
 
@@ -52,10 +52,60 @@ def ficheros_tocados(root):
         if " -> " in ruta:
             ruta = ruta.split(" -> ")[-1]
         ruta = ruta.strip().strip('"')
-        if not ruta.endswith(".py"):
+        # Las extensiones se DERIVAN de la tabla de lenguajes, no se escriben:
+        # esto decia `.py` a secas y se quedo viejo el dia que entraron los otros
+        # 16 motores — un agente trabajando en un .go no salia en el mapa. Tercera
+        # vez que una lista paralela se desincroniza (9-ago); por eso ya no hay.
+        if not ruta.endswith(changes.EXTENSIONES_FUENTE):
             continue
         ficheros.append(os.path.join(base, *ruta.split("/")))
     return ficheros
+
+
+def simbolos_tocados(root, informe_simbolos):
+    """Los SÍMBOLOS que el agente está editando ahora mismo, no solo sus ficheros.
+
+    La capa de actividad razonaba en ficheros y paraba en el módulo: veías el
+    módulo encenderse, nunca la función. La intersección hunk × `[line, end]` ya
+    existía y estaba probada en dos sitios (`impacted._simbolos_tocados` y la
+    onda del cambio); aquí se reutiliza en vez de escribir una tercera.
+
+    Se queda con el símbolo MÁS INTERNO —tocar un método no enciende su clase
+    entera— y devuelve `{}` sin git o sin diff legible: la capa calla hacia el
+    lado seguro (regla 9), y el mapa sigue teniendo los módulos.
+
+    Los ficheros sin trackear no tienen diff contra HEAD, así que sus símbolos
+    entran ENTEROS: es cierto —el fichero es nuevo del todo— y no se inventa nada.
+    """
+    nodes = {n["qual"]: n for n in informe_simbolos.get("nodes", []) if n.get("qual")}
+    if not nodes:
+        return {}
+    # `--relative` es obligatorio, no cosmetico: sin el, git da las rutas desde
+    # el TOPLEVEL del repo (`src/galaxybrain/graph.py`) y los nodos las traen
+    # desde la raiz analizada (`galaxybrain/graph.py`). No casaban, ningun hunk
+    # entraba, y la capa encendia el fichero ENTERO — 47 simbolos por editar uno.
+    diff = graph_mod._git(root, "diff", "--relative", "HEAD", "-U0")
+    rangos = changes._hunks_py(diff) if diff else {}
+    tocados = set(impacted._simbolos_tocados(nodes, rangos)) if rangos else set()
+
+    # los nuevos sin trackear: el diff contra HEAD no los ve
+    nuevos = {os.path.normcase(os.path.abspath(f)) for f in ficheros_tocados(root)}
+    if nuevos:
+        base = os.path.abspath(root)
+        for qual, nodo in nodes.items():
+            if nodo.get("kind") == "module" or not nodo.get("file"):
+                continue
+            entero = os.path.normcase(os.path.abspath(os.path.join(base, nodo["file"])))
+            if entero in nuevos and not _tiene_diff(rangos, nodo["file"]):
+                tocados.add(qual)
+    return {q: nodes[q] for q in tocados if q in nodes}
+
+
+def _tiene_diff(rangos, fichero):
+    """¿Ese fichero aparece en el diff? Si sí, sus símbolos ya se decidieron por
+    hunk y encenderlo entero seria mentir por exceso."""
+    objetivo = os.path.normcase(fichero.replace("/", os.sep))
+    return any(os.path.normcase(r.replace("/", os.sep)) == objetivo for r in rangos)
 
 
 def nodos_tocados(root, informe_simbolos):
@@ -242,6 +292,11 @@ def instantanea(raiz, informe_simbolos, ahora=None):
         if not ficheros and not consola:
             continue
         nodos = sorted(nodos_tocados(analisis, informe_simbolos))
+        # Los simbolos van APARTE de los modulos, no en su lugar: la propagacion
+        # a vecinos (`_vecinos`) razona en modulos y funciona, y reescribirla
+        # seria cambiar lo que ya sirve para anadir lo que falta. El mapa
+        # enciende el simbolo exacto y sigue teniendo el modulo debajo.
+        simbolos = sorted(simbolos_tocados(analisis, informe_simbolos))
         # Un agente que solo esta creando modulos NUEVOS no casa con ningun nodo
         # del mapa canonico — y esconderlo seria esconder justo al que mas esta
         # construyendo. Aparece igual, con la cuenta de lo que aun no tiene sitio
@@ -264,6 +319,10 @@ def instantanea(raiz, informe_simbolos, ahora=None):
             "base": head[:7],
             "misma_base": bool(cabeza) and head == cabeza,
             "nodos": nodos,
+            # La funcion/clase/metodo EXACTO que esta editando. Es lo que hace
+            # util mirar el mapa mientras trabaja: "toca carrito" dice poco,
+            # "toca carrito.total, que tiene 26 llamantes" dice lo que importa.
+            "simbolos": simbolos,
             "vecinos": _vecinos(informe_simbolos, nodos, de_modulo),
             "ficheros": len(ficheros),
             "hace_seg": int(max(0, ahora - reciente)) if reciente else None,
@@ -274,7 +333,11 @@ def instantanea(raiz, informe_simbolos, ahora=None):
         })
 
     for agente in foto["agentes"]:
-        for qual in agente["nodos"]:
+        # Modulo Y simbolo entran en el mismo indice: el mapa enciende los dos y
+        # el cruce (dos agentes en el mismo sitio) se detecta al nivel al que
+        # OCURRE — dos agentes en el mismo modulo pero en funciones distintas no
+        # es el mismo choque que dos en la misma funcion.
+        for qual in list(agente["nodos"]) + list(agente["simbolos"]):
             foto["por_nodo"].setdefault(qual, {"agentes": [], "vecino_de": []})
             foto["por_nodo"][qual]["agentes"].append(agente["nombre"])
         for qual in agente["vecinos"]:

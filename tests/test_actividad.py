@@ -195,6 +195,47 @@ def test_un_agente_que_solo_crea_modulos_nuevos_sigue_visible(proyecto):
 
 # --- cambios: que escribio, exactamente -------------------------------------
 
+def test_la_actividad_baja_al_simbolo_y_no_enciende_el_fichero_entero(proyecto):
+    """Reportado mirando el mapa (9-ago): «veo los modulos encenderse pero no
+    class/function/method». La capa razonaba en FICHEROS y paraba en el modulo.
+
+    Aqui se edita UNA de las dos funciones de un fichero y se comprueba que solo
+    esa se enciende: encender las dos seria el falso positivo que hace que mirar
+    el mapa deje de decir nada."""
+    # un modulo con DOS funciones en la baseline: sin eso no se puede distinguir
+    # "toco el fichero" de "toco esta funcion"
+    (proyecto / "lib" / "par.py").write_text(
+        "def uno(x):\n    return x + 1\n\n\ndef dos(x):\n    return x + 2\n",
+        encoding="utf-8")
+    _git(proyecto, "add", "-A")
+    _git(proyecto, "commit", "-qm", "dos funciones")
+
+    rama = _rama(proyecto, "agente")
+    ruta = rama / "lib" / "par.py"
+    ruta.write_text(ruta.read_text(encoding="utf-8").replace(
+        "    return x + 2", "    return x + 2 + 0"), encoding="utf-8")
+
+    informe = symbols.analyze(str(proyecto))
+    foto = actividad.instantanea(str(proyecto), informe)
+    agente = next(a for a in foto["agentes"] if a["nombre"] == "agente")
+
+    assert agente["simbolos"] == ["lib.par.dos"], agente["simbolos"]
+    assert "lib.par" in agente["nodos"], "el modulo sigue estando debajo"
+
+
+def test_el_simbolo_tocado_entra_en_el_indice_por_nodo(proyecto):
+    """Sin esto el mapa no puede encenderlo: `por_nodo` es lo que consume."""
+    rama = _rama(proyecto, "agente")
+    ruta = rama / "lib" / "nucleo.py"
+    ruta.write_text(ruta.read_text(encoding="utf-8").replace(
+        "    return a + b", "    return a + b + 0"), encoding="utf-8")
+
+    foto = actividad.instantanea(str(proyecto), symbols.analyze(str(proyecto)))
+
+    assert "lib.nucleo.suma" in foto["por_nodo"]
+    assert foto["por_nodo"]["lib.nucleo.suma"]["agentes"] == ["agente"]
+
+
 def test_los_cambios_dicen_la_firma_exacta(proyecto):
     """'Ver exactamente que escriben': la firma del worktree contra el mapa
     canonico — el mismo hecho estrecho que el bucle deriva para enrutar."""
