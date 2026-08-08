@@ -300,7 +300,7 @@ def _linea_consola(evento):
     return None
 
 
-def ejecutar_real(tarea, worktree, prompt, timeout_seg):
+def ejecutar_real(tarea, worktree, prompt, timeout_seg, eco=False):
     exe = shutil.which("claude")
     if not exe:
         raise RuntimeError("claude CLI no esta en PATH: el ejecutor real no puede correr")
@@ -311,7 +311,7 @@ def ejecutar_real(tarea, worktree, prompt, timeout_seg):
              "--output-format", "stream-json", "--verbose"],
             cwd=worktree, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
     except OSError as error:
-        raise RuntimeError("claude -p no arranco: %s" % error)
+        raise RuntimeError("claude -p no arranco: %s" % error) from error
     verdugo = threading.Timer(timeout_seg, proc.kill)
     verdugo.start()
     try:
@@ -330,6 +330,11 @@ def ejecutar_real(tarea, worktree, prompt, timeout_seg):
                     marca = time.strftime("[%H:%M:%S] ")
                     fh.write("".join(marca + l + "\n" for l in linea.split("\n")))
                     fh.flush()
+                    if eco:
+                        # Con `eco`, la misma linea sale ademas por stdout: quien
+                        # lanza UN agente a mano lo mira en su terminal, no solo
+                        # en el mapa (bucle/agente.py).
+                        print("  " + linea.replace("\n", "\n  "), flush=True)
         err = proc.stderr.read()
         rc = proc.wait()
     finally:

@@ -500,7 +500,9 @@ def test_el_nombre_del_worktree_sale_de_la_tarea():
     agente = importlib.util.module_from_spec(_spec_a)
     _spec_a.loader.exec_module(agente)
 
-    assert agente._nombre_por_defecto("arregla el parser de firmas") == "arregla-el-parser"
-    assert agente._nombre_por_defecto("¡¿!!") == "agente"          # nunca vacio
-    # y la consola va AL LADO del worktree, que es donde gb la busca
-    assert agente.log_consola("/x/y/mi-wt") == os.path.normpath("/x/y/mi-wt") + ".consola.log"
+    assert agente.nombre_por_defecto("arregla el parser de firmas") == "arregla-el-parser"
+    assert agente.nombre_por_defecto("¡¿!!") == "agente"           # nunca vacio
+    # y NO reimplementa al orquestador: usa SUS piezas (una copia divergiria)
+    assert agente.bucle._log_consola is not None
+    assert not hasattr(agente, "log_consola"), "el lanzador volvio a duplicar la consola"
+    assert not hasattr(agente, "_corre"), "el lanzador volvio a duplicar el subproceso"
