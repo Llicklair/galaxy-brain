@@ -359,16 +359,51 @@ def es_exploracion(entry):
     """
     if is_ephemeral(entry):
         return True
-    where = (entry.get("where") or "").strip()
-    if not where or where == "?":
+    fichero = fichero_de(entry)
+    if not fichero:
         return True
-    fichero = where.rsplit(":", 1)[0] if ":" in where[2:] else where
+    return any(_dentro_de(fichero, raiz) for raiz in _raices_temporales())
+
+
+def fichero_de(entry):
+    """El fichero de una captura, sin el `:linea`. None si no tiene sitio.
+
+    El `where` es `ruta:linea`, y en Windows la ruta trae su propia `:` de
+    unidad (`C:\\x\\a.py:7`): por eso se corta por la ULTIMA y mirando a partir
+    del tercer caracter. Vivia copiado en dos sitios; una ruta partida de dos
+    formas distintas es un bug de Windows esperando.
+    """
+    donde = (entry.get("where") or "").strip()
+    if not donde or donde == "?" or donde.startswith("<"):
+        return None
+    return donde.rsplit(":", 1)[0] if ":" in donde[2:] else donde
+
+
+def _dentro_de(ruta, base):
+    """¿`ruta` cuelga de `base`? Normalizado, y con la frontera del separador.
+
+    Comparar rutas a pelo en Windows miente —la caja y los separadores— y ya
+    costo un bug (el join del ancla con git, 31-jul). `startswith` sin el
+    separador tambien: `/proy-viejo` empieza por `/proy`.
+    """
     try:
-        ruta = os.path.normcase(os.path.abspath(fichero))
-        return any(ruta == raiz or ruta.startswith(raiz + os.sep)
-                   for raiz in _raices_temporales())
+        ruta = os.path.normcase(os.path.abspath(ruta))
+        base = os.path.normcase(os.path.abspath(base))
     except (OSError, ValueError):
         return False
+    return ruta == base or ruta.startswith(base + os.sep)
+
+
+def es_del_proyecto(entry, raiz):
+    """¿La captura senala un fichero DE ESTE arbol?
+
+    Lo que decide si algo entra en la cola de trabajo: un script de scratchpad
+    ejecutado con el cwd aqui se archiva con este proyecto, pero su fichero vive
+    en otro arbol y no hay nada que arreglar en el. La pregunta no es "¿esta en
+    el temporal?" —un proyecto legitimo puede vivir ahi— sino esta.
+    """
+    fichero = fichero_de(entry)
+    return bool(fichero) and _dentro_de(fichero, raiz)
 
 
 def _raices_temporales():

@@ -945,23 +945,6 @@ def cmd_last(args):
     return 0
 
 
-def _fichero_del_proyecto(entrada, raiz):
-    """¿El fichero de esta captura vive DENTRO del arbol del proyecto?
-
-    Sin sitio (un `?`) o fuera del arbol -> no hay nada que arreglar aqui. Se
-    compara normalizado, que en Windows la caja y los separadores mienten."""
-    donde = (entrada.get("where") or "").strip()
-    if not donde or donde == "?" or donde.startswith("<"):
-        return False
-    fichero = donde.rsplit(":", 1)[0] if ":" in donde[2:] else donde
-    try:
-        ruta = os.path.normcase(os.path.abspath(fichero))
-        base = os.path.normcase(os.path.abspath(raiz))
-    except (OSError, ValueError):
-        return False
-    return ruta == base or ruta.startswith(base + os.sep)
-
-
 def cmd_list(args):
     # Se lee todo el histórico para poder contar; el límite se aplica al final,
     # a las firmas agrupadas (o a las líneas si es --chrono).
@@ -995,7 +978,7 @@ def cmd_list(args):
         # codigo de este arbol?". Se dice cuantas se apartan: ocultar en
         # silencio se lee como "esto es todo lo que hay".
         if raiz and not args.efimeros:
-            de_aqui = [e for e in entries if _fichero_del_proyecto(e, raiz)]
+            de_aqui = [e for e in entries if store.es_del_proyecto(e, raiz)]
             exploracion = len(entries) - len(de_aqui)
             entries = de_aqui
 

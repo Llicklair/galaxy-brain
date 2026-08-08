@@ -2,6 +2,7 @@
 ficheros corruptos (un fallo del disco no puede invalidar la libreta entera)."""
 
 import json
+import os
 from pathlib import Path
 
 from galaxybrain import store
@@ -229,3 +230,32 @@ def test_sin_origen_ni_frames_el_sitio_sigue_siendo_desconocido(gb_home):
     }
     store.write(registro)
     assert store.read_index()[0]["where"] is None
+
+
+def test_el_fichero_de_una_captura_sobrevive_a_la_unidad_de_windows():
+    """El `where` es `ruta:linea`, y en Windows la ruta trae su propia `:` de
+    unidad. Cortar por la PRIMERA daria `C`. Vivia copiado en dos sitios: dos
+    formas de partir la misma ruta es un bug de Windows esperando."""
+    assert store.fichero_de({"where": r"C:\proy\a.py:7"}) == r"C:\proy\a.py"
+    assert store.fichero_de({"where": "/proy/a.py:7"}) == "/proy/a.py"
+    assert store.fichero_de({"where": "a.py"}) == "a.py"          # sin linea
+    for sin_sitio in ("?", "", "<stdin>:3", None):
+        assert store.fichero_de({"where": sin_sitio}) is None
+
+
+def test_dentro_de_no_confunde_un_hermano_con_un_hijo():
+    """`startswith` pelado diria que /proy-viejo cuelga de /proy. La frontera
+    del separador es lo que lo impide."""
+    base = os.path.abspath(os.path.join("x", "proy"))
+    assert store._dentro_de(os.path.join(base, "sub", "a.py"), base)
+    assert store._dentro_de(base, base)
+    assert not store._dentro_de(base + "-viejo" + os.sep + "a.py", base)
+
+
+def test_es_del_proyecto_decide_por_el_arbol_no_por_el_temporal(tmp_path):
+    """Un proyecto legitimo puede vivir en el temporal —los repos de los tests
+    lo hacen— asi que la pregunta es de que ARBOL es el fichero."""
+    raiz = str(tmp_path / "proy")
+    assert store.es_del_proyecto({"where": os.path.join(raiz, "a.py") + ":2"}, raiz)
+    assert not store.es_del_proyecto({"where": str(tmp_path / "otro" / "a.py") + ":2"}, raiz)
+    assert not store.es_del_proyecto({"where": "?"}, raiz)
