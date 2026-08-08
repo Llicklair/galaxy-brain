@@ -434,6 +434,38 @@ def _plantilla_claude_settings():
 """
 
 
+#: Encabezados que declaran un criterio de terminado. Se busca el ENCABEZADO y no
+#: la frase suelta: una mencion de pasada en un parrafo no es un criterio, y
+#: contarla seria fabricar cobertura — el suelo de mentira que este modulo existe
+#: para no construir.
+_CRITERIO_RE = re.compile(
+    r"^#{1,4}\s.*(criterios?\s+de\s+terminado|definition\s+of\s+done|terminado\s*\()",
+    re.IGNORECASE | re.MULTILINE,
+)
+
+#: Donde se mira. No se recorre el repo entero: un criterio vive en los
+#: documentos de decision, y buscar en todas partes invitaria a falsos positivos.
+_CRITERIO_DOCS = ("SCOPE.md", "README.md", "ARCHITECTURE.md", "CLAUDE.md", "AGENTS.md")
+
+
+def _busca_criterio(root):
+    """Documentos que declaran un criterio de terminado. Hecho, no juicio."""
+    hallados = []
+    for rel in _CRITERIO_DOCS:
+        if _CRITERIO_RE.search(_read(root, rel)):
+            hallados.append(rel)
+    carpeta = os.path.join(root, "docs")
+    if os.path.isdir(carpeta):
+        try:
+            nombres = sorted(os.listdir(carpeta))
+        except OSError:
+            nombres = []
+        for nombre in nombres:
+            if nombre.lower().endswith(".md") and _CRITERIO_RE.search(_read(root, "docs", nombre)):
+                hallados.append("docs/" + nombre)
+    return hallados
+
+
 def _level(key, title, status, detail, evidence=None, source=None):
     return {
         "key": key,
@@ -710,11 +742,24 @@ def analyze(root, run_tests=False):
                ", ".join(senales) if senales else "ni git, ni contenedor, ni CI")
     )
 
-    # 7 — el criterio de terminado. NUNCA detectable, y por eso se pide siempre.
+    # 7 — el criterio de terminado. Su CALIDAD no es detectable jamas —por eso el
+    # estado nunca pasa a "ok"— pero su EXISTENCIA sí: es texto en un documento.
+    # Distinguirlas importa porque el mensaje viejo acusaba a quien SÍ lo habia
+    # escrito ("sin el, la causa numero uno sigue abierta"), y un "falta" falso
+    # es lo que hace que un informe deje de leerse. Medido el 8-ago: los dos
+    # repos reales que usan gb tienen su criterio en SCOPE.md y ambos recibian
+    # el reproche.
+    donde_criterio = _busca_criterio(root)
     report["levels"].append(
         _level("terminado", "Un criterio de terminado comprobable", "no-detectable",
-               "esto no lo puede mirar ninguna herramienta: lo escribes tu, antes de empezar. "
-               "Sin el, la causa numero uno de sobreingenieria sigue abierta")
+               ("encontrado en %s — que exista es un hecho; si es COMPROBABLE solo lo "
+                "sabes tu, y por eso esta capa no se marca en verde nunca"
+                % ", ".join(donde_criterio))
+               if donde_criterio else
+               "no encuentro ninguno escrito, y esto no lo puede mirar ninguna herramienta: "
+               "lo escribes tu, antes de empezar. Sin el, la causa numero uno de "
+               "sobreingenieria sigue abierta",
+               evidence=donde_criterio)
     )
 
     # + contexto para agentes (no es de §10; sale del estandar del mercado).

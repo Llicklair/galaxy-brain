@@ -65,15 +65,20 @@ def _texto(b):
     return b.decode("utf-8", errors="replace")
 
 
-def preparar_worktree(id_tarea):
-    """Worktree PROPIO en main (aviso 2 del protocolo: el ancla del harness)."""
-    ruta = os.path.join(RAIZ, ".claude", "worktrees", "bucle-%s" % id_tarea)
+def preparar_worktree(id_tarea, raiz=None):
+    """Worktree PROPIO en main (aviso 2 del protocolo: el ancla del harness).
+
+    `raiz` permite preparar el worktree de OTRO repo: el lanzador de un agente
+    suelto (agente.py) sirve para cualquier proyecto, no solo para este — y
+    cablear el repo era justo el bug que aparecio al usarlo de verdad."""
+    raiz = raiz or RAIZ
+    ruta = os.path.join(raiz, ".claude", "worktrees", "bucle-%s" % id_tarea)
     try:
         os.remove(_log_consola(ruta))  # consola fresca por tirada
     except OSError:
         pass
-    _corre(["git", "worktree", "remove", "--force", ruta])
-    rc, _, err = _corre(["git", "worktree", "add", "--detach", ruta, "main"])
+    _corre(["git", "worktree", "remove", "--force", ruta], cwd=raiz)
+    rc, _, err = _corre(["git", "worktree", "add", "--detach", ruta, "main"], cwd=raiz)
     if rc != 0:
         raise RuntimeError("no se pudo preparar %s: %s" % (ruta, _texto(err)))
     return ruta

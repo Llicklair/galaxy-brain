@@ -48,13 +48,13 @@ def nombre_por_defecto(tarea):
     return "-".join(palabras) or "agente"
 
 
-def asegura_mapa():
+def asegura_mapa(raiz):
     """Un watch vivo sobre el repo, si no lo hay. Sin esto la actividad existe
     en disco pero nadie la pinta — el fallo que costo tres tandas invisibles.
     El candado de gb evita duplicados, asi que llamarlo de mas es inofensivo."""
-    destino = os.path.join(RAIZ, "mapa.html")
-    bucle._corre(bucle.GB + ["symbols", "--html", destino, "--watch", "--fondo",
-                             "--refresco", "3"], timeout=60)
+    destino = os.path.join(raiz, "mapa.html")
+    bucle._corre(bucle.GB + ["symbols", raiz, "--html", destino, "--watch", "--fondo",
+                             "--refresco", "3"], cwd=raiz, timeout=60)
     return destino
 
 
@@ -66,13 +66,17 @@ def main(argv=None):
     parser.add_argument("--timeout", type=int, default=1800)
     parser.add_argument("--sin-mapa", action="store_true",
                         help="no asegurar el watch (por defecto se arranca si falta)")
+    parser.add_argument("--repo", default=RAIZ,
+                        help="repo sobre el que trabajar (por defecto, este)")
     args = parser.parse_args(argv)
 
+    raiz = os.path.abspath(args.repo)
     nombre = args.nombre or nombre_por_defecto(args.tarea)
-    worktree = bucle.preparar_worktree(nombre)
+    worktree = bucle.preparar_worktree(nombre, raiz=raiz)
+    print("repo     : %s" % raiz)
     print("worktree : %s" % worktree)
     if not args.sin_mapa:
-        print("mapa     : file:///%s" % asegura_mapa().replace("\\", "/"))
+        print("mapa     : file:///%s" % asegura_mapa(raiz).replace("\\", "/"))
     print("consola  : %s" % bucle._log_consola(worktree))
     print("-- el agente empieza; su tarjeta aparece en el mapa al primer cambio --\n",
           flush=True)

@@ -253,3 +253,29 @@ def test_detecta_pyrefly_como_gate_de_tipos(tmp_path):
     root = str(tmp_path / "b")
     _write(root, "pyproject.toml", "[tool.pyrefly]\nproject-includes = ['src']\n")
     assert "pyrefly" in floor.detect_gates(root).get("tipos", "")
+
+
+def test_el_criterio_de_terminado_se_ve_si_esta_escrito_pero_nunca_pasa_a_verde(tmp_path):
+    """Su EXISTENCIA es un hecho (texto en un documento); su CALIDAD no la puede
+    juzgar nadie, asi que el estado sigue siendo no-detectable. Distinguirlas
+    importa: el mensaje viejo acusaba de no tenerlo a los dos repos reales que
+    SI lo tenian escrito (medido 8-ago), y un 'falta' falso es lo que hace que
+    un informe deje de leerse."""
+    root = str(tmp_path)
+    nivel = _nivel(floor.analyze(root), "terminado")
+    assert nivel["status"] == "no-detectable"
+    assert "no encuentro ninguno" in nivel["detail"]
+
+    _write(root, "SCOPE.md", "# Alcance\n\n## Criterio de terminado\n\nCuando X mide Y.\n")
+    nivel = _nivel(floor.analyze(root), "terminado")
+    assert nivel["status"] == "no-detectable"      # sigue sin marcarse en verde
+    assert "SCOPE.md" in nivel["detail"]
+    assert nivel["evidence"] == ["SCOPE.md"]
+
+
+def test_una_mencion_de_pasada_no_cuenta_como_criterio(tmp_path):
+    """Se busca el ENCABEZADO, no la frase: contar una mencion en un parrafo
+    seria fabricar cobertura — el suelo de mentira que este modulo evita."""
+    root = str(tmp_path)
+    _write(root, "README.md", "Aqui hablamos del criterio de terminado alguna vez, de pasada.\n")
+    assert "no encuentro ninguno" in _nivel(floor.analyze(root), "terminado")["detail"]
