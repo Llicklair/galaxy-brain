@@ -1353,6 +1353,7 @@ def _vigilar(root, args):
     if candado is None:
         emit("ya hay un watch vivo para %s — este no arranca otro" % destino)
         return 0
+    relanzar = False
 
     emit("vigilando %s — el mapa se regenera al cambiar cualquier .py (Ctrl+C para parar)" % root)
     motor = _codigo_del_motor()
@@ -1371,9 +1372,15 @@ def _vigilar(root, args):
                 # hasta dar con el). Cambio el codigo en disco -> este proceso
                 # ya no es de fiar: lo dice y MUERE. Relanzarlo cuesta un
                 # comando y sirve la version nueva.
-                emit("el codigo de gb cambio en disco desde que arranco este watch — "
-                     "me apago para no servir un mapa viejo (relanzame)")
-                return 0
+                # Morir era correcto; exigir que alguien lo relance, no. Cada
+                # commit a gb mataba el watch y habia que rearrancarlo a mano
+                # (diez veces en la sesion del 8-ago): la friccion se comia la
+                # capa que este proceso existe para ense�ar. Se reinicia SOLO
+                # con el codigo nuevo — el candado se suelta antes, en el
+                # `finally`, o el hijo se encontraria la puerta cerrada.
+                emit("el codigo de gb cambio en disco — me reinicio con la version nueva")
+                relanzar = True
+                break
             _latir(candado)
             actual = (_firma_py(root), _firma_capas(root), _firma_actividad(root))
             if actual != anterior:
@@ -1426,6 +1433,13 @@ def _vigilar(root, args):
         return 0
     finally:
         _soltar_candado(candado)
+
+    # Fuera del `finally`: el candado ya esta suelto, asi que el hijo puede
+    # tomarlo. Al reves se relevaria a si mismo y moriria diciendo "ya hay un
+    # watch vivo".
+    if relanzar:
+        _watch_en_fondo()
+    return 0
 
 
 def cmd_calls(args):

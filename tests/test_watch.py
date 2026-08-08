@@ -209,11 +209,17 @@ def test_el_watch_se_apaga_si_el_codigo_de_gb_cambia_en_disco(tmp_path, monkeypa
             return
         raise AssertionError("el watch dio otra vuelta con el codigo ya cambiado")
 
+    relanzados = []
+    monkeypatch.setattr(cli, "_watch_en_fondo", lambda: relanzados.append(1) or 0)
     monkeypatch.setattr(time, "sleep", _cambia_el_codigo)
     rc = cli.main(["symbols", root, "--html", destino, "--watch"])
     assert rc == 0
-    assert "me apago para no servir un mapa viejo" in capsys.readouterr().out
-    assert not os.path.exists(cli._ruta_candado(destino))  # el candado se suelta
+    # el invariante que importa: NO da otra vuelta con el motor viejo (lo fija
+    # el AssertionError de _cambia_el_codigo). Lo que cambia desde el 8-ago es
+    # que ya no exige un relanzamiento a mano: se releva a si mismo.
+    assert "me reinicio con la version nueva" in capsys.readouterr().out
+    assert relanzados == [1]
+    assert not os.path.exists(cli._ruta_candado(destino))  # el candado se suelta ANTES
 
 
 def test_la_firma_del_motor_cambia_si_un_py_cambia(tmp_path):
@@ -279,3 +285,28 @@ def test_el_watch_en_fondo_no_abre_ventanas(monkeypatch):
         assert flags & 0x00000200  # sin morir con el Ctrl+C del padre
     else:
         assert capturado["kwargs"]["start_new_session"] is True
+
+
+def test_el_watch_se_reinicia_solo_cuando_cambia_el_codigo(tmp_path, monkeypatch, capsys):
+    """Morir con el motor viejo es correcto; exigir que alguien lo relance, no.
+    Cada commit a gb mataba el watch y habia que rearrancarlo a mano — diez
+    veces en una sola sesion (8-ago). Ahora se reinicia solo, y SIEMPRE tras
+    soltar el candado: al reves el hijo se encontraria la puerta cerrada."""
+    destino = str(tmp_path / "mapa.html")
+    with open(destino, "w", encoding="utf-8") as handle:
+        handle.write("<html></html>")
+
+    orden = []
+    monkeypatch.setattr(cli, "_watch_en_fondo", lambda: orden.append("relanzado") or 0)
+    monkeypatch.setattr(cli, "_soltar_candado", lambda c: orden.append("candado suelto"))
+    motores = iter(["motor-viejo", "motor-NUEVO"])
+    monkeypatch.setattr(cli, "_codigo_del_motor", lambda: next(motores))
+
+    args = type("A", (), {"html": destino, "intervalo": 1, "refresco": 3, "capas": False,
+                          "since": None, "path": str(tmp_path)})()
+    assert cli._vigilar(str(tmp_path), args) == 0
+
+    salida = capsys.readouterr().out
+    assert "me reinicio con la version nueva" in salida
+    # el orden importa: primero soltar, luego relanzar
+    assert orden == ["candado suelto", "relanzado"]

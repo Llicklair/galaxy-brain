@@ -1727,11 +1727,18 @@ const CMEM='gb-mapa-consola';
 // borra lo tecleado — o la seleccion justo antes del Ctrl+C — enseña a no usar
 // la busqueda ni a copiar del mapa; y eso es peor que un mapa 10 s mas viejo.
 if(REFRESCO>0){
+  // Aplazar no puede ser aplazar PARA SIEMPRE: una seleccion olvidada dejaba
+  // el mapa congelado indefinidamente y se leia como "no pasa nada" — el
+  // sintoma que costo tres sesiones sin ver la actividad (8-ago). Se aplaza
+  // hasta 10 ticks (~30 s con refresco 3) y luego manda el dato fresco: nadie
+  // tarda medio minuto en copiar, y un mapa viejo miente.
+  let aplazados=0;
   setInterval(()=>{
-    if(document.activeElement===buscar) return;
-    if(window._arrastrandoTerm) return;
+    if(document.activeElement===buscar) return;   // escribir SI bloquea sin tope
+    if(window._arrastrandoTerm) return;           // arrastrar tambien
     const sel=window.getSelection?window.getSelection():null;
-    if(sel&&!sel.isCollapsed) return;
+    if(sel&&!sel.isCollapsed&&aplazados<10){ aplazados++; return; }
+    aplazados=0;
     location.reload();
   }, REFRESCO*1000);
 }
