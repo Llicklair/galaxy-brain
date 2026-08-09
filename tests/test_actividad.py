@@ -275,6 +275,41 @@ def test_tocar_a_nivel_de_clase_enciende_la_CLASE(proyecto):
     assert agente["simbolos"] == ["lib.clase.Caja"], agente["simbolos"]
 
 
+def test_la_escalera_del_agente_viaja_en_la_foto(proyecto):
+    """Un bucle que decide ACEPTAR codigo sin que nadie lo mire no puede ser una
+    caja negra: que decidio y por que tiene que llegar al mapa, o la
+    automatizacion se vuelve fe. Mismo contrato que la consola — se DERIVA del
+    disco, y si nadie lo escribe no hay escalera."""
+    import json as _json
+
+    rama = _rama(proyecto, "agente")
+    ruta = rama / "lib" / "nucleo.py"
+    ruta.write_text(ruta.read_text(encoding="utf-8") + "\n# tocado\n", encoding="utf-8")
+    with open(str(rama) + ".escalera.json", "w", encoding="utf-8") as fh:
+        _json.dump({"veredicto": "aceptar", "motivo": "tests verdes",
+                    "ancla": "lib.nucleo.suma",
+                    "peldanos": [{"n": 0, "veredicto": "rechazar", "motivo": "ciclo"},
+                                 {"n": 1, "veredicto": "aceptar", "motivo": "verdes"}]}, fh)
+
+    foto = actividad.instantanea(str(proyecto), symbols.analyze(str(proyecto)))
+    agente = next(a for a in foto["agentes"] if a["nombre"] == "agente")
+
+    assert agente["escalera"]["veredicto"] == "aceptar"
+    assert [p["n"] for p in agente["escalera"]["peldanos"]] == [0, 1]
+
+
+def test_sin_fichero_de_escalera_el_agente_no_la_lleva(proyecto):
+    """Un agente lanzado a mano no corre escalera: inventarle una seria narrativa."""
+    rama = _rama(proyecto, "agente")
+    ruta = rama / "lib" / "nucleo.py"
+    ruta.write_text(ruta.read_text(encoding="utf-8") + "\n# tocado\n", encoding="utf-8")
+
+    foto = actividad.instantanea(str(proyecto), symbols.analyze(str(proyecto)))
+    agente = next(a for a in foto["agentes"] if a["nombre"] == "agente")
+
+    assert agente["escalera"] is None
+
+
 def test_el_simbolo_tocado_entra_en_el_indice_por_nodo(proyecto):
     """Sin esto el mapa no puede encenderlo: `por_nodo` es lo que consume."""
     rama = _rama(proyecto, "agente")

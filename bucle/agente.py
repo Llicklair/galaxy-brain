@@ -118,6 +118,81 @@ def llamantes_sin_tocar(worktree, nodo):
     return fuera
 
 
+def _carga_escalera():
+    ruta = os.path.join(os.path.dirname(os.path.abspath(__file__)), "escalera.py")
+    spec = importlib.util.spec_from_file_location("escalera_del_lanzador", ruta)
+    modulo = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(modulo)
+    return modulo
+
+
+escalera = _carga_escalera()
+
+
+def _guarda_estado(worktree, estado):
+    """El estado de la escalera, junto al worktree y en JSON.
+
+    Vive fuera del worktree a proposito —igual que el log de consola— para no
+    ensuciar el arbol que el agente esta editando ni aparecer en su propio diff.
+    Lo lee el mapa: si el frontend no puede contarlo, la escalera es una caja
+    negra, y una caja negra que acepta codigo sola es justo lo que no queremos.
+    """
+    ruta = os.path.normpath(worktree.rstrip("\\/")) + ".escalera.json"
+    try:
+        with open(ruta, "w", encoding="utf-8") as fh:
+            json.dump(estado, fh, ensure_ascii=False, indent=2)
+    except OSError:
+        pass
+    return ruta
+
+
+def correr_escalera(worktree, nombre, tarea, nodo, topes, timeout, alcance=None):
+    """Sube peldaños mientras el rechazo CAMBIE. Devuelve el estado final.
+
+    La regla que gobierna el bucle no es un contador: si dos peldaños seguidos
+    producen el MISMO rechazo, el modelo no esta convergiendo y seguir solo gasta
+    cuota. Se para y se dice.
+
+    NUNCA mergea ni commitea: al final el diff sigue en el worktree y quien
+    decide es el humano — incluso cuando el veredicto es ACEPTAR, que significa
+    "el grafo no encontro nada que objetar", no "esta en main".
+    """
+    estado = {"tarea": tarea, "worktree": worktree, "peldanos": [],
+              "veredicto": None, "motivo": "", "ancla": (nodo or {}).get("symbol", {}).get("qual")}
+    rechazo_previo = None
+    for n in range(topes + 1):
+        prompt = escalera.escalon(n, tarea, rechazo=rechazo_previo, ancla=nodo)
+        print("\n== peldano %d ==%s" % (n, (" (con el rechazo anterior)" if rechazo_previo else "")),
+              flush=True)
+        try:
+            bucle.ejecutar_real({"id": "%s-p%d" % (nombre, n)}, worktree, prompt, timeout, eco=True)
+        except RuntimeError as error:
+            print("[el agente termino mal] %s" % error)
+
+        hechos = escalera.hechos_del_arbol(worktree, alcance=alcance)
+        veredicto, motivo = escalera.decidir(hechos)
+        estado["peldanos"].append({"n": n, "veredicto": veredicto, "motivo": motivo,
+                                   "tocados": hechos.get("modulos_tocados", [])})
+        estado["veredicto"], estado["motivo"] = veredicto, motivo
+        _guarda_estado(worktree, estado)
+        print("   -> %s: %s" % (veredicto.upper(), motivo))
+
+        if veredicto != escalera.RECHAZAR:
+            break                      # ACEPTAR o ESCALAR: la escalera termina
+        if escalera.mismo_rechazo(rechazo_previo, motivo):
+            estado["veredicto"] = escalera.ESCALAR
+            estado["motivo"] = "dos peldanos con el mismo rechazo: no converge — %s" % motivo
+            _guarda_estado(worktree, estado)
+            print("   -> ESCALAR: el mismo rechazo dos veces, no converge")
+            break
+        rechazo_previo = motivo
+    else:
+        estado["veredicto"] = escalera.ESCALAR
+        estado["motivo"] = "agotados los %d peldanos sin veredicto limpio" % topes
+        _guarda_estado(worktree, estado)
+    return estado
+
+
 def nombre_por_defecto(tarea):
     """Un nombre legible derivado de la tarea: el worktree se llama como lo que
     hace, que es lo que se va a leer en la tarjeta del mapa."""
@@ -150,6 +225,10 @@ def main(argv=None):
                              "acota el trabajo a su fichero y verifica contra sus llamantes")
     parser.add_argument("--alcance", metavar="RUTA",
                         help="raiz que analiza el grafo para resolver --nodo (por defecto, el repo)")
+    parser.add_argument("--escalera", type=int, default=0, metavar="N",
+                        help="reintentar hasta N veces con el RECHAZO del grafo como hecho; "
+                             "el veredicto (aceptar/rechazar/escalar) sale de hechos, sin modelo. "
+                             "Por defecto 0: una tirada y el diff es tuyo")
     args = parser.parse_args(argv)
 
     raiz = os.path.abspath(args.repo)
@@ -176,6 +255,18 @@ def main(argv=None):
     print("consola  : %s" % bucle._log_consola(worktree))
     print("-- el agente empieza; su tarjeta aparece en el mapa al primer cambio --\n",
           flush=True)
+
+    if args.escalera:
+        tarea = args.tarea if nodo is None else "%s\n\n%s" % (args.tarea, brief_del_nodo(nodo))
+        estado = correr_escalera(worktree, nombre, tarea, nodo, args.escalera,
+                                 args.timeout, alcance=args.alcance)
+        print("\n== veredicto de la escalera: %s ==" % estado["veredicto"].upper())
+        print("   %s" % estado["motivo"])
+        print("   peldanos: %s" % " -> ".join(
+            "%d:%s" % (p["n"], p["veredicto"]) for p in estado["peldanos"]))
+        print("\nEl diff sigue en el worktree y SIN commitear: aceptar no es mergear.")
+        print("revisalo con:  git -C %s diff" % worktree)
+        return 0
 
     prompt = args.tarea if nodo is None else "%s\n\n%s" % (args.tarea, brief_del_nodo(nodo))
     try:

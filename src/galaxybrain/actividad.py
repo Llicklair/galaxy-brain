@@ -18,6 +18,7 @@ Lo que se puede derivar y lo que no, dicho de frente:
 """
 
 import ast
+import json
 import os
 import time
 
@@ -158,6 +159,32 @@ def consola_de(ruta, max_lineas=MAX_CONSOLA):
     except OSError:
         return []
     return [ln for ln in lineas if ln.strip()][-max_lineas:]
+
+
+def escalera_de(ruta):
+    """El estado de la escalera de ese worktree, si su orquestador lo deja.
+
+    Mismo contrato que la consola: se DERIVA del disco. Si nadie lo escribe, no
+    hay escalera y no se inventa nada. Existe porque un bucle que decide aceptar
+    codigo sin que nadie lo mire no puede ser una caja negra — lo que decide y
+    por que tiene que estar delante, o la automatizacion se vuelve fe.
+    """
+    fichero = os.path.normpath(str(ruta).rstrip("\\/")) + ".escalera.json"
+    try:
+        with open(fichero, encoding="utf-8", errors="replace") as fh:
+            datos = json.load(fh)
+    except (OSError, ValueError):
+        return None
+    if not isinstance(datos, dict) or not datos.get("peldanos"):
+        return None
+    return {
+        "veredicto": datos.get("veredicto") or "",
+        "motivo": (datos.get("motivo") or "")[:220],
+        "ancla": datos.get("ancla") or "",
+        "peldanos": [{"n": p.get("n"), "veredicto": p.get("veredicto"),
+                      "motivo": (p.get("motivo") or "")[:160]}
+                     for p in datos["peldanos"][-4:]],
+    }
 
 
 def cambios_de(analisis, ficheros, informe_simbolos):
@@ -330,6 +357,9 @@ def instantanea(raiz, informe_simbolos, ahora=None):
             "cambios": cambios_de(analisis, ficheros, informe_simbolos),
             # Su consola en vivo (stdout teeado por el orquestador), si existe.
             "consola": consola,
+            # El veredicto del grafo sobre su trabajo, si esta corriendo con
+            # escalera. Sin esto, un bucle que acepta codigo solo seria opaco.
+            "escalera": escalera_de(ruta),
         })
 
     for agente in foto["agentes"]:

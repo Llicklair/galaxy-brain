@@ -532,6 +532,10 @@ def render_graph_cloud(
             "cambios": a.get("cambios") or [],
             # Su consola en vivo (stdout del agente): la terminal del lienzo.
             "consola": a.get("consola") or [],
+            # El veredicto del GRAFO sobre su trabajo, si corre con escalera.
+            # Va al mapa porque un bucle que acepta codigo sin que nadie lo mire
+            # no puede ser opaco: que decidio y por que tiene que verse.
+            "escalera": a.get("escalera") or None,
         }
         for a in (_act.get("agentes") or [])
     }
@@ -1516,6 +1520,19 @@ const CMEM='gb-mapa-consola';
       '<b data-acc="tmas" title="mas grande">+</b></span></div>';
     if(!a.misma) h+='<div class="tav">&#9888; parte de otra base ('+escapa(a.base)+')</div>';
     else if(a.fuera) h+='<div class="tav" style="color:var(--suave)">'+a.fuera+' fichero(s) sin sitio en el mapa</div>';
+    // El veredicto del GRAFO, si este agente corre con escalera. Se pinta el
+    // camino entero (0:rechazar -> 1:aceptar) y no solo el final: lo que ensena
+    // como se construyo la respuesta es la secuencia, no el ultimo peldano.
+    if(a.escalera){
+      const e=a.escalera;
+      const col = e.veredicto==='aceptar' ? '#7ec97e' : (e.veredicto==='rechazar' ? '#e0b341' : 'var(--suave)');
+      const ruta=(e.peldanos||[]).map(p=>p.n+':'+p.veredicto).join(' → ');
+      h+='<div class="tav" style="color:'+col+'">'+escapa(e.veredicto.toUpperCase())+
+         (e.ancla?' &middot; '+escapa(e.ancla):'')+
+         '<div style="color:var(--suave);font-size:.9em">'+escapa(e.motivo)+'</div>'+
+         (ruta?'<div style="color:var(--suave);font-size:.85em">'+escapa(ruta)+'</div>':'')+
+         '</div>';
+    }
     let visibles=(a.consola||[]).slice(0,t.reveladas).slice(-TAMT[tamT][1]);
     if(!(a.consola||[]).length){
       // Sin stdout tee-ado (p. ej. el arbol principal, que no tiene orquestador):
