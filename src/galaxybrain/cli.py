@@ -1113,7 +1113,12 @@ def cmd_graph(args):
         smells=args.smells,
         include_nested=args.include_nested,
         constructor=_constructor_de_grafo(root),
-        informe_simbolos=_analiza_simbolos(root) if _fronteras.get("surfaces") else None,
+        # El informe de simbolos hace falta si hay superficies O fronteras: la
+        # frontera tambien se comprueba sobre las LLAMADAS desde que se vio que
+        # `crate::b::f()` la cruzaba sin dejar import (9-ago).
+        informe_simbolos=(_analiza_simbolos(root)
+                          if (_fronteras.get("surfaces") or _fronteras.get("rules"))
+                          else None),
     )
     if args.context:
         return _graph_context(report, root, args.if_changed)
@@ -2091,6 +2096,10 @@ def _graph_gate(report):
     # frontera: alguien entro a un modulo por un simbolo que tu dijiste que no
     # era la puerta. Bloquea por el mismo motivo y con el mismo derecho.
     if report.get("surface_violations"):
+        return 1
+    # Una frontera cruzada con una LLAMADA es el mismo hecho que cruzarla con un
+    # import: llamar a B es depender de B. Bloquea igual.
+    if report.get("call_violations"):
         return 1
     # El mismo fallo un escalon mas sutil: no hay error que leer, solo cero reglas
     # y un verde. Que no exista NINGUN .gb-boundaries es legitimo (las fronteras

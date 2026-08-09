@@ -310,6 +310,31 @@ def test_un_import_de_paquete_encuentra_el_modulo_del_directorio(tmp_path):
 
 
 @necesita_astgrep
+def test_el_import_AGRUPADO_de_go_tambien_deja_arista(tmp_path):
+    """La forma NORMAL de Go agrupa los imports en un bloque, y el patron suelto
+    solo casaba el bloque entero: ni un spec, ninguna arista.
+
+    Esto no era un import perdido, era un FALSO VERDE en el gate: en una tirada
+    real (9-ago) un agente escribio `import ( "ejemplo/carrito" ... )` dentro de
+    un modulo que tiene esa frontera PROHIBIDA, y `gb graph --gate` respondio
+    "sin cruces de frontera" con la violacion delante. Es el peor fallo que puede
+    dar una gate, y solo aparecio corriendo un agente de verdad.
+    """
+    root = str(tmp_path / "go")
+    os.makedirs(os.path.join(root, "iva"), exist_ok=True)
+    os.makedirs(os.path.join(root, "carrito"), exist_ok=True)
+    with open(os.path.join(root, "carrito", "carrito.go"), "w", encoding="utf-8") as fh:
+        fh.write("package carrito\n\nfunc Total(x float64) float64 { return x }\n")
+    with open(os.path.join(root, "iva", "iva.go"), "w", encoding="utf-8") as fh:
+        fh.write('package iva\n\nimport (\n\t"ejemplo/carrito"\n\t"fmt"\n)\n\n'
+                 "func Informe() string { return fmt.Sprint(carrito.Total(1)) }\n")
+
+    aristas = {(e[0], e[1]) for e in lenguajes.analyze(root)["edges"] if e[2] == "IMPORTS"}
+
+    assert ("iva.iva", "carrito.carrito") in aristas, aristas
+
+
+@necesita_astgrep
 def test_un_paquete_ambiguo_no_deja_arista(tmp_path):
     """Con DOS ficheros en el paquete, elegir uno seria adivinar."""
     root = str(tmp_path / "amb")

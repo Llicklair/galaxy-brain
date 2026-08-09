@@ -139,7 +139,9 @@ LENGUAJES = {
         (("function", "func $NAME($$$) $RET { $$$ }"),
          ("function", "func $NAME($$$) { $$$ }"),
          ("class", "type $NAME struct { $$$ }")),
-        ('import "$SRC"',),
+        # con selector: la forma normal de Go agrupa los imports en un bloque,
+        # y el patron suelto solo casa el bloque entero, no cada spec.
+        (('import "$SRC"', "import_spec"),),
         resolucion="paquete", tia=True,
         sufijos_test=("_test",),
     ),
@@ -490,9 +492,16 @@ def _por_cualificado(llamado, definidos, por_modulo):
     en JS o Python el mismo texto suele ser una variable, y por eso no casa con
     ningún módulo y se queda en el techo, que es donde debe quedarse.
     """
-    if llamado.count(".") != 1:
+    # `::` de Rust/C++ y `.` de Go/Java/C# son la misma idea: una ruta hasta el
+    # simbolo. Se normaliza y se toman los DOS ultimos segmentos — el ultimo es
+    # el simbolo y el anterior su modulo. Antes se exigia exactamente un punto,
+    # asi que `crate::carrito::total(x)` no se resolvia y la llamada quedaba
+    # invisible: ni import ni arista, y la frontera `iva -/-> carrito` no la veia
+    # NADIE. Medido en una tirada real (9-ago), donde un agente la escribio asi.
+    partes = [p for p in llamado.replace("::", ".").split(".") if p]
+    if len(partes) < 2:
         return None
-    prefijo, nombre = llamado.split(".")
+    prefijo, nombre = partes[-2], partes[-1]
     if not prefijo.isidentifier() or not nombre.isidentifier():
         return None
     posibles = definidos.get(nombre)
@@ -663,8 +672,16 @@ def analyze(root):
     aristas = set()
     for lang in presentes:
         cfg = LENGUAJES[lang]
-        for patron in cfg["imports"]:
-            for m in _corre(ruta_ag, patron, cfg["ag"], root):
+        for entrada_imp in cfg["imports"]:
+            # (patron) o (patron, selector): el selector hace falta cuando la
+            # forma NORMAL del lenguaje agrupa varios imports en un bloque —
+            # `import ( "a"\n "b" )` en Go casa una vez como bloque y ninguna por
+            # dentro. Sin esto, el gate decia "sin cruces" mientras un modulo
+            # importaba al que tiene prohibido (medido en una tirada real, 9-ago:
+            # un FALSO VERDE, que es el peor fallo que puede dar una gate).
+            patron, selector = (entrada_imp if isinstance(entrada_imp, tuple)
+                                else (entrada_imp, None))
+            for m in _corre(ruta_ag, patron, cfg["ag"], root, selector):
                 especificador = _meta(m, "SRC")
                 fichero = os.path.abspath(os.path.join(root, m.get("file", "")))
                 entrada = por_fichero.get(fichero)

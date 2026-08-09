@@ -502,6 +502,18 @@ def render_graph(report, style):
             )
         for m in report.get("malformed_boundaries", []):
             lines.append(style("  AVISO: linea de regla no valida (ignorada): `%s`" % m, YELLOW))
+        llamadas_cruzadas = report.get("call_violations") or []
+        if llamadas_cruzadas:
+            # `A -/-> B` promete "A no depende de B", y llamar a B es depender de
+            # B. Sin esto el gate bloqueaba en silencio y, antes de existir,
+            # dejaba pasar `crate::b::f()` diciendo "sin cruces" (9-ago).
+            lines.append(style(
+                "CRUCES de frontera por LLAMADA (sin import de por medio):", BOLD))
+            for v in llamadas_cruzadas[:10]:
+                lines.append("  %s %s  ->  %s   [%s]"
+                             % (style("!", YELLOW), v["caller"], v["callee"], v["rule"]))
+            if len(llamadas_cruzadas) > 10:
+                lines.append(style("  ... y %d mas" % (len(llamadas_cruzadas) - 10), DIM))
         cruces = report.get("surface_violations") or []
         if cruces:
             # Una gate que bloquea sin decir QUE la rompio es la peor de todas: se

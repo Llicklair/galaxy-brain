@@ -693,6 +693,42 @@ def find_violations(edges, rules):
     return violations
 
 
+def find_call_violations(llamadas, rules, de_modulo):
+    """Cruces de frontera hechos con una LLAMADA en vez de con un import.
+
+    `A -/-> B` significa "A no depende de B", y llamar a B es depender de B tanto
+    como importarlo. Pero `find_violations` solo mira imports, y hay lenguajes
+    donde se puede alcanzar otro modulo SIN importarlo: `crate::b::f()` en Rust,
+    o dos ficheros del mismo paquete en Java, C#, Kotlin y Scala.
+
+    Medido en una tirada real (9-ago): un agente escribio
+    `crate::carrito::total(items)` dentro de `iva`, con `iva -/-> carrito`
+    declarado, y el gate respondio "sin cruces de frontera". La regla prometia
+    algo que no cumplia — un FALSO VERDE.
+
+    No es un proxy y no puede acusar de mas: la arista de llamada solo existe si
+    el grafo la resolvio contra un simbolo que EXISTE (ADR 0008), y la regla la
+    escribiste tu.
+    """
+    fuera = []
+    vistos = set()
+    for origen, destino in llamadas:
+        mo = de_modulo.get(origen, "")
+        md = de_modulo.get(destino, "")
+        if not mo or not md or mo == md:
+            continue
+        for src, dst in rules:
+            if _under(mo, src) and _under(md, dst):
+                clave = (mo, md, origen, destino)
+                if clave in vistos:
+                    continue
+                vistos.add(clave)
+                fuera.append({"caller": origen, "callee": destino,
+                              "importer": mo, "imported": md,
+                              "rule": "%s -/-> %s" % (src, dst)})
+    return fuera
+
+
 def find_surface_violations(llamadas, surfaces, de_modulo):
     """Llamadas que entran a un módulo por un símbolo que NO es su superficie.
 
@@ -888,11 +924,15 @@ def analyze(root, skip=DEFAULT_SKIP, since=None, boundaries=None, smells=False,
     # Solo se pide si HAY superficies declaradas: quien no las usa no paga un
     # segundo analisis del arbol (presupuesto de latencia, regla 2).
     cruces_superficie = []
-    if superficies and informe_simbolos:
+    cruces_llamada = []
+    if (superficies or rules) and informe_simbolos:
         de_modulo = {n["qual"]: (n.get("module") or n["qual"])
                      for n in informe_simbolos.get("nodes", []) if n.get("qual")}
         llamadas = [(a, b) for a, b, t in informe_simbolos.get("edges", []) if t == "CALLS"]
         cruces_superficie = find_surface_violations(llamadas, superficies, de_modulo)
+        # La MISMA regla, sobre llamadas: hay lenguajes donde se alcanza otro
+        # modulo sin importarlo, y ahi `-/->` prometia algo que no cumplia.
+        cruces_llamada = find_call_violations(llamadas, rules, de_modulo)
     edge_count = sum(len(d) for d in edges.values())
     report = {
         "root": root,
@@ -912,6 +952,7 @@ def analyze(root, skip=DEFAULT_SKIP, since=None, boundaries=None, smells=False,
         "boundaries": len(rules),
         "surfaces": len(superficies),
         "surface_violations": cruces_superficie,
+        "call_violations": cruces_llamada,
         "modulos_sin_regla": modulos_sin_regla(nodes, rules, superficies),
         # La ruta CONSULTADA, se hayan encontrado reglas o no. Sin esto, "0 reglas"
         # es un dato inaccionable: no dice donde habria que poner el fichero.

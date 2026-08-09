@@ -115,6 +115,56 @@ def test_un_destino_que_no_esta_en_el_grafo_se_ignora():
     assert v == []
 
 
+# --- la frontera cruzada con una LLAMADA, sin import de por medio ------------
+
+
+REGLAS = [("app.iva", "app.carrito")]
+DE_MOD = {
+    "app.iva.informe": "app.iva",
+    "app.carrito.total": "app.carrito",
+    "app.iva.tasa": "app.iva",
+    "app.web.handler": "app.web",
+}
+
+
+def test_llamar_al_modulo_prohibido_es_un_cruce():
+    """`A -/-> B` promete "A no depende de B", y llamar a B es depender de B. Solo
+    se miraban IMPORTS, y hay lenguajes donde se alcanza otro modulo SIN
+    importarlo: `crate::b::f()` en Rust, o el mismo paquete en Java y C#.
+
+    Medido en una tirada real (9-ago): un agente escribio
+    `crate::carrito::total(items)` dentro de `iva`, con la frontera declarada, y
+    el gate respondio "sin cruces de frontera" — un falso verde."""
+    v = graph.find_call_violations(
+        [("app.iva.informe", "app.carrito.total")], REGLAS, DE_MOD)
+
+    assert len(v) == 1
+    assert v[0]["caller"] == "app.iva.informe"
+    assert v[0]["rule"] == "app.iva -/-> app.carrito"
+
+
+def test_la_direccion_permitida_no_se_acusa():
+    """`carrito` SI puede usar `iva`: la regla tiene una sola direccion."""
+    assert graph.find_call_violations(
+        [("app.carrito.total", "app.iva.tasa")], REGLAS, DE_MOD) == []
+
+
+def test_una_llamada_dentro_del_mismo_modulo_nunca_cruza():
+    assert graph.find_call_violations(
+        [("app.iva.informe", "app.iva.tasa")], REGLAS, DE_MOD) == []
+
+
+def test_un_modulo_fuera_de_toda_regla_no_se_acusa():
+    assert graph.find_call_violations(
+        [("app.web.handler", "app.carrito.total")], REGLAS, DE_MOD) == []
+
+
+def test_sin_reglas_no_hay_cruces():
+    """La frontera es opt-in: sin reglas escritas no puede acusar a nadie."""
+    assert graph.find_call_violations(
+        [("app.iva.informe", "app.carrito.total")], [], DE_MOD) == []
+
+
 # --- la cobertura de la ley --------------------------------------------------
 
 
