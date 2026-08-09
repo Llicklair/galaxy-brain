@@ -90,9 +90,59 @@ def _simbolos_preexistentes(raiz):
         nodes = {n["qual"]: n for n in informe.get("nodes", []) if n.get("qual")}
         if not nodes:
             return []
-        return impacted.simbolos_preexistentes(nodes, impacted.rangos_del_diff(raiz))
+        tocados = impacted._simbolos_tocados(nodes, impacted.rangos_del_diff(raiz))
+        if not tocados:
+            return []
+        base = _simbolos_de_la_base(raiz, {nodes[q].get("file") for q in tocados})
+        return sorted(q for q in tocados if q in base) if base is not None else []
     except Exception:
         return []
+
+
+def _simbolos_de_la_base(raiz, ficheros):
+    """Los símbolos que existían en HEAD, en los ficheros que el diff toca.
+
+    `None` si no se puede saber — y entonces no se acusa a nadie.
+
+    Primero se intentó deducirlo del propio diff: un símbolo sería nuevo si todo
+    su cuerpo cayera en líneas añadidas. **No funciona**, y lo destapó la tirada
+    del 9-ago con una función recién creada: git alineó la llave de cierre de la
+    función NUEVA con la de la función vieja y la dejó como contexto, así que el
+    cuerpo asomaba una línea fuera del hunk y el símbolo salía acusado de
+    preexistente. La alineación de un diff es una heurística de presentación y no
+    dice qué existía; preguntarle eso es usar un proxy donde hace falta un hecho.
+
+    Se saca de git, que sí lo sabe: la versión en HEAD de esos ficheros —solo
+    esos— extraída aparte y pasada por el mismo motor. Las rutas relativas se
+    conservan para que los nombres de módulo salgan idénticos y los `qual` se
+    puedan comparar.
+    """
+    import shutil
+    import tempfile
+
+    relativos = sorted(f.replace("\\", "/") for f in ficheros if f)
+    if not relativos:
+        return set()
+    tmp = tempfile.mkdtemp(prefix="gb-base-")
+    try:
+        escritos = 0
+        for rel in relativos:
+            rc, contenido = _corre(["git", "show", "HEAD:./%s" % rel], raiz, timeout=120)
+            if rc != 0:
+                continue          # no estaba en HEAD: es un fichero nuevo entero
+            destino = os.path.join(tmp, *rel.split("/"))
+            os.makedirs(os.path.dirname(destino), exist_ok=True)
+            with open(destino, "w", encoding="utf-8", errors="replace") as fh:
+                fh.write(contenido)
+            escritos += 1
+        if not escritos:
+            return set()
+        informe = _json(GB + ["symbols", tmp, "--json"], tmp)
+        if not informe:
+            return None
+        return {n["qual"] for n in informe.get("nodes", []) if n.get("qual")}
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
 
 
 def _modulos_del_diff(worktree, raiz):

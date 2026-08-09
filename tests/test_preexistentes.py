@@ -16,8 +16,6 @@ import importlib.util
 import os
 import subprocess
 
-from galaxybrain import impacted
-
 # `bucle/` no es un paquete instalable: se carga por ruta, igual que en
 # tests/test_escalera.py.
 _RUTA = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
@@ -27,63 +25,59 @@ escalera = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(escalera)
 
 
-def _nodo(qual, linea, fin, fichero="src/carrito.js"):
-    return {"qual": qual, "file": fichero, "line": linea, "end": fin, "kind": "function"}
+def _git(cwd, *args):
+    subprocess.run(["git", "-C", str(cwd), *args], capture_output=True, check=False)
 
 
-# --- la regla: nuevo = todo su cuerpo cae en lineas anadidas -----------------
+def _repo(tmp_path, contenido):
+    root = tmp_path
+    (root / "m.py").write_text(contenido, encoding="utf-8")
+    _git(root, "init", "-q")
+    _git(root, "config", "user.email", "t@t.t")
+    _git(root, "config", "user.name", "t")
+    _git(root, "add", "-A")
+    _git(root, "commit", "-qm", "base")
+    return root
 
 
-def test_una_funcion_anadida_entera_NO_es_preexistente():
-    """El caso de rust: `informe` se escribe al final y todo su cuerpo es hunk."""
-    nodes = {"iva.informe": _nodo("iva.informe", 5, 11, "src/iva.rs")}
-
-    previos = impacted.simbolos_preexistentes(nodes, {"src/iva.rs": [(5, 11)]})
-
-    assert previos == []
+# --- QUE existia se le pregunta a git, no al diff ----------------------------
 
 
-def test_una_funcion_que_asoma_fuera_del_hunk_SI_lo_es():
-    """El caso de go y js: `total` ya estaba y el cambio le mete mano dentro."""
-    nodes = {"carrito.total": _nodo("carrito.total", 3, 9)}
+def test_una_funcion_MODIFICADA_sale_como_preexistente(tmp_path):
+    root = _repo(tmp_path, "def viejo():\n    return 1\n")
+    (root / "m.py").write_text("def viejo():\n    return 99\n", encoding="utf-8")
 
-    previos = impacted.simbolos_preexistentes(nodes, {"src/carrito.js": [(5, 6)]})
-
-    assert previos == ["carrito.total"]
+    assert escalera._simbolos_preexistentes(str(root)) == ["m.viejo"]
 
 
-def test_los_dos_a_la_vez_se_separan():
-    """El diff real de js: `sumar` es nueva y `total` estaba — solo la segunda."""
-    nodes = {"carrito.sumar": _nodo("carrito.sumar", 1, 3),
-             "carrito.total": _nodo("carrito.total", 5, 8)}
+def test_una_funcion_NUEVA_no_sale_aunque_el_diff_la_alinee_mal(tmp_path):
+    """El falso positivo que se comió la primera versión, y por qué ya no se
+    deduce del diff.
 
-    previos = impacted.simbolos_preexistentes(
-        nodes, {"src/carrito.js": [(1, 3), (6, 6)]})
+    Se intentó deducirlo así: un símbolo sería nuevo si todo su cuerpo cayera en
+    líneas añadidas. Medido el 9-ago con una función recién creada: git alineó su
+    llave de cierre con la de la función vieja y la dejó como CONTEXTO, así que el
+    cuerpo asomaba una línea fuera del hunk y `iva.informe` —recién escrita— salía
+    acusada de preexistente. La alineación de un diff es una heurística de
+    presentación; qué existía lo sabe git y se le pregunta a él.
+    """
+    root = _repo(tmp_path, "def viejo():\n    return 1\n")
+    (root / "m.py").write_text(
+        "def viejo():\n    return 1\n\n\ndef nuevo():\n    return 2\n", encoding="utf-8")
 
-    assert previos == ["carrito.total"]
-
-
-def test_un_simbolo_partido_en_dos_hunks_PEGADOS_sigue_siendo_nuevo():
-    """Sin fusionar tramos, un cuerpo cubierto por (1,3) y (4,7) parecía asomar
-    fuera de ambos y se contaba como preexistente — un falso positivo del propio
-    mecanismo, que es lo que esta capa no se puede permitir."""
-    nodes = {"m.f": _nodo("m.f", 1, 7, "m.py")}
-
-    assert impacted.simbolos_preexistentes(nodes, {"m.py": [(1, 3), (4, 7)]}) == []
+    assert escalera._simbolos_preexistentes(str(root)) == []
 
 
-def test_un_fichero_sin_hunks_no_acusa_a_nadie():
-    nodes = {"carrito.total": _nodo("carrito.total", 3, 9)}
+def test_un_fichero_entero_nuevo_no_acusa_a_nadie(tmp_path):
+    """No estaba en HEAD: `git show` falla y todos sus símbolos son nuevos."""
+    root = _repo(tmp_path, "def viejo():\n    return 1\n")
+    (root / "otro.py").write_text("def recien():\n    return 2\n", encoding="utf-8")
 
-    assert impacted.simbolos_preexistentes(nodes, {"otro.js": [(1, 99)]}) == []
+    assert escalera._simbolos_preexistentes(str(root)) == []
 
 
-def test_un_modulo_no_cuenta_como_simbolo():
-    """Los módulos no tienen `end` y abarcarían el fichero entero."""
-    nodes = {"carrito": {"qual": "carrito", "file": "src/carrito.js",
-                         "line": 1, "end": None, "kind": "module"}}
-
-    assert impacted.simbolos_preexistentes(nodes, {"src/carrito.js": [(2, 3)]}) == []
+def test_sin_cambios_no_hay_preexistentes(tmp_path):
+    assert escalera._simbolos_preexistentes(str(_repo(tmp_path, "def f():\n    return 1\n"))) == []
 
 
 # --- el hecho viaja al peldano siguiente ------------------------------------
@@ -132,10 +126,6 @@ def test_sin_preexistentes_el_veredicto_sale_limpio():
 
 
 # --- el fichero NUEVO tambien es un modulo tocado ---------------------------
-
-
-def _git(cwd, *args):
-    subprocess.run(["git", "-C", str(cwd), *args], capture_output=True, check=False)
 
 
 def test_un_modulo_en_fichero_NUEVO_cuenta_como_tocado(tmp_path):

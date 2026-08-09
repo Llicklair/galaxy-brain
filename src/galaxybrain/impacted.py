@@ -178,55 +178,6 @@ def _rangos_por_fichero(rangos):
     }
 
 
-def simbolos_preexistentes(nodes, rangos):
-    """De los símbolos que el diff toca, los que YA EXISTÍAN antes del cambio.
-
-    Un símbolo es NUEVO si su cuerpo entero cae dentro de líneas añadidas: una
-    función recién escrita al final del fichero está toda en el hunk. Si asoma
-    aunque sea una línea que el hunk no añadió, ese símbolo estaba ahí y el
-    cambio lo ha MODIFICADO.
-
-    Existe por lo que midió la tirada del 9-ago. Ante un rechazo del grafo, dos
-    de tres agentes hicieron desaparecer la violación tocando código que nadie
-    les pidió tocar: uno vació `carrito.Total` y se llevó la suma al módulo de
-    impuestos, otro le clavó el 21% como valor por defecto a `total`. Los dos
-    veredictos eran CORRECTOS sobre sus hechos —sin ciclos, sin cruces, verdes—
-    porque "sin violaciones" era alcanzable degradando el código. El rechazo es
-    una presión y el modelo la alivia por donde no hay medida.
-
-    Esto NO acusa: modificar lo que existe es la mitad del trabajo normal. Es un
-    hecho para ponerlo delante — del modelo en el peldaño siguiente, y del humano
-    en el veredicto.
-
-    Techo declarado (ADR 0008): un símbolo REESCRITO entero cuenta como nuevo,
-    porque todas sus líneas son añadidas y desde el diff no se distingue. Se
-    calla hacia el lado que no acusa.
-    """
-    normal = _rangos_por_fichero(rangos)
-    previos = []
-    for qual in _simbolos_tocados(nodes, rangos):
-        nodo = nodes[qual]
-        tramos = normal.get(os.path.normcase(nodo.get("file") or ""))
-        inicio, fin = nodo.get("line"), nodo.get("end")
-        if not tramos or not inicio or not fin:
-            continue
-        if not any(a <= inicio and fin <= b for a, b in _fusiona(tramos)):
-            previos.append(qual)
-    return sorted(previos)
-
-
-def _fusiona(tramos):
-    """Tramos solapados o contiguos, en uno. Sin esto, un símbolo partido en dos
-    hunks pegados parece asomar fuera de ambos y se contaría como preexistente."""
-    fusionados = []
-    for a, b in sorted(tramos):
-        if fusionados and a <= fusionados[-1][1] + 1:
-            fusionados[-1][1] = max(fusionados[-1][1], b)
-        else:
-            fusionados.append([a, b])
-    return [(a, b) for a, b in fusionados]
-
-
 def _simbolos_tocados(nodes, rangos):
     """Los símbolos cuyo cuerpo intersecta un hunk del diff.
 
