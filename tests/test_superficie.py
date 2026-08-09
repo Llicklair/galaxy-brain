@@ -189,3 +189,30 @@ def test_una_regla_cubre_sus_dos_lados():
     nodes = {"app.core", "app.web"}
 
     assert graph.modulos_sin_regla(nodes, [("app.core", "app.web")], []) == []
+
+
+# --- los tests estan EXENTOS de la cobertura ---------------------------------
+
+
+def test_los_modulos_de_test_no_cuentan_como_zona_sin_ley():
+    """Un test no es arquitectura. Exigir que `.gb-boundaries` mencione cada
+    fichero de test hacía la cobertura imposible de satisfacer: en una tirada
+    real (9-ago) js, go y rust escalaron los tres por SUS PROPIOS tests, no por
+    el código que habían escrito. Una regla que nadie puede cumplir no informa."""
+    nodes = {"app.core", "tests.test_core", "app.core_test", "app.core.spec"}
+
+    assert graph.modulos_sin_regla(nodes, [], []) == ["app.core"]
+
+
+def test_reconoce_la_convencion_de_cada_lenguaje():
+    """Los sufijos y carpetas salen de la TABLA de lenguajes, no de una lista
+    escrita aquí: `carrito_test` (Go), `carrito.test` (JS), `tests/` (Rust)."""
+    for m in ("carrito_test", "carrito.test", "tests.carrito", "spec.carrito",
+              "__tests__.carrito", "test_carrito"):
+        assert graph.es_modulo_de_test(m), m
+
+
+def test_no_confunde_codigo_normal_con_un_test():
+    """El riesgo del otro lado: eximir de más deja zonas reales sin vigilar."""
+    for m in ("app.core", "app.testigo", "app.latest", "contest", "app.protest"):
+        assert not graph.es_modulo_de_test(m), m

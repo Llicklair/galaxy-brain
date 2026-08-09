@@ -758,6 +758,46 @@ def find_surface_violations(llamadas, surfaces, de_modulo):
     return fuera
 
 
+def _convenciones_de_test():
+    """Sufijos y carpetas que marcan un modulo de test, DERIVADOS de la tabla de
+    lenguajes en vez de escritos aqui: `carrito_test` en Go, `CarritoTests` en
+    C#, `carrito.test` en JS, `tests/` en Rust. Dos listas de lo mismo divergen,
+    y esta semana ya ha pasado cuatro veces."""
+    sufijos, dirs = {"_test", "_spec"}, {"test", "tests", "spec", "__tests__"}
+    try:
+        from . import lenguajes
+
+        for cfg in lenguajes.LENGUAJES.values():
+            sufijos.update(cfg["sufijos_test"])       # SIN bajar a minusculas:
+            dirs.update(d.lower() for d in cfg["dirs_test"])
+    except Exception:      # sin la tabla, quedan las convenciones comunes
+        pass
+    # ...el sufijo de Java/C# es `Test` en CamelCase, y su mayuscula ES el limite
+    # de palabra. En minusculas, `contest` y `protest` acaban en "test" y
+    # quedarian exentos — eximir de mas deja zonas reales sin vigilar.
+    return tuple(sufijos), dirs
+
+
+def es_modulo_de_test(nombre):
+    """¿Ese modulo es codigo de test?
+
+    Se usa para EXIMIRLO de la cobertura de la ley: un test no es arquitectura.
+    Exigir que `.gb-boundaries` mencione cada fichero de test convertia la
+    cobertura en imposible de satisfacer — en una tirada real (9-ago) los tres
+    lenguajes escalaron por esto y no por su codigo.
+    """
+    sufijos, dirs = _convenciones_de_test()
+    partes = [p for p in (nombre or "").split(".") if p]
+    if not partes:
+        return False
+    if any(p.lower() in dirs for p in partes[:-1]):
+        return True
+    ultimo = partes[-1]
+    return (ultimo.lower() in dirs
+            or ultimo.endswith(sufijos)       # `carrito_test`, `CarritoTests`
+            or ultimo.lower().startswith("test_"))     # `test_carrito`, Python
+
+
 def modulos_sin_regla(nodes, rules, surfaces=()):
     """Módulos que NINGUNA regla menciona — la cobertura de la ley, no su cumplimiento.
 
@@ -769,6 +809,10 @@ def modulos_sin_regla(nodes, rules, surfaces=()):
 
     INFORMA, no bloquea (regla 9): tener zonas sin declarar es normal en un repo
     vivo. Lo que no es normal es dar por bueno un cambio ahí sin mirarlo.
+
+    Los módulos de TEST quedan exentos (`es_modulo_de_test`): un test no es
+    arquitectura, y exigir que la ley los mencione hacía la cobertura imposible
+    de satisfacer — una regla que nadie puede cumplir no informa de nada.
     """
     cubiertos = set()
     for src, dst in rules:
@@ -779,7 +823,10 @@ def modulos_sin_regla(nodes, rules, surfaces=()):
         for m in nodes:
             if _under(m, patron):
                 cubiertos.add(m)
-    return sorted(m for m in nodes if m not in cubiertos)
+    return sorted(
+        m for m in nodes
+        if m not in cubiertos and not es_modulo_de_test(m)
+    )
 
 
 def unmatched_rules(nodes, rules):
