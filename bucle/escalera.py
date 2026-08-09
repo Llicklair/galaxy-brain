@@ -125,7 +125,12 @@ def hechos_del_arbol(worktree, alcance=None, correr_tests=True):
     hechos["modulos_tocados"] = _modulos_del_diff(worktree, raiz)
     if correr_tests:
         rc, _ = _corre(GB + ["tests", "--worktree", "--run", raiz], worktree)
-        hechos["tests_verdes"] = rc == 0
+        # rc 3 = NO SE PUDO comprobar (sin comando de tests declarado). Eso NO es
+        # rojo: `decidir` trata None como "no comprobado" y escala, que es lo
+        # correcto. Meterlo en el mismo saco que un fallo real produciria el
+        # veredicto falso que esta tirada destapo — "los tests estan en rojo"
+        # sobre un proyecto cuyos tests nadie llego a correr.
+        hechos["tests_verdes"] = None if rc == 3 else rc == 0
         # El criterio de terminado del PROYECTO, declarado en su SCOPE con la
         # valla ```gb:terminado. Sin el, `decidir` no puede decir ACEPTAR — solo
         # SIN_OBJECIONES, que es lo que de verdad ha comprobado.

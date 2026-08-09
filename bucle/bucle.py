@@ -66,11 +66,19 @@ def _texto(b):
 
 
 def preparar_worktree(id_tarea, raiz=None):
-    """Worktree PROPIO en main (aviso 2 del protocolo: el ancla del harness).
+    """Worktree PROPIO desde HEAD (aviso 2 del protocolo: el ancla del harness).
 
     `raiz` permite preparar el worktree de OTRO repo: el lanzador de un agente
     suelto (agente.py) sirve para cualquier proyecto, no solo para este — y
-    cablear el repo era justo el bug que aparecio al usarlo de verdad."""
+    cablear el repo era justo el bug que aparecio al usarlo de verdad.
+
+    Se parte de HEAD y no de `main`. Ese nombre estaba cableado, que es hard rule
+    6 (nada project-specific): un repo con `master` —o con cualquier otra rama
+    por defecto— moria con `fatal: invalid reference: main` antes de lanzar nada.
+    Cazado al primer intento de correr una tirada fuera de este repo (9-ago).
+    HEAD es ademas lo correcto: el agente parte de donde TU estas, no de donde
+    alguien decidio que se llamaba la rama principal.
+    """
     raiz = raiz or RAIZ
     ruta = os.path.join(raiz, ".claude", "worktrees", "bucle-%s" % id_tarea)
     try:
@@ -78,7 +86,7 @@ def preparar_worktree(id_tarea, raiz=None):
     except OSError:
         pass
     _corre(["git", "worktree", "remove", "--force", ruta], cwd=raiz)
-    rc, _, err = _corre(["git", "worktree", "add", "--detach", ruta, "main"], cwd=raiz)
+    rc, _, err = _corre(["git", "worktree", "add", "--detach", ruta, "HEAD"], cwd=raiz)
     if rc != 0:
         raise RuntimeError("no se pudo preparar %s: %s" % (ruta, _texto(err)))
     return ruta
@@ -305,6 +313,24 @@ def _linea_consola(evento):
     return None
 
 
+def _eco(linea):
+    """La linea del agente por stdout, sin morir por la codificacion de la consola.
+
+    El stdout de una consola de Windows es cp1252, y el agente escribe flechas,
+    comillas tipograficas y emoji. Un `print` crudo lanza UnicodeEncodeError y
+    mata la TIRADA ENTERA por un caracter decorativo — paso en el primer intento
+    real de correr la escalera (9-ago): 37 segundos de trabajo del agente tirados
+    por un `→`. gb ya tenia este blindaje en `cli.emit`; el eco del bucle no,
+    y era el unico sitio donde el texto ajeno llega a la terminal.
+    """
+    texto = "  " + linea.replace("\n", "\n  ")
+    try:
+        print(texto, flush=True)
+    except UnicodeEncodeError:
+        codec = getattr(sys.stdout, "encoding", None) or "ascii"
+        print(texto.encode(codec, "replace").decode(codec, "replace"), flush=True)
+
+
 def ejecutar_real(tarea, worktree, prompt, timeout_seg, eco=False):
     exe = shutil.which("claude")
     if not exe:
@@ -339,7 +365,7 @@ def ejecutar_real(tarea, worktree, prompt, timeout_seg, eco=False):
                         # Con `eco`, la misma linea sale ademas por stdout: quien
                         # lanza UN agente a mano lo mira en su terminal, no solo
                         # en el mapa (bucle/agente.py).
-                        print("  " + linea.replace("\n", "\n  "), flush=True)
+                        _eco(linea)
         err = proc.stderr.read()
         rc = proc.wait()
     finally:
