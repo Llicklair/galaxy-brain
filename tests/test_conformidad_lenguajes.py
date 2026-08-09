@@ -236,9 +236,10 @@ def test_la_licencia_para_estrechar_es_opt_in():
     from galaxybrain import lenguajes as tabla
 
     concedidas = {i for i, cfg in tabla.LENGUAJES.items() if cfg["tia"]}
-    assert concedidas == {"js", "ts", "go", "csharp"}, (
-        "solo tienen banco medido js/ts (node --test), go (go test) y csharp "
-        "(dotnet test): 0 falsos verdes, cascada exacta y 52%% de ahorro en los tres. "
+    assert concedidas == {"js", "ts", "go", "csharp", "java", "php", "lua"}, (
+        "cada una salio de un banco con rojos REALES y cascada exacta: js/ts con "
+        "node --test, go con go test, csharp con dotnet test, y java/php/lua con "
+        "sus interpretes. Ruby y Rust NO la tienen, y su motivo esta en carencias. "
         "Concedidas ahora: %s" % sorted(concedidas)
     )
 
@@ -253,7 +254,8 @@ def test_sin_licencia_la_seleccion_corre_todo_y_lo_dice():
     assert impacted._sin_licencia_para_estrechar({"lenguajes": ["js"]}) == ""
     assert impacted._sin_licencia_para_estrechar({"lenguajes": ["js", "go"]}) == ""
     assert impacted._sin_licencia_para_estrechar({"lenguajes": ["csharp"]}) == ""
-    assert impacted._sin_licencia_para_estrechar({"lenguajes": ["go", "java"]}) == "java"
+    assert impacted._sin_licencia_para_estrechar({"lenguajes": ["go", "java"]}) == ""
+    assert impacted._sin_licencia_para_estrechar({"lenguajes": ["java", "ruby"]}) == "ruby"
 
 
 def test_la_via_python_no_pasa_por_la_licencia():

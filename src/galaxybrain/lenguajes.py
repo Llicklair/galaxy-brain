@@ -167,7 +167,8 @@ LENGUAJES = {
          ("class", "class $NAME { $$$ }"),
          ("method", "class A { $MOD $RET $NAME($$$) { $$$ } }", "method_declaration")),
         ("import $SRC;",),
-        resolucion="paquete",
+        llamada=("$FN($$$)", "$A.$FN($$$)"),
+        tia=True, resolucion="paquete",
         sufijos_test=("Test", "Tests"), dirs_test=("test", "tests"),
     ),
     "kotlin": _lang(
@@ -176,6 +177,7 @@ LENGUAJES = {
          ("function", "fun $NAME($$$) { $$$ }"),
          ("class", "class $NAME { $$$ }")),
         ("import $SRC",),
+        llamada=("$FN($$$)", "$A.$FN($$$)"),
         resolucion="paquete",
         sufijos_test=("Test",), dirs_test=("test", "tests"),
     ),
@@ -206,6 +208,9 @@ LENGUAJES = {
          ("class", "module $NAME")),
         ("require_relative '$SRC'", 'require_relative "$SRC"'),
         resolucion="ruta-local",
+        carencias=("una llamada SIN parentesis (`total x` o `iva`) no es un nodo de "
+                   "llamada en el AST: es indistinguible de una variable, asi que no "
+                   "deja arista. Es idioma corriente en Ruby",),
         sufijos_test=("_test", "_spec"), dirs_test=("test", "tests", "spec"),
     ),
     "php": _lang(
@@ -218,7 +223,7 @@ LENGUAJES = {
          ("method", "class A { private function $NAME($$$) { $$$ } }", "method_declaration"),
          ("method", "class A { protected function $NAME($$$) { $$$ } }", "method_declaration")),
         ("require_once '$SRC'", "require '$SRC'", "include '$SRC'"),
-        resolucion="ruta-local",
+        tia=True, resolucion="ruta-local",
         sufijos_test=("Test",), dirs_test=("test", "tests"),
     ),
     "lua": _lang(
@@ -230,7 +235,7 @@ LENGUAJES = {
          ("method", "function $T.$NAME($$$) $$$ end"),
          ("method", "function $T:$NAME($$$) $$$ end")),
         ('require("$SRC")', "require '$SRC'"),
-        resolucion="paquete",
+        tia=True, resolucion="paquete",
         sufijos_test=("_test", "_spec"), dirs_test=("test", "tests", "spec"),
     ),
     "scala": _lang(
@@ -239,6 +244,7 @@ LENGUAJES = {
          ("class", "class $NAME { $$$ }"),
          ("class", "object $NAME { $$$ }")),
         ("import $SRC",),
+        llamada=("$FN($$$)", "$A.$FN($$$)"),
         resolucion="paquete",
         sufijos_test=("Test", "Spec"), dirs_test=("test", "tests"),
     ),
@@ -671,13 +677,21 @@ def analyze(root):
         candidatas = []
         for patron in cfg["llamada"]:
             for m in _corre(ruta_ag, patron, cfg["ag"], root):
-                clave = (m.get("file"), _linea(m), _meta(m, "FN"))
+                clave = (m.get("file"), _linea(m), _meta(m, "A"), _meta(m, "FN"))
                 if clave in vistas:
                     continue
                 vistas.add(clave)
                 candidatas.append(m)
         for m in candidatas:
             llamado = (_meta(m, "FN") or "").strip()
+            # Patron `$A.$FN($$$)`: en Java, Kotlin y Scala TODA invocacion es
+            # `receptor.metodo(...)` en el AST y `$FN($$$)` no casa nada — el
+            # banco de Java salio con CERO llamadas hasta ver esto. Las dos
+            # metavariables se recomponen en el nombre cualificado, que es lo que
+            # sabe resolver `_por_cualificado`.
+            receptor = (_meta(m, "A") or "").strip()
+            if receptor and "." not in llamado:
+                llamado = "%s.%s" % (receptor, llamado)
             fichero = os.path.abspath(os.path.join(root, m.get("file", "")))
             entrada = por_fichero.get(fichero)
             if not llamado or entrada is None or entrada[1] != lang:
