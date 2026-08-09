@@ -534,6 +534,32 @@ def _resuelve(especificador, fichero, raiz, modulos, modo):
             cand = ".".join(partes[i:])
             if cand in modulos:
                 return cand
+        # Un import de paquete nombra el DIRECTORIO (`import "ejemplo/iva"`), y el
+        # nombre de modulo aqui es `directorio.fichero` (`iva.iva`): no casan
+        # nunca por sufijo. Se busca el modulo cuyo PREFIJO sea ese paquete, y
+        # solo si hay exactamente uno — con varios ficheros en el paquete, elegir
+        # seria adivinar. Sin esto, Go, Java, Kotlin, Scala, C#, Swift y Elixir
+        # salian con CERO aristas de import y su mapa se veia vacio (9-ago).
+        for i in range(len(partes)):
+            prefijo = ".".join(partes[i:])
+            hijos = [m for m in modulos if m.split(".")[:len(partes) - i] == partes[i:]]
+            if len(hijos) == 1 and prefijo:
+                return hijos[0]
+        # Ultimo recurso, sin distinguir mayusculas: en Elixir el modulo es
+        # `Iva` y su fichero `iva.ex`, y en Java/Kotlin la clase `Carrito` vive
+        # en `carrito.kt`. Es una convencion del lenguaje, no una adivinanza — y
+        # aun asi solo vale si hay EXACTAMENTE un modulo que case.
+        bajas = {}
+        for m in modulos:
+            bajas.setdefault(m.lower(), []).append(m)
+        for i in range(len(partes)):
+            cand = ".".join(partes[i:]).lower()
+            iguales = bajas.get(cand) or []
+            if len(iguales) == 1:
+                return iguales[0]
+            sufijo = [m for k, v in bajas.items() if k.endswith("." + cand) for m in v]
+            if len(sufijo) == 1:
+                return sufijo[0]
         return None
     return None
 

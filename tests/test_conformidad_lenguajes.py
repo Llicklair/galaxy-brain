@@ -290,6 +290,60 @@ def test_resuelve_la_llamada_cualificada_entre_modulos(tmp_path):
 
 
 @necesita_astgrep
+def test_un_import_de_paquete_encuentra_el_modulo_del_directorio(tmp_path):
+    """`import "ejemplo/iva"` nombra el DIRECTORIO, y el modulo aqui se llama
+    `iva.iva` (directorio.fichero): no casan nunca por sufijo. Sin resolver el
+    prefijo, Go, Java, Kotlin, Scala y C# salian con CERO aristas de import y su
+    mapa se veia vacio — medido montando los bancos por lenguaje (9-ago)."""
+    root = str(tmp_path / "go")
+    os.makedirs(os.path.join(root, "iva"), exist_ok=True)
+    os.makedirs(os.path.join(root, "carrito"), exist_ok=True)
+    with open(os.path.join(root, "iva", "iva.go"), "w", encoding="utf-8") as fh:
+        fh.write("package iva\n\nfunc Iva() float64 { return 0.21 }\n")
+    with open(os.path.join(root, "carrito", "carrito.go"), "w", encoding="utf-8") as fh:
+        fh.write('package carrito\n\nimport "ejemplo/iva"\n\n'
+                 "func Total(x float64) float64 { return x * iva.Iva() }\n")
+
+    aristas = {(e[0], e[1]) for e in lenguajes.analyze(root)["edges"] if e[2] == "IMPORTS"}
+
+    assert ("carrito.carrito", "iva.iva") in aristas, aristas
+
+
+@necesita_astgrep
+def test_un_paquete_ambiguo_no_deja_arista(tmp_path):
+    """Con DOS ficheros en el paquete, elegir uno seria adivinar."""
+    root = str(tmp_path / "amb")
+    os.makedirs(os.path.join(root, "iva"), exist_ok=True)
+    os.makedirs(os.path.join(root, "carrito"), exist_ok=True)
+    for n in ("uno", "dos"):
+        with open(os.path.join(root, "iva", n + ".go"), "w", encoding="utf-8") as fh:
+            fh.write("package iva\n\nfunc F%s() int { return 1 }\n" % n)
+    with open(os.path.join(root, "carrito", "carrito.go"), "w", encoding="utf-8") as fh:
+        fh.write('package carrito\n\nimport "ejemplo/iva"\n\nfunc T() int { return 1 }\n')
+
+    aristas = [e for e in lenguajes.analyze(root)["edges"] if e[2] == "IMPORTS"]
+
+    assert aristas == [], aristas
+
+
+@necesita_astgrep
+def test_el_modulo_en_CamelCase_encuentra_su_fichero(tmp_path):
+    """En Elixir el modulo es `Iva` y su fichero `iva.ex`; en Kotlin la clase
+    `Carrito` vive en `carrito.kt`. Es convencion del lenguaje, no adivinanza —
+    y aun asi solo vale si hay exactamente un modulo que case."""
+    root = str(tmp_path / "ex")
+    os.makedirs(os.path.join(root, "lib"), exist_ok=True)
+    with open(os.path.join(root, "lib", "iva.ex"), "w", encoding="utf-8") as fh:
+        fh.write("defmodule Iva do\n  def iva, do: 0.21\nend\n")
+    with open(os.path.join(root, "lib", "carrito.ex"), "w", encoding="utf-8") as fh:
+        fh.write("defmodule Carrito do\n  alias Iva\n\n  def total(x), do: x\nend\n")
+
+    aristas = {(e[0], e[1]) for e in lenguajes.analyze(root)["edges"] if e[2] == "IMPORTS"}
+
+    assert ("lib.carrito", "lib.iva") in aristas, aristas
+
+
+@necesita_astgrep
 def test_un_prefijo_que_no_es_modulo_no_fabrica_arista(tmp_path):
     """`xs.reduce(...)` en JS: el prefijo es una VARIABLE, no un modulo. Sigue
     contando como techo, que es donde debe quedarse — una arista inventada es
