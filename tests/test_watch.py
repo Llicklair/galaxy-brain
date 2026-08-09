@@ -239,22 +239,60 @@ def test_la_firma_de_actividad_ve_worktrees_y_consolas(tmp_path):
     bucle (6-ago, reportado mirando el mapa en vivo). Worktree que aparece,
     consola que crece y worktree que se recoge: los tres mueven la firma."""
     root = str(tmp_path)
-    assert cli._firma_actividad(root) == ()
-
     base = os.path.join(root, ".claude", "worktrees")
+    # La sonda recibe la BASE de worktrees, no la raiz analizada. Antes recibia
+    # `root` y componia `root/.claude/worktrees` — con `gb symbols src --watch`
+    # eso era `src/.claude/worktrees`, que no existe: devolvia vacio SIEMPRE y el
+    # mapa no se refrescaba nunca por actividad (9-ago, verificando el frontend).
+    assert cli._firma_actividad(base) == ()
+
     os.makedirs(os.path.join(base, "bucle-A"))
-    con_worktree = cli._firma_actividad(root)
+    con_worktree = cli._firma_actividad(base)
     assert con_worktree
 
     log = os.path.join(base, "bucle-A.consola.log")
     with open(log, "w", encoding="utf-8") as handle:
         handle.write("linea\n")
-    con_consola = cli._firma_actividad(root)
+    con_consola = cli._firma_actividad(base)
     assert con_consola != con_worktree
 
     with open(log, "a", encoding="utf-8") as handle:
         handle.write("otra\n")
-    assert cli._firma_actividad(root) != con_consola
+    assert cli._firma_actividad(base) != con_consola
+
+
+def test_la_firma_ve_el_CODIGO_dentro_del_worktree(tmp_path):
+    """La otra mitad que faltaba: solo se miraban las entradas de primer nivel, y
+    editar un fichero DENTRO de un worktree no mueve la fecha de su carpeta. Un
+    agente que trabajase en silencio —sin escribir en consola— no repintaba el
+    mapa, que es justo lo que se va a mirar durante una tirada."""
+    base = os.path.join(str(tmp_path), ".claude", "worktrees")
+    wt = os.path.join(base, "bucle-A", "src")
+    os.makedirs(wt)
+    fuente = os.path.join(wt, "modulo.py")
+    with open(fuente, "w", encoding="utf-8") as handle:
+        handle.write("def f():\n    return 1\n")
+    antes = cli._firma_actividad(base)
+
+    # el tamano cambia, como en cualquier edicion real. La firma es
+    # (nombre, tamano, segundo): una edicion del MISMO tamano dentro del MISMO
+    # segundo no se ve — el precio de no hashear en cada tick, y esta declarado.
+    with open(fuente, "w", encoding="utf-8") as handle:
+        handle.write("def f():\n    return 1 + 1\n")
+
+    assert cli._firma_actividad(base) != antes
+
+
+def test_la_raiz_de_worktrees_sale_del_REPO_no_de_la_raiz_analizada(tmp_path):
+    """`gb symbols src --watch` analiza `src`, pero los worktrees viven en la
+    raiz del repo. Resolverlo desde `root` dejaba la sonda muerta."""
+    root = str(tmp_path)
+    os.makedirs(os.path.join(root, ".claude", "worktrees"))
+    os.makedirs(os.path.join(root, "src"))
+
+    base = cli._raiz_de_worktrees(os.path.join(root, "src"))
+
+    assert base is None or base.endswith(os.path.join(".claude", "worktrees"))
 
 
 def test_el_watch_en_fondo_no_abre_ventanas(monkeypatch):

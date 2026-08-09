@@ -1232,25 +1232,58 @@ def _firma_capas(root):
     return marcas
 
 
-def _firma_actividad(root):
-    """La actividad de agentes, a golpe de stat: las entradas de
-    `.claude/worktrees/` (worktrees y sus consolas tee-adas, que crecen linea a
-    linea). La sonda solo miraba los .py del proyecto y una tirada ENTERA del
-    bucle paso sin pintarse (6-ago-2026, reportado mirando el mapa en vivo):
-    los agentes trabajan en OTRO arbol, y su rastro es este directorio, no el
-    codigo. El tick sigue sin pagar subprocesos."""
-    base = os.path.join(root, ".claude", "worktrees")
+def _raiz_de_worktrees(root):
+    """Donde viven los worktrees: la RAIZ DEL REPO, no la raiz analizada.
+
+    Esto valia `root/.claude/worktrees` y por eso la sonda estaba muerta en el
+    uso normal: con `gb symbols src --watch`, root es `src` y miraba en
+    `src/.claude/worktrees`, que no existe — devolvia vacio SIEMPRE y el mapa no
+    se refrescaba nunca por actividad. El arreglo del 6-ago se probo con
+    `gb symbols .` (root = repo) y por eso paso. Cazado verificando el frontend
+    antes de las tiradas (9-ago).
+
+    Se resuelve UNA vez, no por tick: el subprocess de git no entra al bucle.
+    """
+    if os.path.isdir(os.path.join(root, ".claude", "worktrees")):
+        return os.path.join(root, ".claude", "worktrees")
+    from . import graph as graph_mod
+
+    top = (graph_mod._git(root, "rev-parse", "--show-toplevel") or "").strip()
+    return os.path.join(top, ".claude", "worktrees") if top else None
+
+
+def _firma_actividad(base):
+    """La actividad de agentes, a golpe de stat: sus consolas tee-adas (que
+    crecen linea a linea) Y el codigo que estan editando dentro de su worktree.
+
+    Lo segundo faltaba: solo se miraban las entradas de primer nivel, y editar un
+    fichero DENTRO de un worktree no mueve la fecha de su carpeta. Un agente que
+    trabajaba en silencio —sin escribir en consola— no repintaba el mapa.
+
+    Sigue sin pagar subprocesos: es la misma pasada barata que `_firma_py`, una
+    por worktree vivo.
+
+    Limite declarado: la marca es (nombre, tamano, segundo), asi que una edicion
+    del MISMO tamano dentro del MISMO segundo no se ve. Es el precio de no
+    hashear cada fichero en cada tick, y en la practica no aparece — una edicion
+    real mueve el tamano o cruza el segundo.
+    """
+    if not base:
+        return ()
     try:
         nombres = sorted(os.listdir(base))
     except OSError:
         return ()
     marcas = []
     for nombre in nombres:
+        ruta = os.path.join(base, nombre)
         try:
-            st = os.stat(os.path.join(base, nombre))
+            st = os.stat(ruta)
         except OSError:
             continue
         marcas.append((nombre, st.st_size, int(st.st_mtime)))
+        if os.path.isdir(ruta):
+            marcas.extend(_firma_py(ruta))
     return tuple(marcas)
 
 
@@ -1375,6 +1408,9 @@ def _vigilar(root, args):
     intervalo = max(1, args.intervalo)
     refresco = args.refresco or 5  # en watch el auto-refresh tiene sentido por defecto
     anterior = None
+    # UNA vez, no por tick: resolverlo dentro del bucle metería un subprocess de
+    # git en el camino caliente del watch.
+    base_worktrees = _raiz_de_worktrees(root)
 
     candado = _tomar_candado(destino)
     if candado is None:
@@ -1409,7 +1445,7 @@ def _vigilar(root, args):
                 relanzar = True
                 break
             _latir(candado)
-            actual = (_firma_py(root), _firma_capas(root), _firma_actividad(root))
+            actual = (_firma_py(root), _firma_capas(root), _firma_actividad(base_worktrees))
             if actual != anterior:
                 # La actividad NO es forma: los agentes cambian consolas y
                 # worktrees sin tocar un simbolo del proyecto, y el guard de
