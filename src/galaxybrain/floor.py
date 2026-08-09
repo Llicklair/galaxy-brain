@@ -70,6 +70,43 @@ def _first_existing(root, candidates):
     return [c for c in candidates if _exists(root, *c.split("/"))]
 
 
+#: fichero que lo declara -> comando de tests de ese ecosistema. Es una TABLA y
+#: no una escalera de `if` porque anadir un toolchain tiene que costar una linea.
+#:
+#: Existia con cinco entradas cuando el grafo ya leia diecisiete lenguajes: el
+#: suelo decia "no encuentro comando de tests" en un proyecto Maven o Gradle
+#: perfectamente normal. Es la misma asimetria de dos listas de lo mismo que ya
+#: habia mordido tres veces esta semana (9-ago).
+TOOLCHAINS = (
+    ("Cargo.toml", "cargo test"),
+    ("go.mod", "go test ./..."),
+    ("pom.xml", "mvn -q test"),
+    ("build.gradle", "gradle test"),
+    ("build.gradle.kts", "gradle test"),
+    ("build.sbt", "sbt test"),
+    ("mix.exs", "mix test"),
+    ("Package.swift", "swift test"),
+    ("pubspec.yaml", "dart test"),
+    ("Rakefile", "rake test"),
+    ("Gemfile", "bundle exec rake test"),
+    ("composer.json", "composer test"),
+    (".busted", "busted"),
+)
+
+
+def _dotnet(root):
+    """Un proyecto .NET se reconoce por su `.sln` o cualquier `.csproj`, que no
+    tienen nombre fijo — por eso no cabe en la tabla de arriba."""
+    try:
+        nombres = os.listdir(root)
+    except OSError:
+        return None
+    for n in nombres:
+        if n.endswith((".sln", ".csproj", ".fsproj")):
+            return n
+    return None
+
+
 def detect_test_command(root):
     """El comando de tests del proyecto, leido de su configuracion.
 
@@ -80,10 +117,12 @@ def detect_test_command(root):
         content = _read(root, "package.json")
         if re.search(r'"scripts"\s*:\s*\{[^}]*"test"\s*:', content, re.DOTALL):
             return "npm test", "package.json"
-    if _exists(root, "Cargo.toml"):
-        return "cargo test", "Cargo.toml"
-    if _exists(root, "go.mod"):
-        return "go test ./...", "go.mod"
+    for fichero, comando in TOOLCHAINS:
+        if _exists(root, fichero):
+            return comando, fichero
+    proyecto = _dotnet(root)
+    if proyecto:
+        return "dotnet test", proyecto
     pyproject = _read(root, "pyproject.toml")
     if "[tool.pytest" in pyproject:
         return "pytest -q", "pyproject.toml"

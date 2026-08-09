@@ -42,6 +42,41 @@ def test_un_repo_go_no_recibe_pytest(tmp_path):
     assert floor.detect_test_command(root)[0] == "go test ./..."
 
 
+def test_los_toolchains_de_los_17_lenguajes_se_detectan(tmp_path):
+    """El suelo conocia CINCO toolchains cuando el grafo ya leia diecisiete
+    lenguajes, asi que decia "no encuentro comando de tests" en un proyecto Maven
+    o Gradle perfectamente normal. Dos listas de lo mismo divergen, y la que se
+    queda vieja miente en silencio — cuarta vez esta semana."""
+    casos = {
+        "pom.xml": "mvn -q test",
+        "build.gradle": "gradle test",
+        "build.sbt": "sbt test",
+        "mix.exs": "mix test",
+        "Package.swift": "swift test",
+        "pubspec.yaml": "dart test",
+        "Rakefile": "rake test",
+        "composer.json": "composer test",
+        ".busted": "busted",
+    }
+    for fichero, esperado in casos.items():
+        root = str(tmp_path / fichero.replace(".", "_"))
+        _write(root, fichero, "x\n")
+        comando, fuente = floor.detect_test_command(root)
+        assert comando == esperado, "%s -> %s" % (fichero, comando)
+        assert fuente == fichero
+
+
+def test_un_proyecto_dotnet_se_reconoce_por_su_csproj(tmp_path):
+    """Ni `.sln` ni `.csproj` tienen nombre fijo, asi que no caben en la tabla."""
+    root = str(tmp_path)
+    _write(root, "MiApp.csproj", "<Project/>\n")
+
+    comando, fuente = floor.detect_test_command(root)
+
+    assert comando == "dotnet test"
+    assert fuente == "MiApp.csproj"
+
+
 def test_un_repo_node_recibe_npm_test(tmp_path):
     root = str(tmp_path)
     _write(root, "package.json", '{\n "scripts": {\n  "test": "vitest run"\n }\n}\n')
