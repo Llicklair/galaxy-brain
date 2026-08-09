@@ -136,6 +136,65 @@ def test_lo_que_no_puede_se_dice_en_el_informe(tmp_path, lang):
         assert any(texto in linea for linea in informe["not_covered"]), texto
 
 
+# --- clases y metodos: la mitad que la sonda no miraba -----------------------
+
+#: Un fuente con UNA clase y UN metodo, por lenguaje que los declare en la tabla.
+#: Sin esto la sonda solo exigia "algun simbolo" — y como los `def`/`func` sueltos
+#: si salian, no vio que las clases de Ruby daban ERROR de patron, que a PHP le
+#: faltaban los metodos de clase y a Lua las funciones de tabla (los tres, 9-ago).
+CLASES = {
+    "js": ("a.js", "export class Caja {\n  abrir() { return 1; }\n}\n"),
+    "ts": ("a.ts", "export class Caja {\n  abrir(): number { return 1; }\n}\n"),
+    "tsx": ("a.tsx", "export class Caja {\n  abrir() { return 1; }\n}\n"),
+    "go": ("a.go", "package main\n\ntype Caja struct {\n\tN int\n}\n"),
+    "rust": ("a.rs", "pub struct Caja {\n    pub n: i32,\n}\n"),
+    "java": ("A.java", "public class Caja {\n    public int abrir() { return 1; }\n}\n"),
+    "kotlin": ("a.kt", "class Caja {\n    fun abrir(): Int { return 1 }\n}\n"),
+    "swift": ("a.swift", "struct Caja {\n    func abrir() -> Int { return 1 }\n}\n"),
+    # con `def self.` porque la tabla promete `method` para esa forma, que en
+    # Ruby es la funcion de modulo/clase y no un metodo de instancia
+    "ruby": ("a.rb", "class Caja\n  def self.crear(n)\n    n\n  end\n\n"
+                     "  def abrir\n    1\n  end\nend\n"),
+    "php": ("a.php", "<?php\nclass Caja {\n    public function abrir() { return 1; }\n}\n"),
+    "lua": ("a.lua", "local M = {}\n\nfunction M.abrir(x) return x end\n\nreturn M\n"),
+    "scala": ("a.scala", "class Caja {\n  def abrir(): Int = 1\n}\n"),
+    "elixir": ("a.ex", "defmodule Caja do\n  def abrir, do: 1\nend\n"),
+    "csharp": ("A.cs", "class Caja\n{\n    public int Abrir() { return 1; }\n}\n"),
+    "dart": ("a.dart", "class Caja {\n  int abrir() { return 1; }\n}\n"),
+}
+
+
+def _clases_declaradas(cfg):
+    return {kind for kind, *_ in cfg["simbolos"]} & {"class", "method"}
+
+
+def test_todo_lenguaje_con_clases_tiene_su_fuente():
+    """Si la tabla promete clases o metodos, tiene que haber fuente que lo pruebe."""
+    from galaxybrain import lenguajes as tabla
+
+    faltan = [k for k, cfg in tabla.LENGUAJES.items()
+              if _clases_declaradas(cfg) and k not in CLASES]
+    assert not faltan, "sin fuente de clase: %s" % faltan
+
+
+@necesita_astgrep
+@pytest.mark.parametrize("lang", sorted(CLASES))
+def test_extrae_las_clases_y_metodos_que_promete(tmp_path, lang):
+    cfg = lenguajes.LENGUAJES[lang]
+    esperados = _clases_declaradas(cfg)
+    nombre, fuente = CLASES[lang]
+    root = str(tmp_path / ("cls_" + lang))
+    os.makedirs(root, exist_ok=True)
+    with open(os.path.join(root, nombre), "w", encoding="utf-8") as fh:
+        fh.write(fuente)
+
+    kinds = {n["kind"] for n in lenguajes.analyze(root)["nodes"]}
+
+    for kind in sorted(esperados):
+        assert kind in kinds, (
+            "%s promete nodos '%s' y no extrajo ninguno de este fuente" % (lang, kind))
+
+
 # --- el grafo de modulos, solo donde la resolucion es un hecho ---------------
 
 #: Lenguajes cuyo import apunta a una RUTA, que es lo unico que se puede resolver

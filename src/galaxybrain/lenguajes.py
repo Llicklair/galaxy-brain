@@ -158,12 +158,14 @@ LENGUAJES = {
                    "tokens, no una expresion, asi que `assert!(f() > 0)` es invisible",),
     ),
     "java": _lang(
+        # El patron CONTEXTUAL con `$MOD` caza cualquier combinacion de
+        # modificadores de una vez (`public static`, `private`, ...). Los tres
+        # patrones sueltos que habia antes solo cubrian los que alguien habia
+        # pensado, y `public static int f()` se les escapaba.
         "java", (".java",),
         (("class", "public class $NAME { $$$ }"),
          ("class", "class $NAME { $$$ }"),
-         ("method", "public $RET $NAME($$$) { $$$ }"),
-         ("method", "private $RET $NAME($$$) { $$$ }"),
-         ("method", "protected $RET $NAME($$$) { $$$ }")),
+         ("method", "class A { $MOD $RET $NAME($$$) { $$$ } }", "method_declaration")),
         ("import $SRC;",),
         resolucion="paquete",
         sufijos_test=("Test", "Tests"), dirs_test=("test", "tests"),
@@ -181,32 +183,52 @@ LENGUAJES = {
         "swift", (".swift",),
         (("function", "func $NAME($$$) -> $RET { $$$ }"),
          ("function", "func $NAME($$$) { $$$ }"),
-         ("class", "class $NAME { $$$ }")),
+         ("class", "class $NAME { $$$ }"),
+         ("class", "struct $NAME { $$$ }")),
+        # Sin patron de metodo a proposito: en Swift `func` suelto ya caza los de
+        # dentro de un struct o una clase, y anadir el contextual solo metia un
+        # patron que la deduplicacion descartaba siempre — lo caza su sonda.
         ("import $SRC",),
+        resolucion="paquete",
         sufijos_test=("Test", "Tests"), dirs_test=("test", "tests"),
-        carencias=("los imports son modulos del sistema, no ficheros: sin grafo de modulos",),
+        carencias=("`import` en Swift nombra un MODULO del sistema o del paquete, no un "
+                   "fichero: solo deja arista si coincide con un modulo del propio arbol",),
     ),
     "ruby": _lang(
+        # `class $NAME\n $$$\nend` daba ERROR de patron, asi que las clases de
+        # Ruby NO se extraian — y la sonda no lo veia porque solo exigia "algun
+        # simbolo", y los `def` si salian. Sin cuerpo, casa.
         "ruby", (".rb",),
         (("function", "def $NAME($$$)"),
          ("function", "def $NAME"),
-         ("class", "class $NAME\n  $$$\nend")),
+         ("method", "def self.$NAME($$$)"),
+         ("class", "class $NAME"),
+         ("class", "module $NAME")),
         ("require_relative '$SRC'", 'require_relative "$SRC"'),
         resolucion="ruta-local",
         sufijos_test=("_test", "_spec"), dirs_test=("test", "tests", "spec"),
     ),
     "php": _lang(
+        # PHP real es casi todo clases, y el metodo suelto no parsea: necesita
+        # contexto, como en C#. Sin esto solo salian las funciones globales.
         "php", (".php",),
         (("function", "function $NAME($$$) { $$$ }"),
-         ("class", "class $NAME { $$$ }")),
+         ("class", "class $NAME { $$$ }"),
+         ("method", "class A { public function $NAME($$$) { $$$ } }", "method_declaration"),
+         ("method", "class A { private function $NAME($$$) { $$$ } }", "method_declaration"),
+         ("method", "class A { protected function $NAME($$$) { $$$ } }", "method_declaration")),
         ("require_once '$SRC'", "require '$SRC'", "include '$SRC'"),
         resolucion="ruta-local",
         sufijos_test=("Test",), dirs_test=("test", "tests"),
     ),
     "lua": _lang(
+        # `function M.suma(...)` es LA forma de exportar en Lua (tabla-modulo) y
+        # no se cubria: solo salian las globales y las locales.
         "lua", (".lua",),
         (("function", "function $NAME($$$) $$$ end"),
-         ("function", "local function $NAME($$$) $$$ end")),
+         ("function", "local function $NAME($$$) $$$ end"),
+         ("method", "function $T.$NAME($$$) $$$ end"),
+         ("method", "function $T:$NAME($$$) $$$ end")),
         ('require("$SRC")', "require '$SRC'"),
         resolucion="paquete",
         sufijos_test=("_test", "_spec"), dirs_test=("test", "tests", "spec"),
@@ -224,10 +246,11 @@ LENGUAJES = {
         "elixir", (".ex", ".exs"),
         (("function", "def $NAME($$$), do: $$$"),
          ("function", "def $NAME($$$)"),
+         ("function", "defp $NAME($$$)"),
          ("class", "defmodule $NAME do $$$ end")),
-        (),
+        ("alias $SRC", "import $SRC"),
+        resolucion="paquete",
         sufijos_test=("_test",), dirs_test=("test", "tests"),
-        carencias=("`alias`/`import` de Elixir sin resolver: sin grafo de modulos",),
     ),
     "csharp": _lang(
         # Los METODOS necesitan patron CONTEXTUAL: el patron trae el `class A {
@@ -249,24 +272,32 @@ LENGUAJES = {
     "c": _lang(
         "c", (".c", ".h"),
         (("function", "$RET $NAME($$$) { $$$ }"),),
-        (),
+        # Solo la forma LOCAL: `#include <stdio.h>` es una cabecera del sistema y
+        # su arista no diria nada del acoplamiento propio.
+        ('#include "$SRC"',),
         # En C una llamada suelta es una SENTENCIA, no una expresion, asi que
         # `$FN($$$)` a secas no casa nada — de ahi que el lenguaje entrara sin
         # aristas de llamada. Las dos formas comunes si casan (medido 9-ago).
         llamada=("$FN($$$);", "$T $V = $FN($$$);"),
+        resolucion="ruta-local",
         sufijos_test=("_test",), dirs_test=("test", "tests"),
         carencias=("solo se ven las llamadas en sentencia y en asignacion; una anidada "
-                   "en otra expresion (`f(g(x))`) no deja arista para `g`",
-                   "`#include` no se resuelve: sin grafo de modulos"),
+                   "en otra expresion (`f(g(x))`) no deja arista para `g`",),
     ),
     "dart": _lang(
         "dart", (".dart",),
         (("function", "$RET $NAME($$$) { $$$ }"),
-         ("function", "$RET $NAME($$$) => $$$;")),
+         ("function", "$RET $NAME($$$) => $$$;"),
+         ("class", "class $NAME { $$$ }"),
+         ("method", "class A { $RET $NAME($$$) { $$$ } }", "method_declaration")),
         ("import '$SRC';",),
         llamada=None, resolucion="ruta",
         sufijos_test=("_test",), dirs_test=("test", "tests"),
-        carencias=("las LLAMADAS no se extraen: `$FN($$$)` no casa (medido 8-ago)",),
+        # Se probaron seis formas, incluida una literal (`suma($$$)`) y dos con
+        # selector: ninguna casa. La gramatica de dart en ast-grep 0.45 no expone
+        # la invocacion. Sin llamadas no hay `gb calls` ni seleccion de tests.
+        carencias=("las LLAMADAS no se extraen con ningun patron probado (6 formas, "
+                   "9-ago): hay simbolos y modulos, no hay grafo de llamadas",),
     ),
 }
 
