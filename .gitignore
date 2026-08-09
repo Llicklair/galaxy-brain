@@ -28,3 +28,10 @@ nube*.html
 pytest-of-*/
 gb-union-*/
 tmp*/
+
+# Los proyectos que los bancos se generan a si mismos (bancos/README.md). Se
+# regeneran en cada tirada y uno de ellos deja 14 MB de artefactos de cargo:
+# nada de eso es del proyecto, pero vive junto al script que lo crea.
+bancos/bench-*/
+bancos/spike-*/
+bancos/cc/
