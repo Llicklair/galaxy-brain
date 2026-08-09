@@ -10,6 +10,67 @@ mismo detalle que los positivos, o más.
 
 ---
 
+## 2026-08-09 · Agentes reales en js/go/rust: **dos falsos verdes en el gate, y un tercero que bloqueaba siempre**
+
+Tres tandas de agentes escribiendo código de verdad en sus propios repos, con `.gb-boundaries`
+declarando `iva -/-> carrito`. Lo que se buscaba era medir la **escalera** (¿se corrige el agente
+cuando recibe un rechazo determinista?). Lo que salió fue otra cosa, y más grave.
+
+**Tanda 1 — trampa blanda.** Los 16 lenguajes resolvieron la tarea correctamente. 16/16 `ESCALAR`,
+**0 medido**. La trampa era tan fácil que nadie la pisó, y el `ESCALAR` no venía del código sino de
+la cobertura de la ley (ver abajo).
+
+**Tanda 2 — trampa dura. 3/3 cruzaron la frontera, gb cazó 1.** Los dos escapes eran de naturaleza
+distinta y ninguno lo habría encontrado un test escrito desde este repo:
+
+| | cómo cruzó | veredicto |
+|---|---|---|
+| js | `import { total } from "./carrito.js"` | cazado |
+| go | `import ( "ejemplo/carrito" … )` — bloque agrupado | **falso verde** |
+| rust | `crate::carrito::total(items)`, sin `use` | **falso verde** |
+
+El de Go era un patrón incompleto (`import "$SRC"` solo casaba el bloque entero, ningún spec) y la
+forma agrupada **es la normal del lenguaje**. El de Rust era una laguna del mecanismo, no un patrón
+mal escrito: `A -/-> B` prometía "A no depende de B" y solo miraba IMPORTS. En Rust, Java, C#, Kotlin
+y Scala se alcanza otro módulo sin importarlo. De ahí `find_call_violations`, que comprueba la misma
+regla sobre las aristas CALLS — llamar a B es depender de B.
+
+**Tanda 3 — la trampa se ablandó sola y salió el fallo peor.** Al pasar `items` como parámetro, el
+atajo dejó de ser necesario: **0/3 cruzaron** (control positivo hecho — plantando el cruce a mano, el
+gate lo caza por import *y* por llamada, así que el cero no es mudez). Pero al comprobar el gate
+sobre los worktrees: **rc=1 en los tres, sin un solo cruce**. `_boundaries_elsewhere` sube por los
+ancestros y para al ver un `.git`, comprobando `isdir` — y en un worktree `.git` es un **fichero**.
+Trepaba hasta el checkout principal, encontraba su `.gb-boundaries` y lo denunciaba como "dos fuentes
+de reglas", que bloquea. Es el falso positivo que persigue la regla 9, en el único sitio donde
+trabajan los agentes, saltando siempre.
+
+**Lo que empeora ese fallo en vez de mitigarlo:** la escalera no se veía afectada porque lee el JSON,
+no el código de salida. O sea que **la máquina aceptaba un diff que el humano no podía commitear**.
+La lección se repite y ya tiene nombre: *un hecho que el gate usa para bloquear tiene que estar en
+los hechos de la escalera, siempre*. La misma media conexión existía con `call_violations` — el gate
+rechazaba y `hechos_del_arbol` no lo leía.
+
+**El hallazgo que no es un bug de gb.** Los tres agentes devolvieron `TOTAL 145.20 IVA 25.20` donde
+el enunciado pedía `TOTAL 120.00 IVA 25.20`, y los tres escribieron su test afirmando **su propia**
+interpretación. Verde, criterio pasa, `ACEPTAR` × 3. `tests_verdes` es un hecho honesto; lo que no es
+independiente es el test. **Un test escrito por el mismo agente mide coherencia consigo mismo, no
+corrección**, y el auto-accept hereda esa debilidad entera. Ningún hecho del grafo la cubre, y el
+arreglo natural —que el test lo escriba otro agente— es orquestación, que el
+[ADR 0006](adr/0006-gb-provee-no-orquesta.md) deja fuera. Queda escrito como límite, no como tarea.
+
+**Consecuencia de método, además de los tres arreglos:** los repos se comprueban **antes** de gastar
+agentes. En la preparación de la tanda 3 salieron sin coste tres cosas: `ts` estaba rojo de base
+(`npx tsx` sin instalar) y habría rechazado en el peldaño 0 por algo que no hizo el agente; `csharp`
+tiene tests pero ningún comando declarado; y los tres criterios de terminado decían
+`gb graph . --gate`, o sea **el mismo gate que la escalera ya comprueba** — `ACEPTAR` no añadía nada
+sobre `SIN_OBJECIONES`. Ahora el criterio es la suite entera, que sí es evidencia independiente de la
+selección estrechada.
+
+**Y lo que sigue sin medirse después de tres tandas: la escalera.** Cero rechazos reales, cero
+peldaños ejecutados. La pieza que sostiene el auto-accept no se ha probado ni una vez.
+
+---
+
 ## 2026-08-08 · `gb check` contra 67 commits ajenos: **2 señales, 0 acusaciones falsas** — la regla 9 medida
 
 La capa que más riesgo tiene de gritar sin motivo, sobre historia que no es nuestra: los 67 commits
