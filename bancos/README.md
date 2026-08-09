@@ -26,6 +26,7 @@ muerte de esta familia ([SCOPE.md](../SCOPE.md)).
 |---|---|---|---|
 | `bench_js.py` | selección de tests en JS | `node` | **0/7 falsos verdes**, 52 % ahorro, cascada exacta |
 | `bench_go.py` | ídem en Go, **multipaquete** (llamadas cualificadas) | `go` | **0/7**, 52 %, cascada exacta |
+| `bench_csharp.py` | ídem en C#, **métodos + llamadas cualificadas por clase** | `dotnet` + NuGet en caché | **0/7**, 52 %, cascada exacta |
 | `bench_rust.py` | ídem en Rust | `cargo` | **0/7**, pero cascada **incompleta** → sin licencia |
 | `estres_tia.py` | roturas duras sobre un repo REAL | el runner de ese repo | 22/22 sin falsos verdes |
 | `estres_mutacion.py` | roturas **sutiles** (mutación semántica) | ídem | 0/20 falsos verdes |

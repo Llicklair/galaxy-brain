@@ -177,10 +177,10 @@ def test_la_licencia_para_estrechar_es_opt_in():
     from galaxybrain import lenguajes as tabla
 
     concedidas = {i for i, cfg in tabla.LENGUAJES.items() if cfg["tia"]}
-    assert concedidas == {"js", "ts", "go"}, (
-        "solo js/ts (node --test) y go (go test) tienen banco medido: 0 falsos verdes, "
-        "cascada exacta y 52%% de ahorro en los dos. Concedidas ahora: %s"
-        % sorted(concedidas)
+    assert concedidas == {"js", "ts", "go", "csharp"}, (
+        "solo tienen banco medido js/ts (node --test), go (go test) y csharp "
+        "(dotnet test): 0 falsos verdes, cascada exacta y 52%% de ahorro en los tres. "
+        "Concedidas ahora: %s" % sorted(concedidas)
     )
 
 
@@ -193,6 +193,7 @@ def test_sin_licencia_la_seleccion_corre_todo_y_lo_dice():
     assert impacted._sin_licencia_para_estrechar({"lenguajes": ["rust"]}) == "rust"
     assert impacted._sin_licencia_para_estrechar({"lenguajes": ["js"]}) == ""
     assert impacted._sin_licencia_para_estrechar({"lenguajes": ["js", "go"]}) == ""
+    assert impacted._sin_licencia_para_estrechar({"lenguajes": ["csharp"]}) == ""
     assert impacted._sin_licencia_para_estrechar({"lenguajes": ["go", "java"]}) == "java"
 
 

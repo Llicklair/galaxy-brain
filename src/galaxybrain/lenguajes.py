@@ -230,19 +230,21 @@ LENGUAJES = {
         carencias=("`alias`/`import` de Elixir sin resolver: sin grafo de modulos",),
     ),
     "csharp": _lang(
+        # Los METODOS necesitan patron CONTEXTUAL: el patron trae el `class A {
+        # ... }` que la gramatica exige y el selector extrae el nodo real. Suelto,
+        # ast-grep parsea `public $RET $NAME(...)` como funcion local de nivel
+        # superior y el `$` produce nodos ERROR — por eso los 5 patrones probados
+        # a ciegas el 8-ago dieron cero, y por eso C# entro sin grafo de llamadas.
         "csharp", (".cs",),
         (("class", "class $NAME { $$$ }"),
-         ("class", "public class $NAME { $$$ }")),
+         ("class", "public class $NAME { $$$ }"),
+         ("method", "class A { public $RET $NAME($$$) { $$$ } }", "method_declaration"),
+         ("method", "class A { private $RET $NAME($$$) { $$$ } }", "method_declaration"),
+         ("method", "class A { protected $RET $NAME($$$) { $$$ } }", "method_declaration"),
+         ("method", "class A { public static $RET $NAME($$$) { $$$ } }", "method_declaration")),
         ("using $SRC;",),
-        llamada=None, resolucion="paquete",
+        resolucion="paquete", tia=True,
         sufijos_test=("Test", "Tests"), dirs_test=("test", "tests"),
-        # Se probaron 5 patrones de metodo (`public $RET $NAME(...)`, `$MOD $RET
-        # $NAME(...)`, `$RET $NAME(...)`, ...) y ninguno caza (medido 8-ago).
-        # Sin metodos no hay destino que resolver, asi que TAMPOCO se cuentan las
-        # llamadas: contarlas hundiria el porcentaje de resolucion con ruido y
-        # daria a entender que hay grafo de llamadas donde no lo hay.
-        carencias=("los METODOS no se extraen: ningun patron medido los caza (8-ago), "
-                   "asi que solo hay clases y modulos — sin grafo de llamadas",),
     ),
     "c": _lang(
         "c", (".c", ".h"),
@@ -337,14 +339,24 @@ def disponible():
     return ruta, p.stdout.decode("utf-8", "replace").strip()
 
 
-def _corre(ruta, patron, lenguaje, raiz):
+def _corre(ruta, patron, lenguaje, raiz, selector=None):
     """Una pasada de ast-grep, ya parseada. Lista vacía si algo falla: un patrón
     que no casa nada y un patrón mal escrito dan lo mismo aquí, y por eso los
-    contadores del informe declaran cuánto se vio — no se infiere."""
+    contadores del informe declaran cuánto se vio — no se infiere.
+
+    `selector` habilita los patrones CONTEXTUALES: el patrón trae el contexto que
+    la gramática necesita para parsear (`class A { ... }`) y el selector dice qué
+    sub-nodo es el que de verdad se busca (`method_declaration`). Sin esto, un
+    método de C# no se puede expresar: suelto, ast-grep lo parsea como función
+    local de nivel superior y el `$` de la metavariable produce nodos ERROR —
+    que es por lo que C# entró en la tabla sin metodos y sin grafo de llamadas.
+    """
+    orden = [ruta, "run", "-p", patron, "-l", lenguaje, "--json=compact"]
+    if selector:
+        orden += ["--selector", selector]
     try:
         p = subprocess.run(
-            [ruta, "run", "-p", patron, "-l", lenguaje, "--json=compact", raiz],
-            capture_output=True, timeout=180,
+            orden + [raiz], capture_output=True, timeout=180,
         )
     except (OSError, subprocess.SubprocessError):
         return []
@@ -556,8 +568,12 @@ def analyze(root):
     vistos = set()
     for lang in presentes:
         cfg = LENGUAJES[lang]
-        for kind, patron in cfg["simbolos"]:
-            for m in _corre(ruta_ag, patron, cfg["ag"], root):
+        for entrada_pat in cfg["simbolos"]:
+            # (kind, patron) o (kind, patron, selector): el tercero solo lo
+            # necesitan las gramaticas que no parsean el nodo suelto.
+            kind, patron = entrada_pat[0], entrada_pat[1]
+            selector = entrada_pat[2] if len(entrada_pat) > 2 else None
+            for m in _corre(ruta_ag, patron, cfg["ag"], root, selector):
                 nombre = _meta(m, "NAME")
                 fichero = os.path.abspath(os.path.join(root, m.get("file", "")))
                 entrada = por_fichero.get(fichero)

@@ -93,7 +93,7 @@ Todo determinista, cero modelos, cero dependencias más allá de la librería es
    Dos guardas hacen que esto no degrade en «soportamos N lenguajes»: cada uno tiene su **sonda de
    conformidad** en la suite —que cazó 5 promesas falsas el día que se abrió el catálogo— y
    estrechar la selección de tests exige una **licencia medida con rojos reales**, que hoy solo
-   tienen `js`, `ts` y `go`. Un grafo de llamadas incompleto no cuesta ahorro: cuesta un verde falso.
+   tienen `js`, `ts`, `go` y `csharp`. Un grafo de llamadas incompleto no cuesta ahorro: cuesta un verde falso.
 6. **Los hechos se guardan crudos.** Excepción, traza y estado se persisten tal cual se capturan.
    Interpretar es un paso posterior, separado y descartable.
 7. **Histórico local y append-only, fuera del repo observado.** El arnés nunca ensucia el proyecto que

@@ -15,9 +15,9 @@ galaxy-brain is that harness. Not a better prompt, not an autonomous loop: the l
 both, which supplies the evidence they need and can be trusted because nothing in it is inferred by
 a model.
 
-**The graph reads 16 languages** — Python with the stdlib `ast`, and JS/TS, Go, Rust, Java, Kotlin,
-Swift, Ruby, PHP, Lua, Scala, Elixir, C# and Dart through `ast-grep`, integrated by
-reference. Every one of them has a conformance probe in the suite, so "supported" is a claim you can
+**The graph reads 17 languages** — Python with the stdlib `ast`, plus 16 more through `ast-grep`,
+integrated by reference: JS, TS, TSX, Go, Rust, Java, Kotlin, Swift, Ruby, PHP, Lua, Scala, Elixir,
+C#, C and Dart. Every one has a conformance probe in the suite, so "supported" is a claim you can
 re-verify, not a list of intentions — and what a language *can't* do is printed in its own output
 rather than hidden. The **error console** is Python-only and says so: `sys.excepthook` has no
 portable equivalent.
@@ -109,8 +109,8 @@ declared yourself.
   down in [docs/pruebas-de-uso.md](docs/pruebas-de-uso.md) rather than hidden.
 - **Not a server, not an MCP server.** [SCOPE.md](SCOPE.md) has the reasoning, including the one
   condition that would reopen the MCP question.
-- **Not multi-language everywhere.** The *graph* reads 16 languages; the *error console* is
-  Python-only, and narrowing test selection is licensed per language — `js`, `ts` and `go` today,
+- **Not multi-language everywhere.** The *graph* reads 17 languages; the *error console* is
+  Python-only, and narrowing test selection is licensed per language — `js`, `ts`, `go` and `c#` today,
   each earned with a bench of real failures. Everywhere else `gb tests` runs the whole suite and
   says why. A call graph with holes doesn't cost you savings; it costs you a false green.
 
