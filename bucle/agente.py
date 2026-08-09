@@ -159,9 +159,10 @@ def correr_escalera(worktree, nombre, tarea, nodo, topes, timeout, alcance=None)
     """
     estado = {"tarea": tarea, "worktree": worktree, "peldanos": [],
               "veredicto": None, "motivo": "", "ancla": (nodo or {}).get("symbol", {}).get("qual")}
-    rechazo_previo = None
+    rechazo_previo, previos_del_intento = None, ()
     for n in range(topes + 1):
-        prompt = escalera.escalon(n, tarea, rechazo=rechazo_previo, ancla=nodo)
+        prompt = escalera.escalon(n, tarea, rechazo=rechazo_previo, ancla=nodo,
+                                  preexistentes=previos_del_intento)
         print("\n== peldano %d ==%s" % (n, (" (con el rechazo anterior)" if rechazo_previo else "")),
               flush=True)
         try:
@@ -171,8 +172,10 @@ def correr_escalera(worktree, nombre, tarea, nodo, topes, timeout, alcance=None)
 
         hechos = escalera.hechos_del_arbol(worktree, alcance=alcance)
         veredicto, motivo = escalera.decidir(hechos)
+        previos_del_intento = hechos.get("simbolos_preexistentes") or ()
         estado["peldanos"].append({"n": n, "veredicto": veredicto, "motivo": motivo,
-                                   "tocados": hechos.get("modulos_tocados", [])})
+                                   "tocados": hechos.get("modulos_tocados", []),
+                                   "preexistentes": list(previos_del_intento)})
         estado["veredicto"], estado["motivo"] = veredicto, motivo
         _guarda_estado(worktree, estado)
         print("   -> %s: %s" % (veredicto.upper(), motivo))

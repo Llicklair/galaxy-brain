@@ -85,8 +85,7 @@ def simbolos_tocados(root, informe_simbolos):
     # el TOPLEVEL del repo (`src/galaxybrain/graph.py`) y los nodos las traen
     # desde la raiz analizada (`galaxybrain/graph.py`). No casaban, ningun hunk
     # entraba, y la capa encendia el fichero ENTERO — 47 simbolos por editar uno.
-    diff = graph_mod._git(root, "diff", "--relative", "HEAD", "-U0")
-    rangos = changes._hunks_py(diff) if diff else {}
+    rangos = impacted.rangos_del_diff(root)
     tocados = set(impacted._simbolos_tocados(nodes, rangos)) if rangos else set()
 
     # los nuevos sin trackear: el diff contra HEAD no los ve

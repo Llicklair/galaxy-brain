@@ -67,6 +67,34 @@ def _json(cmd, cwd):
         return None
 
 
+def _simbolos_preexistentes(raiz):
+    """Los símbolos que YA EXISTÍAN y este cambio ha modificado.
+
+    Es el hecho que faltaba tras la tirada del 9-ago: ante un rechazo, dos de
+    tres agentes hicieron desaparecer la violación tocando código que nadie les
+    pidió tocar. No rechaza —modificar lo que existe es trabajo normal—, viaja al
+    peldaño siguiente y se dice en el veredicto.
+
+    Vacío si no se puede derivar: callar es el lado seguro, y aquí callar no
+    aprueba nada porque el veredicto no depende de esto.
+    """
+    # Los simbolos se piden a `gb`, no a `symbols.analyze`: el despacho de motor
+    # por lenguaje vive en la CLI, y llamar al de Python directamente dejaria
+    # este hecho mudo en los 16 lenguajes que no son Python.
+    informe = _json(GB + ["symbols", raiz, "--json"], raiz)
+    if not informe:
+        return []
+    try:
+        from galaxybrain import impacted
+
+        nodes = {n["qual"]: n for n in informe.get("nodes", []) if n.get("qual")}
+        if not nodes:
+            return []
+        return impacted.simbolos_preexistentes(nodes, impacted.rangos_del_diff(raiz))
+    except Exception:
+        return []
+
+
 def _modulos_del_diff(worktree, raiz):
     """Los módulos que el diff toca, por sus ficheros. Vacío si no se puede leer
     el diff — y `decidir` escala ante una lista vacía, que es lo correcto: sin
@@ -105,7 +133,7 @@ def hechos_del_arbol(worktree, alcance=None, correr_tests=True):
         "tests_verdes": None, "suite_entera": True, "ciclos_nuevos": [],
         "cruces_frontera": [], "cruces_llamada": [], "cruces_superficie": [],
         "llamantes_huerfanos": [],
-        "modulos_tocados": [], "modulos_sin_regla": [],
+        "modulos_tocados": [], "modulos_sin_regla": [], "simbolos_preexistentes": [],
         "criterio_pasa": None, "criterio_detalle": "",
     }
 
@@ -125,6 +153,7 @@ def hechos_del_arbol(worktree, alcance=None, correr_tests=True):
     # funcion, asi que derivarlo de los simbolos dejaba la lista vacia y hacia
     # escalar cambios perfectamente normales.
     hechos["modulos_tocados"] = _modulos_del_diff(worktree, raiz)
+    hechos["simbolos_preexistentes"] = _simbolos_preexistentes(raiz)
     if correr_tests:
         rc, _ = _corre(GB + ["tests", "--worktree", "--run", raiz], worktree)
         # rc 3 = NO SE PUDO comprobar (sin comando de tests declarado). Eso NO es
@@ -203,6 +232,14 @@ def decidir(hechos):
     detalle = "suite entera" if hechos.get("suite_entera") else "seleccion del grafo"
     limpio = ("tests verdes (%s), sin ciclos, sin cruces y con la ley cubriendo lo tocado"
               % detalle)
+    # No cambia el veredicto: modificar codigo que existe es trabajo normal, y
+    # gatearlo seria el proxy que fabrica el --no-verify (regla 9). Pero se DICE,
+    # porque "aceptado" a secas escondia que el arreglo se habia llevado por
+    # delante una funcion que nadie mando tocar.
+    previos = hechos.get("simbolos_preexistentes") or []
+    if previos:
+        limpio += "; modifica %d simbolo(s) que ya existian: %s" % (
+            len(previos), ", ".join(previos[:3]))
 
     # El ultimo escalon, y el que separa "no rompiste nada" de "esta hecho". Que
     # la tarea este terminada NO es una propiedad del codigo: es de tu intencion,
@@ -224,15 +261,25 @@ def mismo_rechazo(a, b):
     return bool(a) and a == b
 
 
-def escalon(n, tarea, rechazo=None, ancla=None):
+def escalon(n, tarea, rechazo=None, ancla=None, preexistentes=()):
     """El prompt del peldaño `n`. Cada uno añade un hecho, nunca una orden.
 
     Se evita a propósito el lenguaje imperativo ("corrige", "asegúrate de"): lo
     que mueve al modelo, medido, es el hecho que le contradice — no la insistencia.
+
+    `preexistentes` son los símbolos que YA existían y el intento anterior tocó.
+    Va sin juicio y sin pedir nada: en la tirada del 9-ago el rechazo empujó a dos
+    de tres agentes a quitar la violación estropeando código que no se les pidió
+    tocar, y ninguno lo mencionó. Enseñarle lo que acaba de mover es el hecho que
+    le faltaba; decidir si estaba bien no es competencia de esta capa.
     """
     if n == 0 or not rechazo:
         return tarea
     bloques = [tarea, "LO QUE EL GRAFO ENCONTRO EN TU INTENTO ANTERIOR:\n- " + rechazo]
+    if preexistentes:
+        bloques.append(
+            "Y ademas, tu intento anterior MODIFICO codigo que ya existia:\n%s"
+            % "\n".join("  - %s" % q for q in preexistentes[:10]))
     if n >= 2 and ancla:
         bloques.append(
             "ALCANCE: trabaja sobre %s (%s:%s). Sus llamantes son:\n%s"
