@@ -95,6 +95,17 @@ def test_un_cruce_de_frontera_se_rechaza():
     assert "core -> web" in motivo
 
 
+def test_cruzar_la_frontera_por_una_LLAMADA_tambien_se_rechaza():
+    """El gate bloquea `A -/-> B` comprobado sobre CALLS, y la escalera tiene que
+    rechazar lo mismo: si no, el auto-accept ACEPTA lo que el humano no puede
+    commitear. Es el caso de Rust — `crate::carrito::total()` alcanza el modulo
+    prohibido sin un solo import que detectar (medido el 9-ago)."""
+    v, motivo = escalera.decidir(
+        _hechos(cruces_llamada=[{"caller": "iva.informe", "callee": "carrito.total"}]))
+    assert v == escalera.RECHAZAR
+    assert "iva.informe -> carrito.total" in motivo
+
+
 def test_romper_la_superficie_publica_se_rechaza():
     v, motivo = escalera.decidir(
         _hechos(cruces_superficie=[{"caller": "web.h", "callee": "store._x"}]))

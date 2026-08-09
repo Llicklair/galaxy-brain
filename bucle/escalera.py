@@ -103,7 +103,8 @@ def hechos_del_arbol(worktree, alcance=None, correr_tests=True):
     raiz = os.path.join(worktree, alcance) if alcance else worktree
     hechos = {
         "tests_verdes": None, "suite_entera": True, "ciclos_nuevos": [],
-        "cruces_frontera": [], "cruces_superficie": [], "llamantes_huerfanos": [],
+        "cruces_frontera": [], "cruces_llamada": [], "cruces_superficie": [],
+        "llamantes_huerfanos": [],
         "modulos_tocados": [], "modulos_sin_regla": [],
         "criterio_pasa": None, "criterio_detalle": "",
     }
@@ -112,6 +113,7 @@ def hechos_del_arbol(worktree, alcance=None, correr_tests=True):
     if grafo:
         hechos["ciclos_nuevos"] = grafo.get("new_cycles") or grafo.get("cycles") or []
         hechos["cruces_frontera"] = grafo.get("violations") or []
+        hechos["cruces_llamada"] = grafo.get("call_violations") or []
         hechos["cruces_superficie"] = grafo.get("surface_violations") or []
         hechos["modulos_sin_regla"] = grafo.get("modulos_sin_regla") or []
 
@@ -147,7 +149,8 @@ def decidir(hechos):
         tests_verdes      bool o None   None = no se pudieron correr
         suite_entera      bool          True si no se estrechó la selección
         ciclos_nuevos     lista
-        cruces_frontera   lista
+        cruces_frontera   lista         la misma regla, vista en los IMPORTS
+        cruces_llamada    lista         ...y vista en las LLAMADAS
         cruces_superficie lista
         llamantes_huerfanos lista
         modulos_tocados   lista
@@ -160,6 +163,7 @@ def decidir(hechos):
     """
     ciclos = hechos.get("ciclos_nuevos") or []
     frontera = hechos.get("cruces_frontera") or []
+    llamada = hechos.get("cruces_llamada") or []
     superficie = hechos.get("cruces_superficie") or []
     huerfanos = hechos.get("llamantes_huerfanos") or []
     verdes = hechos.get("tests_verdes")
@@ -171,6 +175,10 @@ def decidir(hechos):
     if frontera:
         v = frontera[0]
         return RECHAZAR, "cruce de frontera: %s -> %s" % (v.get("importer"), v.get("imported"))
+    if llamada:
+        v = llamada[0]
+        return RECHAZAR, "cruce de frontera por LLAMADA: %s -> %s" % (
+            v.get("caller"), v.get("callee"))
     if superficie:
         v = superficie[0]
         return RECHAZAR, ("superficie publica: %s entra a %s por un simbolo interno"
