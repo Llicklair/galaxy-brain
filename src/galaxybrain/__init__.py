@@ -7,7 +7,7 @@ pesado: solo `sys` y `os`. Todo lo demas se carga cuando ya ha habido un fallo,
 momento en el que el proceso se estaba muriendo de todos modos.
 """
 
-__version__ = "0.4.0"
+__version__ = "0.5.0"
 
 __all__ = ["install", "uninstall", "is_installed", "__version__"]
 

@@ -62,10 +62,11 @@ FUENTES = {
     "csharp": ("A.cs", "class A {\n"
                        "  public int suma(int a, int b) { return a + b; }\n"
                        "  public int total(int x) { return suma(x, 1); }\n}\n"),
+    # En C la llamada va en SENTENCIA o en asignacion, que son las dos formas que
+    # el motor ve; `return suma(x, 1);` anida la llamada dentro del return y no
+    # deja arista — esta declarado en sus carencias.
     "c": ("a.c", "int suma(int a, int b) { return a + b; }\n\n"
-                 "int total(int x) { return suma(x, 1); }\n"),
-    "cpp": ("a.cpp", "int suma(int a, int b) { return a + b; }\n\n"
-                     "int total(int x) { return suma(x, 1); }\n"),
+                 "int total(int x) {\n    int r = suma(x, 1);\n    return r;\n}\n"),
     "dart": ("a.dart", "int suma(int a, int b) { return a + b; }\n\n"
                        "int total(int x) { return suma(x, 1); }\n"),
 }

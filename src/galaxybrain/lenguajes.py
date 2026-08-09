@@ -248,18 +248,14 @@ LENGUAJES = {
         "c", (".c", ".h"),
         (("function", "$RET $NAME($$$) { $$$ }"),),
         (),
-        llamada=None,
+        # En C una llamada suelta es una SENTENCIA, no una expresion, asi que
+        # `$FN($$$)` a secas no casa nada — de ahi que el lenguaje entrara sin
+        # aristas de llamada. Las dos formas comunes si casan (medido 9-ago).
+        llamada=("$FN($$$);", "$T $V = $FN($$$);"),
         sufijos_test=("_test",), dirs_test=("test", "tests"),
-        carencias=("las LLAMADAS no se extraen: `$FN($$$)` no casa (medido 8-ago). "
-                   "Hay simbolos, no hay aristas de llamada",),
-    ),
-    "cpp": _lang(
-        "cpp", (".cpp", ".cc", ".cxx", ".hpp"),
-        (),
-        (),
-        sufijos_test=("_test",), dirs_test=("test", "tests"),
-        carencias=("las DEFINICIONES no se extraen: `$RET $NAME($$$) { $$$ }` no casa "
-                   "(medido 8-ago). Sin simbolos no hay grafo utilizable",),
+        carencias=("solo se ven las llamadas en sentencia y en asignacion; una anidada "
+                   "en otra expresion (`f(g(x))`) no deja arista para `g`",
+                   "`#include` no se resuelve: sin grafo de modulos"),
     ),
     "dart": _lang(
         "dart", (".dart",),
@@ -274,7 +270,15 @@ LENGUAJES = {
 
 #: Lo que NO se declara soportado aunque `ast-grep` lo acepte: sin patrones
 #: medidos, incluirlo seria prometer un grafo que no existe.
-SIN_SOPORTE = ("html", "css", "json", "yaml", "bash", "haskell", "nix", "solidity")
+#:
+#: `cpp` estuvo aqui dentro un dia y se SACO (9-ago). Ninguno de los cinco
+#: patrones probados extrae una definicion —ni siquiera `class $NAME { $$$ };`—
+#: asi que solo producia nodos de modulo, sin simbolos ni imports: cero valor. Y
+#: era peor que ausente, porque al figurar su extension como "leida" el aviso de
+#: frontera dejaba de saltar y el usuario recibia un grafo vacio sin que nadie le
+#: dijera por que. Fuera de la tabla, gb dice "veo C++ y no lo leo", que es la
+#: verdad. Vuelve el dia que alguien mida patrones que funcionen.
+SIN_SOPORTE = ("html", "css", "json", "yaml", "bash", "haskell", "nix", "solidity", "cpp")
 
 #: Directorios que nunca son código del proyecto, en ningún lenguaje.
 SKIP = frozenset(("node_modules", "dist", "build", "coverage", ".next", "out", "vendor",

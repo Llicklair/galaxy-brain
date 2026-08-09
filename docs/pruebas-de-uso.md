@@ -38,7 +38,15 @@ instrumento mudo y un repo limpio dan exactamente la misma cifra.
 
 Un proyecto JS mínimo destapó que gb daba el **10 %** de su valor fuera de Python — y encima mentía
 (`gb check` → "Sin señales" sobre un árbol que no había leído). De ahí salieron el ADR 0009 y el
-motor por tabla: 17 lenguajes con `ast-grep` **por referencia**, cero dependencias Python nuevas.
+motor por tabla: **16 lenguajes** con `ast-grep` **por referencia**, cero dependencias Python nuevas.
+
+Fueron 17 durante un día. **C++ se sacó** (9-ago): ninguno de los cinco patrones probados extrae una
+definición —ni siquiera `class $NAME { $$$ };`— así que solo producía nodos de módulo, sin símbolos
+ni imports. Y era **peor que ausente**: al figurar su extensión como "leída", el aviso de frontera
+dejaba de saltar y el usuario recibía un grafo vacío sin que nadie le dijera por qué. Fuera de la
+tabla, gb dice *"veo C++ y no lo leo"*, que es la verdad. C sí se arregló en la misma tirada: en C
+una llamada suelta es una **sentencia**, no una expresión, así que `$FN($$$)` no casaba nada — con
+`$FN($$$);` y `$T $V = $FN($$$);` el lenguaje pasa a tener aristas de llamada.
 
 **Lo que hace que el catálogo no sea una lista de intenciones: la sonda de conformidad.** Cada
 lenguaje aporta un fuente mínimo y se comprueba contra la tabla que extrae lo que promete. En su
