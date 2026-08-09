@@ -610,6 +610,58 @@ def siguiente_paso(report):
     return None
 
 
+#: Comandos dentro de vallas de codigo. Se lee el documento entero y no solo la
+#: seccion "Comandos": el titulo de la seccion varia entre proyectos y exigir uno
+#: concreto seria cablear una convencion (hard rule 6).
+_VALLA_RE = re.compile(r"^```(?:bash|sh|shell|console)?\s*\n(.*?)^```", re.MULTILINE | re.DOTALL)
+
+#: La primera palabra identifica la herramienta. Comparar la linea entera daria
+#: falsos positivos por cualquier bandera: `pytest -q --strict` NO contradice a
+#: `pytest -q`, es el mismo toolchain con otras opciones.
+_HERRAMIENTAS = ("pytest", "npm", "yarn", "pnpm", "cargo", "go", "mvn", "gradle",
+                 "sbt", "mix", "swift", "dart", "rake", "bundle", "composer",
+                 "busted", "dotnet", "make", "tox", "nox", "lua", "php", "ruby")
+
+
+def comandos_declarados(root, rel="AGENTS.md"):
+    """Las herramientas que el documento dice usar. Hecho: esta escrito ahi."""
+    fuera = []
+    for bloque in _VALLA_RE.findall(_read(root, rel)):
+        for linea in bloque.splitlines():
+            linea = linea.strip().lstrip("$ ").strip()
+            if not linea or linea.startswith("#"):
+                continue
+            primera = linea.split()[0]
+            if primera in _HERRAMIENTAS:
+                fuera.append((primera, linea))
+    return fuera
+
+
+def divergencia_de_comandos(root):
+    """Lo ESCRITO contra lo DETECTADO, o None si no hay contradiccion.
+
+    Es la podredumbre documental medida en su propia mano: un AGENTS.md que dice
+    `npm test` en un repo que corre `pytest` manda a quien lo lea —humano o
+    agente— a ejecutar algo que no existe. Y no es opinion: las dos mitades son
+    hechos, una leida del documento y otra detectada del proyecto.
+
+    Solo se compara la HERRAMIENTA, nunca la linea entera: `pytest -q --strict`
+    no contradice a `pytest -q`. Un falso "te falta" es lo que hace que un
+    informe deje de leerse, y este modulo existe para no fabricarlos.
+    """
+    detectado, _fuente = detect_test_command(root)
+    if not detectado:
+        return None
+    herramienta = detectado.split()[0]
+    declarados = comandos_declarados(root)
+    if not declarados:
+        return None                     # no dice nada: eso no es contradecir
+    if any(h == herramienta for h, _linea in declarados):
+        return None
+    return {"detectado": detectado, "declarado": declarados[0][1],
+            "herramientas": sorted({h for h, _l in declarados})}
+
+
 def _busca_criterio(root):
     """Documentos que declaran un criterio de terminado. Hecho, no juicio."""
     hallados = []
@@ -962,6 +1014,20 @@ def analyze(root, run_tests=False):
         report["levels"].append(
             _level("agentes", "Contexto ejecutable para agentes", "esqueleto",
                    "AGENTS.md existe pero conserva marcas sin rellenar")
+        )
+    elif agents and divergencia_de_comandos(root):
+        # El documento existe y esta relleno, pero CONTRADICE al proyecto: manda
+        # a quien lo lea —humano o agente— a ejecutar algo que no esta. Es la
+        # podredumbre documental cazada con un hecho, no con una opinion sobre
+        # si esta "completo". Parcial y nunca `falta`: el fichero SI aporta, y un
+        # "te falta" falso es lo que hace que un informe deje de leerse.
+        _div = divergencia_de_comandos(root)
+        report["levels"].append(
+            _level("agentes", "Contexto ejecutable para agentes", "parcial",
+                   "AGENTS.md dice `%s` pero este proyecto corre `%s`: quien lo lea "
+                   "ejecutara algo que no existe"
+                   % (_div["declarado"], _div["detectado"]),
+                   evidence=["AGENTS.md"])
         )
     elif agents:
         report["levels"].append(

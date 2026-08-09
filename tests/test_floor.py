@@ -174,6 +174,64 @@ def test_agents_md_es_el_estandar_y_claude_md_solo_parcial(tmp_path):
 # --- el contrato del informe -------------------------------------------------
 
 
+# --- lo ESCRITO contra lo DETECTADO -----------------------------------------
+
+
+def _repo_pytest(tmp_path, agents):
+    root = str(tmp_path)
+    _write(root, "pyproject.toml", "[tool.pytest.ini_options]\ntestpaths = ['tests']\n")
+    _write(root, "AGENTS.md", agents)
+    return root
+
+
+def test_un_agents_que_contradice_al_proyecto_no_pasa_por_bueno(tmp_path):
+    """La podredumbre documental, cazada con un HECHO y no con una opinion sobre
+    si el documento esta "completo": las dos mitades son comprobables — una leida
+    del documento, otra detectada del proyecto. Un AGENTS.md que dice `npm test`
+    en un repo que corre pytest manda a quien lo lea a ejecutar algo que no esta.
+    """
+    root = _repo_pytest(tmp_path, "# p\n\n## Comandos\n\n```bash\nnpm test\n```\n")
+
+    nivel = _nivel(floor.analyze(root), "agentes")
+
+    assert nivel["status"] == "parcial", "existe y aporta: nunca 'falta'"
+    assert "npm test" in nivel["detail"] and "pytest -q" in nivel["detail"]
+
+
+def test_las_banderas_no_son_una_contradiccion(tmp_path):
+    """`pytest -q --strict-markers` es el MISMO toolchain con otras opciones.
+    Acusar aqui seria el falso positivo que hace que un informe deje de leerse."""
+    root = _repo_pytest(tmp_path, "# p\n\n```bash\npytest -q --strict-markers\n```\n")
+
+    assert _nivel(floor.analyze(root), "agentes")["status"] == "ok"
+    assert floor.divergencia_de_comandos(root) is None
+
+
+def test_no_decir_nada_no_es_contradecir(tmp_path):
+    """Un documento sin comandos no miente; solo dice menos. Marcarlo seria
+    exigir una convencion de formato, que es justo lo que la regla 6 prohibe."""
+    root = _repo_pytest(tmp_path, "# p\n\nEste proyecto hace cosas.\n")
+
+    assert floor.divergencia_de_comandos(root) is None
+
+
+def test_sin_comando_detectado_no_se_acusa_a_nadie(tmp_path):
+    """Si gb no sabe que corre el proyecto, no tiene con que comparar."""
+    root = str(tmp_path)
+    _write(root, "AGENTS.md", "# p\n\n```bash\nnpm test\n```\n")
+
+    assert floor.divergencia_de_comandos(root) is None
+
+
+def test_lee_los_comandos_de_cualquier_valla(tmp_path):
+    """El titulo de la seccion varia entre proyectos; exigir uno concreto seria
+    cablear una convencion (hard rule 6)."""
+    root = str(tmp_path)
+    _write(root, "AGENTS.md", "# p\n\n## Como se prueba\n\n```\n$ cargo test\n```\n")
+
+    assert [h for h, _l in floor.comandos_declarados(root)] == ["cargo"]
+
+
 # --- el recorrido: 4 fases sobre las 8 capas --------------------------------
 
 
