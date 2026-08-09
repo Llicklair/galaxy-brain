@@ -34,6 +34,48 @@ instrumento mudo y un repo limpio dan exactamente la misma cifra.
 
 ---
 
+## 2026-08-09 · Ocho licencias, y las tres veces que la sonda dejó pasar un hueco real
+
+Segunda tanda del catálogo, esta vez en lote — reproche justo del usuario: *«no tiene sentido
+implementar 1, hacer test, implementar 2, hacer test»*. Una sola medición sobre todos los huecos, una
+sola verificación.
+
+**Lo que la medición en lote encontró y la de uno en uno no habría encontrado:**
+
+| Hueco | Por qué la sonda no lo veía |
+|---|---|
+| **Las clases de Ruby daban ERROR de patrón** | solo exigía "algún símbolo", y los `def` sí salían |
+| **PHP sin métodos de clase** — casi todo el PHP real | ídem |
+| **Lua sin `function M.x()`** — *la* forma de exportar | ídem |
+| **Java con CERO llamadas**, ni candidatas | su fuente llamaba sin receptor |
+
+El de Java es el que más enseña: en **Java, Kotlin y Scala toda invocación es `receptor.metodo(...)`**
+en el AST, y `$FN($$$)` no casa nada. Con `$A.$FN($$$)` el motor recompone el nombre cualificado y la
+cadena sale entera. Tres veces en dos días que la sonda pasa por encima de un hueco real; ahora
+comprueba clases y métodos donde la tabla los promete, derivándolo de la tabla misma.
+
+**Las licencias, medidas con rojos reales** (ruby, php, lua, jdk y scala-cli instalados para poder
+hacerlo):
+
+| Con licencia (8) | Denegada, con motivo escrito |
+|---|---|
+| Python · JS · TS · Go · C# · Java · PHP · Lua | **Ruby**: llama sin paréntesis (`total x`) y eso no es un nodo de llamada · **Rust**: llamadas dentro de macros |
+
+Java, PHP y Lua dan **0 falsos verdes, cascada exacta 3-2-1-1 y 56 % de ahorro**.
+
+**Dos errores del banco que parecían del motor**, y por eso se escriben: buscar la función por el
+nombre del módulo (`carrito` define `total`) dejó tres roturas sin aplicar — el banco lo dijo en vez
+de dar un verde silencioso; y las funciones de Lua en **una sola línea** hacían que la rotura cayera
+fuera del cuerpo, sin semilla, con un `4-2-4-4` que parecía errático del motor y era del fixture.
+
+**Y el fallo de método más caro, el cuarto de la semana:** C# entró en la tabla sin métodos porque
+probé cinco patrones a ciegas. `--debug-query=ast` lo explicaba en una línea —`ERROR` sobre el `$` de
+la metavariable— porque ast-grep parsea un patrón suelto de C# como función local de nivel superior.
+La cura son los patrones **contextuales**, y con ellos C# pasó de medio lenguaje a licencia completa.
+Mirar el instrumento antes de tantear habría ahorrado dos días.
+
+---
+
 ## 2026-08-09 · El catálogo multilenguaje, y por qué «17 lenguajes» no es la cifra que importa
 
 Un proyecto JS mínimo destapó que gb daba el **10 %** de su valor fuera de Python — y encima mentía
