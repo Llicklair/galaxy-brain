@@ -612,6 +612,21 @@ def find_boundaries(root, max_depth=2):
     return None
 
 
+def _es_raiz_de_arbol(directorio):
+    """¿Ese directorio es la raiz de un arbol de trabajo de git?
+
+    `.git` es un DIRECTORIO en un clon normal y un FICHERO en un worktree (y en
+    un submodulo): dentro lleva la linea `gitdir:` que apunta al de verdad. Mirar
+    solo `isdir` daba por "no es raiz" a todo worktree, y como los worktrees de
+    gb viven en `<repo>/.claude/worktrees/<nombre>`, el escaneo hacia arriba
+    llegaba al checkout principal y denunciaba SU `.gb-boundaries` como una
+    segunda fuente de reglas. Resultado medido (9-ago): `--gate` devolvia 1 en
+    CUALQUIER worktree, sin un solo cruce — el falso positivo que acaba en
+    `--no-verify`, y encima justo donde trabajan los agentes.
+    """
+    return os.path.exists(os.path.join(directorio, ".git"))
+
+
 def _boundaries_elsewhere(root, consultado, max_arriba=3):
     """Un `.gb-boundaries` que existe pero NO es el que se ha leido, o None.
 
@@ -629,11 +644,15 @@ def _boundaries_elsewhere(root, consultado, max_arriba=3):
 
     actual = os.path.abspath(root)
     for _ in range(max_arriba):
+        # Lo que se analiza YA es la raiz de un arbol de trabajo: encima no hay
+        # "otro fichero de reglas del mismo proyecto", hay otro proyecto.
+        if _es_raiz_de_arbol(actual):
+            break
         padre = os.path.dirname(actual)
         if padre == actual:
             break
         candidatos.append(os.path.join(padre, BOUNDARIES_FILE))
-        if os.path.isdir(os.path.join(padre, ".git")):
+        if _es_raiz_de_arbol(padre):
             break
         actual = padre
 

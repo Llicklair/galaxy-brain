@@ -119,6 +119,33 @@ def test_el_fichero_que_SI_se_lee_no_cuenta_como_extraviado(tmp_path):
     assert cli._graph_gate(report) == 0
 
 
+def test_un_WORKTREE_no_denuncia_el_fichero_del_checkout_principal(tmp_path):
+    """`.git` es un DIRECTORIO en un clon y un FICHERO en un worktree.
+
+    Como los worktrees de gb viven en `<repo>/.claude/worktrees/<nombre>`, mirar
+    solo `isdir` hacia arriba llegaba al checkout principal y denunciaba SU
+    `.gb-boundaries` como una segunda fuente de reglas. Medido el 9-ago: `--gate`
+    devolvia 1 en los TRES worktrees de la tirada sin un solo cruce — y es justo
+    el sitio donde trabajan los agentes, asi que el falso positivo salta siempre.
+    """
+    repo = str(tmp_path)
+    _write(repo, ".git/HEAD", "ref: refs/heads/master\n")     # el clon: directorio
+    _write(repo, ".gb-boundaries", "pkg.a -/-> pkg.b\n")
+
+    wt = os.path.join(repo, ".claude", "worktrees", "agente")
+    _write(wt, ".git", "gitdir: %s/.git/worktrees/agente\n" % repo)   # ...y aqui, FICHERO
+    _write(wt, ".gb-boundaries", "pkg.a -/-> pkg.b\n")
+    _write(wt, "pkg/__init__.py", "")
+    _write(wt, "pkg/a.py", "")
+    _write(wt, "pkg/b.py", "")
+
+    report = graph.analyze(wt)
+
+    assert report["boundaries"] == 1
+    assert report["boundaries_elsewhere"] is None
+    assert cli._graph_gate(report) == 0
+
+
 def test_load_boundaries_parsea(tmp_path):
     root = str(tmp_path)
     _write(
