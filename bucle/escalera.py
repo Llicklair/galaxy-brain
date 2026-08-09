@@ -104,6 +104,18 @@ def _modulos_del_diff(worktree, raiz):
     rc, salida = _corre(["git", "diff", "--name-only", "HEAD"], worktree, timeout=120)
     if rc != 0:
         return []
+    # Los ficheros NUEVOS no estan en el diff contra HEAD: git no los conoce
+    # todavia. Y anadir codigo en un fichero nuevo es la forma mas normal que
+    # tiene un agente de anadir codigo, asi que sin esto el hecho "que modulos
+    # toca el cambio" se salta justo lo que acaba de aparecer. Medido el 9-ago:
+    # un agente extrajo la logica compartida a un `suma.js` nuevo —la solucion
+    # BUENA— y ese modulo, que ninguna regla menciona, no llego a la
+    # comprobacion de cobertura: se acepto sin el ESCALAR que tocaba. Es el mismo
+    # caso que `actividad.simbolos_tocados` ya contemplaba por su cuenta.
+    rc_nuevos, nuevos = _corre(["git", "ls-files", "--others", "--exclude-standard"],
+                               worktree, timeout=120)
+    if rc_nuevos == 0:
+        salida += "\n" + nuevos
     modulos = set()
     for rel in salida.splitlines():
         rel = rel.strip()

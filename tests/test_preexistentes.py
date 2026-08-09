@@ -14,6 +14,7 @@ ponerlo delante, del modelo en el peldaño siguiente y del humano en el veredict
 
 import importlib.util
 import os
+import subprocess
 
 from galaxybrain import impacted
 
@@ -128,3 +129,35 @@ def test_sin_preexistentes_el_veredicto_sale_limpio():
 
     assert v == escalera.ACEPTAR
     assert "ya existian" not in motivo
+
+
+# --- el fichero NUEVO tambien es un modulo tocado ---------------------------
+
+
+def _git(cwd, *args):
+    subprocess.run(["git", "-C", str(cwd), *args], capture_output=True, check=False)
+
+
+def test_un_modulo_en_fichero_NUEVO_cuenta_como_tocado(tmp_path):
+    """`git diff HEAD` no lista lo que git aún no conoce, y añadir código en un
+    fichero nuevo es la forma más normal que tiene un agente de añadir código.
+
+    Medido el 9-ago: un agente extrajo la lógica compartida a un `suma.js` nuevo
+    —la solución BUENA— y ese módulo, que ninguna regla menciona, no llegó a la
+    comprobación de cobertura. Se aceptó sin el ESCALAR que tocaba: el examen se
+    salta creando ficheros.
+    """
+    root = tmp_path
+    (root / "viejo.py").write_text("X = 1\n", encoding="utf-8")
+    _git(root, "init", "-q")
+    _git(root, "config", "user.email", "t@t.t")
+    _git(root, "config", "user.name", "t")
+    _git(root, "add", "-A")
+    _git(root, "commit", "-qm", "base")
+
+    (root / "viejo.py").write_text("X = 2\n", encoding="utf-8")
+    (root / "nuevo.py").write_text("Y = 3\n", encoding="utf-8")     # sin trackear
+
+    modulos = escalera._modulos_del_diff(str(root), str(root))
+
+    assert modulos == ["nuevo", "viejo"]
