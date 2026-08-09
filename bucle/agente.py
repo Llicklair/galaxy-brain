@@ -21,6 +21,7 @@ humano (regla de trabajo: los bucles no mergean).
 
 import argparse
 import importlib.util
+import json
 import os
 import re
 import sys
@@ -39,6 +40,82 @@ def _carga_orquestador():
 
 bucle = _carga_orquestador()
 RAIZ = bucle.RAIZ
+
+
+def resuelve_nodo(raiz, qual, alcance=None):
+    """El símbolo del grafo al que se ancla el agente, o None con su motivo.
+
+    Consume `gb calls` por CLI como el resto del bucle: gb PROVEE el hecho, esto
+    lo usa. Si el símbolo no existe —o el lenguaje no tiene motor— se devuelve el
+    motivo tal cual lo dice gb, en vez de inventarse un ancla.
+    """
+    ruta = alcance or raiz
+    rc, salida, err = bucle._corre(bucle.GB + ["calls", qual, ruta, "--json"], cwd=raiz)
+    texto = bucle._texto(salida).strip()
+    if rc != 0 or not texto.startswith("{"):
+        return None, (bucle._texto(err).strip() or texto or "gb calls no respondio")[:200]
+    datos = json.loads(texto)
+    matches = datos.get("matches") or []
+    if not matches:
+        return None, "no hay ningun simbolo '%s' en %s" % (qual, ruta)
+    if len(matches) > 1:
+        nombres = ", ".join(m["symbol"]["qual"] for m in matches[:5])
+        return None, "'%s' es ambiguo: %s — usa el nombre cualificado" % (qual, nombres)
+    m = matches[0]
+    # El PREFIJO del analisis respecto al repo. Sin el, las rutas no casan: el
+    # grafo las da desde la raiz analizada (`galaxybrain/graph.py` cuando se
+    # analiza `src/`) y el diff desde la raiz del repo (`src/galaxybrain/...`).
+    # Sin esto, `llamantes_sin_tocar` no casaba NUNCA y acusaba a todos los
+    # llamantes siempre — un acusador que acusa siempre es peor que ninguno, y
+    # lo caza el control positivo de su test.
+    prefijo = os.path.relpath(os.path.abspath(ruta), raiz).replace("\\", "/")
+    return {"symbol": m["symbol"], "callers": m.get("callers") or [],
+            "callees": m.get("callees") or [],
+            "prefijo": "" if prefijo == "." else prefijo}, ""
+
+
+def brief_del_nodo(nodo):
+    """El encuadre que recibe el agente: DÓNDE trabajar y qué no puede romper.
+
+    Ojo con lo que esto es y lo que no. La medición del proyecto dice que la
+    información en contexto es una palanca DÉBIL (señal preventiva ignorada
+    12/12); lo que corrige es la arista determinista que obliga (rechazo 4/4).
+    Así que esto no está aquí para hacer al modelo más listo: está para ACOTAR
+    —un fichero y un símbolo en vez del repo— y para dejar por escrito contra qué
+    se le va a verificar después, que es lo que sí pesa.
+    """
+    s = nodo["symbol"]
+    lineas = [
+        "ANCLA: %s  (%s:%s)" % (s["qual"], s["file"], s["line"]),
+        "firma actual: %s%s" % (s["qual"].rsplit(".", 1)[-1], s.get("sig") or "()"),
+        "",
+        "Trabaja sobre ESE simbolo. Si cambias su firma, actualiza a sus llamantes:",
+    ]
+    for c in nodo["callers"][:12]:
+        lineas.append("  - %s  (%s:%s)" % (c["qual"], c["file"], c["line"]))
+    if not nodo["callers"]:
+        lineas.append("  (ninguno en el grafo: nadie lo llama todavia)")
+    elif len(nodo["callers"]) > 12:
+        lineas.append("  ... y %d mas" % (len(nodo["callers"]) - 12))
+    return "\n".join(lineas)
+
+
+def llamantes_sin_tocar(worktree, nodo):
+    """De los llamantes del ancla, cuáles NO tocó el agente.
+
+    Es un HECHO derivado del diff, no un veredicto (regla 9): "cambiaste la firma
+    y no miraste 4 de sus 7 llamantes" es justo lo que hay que leer antes de
+    mergear. Quien decide sigue siendo el humano.
+    """
+    tocados = {f.replace("\\", "/") for f in bucle.lineas_anadidas(worktree)}
+    prefijo = nodo.get("prefijo") or ""
+    fuera = []
+    for c in nodo["callers"]:
+        rel = c["file"].replace("\\", "/")
+        completa = "%s/%s" % (prefijo, rel) if prefijo else rel
+        if completa not in tocados:
+            fuera.append("%s  (%s:%s)" % (c["qual"], c["file"], c["line"]))
+    return fuera
 
 
 def nombre_por_defecto(tarea):
@@ -68,12 +145,31 @@ def main(argv=None):
                         help="no asegurar el watch (por defecto se arranca si falta)")
     parser.add_argument("--repo", default=RAIZ,
                         help="repo sobre el que trabajar (por defecto, este)")
+    parser.add_argument("--nodo", metavar="QUAL",
+                        help="anclar el agente a un simbolo del grafo (p.ej. carrito.total): "
+                             "acota el trabajo a su fichero y verifica contra sus llamantes")
+    parser.add_argument("--alcance", metavar="RUTA",
+                        help="raiz que analiza el grafo para resolver --nodo (por defecto, el repo)")
     args = parser.parse_args(argv)
 
     raiz = os.path.abspath(args.repo)
+
+    nodo = None
+    if args.nodo:
+        nodo, motivo = resuelve_nodo(raiz, args.nodo, args.alcance)
+        if nodo is None:
+            # Un ancla que no existe no se sustituye por "trabaja donde puedas":
+            # el usuario pidio un sitio concreto y no esta.
+            sys.stderr.write("[agente] no puedo anclar a '%s': %s\n" % (args.nodo, motivo))
+            return 1
+
     nombre = args.nombre or nombre_por_defecto(args.tarea)
     worktree = bucle.preparar_worktree(nombre, raiz=raiz)
     print("repo     : %s" % raiz)
+    if nodo:
+        s = nodo["symbol"]
+        print("ancla    : %s  (%s:%s) · %d llamante(s)"
+              % (s["qual"], s["file"], s["line"], len(nodo["callers"])))
     print("worktree : %s" % worktree)
     if not args.sin_mapa:
         print("mapa     : file:///%s" % asegura_mapa(raiz).replace("\\", "/"))
@@ -81,8 +177,9 @@ def main(argv=None):
     print("-- el agente empieza; su tarjeta aparece en el mapa al primer cambio --\n",
           flush=True)
 
+    prompt = args.tarea if nodo is None else "%s\n\n%s" % (args.tarea, brief_del_nodo(nodo))
     try:
-        bucle.ejecutar_real({"id": nombre}, worktree, args.tarea, args.timeout, eco=True)
+        bucle.ejecutar_real({"id": nombre}, worktree, prompt, args.timeout, eco=True)
     except RuntimeError as error:
         # Un agente que sale mal no es una excepcion del lanzador: es un hecho
         # de la tirada. Se dice y se sigue al diff, que puede tener trabajo util.
@@ -91,6 +188,32 @@ def main(argv=None):
     _rc, diff, _err = bucle._corre(["git", "diff", "--stat", "HEAD"], cwd=worktree)
     print("\n== lo que dejo (SIN commitear, SIN mergear) ==")
     print(bucle._texto(diff).strip() or "(nada)")
+
+    if nodo:
+        # La verificacion anclada, que es lo que de verdad aporta el --nodo: la
+        # informacion en contexto es palanca debil (12/12 ignorada), la arista
+        # que obliga es la fuerte (rechazo 4/4). Esto NO bloquea ni mergea: son
+        # hechos derivados del diff para leer antes de decidir (regla 9).
+        print("\n== contra el ancla ==")
+        firmas = bucle.firmas_de(worktree)
+        s = nodo["symbol"]
+        antes = "%s%s" % (s["qual"].rsplit(".", 1)[-1], s.get("sig") or "()")
+        ahora = firmas.get(s["qual"])
+        if ahora is None:
+            print("  la firma de %s ya no existe con ese nombre (movida o borrada)" % s["qual"])
+        elif ahora != (s.get("sig") or ""):
+            print("  FIRMA CAMBIADA: %s -> %s%s" % (antes, s["qual"].rsplit(".", 1)[-1], ahora))
+            sin_tocar = llamantes_sin_tocar(worktree, nodo)
+            if sin_tocar:
+                print("  %d de %d llamante(s) SIN tocar:"
+                      % (len(sin_tocar), len(nodo["callers"])))
+                for linea in sin_tocar[:10]:
+                    print("    - %s" % linea)
+            else:
+                print("  todos sus llamantes fueron tocados")
+        else:
+            print("  la firma de %s no cambio: sus %d llamante(s) siguen valiendo"
+                  % (s["qual"], len(nodo["callers"])))
     print("\nrevisalo con:  git -C %s diff" % worktree)
     print("y cuando decidas TU:  git -C %s diff | git apply -" % worktree)
     return 0
