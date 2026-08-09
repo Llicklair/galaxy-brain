@@ -345,6 +345,18 @@ su motivo. Escribe aqui lo que has decidido no hacer — sobre todo lo que te ap
 %s Comprobable, escrito ANTES de la primera linea de codigo. No "que funcione bien":
 algo que se pueda mirar y responder si o no. Es la cura mas barata que existe contra
 la sobreingenieria, cuya causa numero uno es no saber cuando parar.
+
+**Escribelo como COMANDO y deja de ser una intencion.** Lo de dentro de esta valla
+se puede ejecutar, asi que un bucle que construya y verifique sabra cuando ha
+terminado — y `gb floor` te dira si hoy pasa. En prosa nadie puede comprobarlo:
+
+```gb:terminado
+# sustituye esto por el comando que decide que el MVP esta terminado.
+# ejemplos: `pytest tests/test_mvp.py -q` · `npm run e2e` · `go test ./caso`
+```
+
+Que el criterio sea BUENO sigue sin poder juzgarlo ninguna herramienta (`exit 0`
+tambien pasa), asi que esta capa del suelo no se marca en verde nunca.
 """ % (nombre, PENDING_MARK, PENDING_MARK, PENDING_MARK)
 
 
@@ -485,6 +497,54 @@ _CRITERIO_RE = re.compile(
 #: Donde se mira. No se recorre el repo entero: un criterio vive en los
 #: documentos de decision, y buscar en todas partes invitaria a falsos positivos.
 _CRITERIO_DOCS = ("SCOPE.md", "README.md", "ARCHITECTURE.md", "CLAUDE.md", "AGENTS.md")
+
+
+#: El criterio de terminado, escrito como COMANDO. La valla lleva etiqueta
+#: explicita (```gb:terminado) a proposito: adivinar "el primer bloque de codigo
+#: bajo el encabezado" convertiria un ejemplo de prosa en un veredicto.
+#:
+#: Un criterio en prosa no se puede juzgar — por eso esa capa del suelo nunca se
+#: marca en verde. Uno escrito como comando SI se puede EJECUTAR, y entonces deja
+#: de ser una intencion y pasa a ser un hecho. Lo que sigue sin poder juzgarse es
+#: si el criterio es BUENO (`exit 0` tambien pasa), asi que el nivel se queda en
+#: no-detectable y lo unico que cambia es cuanta informacion da.
+_CRITERIO_CMD_RE = re.compile(
+    r"^```gb:terminado\s*\n(.*?)^```", re.MULTILINE | re.DOTALL)
+
+
+def criterio_ejecutable(root):
+    """(comando, fichero) del criterio de terminado, o (None, None).
+
+    Se busca en los mismos documentos que el criterio en prosa: vive donde se
+    declara el alcance, no en un fichero nuevo (restar antes que pulir).
+    """
+    for rel in _CRITERIO_DOCS:
+        m = _CRITERIO_CMD_RE.search(_read(root, rel))
+        if m:
+            lineas = [ln.strip() for ln in m.group(1).splitlines()
+                      if ln.strip() and not ln.strip().startswith("#")]
+            if lineas:
+                return "\n".join(lineas), rel
+    return None, None
+
+
+def correr_criterio(root, comando=None, timeout=1800):
+    """Ejecuta el criterio y devuelve (paso, detalle). `None` si no hay criterio.
+
+    Es el unico sitio de gb donde se ejecuta algo que el usuario escribio, y por
+    eso lo pide explicitamente quien lo llama: el camino por defecto no ejecuta
+    nada de nadie.
+    """
+    if comando is None:
+        comando, _fuente = criterio_ejecutable(root)
+    if not comando:
+        return None, "sin criterio de terminado ejecutable"
+    try:
+        p = subprocess.run(comando, shell=True, cwd=root, capture_output=True,
+                           timeout=timeout)
+    except (OSError, subprocess.SubprocessError) as error:
+        return False, "el criterio no pudo ejecutarse: %s" % error
+    return p.returncode == 0, "`%s` -> exit %d" % (comando.splitlines()[0], p.returncode)
 
 
 def _busca_criterio(root):
@@ -789,16 +849,32 @@ def analyze(root, run_tests=False):
     # repos reales que usan gb tienen su criterio en SCOPE.md y ambos recibian
     # el reproche.
     donde_criterio = _busca_criterio(root)
+    comando_criterio, fuente_criterio = criterio_ejecutable(root)
+    if comando_criterio:
+        # Escrito como COMANDO deja de ser una intencion y pasa a ser algo que se
+        # puede EJECUTAR — y entonces un bucle puede saber si termino. Lo que
+        # sigue sin poder juzgarse es si el criterio es bueno (`exit 0` tambien
+        # pasa), asi que el nivel se queda en no-detectable igual: lo unico que
+        # cambia es cuanta informacion da.
+        detalle_criterio = (
+            "EJECUTABLE en %s: `%s` — se puede correr, asi que un bucle puede saber "
+            "cuando ha terminado. Que sea un BUEN criterio sigue sin poder juzgarlo "
+            "nadie, y por eso esta capa no se marca en verde nunca"
+            % (fuente_criterio, comando_criterio.splitlines()[0][:90]))
+    elif donde_criterio:
+        detalle_criterio = (
+            "en prosa, en %s — que exista es un hecho; si es COMPROBABLE solo lo sabes "
+            "tu. Escrito como comando (valla ```gb:terminado) se podria EJECUTAR, y un "
+            "bucle sabria cuando parar" % ", ".join(donde_criterio))
+    else:
+        detalle_criterio = (
+            "no encuentro ninguno escrito, y esto no lo puede mirar ninguna herramienta: "
+            "lo escribes tu, antes de empezar. Sin el, la causa numero uno de "
+            "sobreingenieria sigue abierta")
     report["levels"].append(
         _level("terminado", "Un criterio de terminado comprobable", "no-detectable",
-               ("encontrado en %s — que exista es un hecho; si es COMPROBABLE solo lo "
-                "sabes tu, y por eso esta capa no se marca en verde nunca"
-                % ", ".join(donde_criterio))
-               if donde_criterio else
-               "no encuentro ninguno escrito, y esto no lo puede mirar ninguna herramienta: "
-               "lo escribes tu, antes de empezar. Sin el, la causa numero uno de "
-               "sobreingenieria sigue abierta",
-               evidence=donde_criterio)
+               detalle_criterio,
+               evidence=([fuente_criterio] if comando_criterio else donde_criterio))
     )
 
     # + contexto para agentes (no es de §10; sale del estandar del mercado).

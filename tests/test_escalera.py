@@ -42,16 +42,34 @@ def _hechos(**kw):
 # --- el unico camino a ACEPTAR ----------------------------------------------
 
 
-def test_un_cambio_limpio_y_cubierto_se_acepta():
+def test_sin_criterio_de_terminado_el_maximo_es_SIN_OBJECIONES():
+    """El veredicto no puede prometer mas de lo que comprobo. Sin criterio, lo
+    unico verificado es que nada de lo que el grafo sabe mirar esta roto — y eso
+    NO es "la tarea esta hecha", que es una propiedad de tu intencion."""
     veredicto, motivo = escalera.decidir(_hechos())
 
+    assert veredicto == escalera.SIN_OBJECIONES
+    assert "si la tarea esta HECHA" in motivo
+
+
+def test_con_el_criterio_pasando_SI_se_acepta():
+    veredicto, motivo = escalera.decidir(_hechos(criterio_pasa=True))
+
     assert veredicto == escalera.ACEPTAR
-    assert "verdes" in motivo
+    assert "criterio de terminado PASA" in motivo
+
+
+def test_con_el_criterio_fallando_se_rechaza():
+    """Todo verde y aun asi RECHAZAR: no rompiste nada, pero no lo hiciste."""
+    veredicto, motivo = escalera.decidir(_hechos(criterio_pasa=False))
+
+    assert veredicto == escalera.RECHAZAR
+    assert "no esta hecha" in motivo
 
 
 def test_correr_la_suite_entera_tambien_vale():
     """No estrechar es MAS seguro, no menos: el veredicto sigue siendo real."""
-    veredicto, motivo = escalera.decidir(_hechos(suite_entera=True))
+    veredicto, motivo = escalera.decidir(_hechos(suite_entera=True, criterio_pasa=True))
 
     assert veredicto == escalera.ACEPTAR
     assert "suite entera" in motivo
@@ -130,8 +148,9 @@ def test_si_no_se_sabe_que_toca_se_escala():
 
 def test_zona_sin_ley_que_NO_se_toca_no_estorba():
     """Solo importa la interseccion: un repo con modulos sin declarar es normal."""
-    v, _ = escalera.decidir(
-        _hechos(modulos_tocados=["app.carrito"], modulos_sin_regla=["app.otro", "app.mas"]))
+    v, _ = escalera.decidir(_hechos(modulos_tocados=["app.carrito"],
+                                    modulos_sin_regla=["app.otro", "app.mas"],
+                                    criterio_pasa=True))
 
     assert v == escalera.ACEPTAR
 

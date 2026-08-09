@@ -20,8 +20,15 @@ significa *sin reglas que violar*. Es la misma trampa que una lista de permitido
 vacía, a nivel de arquitectura y con consecuencias peores. Ahí se escala al
 humano, siempre.
 
-NUNCA mergea (ADR 0006 y la regla de trabajo): decide ACEPTAR, RECHAZAR o
-ESCALAR, y deja el diff donde está.
+Y la pregunta que cierra el circulo: **¿cuándo termina?** El grafo sabe decir si
+un cambio es aceptable; no puede decir nunca si el trabajo está hecho — eso no es
+una propiedad del código, es de tu intención, y por eso esa capa del suelo jamás
+se marca en verde. Lo que sí se puede cerrar es la mitad ejecutable: si el
+criterio de terminado está escrito como COMANDO (valla ```gb:terminado en el
+SCOPE), se corre, y entonces sí es un hecho. Sin él, el veredicto máximo es
+SIN_OBJECIONES — que es lo único que de verdad se ha comprobado.
+
+NUNCA mergea (ADR 0006 y la regla de trabajo): decide, y deja el diff donde está.
 """
 
 import json
@@ -30,6 +37,11 @@ import subprocess
 import sys
 
 ACEPTAR = "aceptar"
+#: Lo que de verdad comprueba el grafo cuando no hay criterio de terminado: que
+#: nada de lo que sabe mirar esta roto. NO es "la tarea esta hecha" — eso no es
+#: una propiedad del codigo, es de tu intencion, y confundirlas seria dar un
+#: veredicto sobre lo que no se ha mirado. El nombre no promete de mas.
+SIN_OBJECIONES = "sin-objeciones"
 RECHAZAR = "rechazar"
 ESCALAR = "escalar"
 
@@ -93,6 +105,7 @@ def hechos_del_arbol(worktree, alcance=None, correr_tests=True):
         "tests_verdes": None, "suite_entera": True, "ciclos_nuevos": [],
         "cruces_frontera": [], "cruces_superficie": [], "llamantes_huerfanos": [],
         "modulos_tocados": [], "modulos_sin_regla": [],
+        "criterio_pasa": None, "criterio_detalle": "",
     }
 
     grafo = _json(GB + ["graph", raiz, "--json"], worktree)
@@ -113,6 +126,11 @@ def hechos_del_arbol(worktree, alcance=None, correr_tests=True):
     if correr_tests:
         rc, _ = _corre(GB + ["tests", "--worktree", "--run", raiz], worktree)
         hechos["tests_verdes"] = rc == 0
+        # El criterio de terminado del PROYECTO, declarado en su SCOPE con la
+        # valla ```gb:terminado. Sin el, `decidir` no puede decir ACEPTAR — solo
+        # SIN_OBJECIONES, que es lo que de verdad ha comprobado.
+        from galaxybrain import floor
+        hechos["criterio_pasa"], hechos["criterio_detalle"] = floor.correr_criterio(worktree)
     return hechos
 
 
@@ -170,7 +188,21 @@ def decidir(hechos):
         return ESCALAR, "no se pudo derivar que modulos toca el cambio"
 
     detalle = "suite entera" if hechos.get("suite_entera") else "seleccion del grafo"
-    return ACEPTAR, "tests verdes (%s), sin ciclos, sin cruces y con la ley cubriendo lo tocado" % detalle
+    limpio = ("tests verdes (%s), sin ciclos, sin cruces y con la ley cubriendo lo tocado"
+              % detalle)
+
+    # El ultimo escalon, y el que separa "no rompiste nada" de "esta hecho". Que
+    # la tarea este terminada NO es una propiedad del codigo: es de tu intencion,
+    # y ninguna herramienta la juzga. Pero si la escribiste como COMANDO
+    # (`gb floor` la llama criterio de terminado ejecutable), se puede correr — y
+    # entonces si es un hecho.
+    criterio = hechos.get("criterio_pasa")
+    if criterio is True:
+        return ACEPTAR, "%s; y el criterio de terminado PASA" % limpio
+    if criterio is False:
+        return RECHAZAR, "el criterio de terminado no pasa: la tarea no esta hecha"
+    return SIN_OBJECIONES, ("%s — pero no hay criterio de terminado ejecutable, asi que "
+                            "nadie ha comprobado si la tarea esta HECHA" % limpio)
 
 
 def mismo_rechazo(a, b):
