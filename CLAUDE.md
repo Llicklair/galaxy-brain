@@ -41,9 +41,13 @@ a publicarse. Hoy no se publica nada.
    modelo. La IA entra después del hecho, a mano y visible (ARCHITECTURE, regla 8).
 2. **Presupuesto de latencia.** < 1 s por edición, < 10 s por commit. Sobrepasarlo es violación de
    arquitectura, no un problema de rendimiento a optimizar luego.
-3. **Un lenguaje, un runtime.** Python · local. La consola captura un solo tipo de fallo: excepciones
-   no capturadas. Un segundo de cualquiera de los tres se discute en [SCOPE.md](SCOPE.md) antes de
-   tocar código.
+3. **Un runtime, un tipo de fallo — y el grafo con dos motores.** Ejecución local, y la consola
+   captura un solo tipo de fallo: excepciones no capturadas, solo en Python. El grafo lee 17
+   lenguajes (Python con `ast`; el resto con `ast-grep` por referencia,
+   [ADR 0009](docs/adr/0009-multilenguaje-por-referencia.md)). Añadir un lenguaje es una entrada en
+   la tabla `LENGUAJES` **más su sonda de conformidad**; estrechar tests con él exige **licencia
+   medida con rojos reales** (`tia`), que hoy tienen js, ts y go. Cualquier otro eje se discute en
+   [SCOPE.md](SCOPE.md) antes de tocar código.
 4. **Si un comando no cae en una de las familias de [ARCHITECTURE.md](ARCHITECTURE.md), no entra.** No
    hay excepción "pequeña": las excepciones pequeñas son exactamente cómo se fabrica un monstruo.
 5. **El abandono se investiga, no se blinda.** Si dejas de usar la herramienta, prohibido añadir un

@@ -34,6 +34,54 @@ instrumento mudo y un repo limpio dan exactamente la misma cifra.
 
 ---
 
+## 2026-08-09 · El catálogo multilenguaje, y por qué «17 lenguajes» no es la cifra que importa
+
+Un proyecto JS mínimo destapó que gb daba el **10 %** de su valor fuera de Python — y encima mentía
+(`gb check` → "Sin señales" sobre un árbol que no había leído). De ahí salieron el ADR 0009 y el
+motor por tabla: 17 lenguajes con `ast-grep` **por referencia**, cero dependencias Python nuevas.
+
+**Lo que hace que el catálogo no sea una lista de intenciones: la sonda de conformidad.** Cada
+lenguaje aporta un fuente mínimo y se comprueba contra la tabla que extrae lo que promete. En su
+primera tirada **cazó 5 promesas falsas** que habría publicado: `ts` sin un solo símbolo (faltaba
+`: $RET`), `csharp` sin resolver la llamada interna, y `ruby`/`php` sin una sola arista porque
+`require_relative` no lleva punto inicial.
+
+**Y la cifra que de verdad importa no es 17, es 3.** Los bancos con rojos reales:
+
+| Lenguaje | Runner | Falsos verdes | Ahorro | Cascada |
+|---|---|---|---|---|
+| JS | `node --test` | **0/7** | 52 % | 5-4-4-3-2-1-1, exacta |
+| Go | `go test` | **0/7** | 52 % | 5-4-4-3-2-1-1, exacta |
+| Rust | `cargo test` | 0/7 | 64 % | **incompleta** |
+
+Rust es el caso instructivo. Su banco daba 0 falsos verdes y **más** ahorro que los otros dos, y aun
+así se le negó la licencia: al mirar por qué el símbolo más profundo alcanzaba 4 tests y no 5,
+faltaba `informe.linea → factura.emitir` porque la llamada vive dentro de
+`format!("TOTAL {:.2}", emitir(xs))` — el cuerpo de un macro es un árbol de **tokens**, no una
+expresión. Eso no es menos ahorro: es **sub-selección**, la única dirección que produce verdes
+falsos. Aquí no lo produjo **de puro azar**, porque todos los tests recorrían la cadena.
+
+**Consecuencia: estrechar exige licencia medida** (`tia`, defecto `False`). Un lenguaje no puede
+estrechar el día que entra en la tabla: primero su banco, después la licencia. Los otros 14 corren la
+suite entera y el informe dice por qué.
+
+**De propina, lo que desbloqueó Go:** las llamadas cualificadas (`paquete.Funcion()`) se descartaban
+como techo, y ésa es la forma normal de llamar fuera del módulo en Go, Java, C#, Kotlin y Scala — su
+grafo de llamadas salía con **cero aristas entre paquetes**. Ahora se resuelven casando contra
+símbolos que existen, solo si hay exactamente uno. Su test de control (un prefijo que **no** es
+módulo) destapó un `IndexError` propio: la función podía devolver lista vacía y el código la indexaba
+igual; el docstring ya lo decía y el código no.
+
+**El patrón de error más caro de estos dos días, por si sirve de aviso: TRES desajustes de rutas del
+mismo tipo.** El diff da rutas desde el toplevel del repo y el grafo desde la raíz analizada. Se
+manifestó (1) en la actividad, encendiendo el fichero entero —47 símbolos por editar uno— hasta poner
+`--relative`; (2) en `ficheros_tocados`, con un filtro `.py` a mano que dejaba invisible a un agente
+trabajando en `.go`; y (3) en el agente anclado, donde **todos** los llamantes figuraban como "sin
+tocar" siempre. El tercero solo lo cazó un **control positivo** — el caso negativo daba el resultado
+esperado y habría pasado por bueno.
+
+---
+
 ## 2026-08-08 · Roturas SUTILES (mutación): 0/20 falsos verdes — y lo que encontró en el repo ajeno
 
 Cierra el hueco que dejó escrito la entrada de abajo: *«las 22 roturas son duras; no dicen nada

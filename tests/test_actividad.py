@@ -223,6 +223,58 @@ def test_la_actividad_baja_al_simbolo_y_no_enciende_el_fichero_entero(proyecto):
     assert "lib.par" in agente["nodos"], "el modulo sigue estando debajo"
 
 
+def test_tocar_un_metodo_enciende_el_METODO_y_no_su_clase(proyecto):
+    """Los cuatro niveles del grafo se encienden, no solo module y function.
+
+    El matiz que importa es el MAS INTERNO: tocar un metodo intersecta tambien
+    con el `[line, end]` de su clase entera, y encender las dos diria "toda esta
+    clase esta en obra" cuando solo lo esta un metodo. Preguntado mirando el mapa
+    (9-ago): «veo module y function, entiendo que faltan class y method»."""
+    (proyecto / "lib" / "clase.py").write_text(
+        "class Caja:\n"
+        "    TAMANO = 1\n\n"
+        "    def abrir(self):\n"
+        "        return 1\n\n"
+        "    def cerrar(self):\n"
+        "        return 2\n",
+        encoding="utf-8")
+    _git(proyecto, "add", "-A")
+    _git(proyecto, "commit", "-qm", "una clase")
+
+    rama = _rama(proyecto, "agente")
+    ruta = rama / "lib" / "clase.py"
+    ruta.write_text(ruta.read_text(encoding="utf-8").replace(
+        "        return 2", "        return 2 + 0"), encoding="utf-8")
+
+    foto = actividad.instantanea(str(proyecto), symbols.analyze(str(proyecto)))
+    agente = next(a for a in foto["agentes"] if a["nombre"] == "agente")
+
+    assert agente["simbolos"] == ["lib.clase.Caja.cerrar"], agente["simbolos"]
+
+
+def test_tocar_a_nivel_de_clase_enciende_la_CLASE(proyecto):
+    """La otra mitad: una linea dentro de la clase y fuera de todo metodo no
+    tiene simbolo mas interno que la propia clase."""
+    (proyecto / "lib" / "clase.py").write_text(
+        "class Caja:\n"
+        "    TAMANO = 1\n\n"
+        "    def abrir(self):\n"
+        "        return 1\n",
+        encoding="utf-8")
+    _git(proyecto, "add", "-A")
+    _git(proyecto, "commit", "-qm", "una clase")
+
+    rama = _rama(proyecto, "agente")
+    ruta = rama / "lib" / "clase.py"
+    ruta.write_text(ruta.read_text(encoding="utf-8").replace(
+        "    TAMANO = 1", "    TAMANO = 2"), encoding="utf-8")
+
+    foto = actividad.instantanea(str(proyecto), symbols.analyze(str(proyecto)))
+    agente = next(a for a in foto["agentes"] if a["nombre"] == "agente")
+
+    assert agente["simbolos"] == ["lib.clase.Caja"], agente["simbolos"]
+
+
 def test_el_simbolo_tocado_entra_en_el_indice_por_nodo(proyecto):
     """Sin esto el mapa no puede encenderlo: `por_nodo` es lo que consume."""
     rama = _rama(proyecto, "agente")

@@ -81,9 +81,19 @@ Todo determinista, cero modelos, cero dependencias más allá de la librería es
 4. **Presupuesto de overhead sobre el proceso observado, medido no estimado.** La instrumentación tiene
    un techo escrito. Una consola que ralentiza el programa se apaga el primer día. (Medido: 6,4 ms de
    arranque, cero mientras el programa corre — ver [README.md](README.md).)
-5. **Un lenguaje, un runtime.** Python · local. Y la consola captura **un solo tipo de fallo**:
-   excepciones no capturadas. Añadir un segundo de cualquiera de los tres es un cambio de scope, no una
-   mejora, y va a [SCOPE.md](SCOPE.md) antes que al código.
+5. **Un runtime, un tipo de fallo — y dos motores de grafo, no uno genérico.** Ejecución local, y la
+   consola captura **un solo tipo de fallo**: excepciones no capturadas, en Python, porque
+   `sys.excepthook` no tiene equivalente portable. El **grafo** sí lee más: Python con `ast` de la
+   stdlib, y otros 16 lenguajes con `ast-grep` **por referencia** — binario externo detectado y
+   verificado, cero dependencias nuevas ([ADR 0009](docs/adr/0009-multilenguaje-por-referencia.md)).
+   Dos motores que conviven; añadir un lenguaje es una entrada en una tabla de datos, y si hiciera
+   falta tocar el motor, la tabla estaría mal diseñada. Cualquier otro eje nuevo es un cambio de
+   scope, no una mejora, y va a [SCOPE.md](SCOPE.md) antes que al código.
+
+   Dos guardas hacen que esto no degrade en «soportamos N lenguajes»: cada uno tiene su **sonda de
+   conformidad** en la suite —que cazó 5 promesas falsas el día que se abrió el catálogo— y
+   estrechar la selección de tests exige una **licencia medida con rojos reales**, que hoy solo
+   tienen `js`, `ts` y `go`. Un grafo de llamadas incompleto no cuesta ahorro: cuesta un verde falso.
 6. **Los hechos se guardan crudos.** Excepción, traza y estado se persisten tal cual se capturan.
    Interpretar es un paso posterior, separado y descartable.
 7. **Histórico local y append-only, fuera del repo observado.** El arnés nunca ensucia el proyecto que
