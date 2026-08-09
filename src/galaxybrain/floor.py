@@ -547,6 +547,69 @@ def correr_criterio(root, comando=None, timeout=1800):
     return p.returncode == 0, "`%s` -> exit %d" % (comando.splitlines()[0], p.returncode)
 
 
+#: El RECORRIDO. Las capas se ordenan por impacto medido; esto es el otro eje —
+#: en qué orden se desbloquean. No son 8 capas en 4 fases uno a uno:
+#:
+#:   - la fase 3 no tiene ninguna capa. Construir no es un estado del proyecto,
+#:     es lo que haces cuando el suelo esta puesto.
+#:   - `terminado` sale DOS veces con preguntas distintas: en la 1 "¿lo has
+#:     escrito?" y en la 4 "¿pasa?". Es la misma capa y no cuenta dos.
+#:   - `porque` es transversal: se acumula en todas, no pertenece a ninguna.
+#:
+#: Y el criterio de terminado va PRIMERO, no al final. Es la regla del proyecto
+#: (se escribe antes de la primera linea) y ahora ademas es lo que la fase de
+#: construccion usa para saber cuando ha terminado: al final no serviria de nada.
+FASES = (
+    ("declarar", "Declarar — solo lo puedes escribir tu",
+     ("terminado", "invariantes")),
+    ("verificador", "Montar el verificador — que exista quien juzgue",
+     ("feedback", "gates", "mapa", "barato", "agentes")),
+    ("construir", "Construir — con el verificador puesto", ()),
+    ("cerrar", "Cerrar — el criterio de terminado pasa", ()),
+)
+
+#: No pertenece a ninguna fase porque pertenece a todas.
+TRANSVERSAL = ("porque",)
+
+
+def _fase_de(clave):
+    for nombre, _titulo, claves in FASES:
+        if clave in claves:
+            return nombre
+    return "transversal" if clave in TRANSVERSAL else ""
+
+
+def siguiente_paso(report):
+    """La UNA cosa por la que empezar, o None si el suelo esta puesto.
+
+    Se deriva del informe y del orden de las fases: la primera capa sin cubrir de
+    la fase mas temprana. Devolver una lista de ocho deberes no ayuda a nadie —
+    lo que desbloquea es saber cual va antes y por que.
+    """
+    porques = {
+        "terminado": "sin el, la fase de construccion no puede saber cuando ha terminado",
+        "invariantes": "sin invariantes escritos, el verificador no tiene nada que comprobar "
+                       "y su verde solo significa 'no hay reglas'",
+        "feedback": "sin comando de tests no hay veredicto que automatizar",
+        "gates": "sin gates, cada revision depende de que alguien se acuerde",
+        "mapa": "sin grafo no hay onda del cambio ni seleccion de tests",
+        "barato": "sin worktrees, equivocarse cuesta el arbol principal",
+        "agentes": "sin AGENTS.md, cada agente que entra empieza a ciegas",
+    }
+    estado = {n["key"]: n for n in report.get("levels", [])}
+    for _nombre, _titulo, claves in FASES:
+        for clave in claves:
+            nivel = estado.get(clave) or {}
+            # `no-detectable` cuenta como pendiente SOLO si no hay nada escrito:
+            # el criterio nunca se marca en verde, pero declararlo si es un hecho.
+            cubierto = nivel.get("status") == "ok" or (
+                nivel.get("status") == "no-detectable" and nivel.get("evidence"))
+            if not cubierto:
+                return {"capa": clave, "titulo": nivel.get("title") or clave,
+                        "fase": _fase_de(clave), "porque": porques.get(clave, "")}
+    return None
+
+
 def _busca_criterio(root):
     """Documentos que declaran un criterio de terminado. Hecho, no juicio."""
     hallados = []
@@ -935,4 +998,11 @@ def analyze(root, run_tests=False):
         report["not_covered"].append(
             "si lo escrito en los documentos es CIERTO: solo se ve si quedan marcas sin rellenar"
         )
+    # El RECORRIDO va al final a proposito: necesita TODOS los niveles ya
+    # anadidos. Calcularlo a media lista dejaba el ultimo sin fase, y el
+    # siguiente paso se derivaba de un informe incompleto.
+    for nivel in report["levels"]:
+        nivel["fase"] = _fase_de(nivel["key"])
+    report["fases"] = [{"nombre": n, "titulo": t, "capas": list(c)} for n, t, c in FASES]
+    report["siguiente"] = siguiente_paso(report)
     return report

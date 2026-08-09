@@ -174,6 +174,87 @@ def test_agents_md_es_el_estandar_y_claude_md_solo_parcial(tmp_path):
 # --- el contrato del informe -------------------------------------------------
 
 
+# --- el recorrido: 4 fases sobre las 8 capas --------------------------------
+
+
+def test_las_ocho_capas_reparten_en_fases_sin_perder_ninguna(tmp_path):
+    """8 capas, 4 fases, y NO es uno a uno: la fase de construir no tiene capas
+    (no es un estado, es lo que haces), `terminado` sale en la 1 y en la 4 con
+    preguntas distintas, y `porque` es transversal."""
+    niveles = floor.analyze(str(tmp_path))["levels"]
+    por_fase = {}
+    for n in niveles:
+        por_fase.setdefault(n["fase"], []).append(n["key"])
+
+    assert len(niveles) == 8
+    assert len(por_fase["declarar"]) == 2
+    assert len(por_fase["verificador"]) == 5
+    assert por_fase["transversal"] == ["porque"]
+    assert "construir" not in por_fase
+
+
+def test_en_un_repo_nuevo_lo_primero_es_el_criterio_de_terminado(tmp_path):
+    """La regla del proyecto: se escribe ANTES de la primera linea. Y ahora
+    ademas es contra lo que verifica la fase de construccion — al final no
+    serviria de nada."""
+    siguiente = floor.analyze(str(tmp_path))["siguiente"]
+
+    assert siguiente["capa"] == "terminado"
+    assert siguiente["fase"] == "declarar"
+    assert "cuando ha terminado" in siguiente["porque"]
+
+
+def test_declarado_el_criterio_el_recorrido_avanza_de_fase(tmp_path):
+    """Un criterio escrito NO pone la capa en verde —nunca lo hace— pero si la
+    saca de pendiente: el recorrido pasa a la fase siguiente."""
+    root = str(tmp_path)
+    _write(root, "SCOPE.md", "# Alcance\n\n## Criterio de terminado\n\nCuando X mida Y.\n")
+
+    siguiente = floor.analyze(root)["siguiente"]
+
+    assert siguiente["capa"] != "terminado"
+    assert siguiente["fase"] in ("declarar", "verificador")
+
+
+def test_con_el_suelo_puesto_no_hay_siguiente_paso(tmp_path):
+    """Sin nada pendiente, el informe deja de dar deberes: toca construir."""
+    report = floor.analyze(str(tmp_path))
+    report["levels"] = [dict(n, status="ok") for n in report["levels"]]
+
+    assert floor.siguiente_paso(report) is None
+
+
+def test_el_criterio_ejecutable_se_detecta_y_se_puede_correr(tmp_path):
+    """Un criterio en prosa no se puede juzgar; escrito como COMANDO se ejecuta,
+    y entonces un bucle sabe cuando ha terminado."""
+    root = str(tmp_path)
+    _write(root, "SCOPE.md",
+           "# Alcance\n\n## Criterio de terminado\n\n"
+           "```gb:terminado\npython -c \"raise SystemExit(0)\"\n```\n")
+
+    comando, fuente = floor.criterio_ejecutable(root)
+    assert comando and fuente == "SCOPE.md"
+    assert floor.correr_criterio(root)[0] is True
+
+    nivel = _nivel(floor.analyze(root), "terminado")
+    assert nivel["status"] == "no-detectable", "que sea BUENO sigue sin poder juzgarse"
+    assert "EJECUTABLE" in nivel["detail"]
+
+
+def test_un_criterio_que_falla_lo_dice(tmp_path):
+    root = str(tmp_path)
+    _write(root, "SCOPE.md",
+           "# Alcance\n\n## Criterio de terminado\n\n"
+           "```gb:terminado\npython -c \"raise SystemExit(1)\"\n```\n")
+
+    assert floor.correr_criterio(root)[0] is False
+
+
+def test_sin_criterio_ejecutable_no_se_inventa_uno(tmp_path):
+    assert floor.criterio_ejecutable(str(tmp_path)) == (None, None)
+    assert floor.correr_criterio(str(tmp_path))[0] is None
+
+
 def test_el_criterio_de_terminado_nunca_se_da_por_cubierto(tmp_path):
     """No lo puede mirar ninguna herramienta. Marcarlo 'ok' alguna vez seria mentir."""
     report = floor.analyze(str(tmp_path))

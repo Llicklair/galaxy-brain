@@ -228,6 +228,17 @@ def render_floor(report, style):
                 YELLOW,
             )
         )
+    # EL SIGUIENTE PASO, arriba del todo. Una lista de ocho deberes no dice por
+    # donde empezar; lo que desbloquea es saber cual va antes y por que. Se deriva
+    # del orden de las fases, no de una opinion.
+    siguiente = report.get("siguiente")
+    if siguiente:
+        lines.append(style("EMPIEZA POR AQUI: %s" % siguiente["titulo"], BOLD))
+        if siguiente.get("porque"):
+            lines.append(style("  %s" % siguiente["porque"], DIM))
+        lines.append(style("  (fase: %s)" % siguiente.get("fase", ""), DIM))
+    elif report.get("fases"):
+        lines.append(style("El suelo esta puesto: toca CONSTRUIR con el verificador.", BOLD))
     lines.append("")
 
     for level in levels:
@@ -236,7 +247,12 @@ def render_floor(report, style):
             "ok": None, "parcial": YELLOW, "falta": RED,
             "no-detectable": DIM, "esqueleto": YELLOW,
         }.get(level["status"])
-        head = "  %s %s" % (style(mark, color) if color else mark, level["title"])
+        # La fase junto a la capa: la capa dice QUE falta, la fase dice CUANDO
+        # toca. Sin ella, ocho lineas planas se leen como ocho deberes iguales.
+        fase = level.get("fase")
+        etiqueta = (" " + style("[%s]" % fase, DIM)) if fase and fase != "transversal" else (
+            " " + style("[en todas]", DIM) if fase == "transversal" else "")
+        head = "  %s %s%s" % (style(mark, color) if color else mark, level["title"], etiqueta)
         lines.append(head)
         lines.append("      %s" % style(level["detail"], DIM))
     lines.append("")
