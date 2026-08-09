@@ -461,6 +461,7 @@ def render_graph(report, style):
                 )
         elif report.get("boundaries"):
             lines.append(style("Sin cruces de frontera prohibidos (%d regla(s))." % report["boundaries"], DIM))
+
         elif not report.get("boundaries_error"):
             otro = report.get("boundaries_elsewhere")
             lines.append(style("SIN FRONTERAS COMPROBADAS: 0 reglas cargadas.", YELLOW))
@@ -485,6 +486,29 @@ def render_graph(report, style):
             )
         for m in report.get("malformed_boundaries", []):
             lines.append(style("  AVISO: linea de regla no valida (ignorada): `%s`" % m, YELLOW))
+        cruces = report.get("surface_violations") or []
+        if cruces:
+            # Una gate que bloquea sin decir QUE la rompio es la peor de todas: se
+            # acaba saltando a ciegas. Aqui va el simbolo exacto y cual era la puerta.
+            lines.append(style("SUPERFICIE PUBLICA rota — entrada por un simbolo interno:", BOLD))
+            for v in cruces[:10]:
+                lines.append("  %s %s  ->  %s" % (style("!", YELLOW), v["caller"], v["callee"]))
+            if len(cruces) > 10:
+                lines.append(style("  ... y %d mas" % (len(cruces) - 10), DIM))
+            for puerta in sorted({", ".join(v["public"]) for v in cruces}):
+                lines.append(style("  la puerta declarada es: %s" % puerta[:150], DIM))
+        elif report.get("surfaces"):
+            lines.append(style("Superficie publica respetada (%d modulo(s) con puerta declarada)."
+                               % report["surfaces"], DIM))
+        sin_regla = report.get("modulos_sin_regla") or []
+        if sin_regla:
+            # INFORMA, no bloquea (regla 9): tener zonas sin declarar es normal en un
+            # repo vivo. Lo que no es normal es AUTOMATIZAR sobre un verde ahi — "cero
+            # violaciones" donde no hay reglas no es un aprobado, es no haber examen.
+            lines.append(style(
+                "Sin ninguna regla que los mencione: %d de %d modulo(s) — %s"
+                % (len(sin_regla), report["modules"],
+                   ", ".join(sin_regla[:5]) + (" ..." if len(sin_regla) > 5 else "")), DIM))
         for u in report.get("unmatched_rules", []):
             lines.append(
                 style("  AVISO: la regla `%s` no casa con ningun modulo (typo o raiz equivocada)." % u["rule"], YELLOW)

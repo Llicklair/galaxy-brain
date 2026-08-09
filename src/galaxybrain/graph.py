@@ -539,21 +539,36 @@ def load_boundaries(root, path=None):
         # existe = error: pediste unas reglas que no están, y pasar en verde sería
         # la falsa cobertura del invariante 4.
         error = ("no encuentro el fichero de fronteras: %s" % path) if explicit else None
-        return {"rules": [], "malformed": [], "error": error, "path": path}
+        return {"rules": [], "surfaces": [], "malformed": [], "error": error, "path": path}
     except OSError as error:
         # Existe pero no se puede leer (permisos, es un directorio…): nunca silencioso.
         return {
             "rules": [],
+            "surfaces": [],
             "malformed": [],
             "error": "no pude leer %s (%s)" % (path, error),
             "path": path,
         }
 
     rules = []
+    surfaces = []
     malformed = []
     for raw in content.splitlines():
         line = raw.split("#", 1)[0].strip()
         if not line:
+            continue
+        if "::" in line and "-/->" not in line:
+            # SUPERFICIE PÚBLICA: `MOD :: sim1, sim2` — a MOD solo se entra
+            # llamando a esos símbolos. Es encapsulación declarada, y por tanto
+            # un hecho: quien llama a `MOD.otra_cosa` desde fuera la rompe.
+            # Las fronteras `-/->` miran IMPORTS entre módulos; esto mira CALLS
+            # entre símbolos, que es el nivel al que se rompe una abstracción.
+            izq, der = line.split("::", 1)
+            simbolos = [s.strip() for s in der.replace(",", " ").split() if s.strip()]
+            if izq.strip() and simbolos:
+                surfaces.append((izq.strip(), tuple(simbolos)))
+            else:
+                malformed.append(line)
             continue
         parts = [p.strip() for p in line.split("-/->")]
         if len(parts) == 2 and parts[0] and parts[1]:
@@ -562,7 +577,8 @@ def load_boundaries(root, path=None):
             # Contenido que NO es una regla válida (flecha con typo, dos flechas,
             # un lado vacío): enforced nada. Se avisa en vez de descartarse mudo.
             malformed.append(line)
-    return {"rules": rules, "malformed": malformed, "error": None, "path": path}
+    return {"rules": rules, "surfaces": surfaces, "malformed": malformed,
+            "error": None, "path": path}
 
 
 def find_boundaries(root, max_depth=2):
@@ -677,6 +693,59 @@ def find_violations(edges, rules):
     return violations
 
 
+def find_surface_violations(llamadas, surfaces, de_modulo):
+    """Llamadas que entran a un módulo por un símbolo que NO es su superficie.
+
+    `-/->` mira imports entre módulos; esto mira CALLS entre símbolos, que es el
+    nivel al que de verdad se rompe una abstracción: puedes respetar todas las
+    fronteras de import y aun así llamar a la función interna de otro módulo.
+
+    Una llamada DENTRO del propio módulo nunca es violación — la superficie
+    regula la entrada, no el uso interno. Y como toda regla de este fichero, es
+    un hecho porque tú la declaraste (regla 9): sin `::`, esto no comprueba nada.
+    """
+    fuera = []
+    for origen, destino in llamadas:
+        mod_dst = de_modulo.get(destino)
+        if not mod_dst:
+            continue
+        for patron, publicos in surfaces:
+            if not _under(mod_dst, patron):
+                continue
+            mod_src = de_modulo.get(origen, "")
+            if mod_src and _under(mod_src, patron):
+                continue                      # dentro de casa
+            nombre = destino.rsplit(".", 1)[-1]
+            if nombre not in publicos:
+                fuera.append({"caller": origen, "callee": destino,
+                              "module": patron, "public": list(publicos)})
+    return fuera
+
+
+def modulos_sin_regla(nodes, rules, surfaces=()):
+    """Módulos que NINGUNA regla menciona — la cobertura de la ley, no su cumplimiento.
+
+    `unmatched_rules` mira reglas sin realidad (typos, raíz equivocada). Esto mira
+    lo contrario: realidad sin reglas. Importa cuando alguien quiere AUTOMATIZAR
+    sobre el veredicto, porque ahí "cero violaciones" no significa correcto, sino
+    *sin reglas que violar* — el mismo fallo que una lista de permitidos vacía,
+    pero a nivel de arquitectura y con consecuencias peores.
+
+    INFORMA, no bloquea (regla 9): tener zonas sin declarar es normal en un repo
+    vivo. Lo que no es normal es dar por bueno un cambio ahí sin mirarlo.
+    """
+    cubiertos = set()
+    for src, dst in rules:
+        for m in nodes:
+            if _under(m, src) or _under(m, dst):
+                cubiertos.add(m)
+    for patron, _publicos in surfaces:
+        for m in nodes:
+            if _under(m, patron):
+                cubiertos.add(m)
+    return sorted(m for m in nodes if m not in cubiertos)
+
+
 def unmatched_rules(nodes, rules):
     """Reglas cuyo SRC o DST no casa con NINGÚN módulo del grafo.
 
@@ -777,7 +846,7 @@ def overengineering(root, skip=DEFAULT_SKIP, include_nested=False):
 
 
 def analyze(root, skip=DEFAULT_SKIP, since=None, boundaries=None, smells=False,
-            include_nested=False, constructor=None):
+            include_nested=False, constructor=None, informe_simbolos=None):
     """El informe del acoplamiento del proyecto.
 
     Con `since` (ref de git) añade el delta de acoplamiento cíclico NUEVO. Con un
@@ -813,7 +882,17 @@ def analyze(root, skip=DEFAULT_SKIP, since=None, boundaries=None, smells=False,
         boundaries = find_boundaries(root)
     boundaries_info = load_boundaries(root, boundaries)
     rules = boundaries_info["rules"]
+    superficies = boundaries_info.get("surfaces") or []
     violations = find_violations(edges, rules)
+    # La superficie se comprueba sobre CALLS, que vive en el informe de simbolos.
+    # Solo se pide si HAY superficies declaradas: quien no las usa no paga un
+    # segundo analisis del arbol (presupuesto de latencia, regla 2).
+    cruces_superficie = []
+    if superficies and informe_simbolos:
+        de_modulo = {n["qual"]: (n.get("module") or n["qual"])
+                     for n in informe_simbolos.get("nodes", []) if n.get("qual")}
+        llamadas = [(a, b) for a, b, t in informe_simbolos.get("edges", []) if t == "CALLS"]
+        cruces_superficie = find_surface_violations(llamadas, superficies, de_modulo)
     edge_count = sum(len(d) for d in edges.values())
     report = {
         "root": root,
@@ -831,6 +910,9 @@ def analyze(root, skip=DEFAULT_SKIP, since=None, boundaries=None, smells=False,
         "fan_out": fan_out,
         "errors": errors,
         "boundaries": len(rules),
+        "surfaces": len(superficies),
+        "surface_violations": cruces_superficie,
+        "modulos_sin_regla": modulos_sin_regla(nodes, rules, superficies),
         # La ruta CONSULTADA, se hayan encontrado reglas o no. Sin esto, "0 reglas"
         # es un dato inaccionable: no dice donde habria que poner el fichero.
         "boundaries_path": boundaries_info["path"],

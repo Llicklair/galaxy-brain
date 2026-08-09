@@ -1102,6 +1102,10 @@ def cmd_graph(args):
         return 1 if informe["failed"] else 0
 
     root = os.path.abspath(args.path or ".")
+    # El informe de simbolos solo se calcula si HAY superficies declaradas: la
+    # superficie se comprueba sobre CALLS y eso es un segundo analisis del arbol.
+    # Quien no las usa no lo paga (regla 2, presupuesto de latencia).
+    _fronteras = graph.load_boundaries(root, args.boundaries or graph.find_boundaries(root))
     report = graph.analyze(
         root,
         since=args.since,
@@ -1109,6 +1113,7 @@ def cmd_graph(args):
         smells=args.smells,
         include_nested=args.include_nested,
         constructor=_constructor_de_grafo(root),
+        informe_simbolos=_analiza_simbolos(root) if _fronteras.get("surfaces") else None,
     )
     if args.context:
         return _graph_context(report, root, args.if_changed)
@@ -2007,6 +2012,11 @@ def _graph_gate(report):
         or report.get("malformed_boundaries")
         or report.get("unmatched_rules")
     ):
+        return 1
+    # Una superficie publica rota es un HECHO declarado, igual que un cruce de
+    # frontera: alguien entro a un modulo por un simbolo que tu dijiste que no
+    # era la puerta. Bloquea por el mismo motivo y con el mismo derecho.
+    if report.get("surface_violations"):
         return 1
     # El mismo fallo un escalon mas sutil: no hay error que leer, solo cero reglas
     # y un verde. Que no exista NINGUN .gb-boundaries es legitimo (las fronteras
