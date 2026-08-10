@@ -67,6 +67,43 @@ def _json(cmd, cwd):
         return None
 
 
+def _ley_incomprobable(grafo):
+    """Motivos por los que la comprobacion de fronteras NO esta comprobando nada.
+
+    `gb graph --gate` bloquea SIEMPRE ante esto y no lo trata como un cruce: un
+    fichero de reglas ilegible, una linea mal escrita, una regla que no casa con
+    ningun modulo (typo, o el analisis apuntando a otra raiz) o un arbol donde no
+    quedo ni un modulo que mirar. En todos esos casos salen cero violaciones — y
+    el cero significa "no he mirado", no "esta limpio". Es el peor modo de fallo
+    que puede tener una gate, porque el verde se lee como comprobado.
+
+    La escalera no lo miraba, asi que un cambio que rompiese el propio fichero de
+    reglas —o que dejase el analisis apuntando a un arbol vacio— salia ACEPTADO
+    con la ley entera sin aplicar. Tercera media conexion del mismo tipo hallada
+    hoy (9-ago), y por eso ahora se derivan las dos listas del MISMO informe.
+
+    No rechaza: no se puede saber quien rompio la configuracion, y el veredicto
+    honesto ante "no he podido comprobarlo" es ESCALAR.
+    """
+    motivos = []
+    if grafo.get("root_error"):
+        motivos.append("la raiz analizada da error: %s" % grafo["root_error"])
+    elif not grafo.get("modules"):
+        motivos.append("el analisis no encontro ni un modulo que mirar")
+    if grafo.get("boundaries_error"):
+        motivos.append("no se pudo leer el fichero de reglas: %s" % grafo["boundaries_error"])
+    if grafo.get("malformed_boundaries"):
+        motivos.append("regla(s) mal escritas: %s"
+                       % ", ".join(str(r) for r in grafo["malformed_boundaries"][:3]))
+    if grafo.get("unmatched_rules"):
+        motivos.append("regla(s) que no casan con ningun modulo (typo o raiz equivocada): %s"
+                       % ", ".join(str(r) for r in grafo["unmatched_rules"][:3]))
+    if grafo.get("boundaries_elsewhere"):
+        motivos.append("hay otro fichero de reglas que NO se esta aplicando: %s"
+                       % grafo["boundaries_elsewhere"])
+    return motivos
+
+
 def _simbolos_preexistentes(raiz):
     """Los símbolos que YA EXISTÍAN y este cambio ha modificado.
 
@@ -194,7 +231,7 @@ def hechos_del_arbol(worktree, alcance=None, correr_tests=True):
     hechos = {
         "tests_verdes": None, "suite_entera": True, "ciclos_nuevos": [],
         "cruces_frontera": [], "cruces_llamada": [], "cruces_superficie": [],
-        "llamantes_huerfanos": [],
+        "llamantes_huerfanos": [], "ley_incomprobable": [],
         "modulos_tocados": [], "modulos_sin_regla": [], "simbolos_preexistentes": [],
         "criterio_pasa": None, "criterio_detalle": "",
     }
@@ -204,8 +241,13 @@ def hechos_del_arbol(worktree, alcance=None, correr_tests=True):
         hechos["ciclos_nuevos"] = grafo.get("new_cycles") or grafo.get("cycles") or []
         hechos["cruces_frontera"] = grafo.get("violations") or []
         hechos["cruces_llamada"] = grafo.get("call_violations") or []
+        hechos["ley_incomprobable"] = _ley_incomprobable(grafo)
         hechos["cruces_superficie"] = grafo.get("surface_violations") or []
         hechos["modulos_sin_regla"] = grafo.get("modulos_sin_regla") or []
+    else:
+        # Sin informe no hay NADA comprobado, y las listas vacias de arriba se
+        # leerian como "todo limpio". Es el mismo verde mudo, en su version total.
+        hechos["ley_incomprobable"] = ["no se pudo obtener el grafo del arbol"]
 
     seleccion = _json(GB + ["tests", "--worktree", "--json", raiz], worktree)
     if seleccion:
@@ -280,6 +322,15 @@ def decidir(hechos):
 
     # A partir de aqui NO hay ningun fallo demostrado. La pregunta deja de ser
     # "¿esta mal?" y pasa a ser "¿he podido comprobarlo?".
+    #
+    # Y la primera de todas: ¿estaba la ley puesta? Cero cruces sobre un fichero
+    # de reglas roto no es un aprobado — es que no hubo examen, igual que una
+    # lista de permitidos vacia. Va ANTES que todo lo demas porque invalida las
+    # comprobaciones de arriba: son ellas las que salieron vacias.
+    ley = hechos.get("ley_incomprobable") or []
+    if ley:
+        return ESCALAR, ("la ley no se estaba comprobando: %s — sin eso, 'cero cruces' "
+                         "no significa nada" % ley[0])
     if verdes is None:
         return ESCALAR, "no se pudieron correr los tests: sin veredicto que aceptar"
 

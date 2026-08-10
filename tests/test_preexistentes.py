@@ -125,6 +125,52 @@ def test_sin_preexistentes_el_veredicto_sale_limpio():
     assert "ya existian" not in motivo
 
 
+# --- ¿estaba la ley puesta? --------------------------------------------------
+
+
+def test_una_regla_mal_escrita_impide_aceptar():
+    """`gb graph --gate` bloquea SIEMPRE ante una configuracion de reglas rota,
+    porque entonces salen cero cruces y el cero significa "no he mirado". La
+    escalera no lo miraba: un cambio que rompiese el propio fichero de reglas
+    salia ACEPTADO con la ley entera sin aplicar."""
+    v, motivo = escalera.decidir(_hechos(ley_incomprobable=["regla(s) mal escritas: 'a - b'"]))
+
+    assert v == escalera.ESCALAR
+    assert "no se estaba comprobando" in motivo
+
+
+def test_gana_a_la_cobertura_porque_la_invalida():
+    """Si la ley no se aplicaba, decir "esta zona no tiene reglas" sobra: no se
+    sabe si las tenia. El motivo que se da es el que explica los demas."""
+    v, motivo = escalera.decidir(
+        _hechos(ley_incomprobable=["el analisis no encontro ni un modulo que mirar"],
+                modulos_sin_regla=["iva"]))
+
+    assert v == escalera.ESCALAR
+    assert "ni un modulo" in motivo
+
+
+def test_un_cruce_DEMOSTRADO_sigue_ganando():
+    """Orden: primero el fallo demostrado, despues "no he podido comprobarlo".
+    Si a pesar de la configuracion rota se vio un cruce, ese cruce es real."""
+    v, motivo = escalera.decidir(
+        _hechos(ley_incomprobable=["hay otro fichero de reglas que NO se esta aplicando: X"],
+                cruces_frontera=[{"importer": "iva", "imported": "carrito"}]))
+
+    assert v == escalera.RECHAZAR
+
+
+def test_el_informe_limpio_no_inventa_motivos():
+    assert escalera._ley_incomprobable(
+        {"modules": 4, "boundaries_error": None, "malformed_boundaries": [],
+         "unmatched_rules": [], "boundaries_elsewhere": None, "root_error": None}) == []
+
+
+def test_un_arbol_sin_un_solo_modulo_no_comprueba_nada():
+    """Un typo en la ruta del hook y la gate no vuelve a mirar jamas, en verde."""
+    assert escalera._ley_incomprobable({"modules": 0}) != []
+
+
 # --- el fichero NUEVO tambien es un modulo tocado ---------------------------
 
 
