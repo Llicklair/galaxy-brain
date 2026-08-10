@@ -33,6 +33,20 @@ FICHEROS_GLOBALES = ("conftest.py", "pytest.ini", "tox.ini", "setup.cfg", "pypro
 #: precio (SCOPE, criterio de muerte de esta familia).
 MARCAS_OPACAS = ("subprocess", "Popen", "runpy", "os.system", "os.spawn", "multiprocessing")
 
+#: Para el caso INDIRECTO hace falta algo más fino: no basta con lanzar, hay que
+#: lanzar **código nuestro**. `graph._git` lanza `git`, `lenguajes._corre` lanza
+#: `ast-grep` y `cli._abrir` abre un navegador: ninguno de esos hijos ejecuta una
+#: línea de este proyecto, así que no pueden esconder comportamiento. Pero `_git`
+#: lo llama medio repo, y contagiarlo subía los opacos de 26 a 43 de 50 ficheros
+#: (86 % de la suite) hundiendo el ahorro al 14 % sin comprar seguridad ninguna.
+#: Con el filtro, los lanzadores de verdad son 7 de 42 — entre ellos los dos que
+#: causaron el falso verde real, `bootstrap.coverage` y `bootstrap.verify`.
+#:
+#: La asimetría con el caso directo es deliberada: la regla de los ficheros de
+#: test tiene 42/42 sin falsos verdes detrás y no se toca a cambio de ahorro. Ésta
+#: es nueva y se estrecha con la medida delante.
+MARCAS_PROPIO_INTERPRETE = ("sys.executable", "-m galaxybrain")
+
 
 def _sin_licencia_para_estrechar(grafo):
     """Los lenguajes del informe que NO pueden estrechar la seleccion, o "".
@@ -230,6 +244,60 @@ def _ficheros_opacos(root, ficheros):
     return opacos
 
 
+def ficheros_opacos(root, nodes, llamantes, todos):
+    """Los opacos DE VERDAD: los que lanzan, y los que llaman a quien lanza.
+
+    Una sola funcion porque la selecccion y el oraculo tienen que mirar lo mismo:
+    con dos listas paralelas, el banco mide una seleccion que no existe — y este
+    repo ya ha pagado esa factura tres veces.
+    """
+    directos = _ficheros_opacos(root, todos)
+    indirectos = set()
+    for spawner in _simbolos_que_lanzan(root, nodes):
+        alcanzan, truncado = tests_que_alcanzan(nodes, llamantes, {spawner})
+        if truncado:
+            return set(todos)          # ante la duda, todo: la regla de siempre
+        indirectos.update(_ficheros_de(nodes, alcanzan))
+    return directos | indirectos
+
+
+def _simbolos_que_lanzan(root, nodes):
+    """Los simbolos de PRODUCCION que lanzan un subproceso en su cuerpo.
+
+    El detector de arriba grepea el fichero de TEST, y eso solo ve el caso
+    directo. `tests/test_cobertura.py` no tiene ni una marca y aun asi ejercita
+    medio `capture` dentro de procesos hijos: llama a `bootstrap.coverage()`, y
+    es esa funcion de `src` la que lanza. El fichero no salia opaco, la seleccion
+    no lo elegia, y era un falso verde de verdad — el fallo que mata a esta
+    familia. Salio al ensenarle al oraculo a mirar dentro de los subprocesos
+    (11-ago-2026): 0 falsos verdes pasaron a 60, todos por esta via.
+    """
+    lanzan = set()
+    por_fichero = {}
+    for qual, nodo in nodes.items():
+        ruta = nodo.get("file")
+        if nodo.get("kind") not in ("function", "method") or not ruta:
+            continue
+        if qual.startswith("tests."):
+            continue                      # los tests ya los mira `_ficheros_opacos`
+        if ruta not in por_fichero:
+            try:
+                with open(os.path.join(root, ruta.replace("/", os.sep)),
+                          "r", encoding="utf-8-sig", errors="replace") as handle:
+                    por_fichero[ruta] = handle.read().splitlines()
+            except OSError:
+                por_fichero[ruta] = []
+        lineas = por_fichero[ruta]
+        inicio, fin = nodo.get("line"), nodo.get("end")
+        if not (inicio and fin):
+            continue
+        cuerpo = "\n".join(lineas[inicio - 1:fin])
+        if any(marca in cuerpo for marca in MARCAS_OPACAS) and \
+                any(marca in cuerpo for marca in MARCAS_PROPIO_INTERPRETE):
+            lanzan.add(qual)
+    return lanzan
+
+
 def rangos_del_diff(root):
     """Los tramos que el diff sin commitear AÑADE, por fichero.
 
@@ -413,7 +481,7 @@ def analyze(root, rev_range=None, staged=False, worktree=False, skip=None,
 
     alcanzados = _ficheros_de(nodes, tests)
     # Los opacos van siempre: ejercitan el codigo sin dejar arista que seguir.
-    opacos = sorted(_ficheros_opacos(root, todos) - set(alcanzados))
+    opacos = sorted(ficheros_opacos(root, nodes, llamantes, todos) - set(alcanzados))
     report["opacos"] = opacos
     report["tests"] = sorted(set(alcanzados) | set(opacos))
     report["n_tests"] = len(tests)

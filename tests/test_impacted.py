@@ -349,3 +349,68 @@ def test_la_puerta_no_enlaza_funciones_de_otro_modulo(tmp_path):
 
     nodes, llamantes = _puerta(root)
     assert "app.otro.ajeno" not in llamantes.get("app.g._sonda", set())
+
+
+# --- opacidad INDIRECTA: quien llama a quien lanza -----------------------------
+#
+# El detector grepeaba el fichero de TEST y solo veia el caso directo.
+# `tests/test_cobertura.py` no tiene ni una marca de subproceso y aun asi
+# ejercitaba medio `capture` dentro de procesos hijos: llama a
+# `bootstrap.coverage()`, y es esa funcion de src la que lanza. El fichero no
+# salia opaco, la seleccion no lo elegia, y era un falso verde de verdad — el
+# fallo que mata a esta familia. Salio al ensenar al oraculo a mirar dentro de
+# los subprocesos (11-ago-2026): 0 falsos verdes pasaron a 60, todos por aqui.
+
+
+def _proyecto_con_lanzador(tmp_path, arranque):
+    """Un repo donde el test NO lanza nada: llama a una funcion de src que si."""
+    root = tmp_path / "p"
+    (root / "lib").mkdir(parents=True)
+    (root / "tests").mkdir()
+    (root / "lib" / "__init__.py").write_text("", encoding="utf-8")
+    (root / "lib" / "arranca.py").write_text(
+        "import subprocess\n"
+        "import sys\n"
+        "\n"
+        "\n"
+        "def lanza():\n"
+        "    return subprocess.run(%s, capture_output=True)\n" % arranque,
+        encoding="utf-8")
+    (root / "tests" / "__init__.py").write_text("", encoding="utf-8")
+    (root / "tests" / "test_indirecto.py").write_text(
+        "from lib.arranca import lanza\n"
+        "\n"
+        "\n"
+        "def test_indirecto():\n"
+        "    assert lanza() is not None\n",
+        encoding="utf-8")
+    return root
+
+
+def _opacos_de(root):
+    from galaxybrain import symbols
+
+    grafo = symbols.analyze(str(root))
+    nodes = {n["qual"]: n for n in grafo["nodes"]}
+    llamantes = impacted._llamantes(grafo["edges"])
+    todos = impacted._todos_los_ficheros_de_test(nodes)
+    return impacted.ficheros_opacos(str(root), nodes, llamantes, todos)
+
+
+def test_un_test_que_llama_a_quien_lanza_NUESTRO_codigo_es_opaco(tmp_path):
+    """El caso real: el hijo corre nuestro interprete y puede ejercitar
+    cualquier cosa sin dejar arista."""
+    root = _proyecto_con_lanzador(tmp_path, '[sys.executable, "-c", "pass"]')
+    assert "tests/test_indirecto.py" in _opacos_de(root)
+
+
+def test_lanzar_un_binario_AJENO_no_contagia_opacidad(tmp_path):
+    """`graph._git` lanza git, `lenguajes._corre` lanza ast-grep: sus hijos no
+    ejecutan una linea de este proyecto, asi que no pueden esconder nada.
+
+    Sin este filtro la regla se contagiaba por medio repo —`_git` lo llama casi
+    todo— y los opacos subian de 26 a 43 de 50 ficheros, hundiendo el ahorro del
+    30% al 14% SIN comprar seguridad ninguna. Medido el 11-ago-2026.
+    """
+    root = _proyecto_con_lanzador(tmp_path, '["git", "status"]')
+    assert "tests/test_indirecto.py" not in _opacos_de(root)

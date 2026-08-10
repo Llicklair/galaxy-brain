@@ -27,8 +27,10 @@ la seleccion.
 """
 
 import argparse
+import glob
 import json
 import os
+import shutil
 import subprocess
 import sys
 
@@ -39,17 +41,71 @@ DATOS = os.path.join(RAIZ, ".oraculo.cov")
 INI = os.path.join(RAIZ, ".oraculo.ini")
 HUELLA = os.path.join(RAIZ, ".oraculo.huella")
 
+#: La config base de coverage. El plugin la reescribe anadiendo `context = <test>`
+#: antes de cada test, asi que tiene que estar en UN sitio: dos copias que se
+#: desincronicen darian una captura con `source` distinto en padre e hijo, y eso
+#: se traduce en ficheros medidos en uno y no en el otro sin que nada avise.
+_BASE_INI = "[run]\ndynamic_context = test_function\nsource = src\nparallel = true\n"
+
 
 def correr_suite():
-    """La suite entera bajo coverage, con un contexto por funcion de test."""
+    """La suite entera bajo coverage, con un contexto por funcion de test.
+
+    **Mide tambien DENTRO de los subprocesos**, y eso no es un extra: 26 de los
+    50 ficheros de test de este repo lanzan uno, o sea el 52% de la suite. Sin
+    esto, la "verdad de ejecucion" de justo esa mitad era la del proceso padre y
+    nada mas — el instrumento estaba ciego precisamente en la region que mas
+    cuesta, y cualquier medida sobre ella habria salido optimista sin avisar.
+
+    El enganche es un `sitecustomize.py` en un temporal metido por `PYTHONPATH`:
+    Python lo importa al arrancar CUALQUIER proceso, asi que el hijo empieza a
+    grabar solo. Se hace asi y no escribiendo un `.pth` en site-packages porque
+    un banco no toca la instalacion del usuario (regla 7). `--parallel-mode` da
+    un fichero por proceso y `combine` los junta.
+    """
     with open(INI, "w", encoding="utf-8") as fh:
-        fh.write("[run]\ndynamic_context = test_function\nsource = src\n")
-    print("corriendo la suite bajo coverage (tarda mas que la suite sola)...", flush=True)
+        fh.write(_BASE_INI)
+    enganche = os.path.join(RAIZ, ".oraculo_enganche")
+    os.makedirs(enganche, exist_ok=True)
+    with open(os.path.join(enganche, "sitecustomize.py"), "w", encoding="utf-8") as fh:
+        fh.write("import coverage\ncoverage.process_startup()\n")
+    # El hijo se mide, pero SIN SABER que test lo lanzo: sus lineas llegaban con
+    # contexto vacio y el contraste las tiraba — o sea que medirlo no habria
+    # servido de nada y el numero habria salido igual de ciego, sin avisar.
+    # `COVERAGE_CONTEXT` no lo lee esta version (probado); lo que si lee el hijo
+    # al arrancar es el RCFILE, asi que el padre le escribe ahi el contexto antes
+    # de cada test y el hijo nace ya etiquetado. Vale porque los tests corren en
+    # serie; con `-n` habria que revisarlo, y por eso se dice.
+    with open(os.path.join(enganche, "plugin_ctx.py"), "w", encoding="utf-8") as fh:
+        fh.write(
+            "import os\n\n"
+            "INI = os.environ['COVERAGE_PROCESS_START']\n"
+            "BASE = %r\n\n"
+            "def pytest_runtest_setup(item):\n"
+            "    with open(INI, 'w', encoding='utf-8') as fh:\n"
+            "        fh.write(BASE + 'context = %%s\\n' %% item.nodeid.replace('\\n', ' '))\n"
+            % _BASE_INI)
+
+    entorno = dict(os.environ)
+    entorno["COVERAGE_PROCESS_START"] = INI
+    entorno["COVERAGE_FILE"] = DATOS
+    previo = entorno.get("PYTHONPATH")
+    entorno["PYTHONPATH"] = enganche + (os.pathsep + previo if previo else "")
+
+    for viejo in glob.glob(DATOS + ".*"):
+        os.remove(viejo)      # restos de una tirada anterior falsearian el combine
+    print("corriendo la suite bajo coverage, subprocesos incluidos "
+          "(tarda mas que la suite sola)...", flush=True)
     rc = subprocess.call(
         [sys.executable, "-m", "coverage", "run", "--rcfile", INI,
-         "--data-file", DATOS, "-m", "pytest", "tests/", "-q"],
-        cwd=RAIZ)
+         "--data-file", DATOS, "-m", "pytest", "tests/", "-q", "-p", "plugin_ctx"],
+        cwd=RAIZ, env=entorno)
     print("pytest devolvio %d" % rc)
+    trozos = glob.glob(DATOS + ".*")
+    print("juntando %d fichero(s) de cobertura (uno por proceso)..." % len(trozos), flush=True)
+    subprocess.call([sys.executable, "-m", "coverage", "combine", "--rcfile", INI,
+                     "--data-file", DATOS], cwd=RAIZ, env=entorno)
+    shutil.rmtree(enganche, ignore_errors=True)
     with open(HUELLA, "w", encoding="utf-8") as fh:
         fh.write(_huella_src())
     return rc
@@ -96,6 +152,27 @@ def _mapa_de_tests(nodes):
     return mapa
 
 
+def _casa_contexto(ctx, mapa):
+    """El contexto de coverage al qual del test, venga del padre o del HIJO.
+
+    Son dos formatos distintos y hay que entender los dos, o la mitad que se
+    acaba de ganar se tiraria en silencio — que es el modo de fallo caro: el
+    numero sale, mas bajo, y nada dice que falta media medida.
+
+      padre (dynamic_context): `test_actividad.test_algo`
+      hijo  (context del ini): `tests/test_actividad.py::test_algo[param]`
+    """
+    if not ctx:
+        return None                                # ejecutado fuera de un test
+    if "::" in ctx:
+        fichero, _, funcion = ctx.partition("::")
+        base = os.path.splitext(os.path.basename(fichero))[0]
+        funcion = funcion.split("[")[0]            # fuera la parametrizacion
+        return mapa.get((base, funcion))
+    partes = ctx.split(".")
+    return mapa.get((partes[-2], partes[-1])) if len(partes) >= 2 else None
+
+
 def _verdad_por_simbolo(nodes, mapa):
     """simbolo -> {quals de test que EJECUTARON alguna de sus lineas}."""
     import coverage
@@ -124,10 +201,7 @@ def _verdad_por_simbolo(nodes, mapa):
         tests = set()
         for linea in range(inicio, fin + 1):
             for ctx in contextos.get(linea, ()):
-                if not ctx:
-                    continue                       # ejecutado fuera de un test
-                partes = ctx.split(".")
-                casado = mapa.get((partes[-2], partes[-1])) if len(partes) >= 2 else None
+                casado = _casa_contexto(ctx, mapa)
                 if casado:
                     tests.add(casado)
         if tests:
@@ -193,7 +267,7 @@ def contrastar():
     impacted._enlaza_pasados_como_valor(nodes, llamantes,
                                         grafo.get("nombrado_como_valor_en"))
     todos = impacted._todos_los_ficheros_de_test(nodes)
-    opacos = impacted._ficheros_opacos(RAIZ, todos)
+    opacos = impacted.ficheros_opacos(RAIZ, nodes, llamantes, todos)
 
     mapa = _mapa_de_tests(nodes)
     verdad = _verdad_por_simbolo(nodes, mapa)
