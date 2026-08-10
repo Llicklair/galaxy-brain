@@ -31,7 +31,7 @@ which is why it can be instant and cannot fail in expensive ways.
 orchestration. The graph here is a graph <b>of your code</b> — modules, symbols, call edges, parsed
 from the AST.</sub>
 
-<sub>v0.5.0 · 750 tests · 12.5k LOC source / 10.9k LOC tests · clean gate · ruff · Python ≥ 3.9 · zero runtime dependencies (<code>ast-grep</code> optional, only for non-Python graphs) · CLI output is in Spanish today</sub>
+<sub>v0.6.0 · 842 tests · 13.3k LOC source / 11.9k LOC tests · clean gate · ruff · Python ≥ 3.9 · zero runtime dependencies (<code>ast-grep</code> optional, only for non-Python graphs) · CLI output is in Spanish today</sub>
 
 ---
 
@@ -442,6 +442,11 @@ It reports what a diff did to the tests, to coupling, and to the blast wave of t
 touched. Its whole output is advisory. The one thing in this area that *can* stop a commit lives in
 `graph --gate`, and only for two facts: a **new** import cycle, or a crossing of a boundary you
 declared in `.gb-boundaries`.
+
+A crossing is checked on **both** ways of depending on a module — importing it and calling into
+it. `A -/-> B` promises "A does not depend on B", and there are languages where you reach another
+module without importing it: `crate::b::f()` in Rust, or the same package in Java, C# and Kotlin.
+Checking only imports left that door open, and a real agent walked through it.
 
 ### Which tests to run for what changed
 
