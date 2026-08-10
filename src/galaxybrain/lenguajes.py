@@ -155,6 +155,17 @@ LENGUAJES = {
         ("use $SRC;",),
         llamada=LLAMADA_RUST, resolucion="paquete",
         dirs_test=("tests",),
+        # SIN licencia, y con la prueba de por que — medido el 10-ago-2026. Con
+        # `tia=True` el banco da 0/7 y 64% de ahorro, que parece licencia
+        # ganada, y NO lo es: la cascada esta rota en `informe.linea ->
+        # factura.emitir` (`format!("TOTAL {}", emitir(xs))`, la llamada no es
+        # el primer argumento del macro). Rompiendo `iva` el test de `informe`
+        # falla y la seleccion no lo elige; el banco sale verde solo porque
+        # OTROS tests ya salian rojos. Un 0/7 que pasa por suerte de que fichero
+        # cayo no demuestra nada, y esta familia se mata con un falso verde.
+        # Anadir `$M!($A, $FN($$$))` NO lo arregla: ast-grep casa ese patron y
+        # captura `$FN` (verificado con --json), pero gb sigue sin emitir la
+        # arista, asi que el hueco esta en la EXTRACCION, no en la tabla.
         carencias=("las llamadas dentro de un macro solo se ven en las formas "
                    "`m!(f(..))` y `m!(f(..), ..)`: el cuerpo de un macro es un arbol de "
                    "tokens, no una expresion, asi que `assert!(f() > 0)` es invisible",),

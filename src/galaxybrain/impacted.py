@@ -108,6 +108,56 @@ def _enlaza_dunders(nodes, llamantes):
             llamantes.setdefault(qual, set()).add(duenio)
 
 
+def _enlaza_pasados_como_valor(nodes, llamantes, nombrado_en):
+    """Quien NOMBRA una funcion puede invocarla: el cuerpo entra como llamante.
+
+    `graph_p.set_defaults(func=cmd_graph)` no deja arista — la invocacion real es
+    `args.func(args)` sobre una variable. La puerta que ya habia protegia el caso
+    "cambio el simbolo opaco": entonces se corre todo. Pero NO protegia el caso
+    de al lado, que resulto ser el unico que fallaba: que el camino desde el
+    simbolo cambiado hasta su test PASE por un enlace opaco. Ahi la cadena de
+    llamantes se cortaba en seco y los tests del otro lado se perdian en
+    silencio, que es el falso verde exacto que este modulo existe para evitar.
+
+    Medido con los dos oraculos el 10-ago-2026: **93 de 93** falsos verdes
+    trazaban a este eslabon, y el ejemplo era siempre el mismo despacho de
+    argparse en `cli.main`. Media conexion, la quinta de esta familia: una puerta
+    que cubre una de las dos mitades se lee como verde.
+
+    Esto sobre-aproxima —el cuerpo que nombra a `f` quiza no la llame nunca— y
+    por eso vive AQUI y no en el grafo: la seleccion puede ponerse en lo seguro,
+    el grafo no puede decir algo que no sea un hecho.
+    """
+    por_modulo = {}
+    for qual, cuerpos in (nombrado_en or {}).items():
+        if qual not in nodes:
+            continue
+        for cuerpo in cuerpos:
+            if not cuerpo.endswith(".<modulo>"):
+                if cuerpo in nodes and cuerpo != qual:
+                    llamantes.setdefault(qual, set()).add(cuerpo)
+                continue
+            # `SONDAS = (..., _sonda_cruce)` a nivel de módulo. El cuerpo del
+            # módulo no es un nodo y no tiene llamantes, así que enlazarlo no
+            # lleva a ningún test: la cadena muere igual que sin puerta. Quien
+            # consume el registro no está escrito en ninguna parte que el AST
+            # pueda seguir, pero SÍ se sabe una cosa cierta y acotada: está en
+            # este módulo o le llega desde él. Se enlazan las funciones del
+            # módulo, que es la sobre-aproximación más estrecha que cierra el
+            # caso — y era el resto exacto tras el primer arreglo: 22 falsos
+            # verdes, todos `graph.*`, todos por `self_test` y su tabla de sondas.
+            modulo = cuerpo[: -len(".<modulo>")]
+            if modulo not in por_modulo:
+                por_modulo[modulo] = [
+                    q for q, n in nodes.items()
+                    if n.get("kind") in ("function", "method")
+                    and q.rsplit(".", 1)[0].startswith(modulo)
+                ]
+            for vecino in por_modulo[modulo]:
+                if vecino != qual:
+                    llamantes.setdefault(qual, set()).add(vecino)
+
+
 def tests_que_alcanzan(nodes, llamantes, semillas, max_depth=8):
     """Cierre transitivo de llamantes desde `semillas` hasta los tests.
 
@@ -347,6 +397,7 @@ def analyze(root, rev_range=None, staged=False, worktree=False, skip=None,
 
     llamantes = _llamantes(grafo["edges"])
     _enlaza_dunders(nodes, llamantes)
+    _enlaza_pasados_como_valor(nodes, llamantes, grafo.get("nombrado_como_valor_en"))
     tests, truncado = tests_que_alcanzan(nodes, llamantes, semillas)
     if truncado:
         return correr_todo("el cierre de llamantes no termino (¿ciclo de llamadas?): todo")

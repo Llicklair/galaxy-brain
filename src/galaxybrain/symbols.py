@@ -276,7 +276,7 @@ def _resolver_llamada(node, modulo, clase, tabla_global, modulos):
 
 
 def _llamadas_en(cuerpo, origen, modulo, clase, tabla_global, modulos, aristas, motivos,
-                 como_valor=None):
+                 como_valor=None, nombrado_en=None):
     llamados = set()
     for node in ast.walk(cuerpo):
         if not isinstance(node, ast.Call):
@@ -290,6 +290,8 @@ def _llamadas_en(cuerpo, origen, modulo, clase, tabla_global, modulos, aristas, 
 
     if como_valor is None:
         return
+    if nombrado_en is None:
+        nombrado_en = {}
     # Un simbolo NOMBRADO sin llamarlo se esta pasando como valor: a un
     # parametro, a un registro, a un decorador. Desde ahi lo invoca alguien a
     # quien el AST no puede seguir — la llamada acaba siendo `f(...)` sobre una
@@ -313,6 +315,13 @@ def _llamadas_en(cuerpo, origen, modulo, clase, tabla_global, modulos, aristas, 
             # ensuciaria el hecho hasta volverlo inservible.
             if destino and tabla_global.get(destino, {}).get("kind") in ("function", "method"):
                 como_valor.add(destino)
+                # DONDE se nombró, no solo QUE se nombró. La diferencia es todo:
+                # `set_defaults(func=cmd_graph)` dice que quien tenga esa tabla
+                # delante puede invocar `cmd_graph`, y ese alguien está escrito
+                # aquí, en `origen`. Sin este dato la cadena de llamantes se
+                # corta en seco y los tests que llegan por ahí se pierden — eran
+                # el 93 de 93 de los falsos verdes medidos el 10-ago-2026.
+                nombrado_en.setdefault(destino, set()).add(origen)
 
 
 class _ComoFuncion:
@@ -393,6 +402,7 @@ def analyze(root, skip=DEFAULT_SKIP, include_nested=False, since=None):
     aristas = set()
     motivos = {}
     como_valor = set()
+    nombrado_en = {}
     for mod, info in modulos.items():
         for qual in info["functions"].values():
             aristas.add((mod, qual, "DEFINES"))
@@ -408,18 +418,18 @@ def analyze(root, skip=DEFAULT_SKIP, include_nested=False, since=None):
         # Llamadas dentro de funciones sueltas y dentro de metodos.
         for node in _def_nodes(info["tree"].body):
             _llamadas_en(node, info["functions"][node.name], info, None, tabla, modulos,
-                         aristas, motivos, como_valor)
+                         aristas, motivos, como_valor, nombrado_en)
         for nombre, origen_clase in info["classes"].items():
             for m in _def_nodes(
                 next(c for c in info["tree"].body
                      if isinstance(c, ast.ClassDef) and c.name == nombre).body
             ):
                 _llamadas_en(m, origen_clase["methods"][m.name], info, origen_clase,
-                             tabla, modulos, aristas, motivos, como_valor)
+                             tabla, modulos, aristas, motivos, como_valor, nombrado_en)
         # Fuera de toda funcion: `TABLA = {"x": handler}` a nivel de modulo es
         # exactamente el mismo caso y es donde viven los registros.
         _llamadas_en(info["tree"], "%s.<modulo>" % info["module"], info, None, tabla,
-                     modulos, set(), {}, como_valor)
+                     modulos, set(), {}, como_valor, nombrado_en)
 
     resueltas = len([a for a in aristas if a[2] == "CALLS"])
     builtins_vistos = motivos.pop("builtin", 0)
@@ -430,6 +440,11 @@ def analyze(root, skip=DEFAULT_SKIP, include_nested=False, since=None):
     # invoca de verdad no deja arista. La seleccion de tests lo trata como
     # opaco y corre todo, igual que con los subprocesos.
     report["usados_como_valor"] = sorted(como_valor)
+    # Y dónde se nombró cada uno. Es un hecho sintáctico —el `Name` está escrito
+    # en ese cuerpo— y por eso vive en el grafo; lo que se HACE con él (tratar a
+    # ese cuerpo como posible invocador) es sobre-aproximar, y eso vive en la
+    # selección, igual que `_enlaza_dunders`. El grafo dice hechos.
+    report["nombrado_como_valor_en"] = {k: sorted(v) for k, v in sorted(nombrado_en.items())}
     report["calls_resolved"] = resueltas
     report["calls_builtin"] = builtins_vistos
     report["calls_total"] = resueltas + sin_resolver + builtins_vistos

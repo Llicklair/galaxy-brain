@@ -27,6 +27,7 @@ la seleccion.
 """
 
 import argparse
+import json
 import os
 import subprocess
 import sys
@@ -36,6 +37,7 @@ sys.path.insert(0, os.path.join(RAIZ, "src"))
 
 DATOS = os.path.join(RAIZ, ".oraculo.cov")
 INI = os.path.join(RAIZ, ".oraculo.ini")
+HUELLA = os.path.join(RAIZ, ".oraculo.huella")
 
 
 def correr_suite():
@@ -48,7 +50,30 @@ def correr_suite():
          "--data-file", DATOS, "-m", "pytest", "tests/", "-q"],
         cwd=RAIZ)
     print("pytest devolvio %d" % rc)
+    with open(HUELLA, "w", encoding="utf-8") as fh:
+        fh.write(_huella_src())
     return rc
+
+
+def _huella_src():
+    """Hash de `src`, que es lo que la cobertura anota por (fichero, LINEA).
+
+    Mismo motivo y misma lección que en `oraculo_aristas.py`: si `src` cambia
+    entre la captura y el contraste, las líneas se desplazan y los contextos
+    caen dentro de otro símbolo. El informe sigue saliendo, con otro número, y
+    nada avisa. Aquí faltaba, y se puso el día en que un arreglo de `symbols.py`
+    invalidó en silencio una tirada que ya estaba en disco.
+    """
+    import hashlib
+
+    h = hashlib.sha256()
+    base = os.path.join(RAIZ, "src", "galaxybrain")
+    for nombre in sorted(os.listdir(base)):
+        if nombre.endswith(".py"):
+            with open(os.path.join(base, nombre), "rb") as fh:
+                h.update(nombre.encode())
+                h.update(fh.read())
+    return h.hexdigest()
 
 
 def _mapa_de_tests(nodes):
@@ -110,17 +135,63 @@ def _verdad_por_simbolo(nodes, mapa):
     return verdad
 
 
+def _puerta_que_falla(qual, perdidos, nodes, real, estaticas, por_valor):
+    """Que PUERTA de la seleccion dejo escapar este falso verde.
+
+    El grafo acierta el 96% de las aristas (oraculo_aristas, 10-ago-2026) y aun
+    asi la seleccion pierde el 27%: el eslabon debil esta rio abajo del grafo, en
+    las puertas que sobre-aproximan. Esto las nombra en vez de suponerlas.
+
+    Se sube por el camino REAL —el que registro el perfilador— desde el simbolo
+    hasta un test de un fichero perdido, y se devuelve el primer eslabon que el
+    grafo no tiene, clasificado por la puerta a la que le tocaba cubrirlo.
+    """
+    objetivo = set(perdidos)
+    visto, cola = set(), [(qual, [qual])]
+    while cola:
+        q, camino = cola.pop(0)
+        if q in visto or len(camino) > 8:
+            continue
+        visto.add(q)
+        for llamante in real.get(q, ()):
+            ruta = nodes.get(llamante, {}).get("file")
+            nuevo = [llamante] + camino
+            if ruta and ruta.replace("\\", "/") in objetivo:
+                for a, b in zip(nuevo, nuevo[1:]):
+                    if (a, b) in estaticas:
+                        continue
+                    corto = b.rsplit(".", 1)[-1]
+                    if corto.startswith("__") and corto.endswith("__"):
+                        return "dunder: _enlaza_dunders no llego", (a, b)
+                    if b in por_valor:
+                        return "valor: la puerta de opacos no llego", (a, b)
+                    return "sin puerta: arista que el grafo no ve", (a, b)
+                return "el camino existe entero: falla el CIERRE, no una arista", None
+            cola.append((llamante, nuevo))
+    return "sin camino real hasta el fichero perdido", None
+
+
 def contrastar():
     from galaxybrain import impacted, symbols
 
     if not os.path.exists(DATOS):
         print("no hay datos de coverage: corre primero con --correr")
         return 2
+    guardada = ""
+    if os.path.exists(HUELLA):
+        with open(HUELLA, encoding="utf-8") as fh:
+            guardada = fh.read().strip()
+    if guardada != _huella_src():
+        print("los datos de coverage son de OTRO src: las lineas ya no casan. "
+              "Vuelve a correr con --correr.")
+        return 2
 
     grafo = symbols.analyze(RAIZ)
     nodes = {n["qual"]: n for n in grafo["nodes"]}
     llamantes = impacted._llamantes(grafo["edges"])
     impacted._enlaza_dunders(nodes, llamantes)
+    impacted._enlaza_pasados_como_valor(nodes, llamantes,
+                                        grafo.get("nombrado_como_valor_en"))
     todos = impacted._todos_los_ficheros_de_test(nodes)
     opacos = impacted._ficheros_opacos(RAIZ, todos)
 
@@ -169,7 +240,54 @@ def contrastar():
             print("  %-58s %d/%d perdidos" % (qual, len(perdidos), n))
             for f in perdidos[:3]:
                 print("      %s" % f)
+    if fallos:
+        _por_que(fallos, nodes, grafo, por_valor)
     return 1 if fallos else 0
+
+
+def _por_que(fallos, nodes, grafo, por_valor):
+    """La atribucion por puerta. Degrada en silencio si no hay datos de aristas."""
+    datos = os.path.join(RAIZ, ".oraculo_aristas.json")
+    if not os.path.exists(datos):
+        print("\n(sin datos del oraculo de aristas: corre "
+              "`python bancos/oraculo_aristas.py --correr` para saber POR QUE)")
+        return
+    sys.path.insert(0, os.path.join(RAIZ, "bancos"))
+    import importlib.util as iu
+
+    spec = iu.spec_from_file_location(
+        "_ora_aristas", os.path.join(RAIZ, "bancos", "oraculo_aristas.py"))
+    ora = iu.module_from_spec(spec)
+    spec.loader.exec_module(ora)
+
+    with open(datos, encoding="utf-8") as fh:
+        guardado = json.load(fh)
+    if guardado.get("huella") != ora._huella(guardado.get("ficheros") or []):
+        print("\n(los datos de aristas son de otro arbol: no se atribuye nada)")
+        return
+
+    idx = ora._indice_por_fichero(nodes)
+    estaticas = {(a, b) for a, b, t in grafo["edges"] if t == "CALLS"}
+    real = {}
+    for pf, pl, hf, hl in guardado["pares"]:
+        llamante, _ = ora._localiza(idx, pf, pl)
+        llamado, _ = ora._localiza(idx, hf, hl, exacto=True)
+        if llamante and llamado and llamante != llamado:
+            real.setdefault(llamado, set()).add(llamante)
+
+    cuenta, ejemplos = {}, {}
+    for qual, perdidos, _n in fallos:
+        causa, par = _puerta_que_falla(qual, perdidos, nodes, real, estaticas, por_valor)
+        cuenta[causa] = cuenta.get(causa, 0) + 1
+        ejemplos.setdefault(causa, (qual, par))
+
+    print("\n=== POR QUE FALLA CADA UNO (la puerta, no el grafo) ===")
+    for causa, n in sorted(cuenta.items(), key=lambda x: -x[1]):
+        print("  %3d  %s" % (n, causa))
+        qual, par = ejemplos[causa]
+        print("       ej: %s" % qual)
+        if par:
+            print("           eslabon roto: %s -> %s" % par)
 
 
 if __name__ == "__main__":

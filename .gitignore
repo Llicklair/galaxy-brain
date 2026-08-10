@@ -36,6 +36,8 @@ bancos/bench-*/
 bancos/spike-*/
 bancos/cc/
 
-# datos del oraculo de cobertura (se regeneran corriendo la suite)
+# datos de los oraculos (se regeneran corriendo la suite)
 .oraculo.cov*
 .oraculo.ini
+.oraculo.huella
+.oraculo_aristas.json

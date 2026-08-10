@@ -264,3 +264,88 @@ def test_la_seleccion_usa_rutas_que_pytest_entiende(repo):
     for ruta in report["tests"]:
         assert "\\" not in ruta, "las rutas van con / para que pytest las coma en Windows"
         assert os.path.exists(os.path.join(str(repo), ruta))
+
+
+# --- la puerta de los pasados como VALOR -------------------------------------
+#
+# Medida el 10-ago-2026 con los dos oraculos: 93 de 93 falsos verdes trazaban
+# aqui. No es que el grafo perdiera la arista — es que la cadena de LLAMANTES se
+# cortaba al llegar a un simbolo que alguien pasa como valor, y los tests del
+# otro lado se perdian en silencio.
+
+
+def _puerta(root):
+    """llamantes ya enlazados, tal como los arma `impacted.analyze`."""
+    from galaxybrain import symbols
+
+    grafo = symbols.analyze(str(root))
+    nodes = {n["qual"]: n for n in grafo["nodes"]}
+    llamantes = impacted._llamantes(grafo["edges"])
+    impacted._enlaza_pasados_como_valor(nodes, llamantes,
+                                        grafo.get("nombrado_como_valor_en"))
+    return nodes, llamantes
+
+
+def test_quien_nombra_una_funcion_entra_como_llamante(tmp_path):
+    """`p.set_defaults(func=cmd)`: la invocacion real es `args.func(...)`."""
+    root = tmp_path / "p"
+    (root / "app").mkdir(parents=True)
+    (root / "app" / "__init__.py").write_text("", encoding="utf-8")
+    (root / "app" / "cli.py").write_text(
+        "def cmd_ver(args):\n"
+        "    return 1\n"
+        "\n"
+        "\n"
+        "def main():\n"
+        "    tabla = {'ver': cmd_ver}\n"
+        "    return tabla\n",
+        encoding="utf-8")
+
+    nodes, llamantes = _puerta(root)
+    assert "app.cli.main" in llamantes.get("app.cli.cmd_ver", set())
+
+
+def test_un_registro_a_nivel_de_modulo_enlaza_las_funciones_del_modulo(tmp_path):
+    """`SONDAS = (_sonda,)` fuera de toda funcion: el cuerpo del modulo no es nodo.
+
+    Enlazarlo no llevaria a ningun test —no tiene llamantes— asi que la cadena
+    moriria igual que sin puerta. Era el resto exacto tras el primer arreglo.
+    """
+    root = tmp_path / "p"
+    (root / "app").mkdir(parents=True)
+    (root / "app" / "__init__.py").write_text("", encoding="utf-8")
+    (root / "app" / "g.py").write_text(
+        "def _sonda(x):\n"
+        "    return x\n"
+        "\n"
+        "\n"
+        "def self_test():\n"
+        "    return [s(1) for _n, s in SONDAS]\n"
+        "\n"
+        "\n"
+        "SONDAS = ((_sonda.__name__, _sonda),)\n",
+        encoding="utf-8")
+
+    nodes, llamantes = _puerta(root)
+    assert "app.g.self_test" in llamantes.get("app.g._sonda", set())
+
+
+def test_la_puerta_no_enlaza_funciones_de_otro_modulo(tmp_path):
+    """Sobre-aproximar si; inventar que medio repo llama a esto, no."""
+    root = tmp_path / "p"
+    (root / "app").mkdir(parents=True)
+    (root / "app" / "__init__.py").write_text("", encoding="utf-8")
+    (root / "app" / "g.py").write_text(
+        "def _sonda(x):\n"
+        "    return x\n"
+        "\n"
+        "\n"
+        "SONDAS = (_sonda,)\n",
+        encoding="utf-8")
+    (root / "app" / "otro.py").write_text(
+        "def ajeno():\n"
+        "    return 2\n",
+        encoding="utf-8")
+
+    nodes, llamantes = _puerta(root)
+    assert "app.otro.ajeno" not in llamantes.get("app.g._sonda", set())
