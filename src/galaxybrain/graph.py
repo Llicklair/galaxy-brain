@@ -553,9 +553,40 @@ def load_boundaries(root, path=None):
     rules = []
     surfaces = []
     malformed = []
+    grupos = {}
+    # Una linea que acaba en coma SIGUE en la siguiente. Sin esto un grupo de 15
+    # modulos cabe en una sola linea ilegible, y la legibilidad es justo lo que
+    # el grupo venia a arreglar. Se junta antes de parsear para que el resto del
+    # parser siga viendo una regla por linea.
+    lineas, pendiente = [], ""
     for raw in content.splitlines():
-        line = raw.split("#", 1)[0].strip()
+        trozo = raw.split("#", 1)[0].strip()
+        if pendiente:
+            trozo = pendiente + " " + trozo
+            pendiente = ""
+        if trozo.endswith(","):
+            pendiente = trozo
+            continue
+        lineas.append(trozo)
+    if pendiente:                      # acaba en coma y no sigue nada: se dice
+        lineas.append(pendiente)
+    for line in lineas:
         if not line:
+            continue
+        if "=" in line and "-/->" not in line and "::" not in line:
+            # GRUPO: `NUCLEO = capture, store, graph`. Un nombre para varios
+            # modulos, y nada mas — no es una regla y no comprueba nada por si
+            # solo. Existe porque la ley de ESTE repo eran 45 lineas que decian
+            # UNA cosa ("el nucleo no importa la presentacion"), escritas a mano
+            # como producto cartesiano de 15x3. Con ese coste las fronteras no se
+            # escriben, y un modulo nuevo entra sin regla sin que nadie se entere.
+            nombre, miembros = line.split("=", 1)
+            nombre = nombre.strip()
+            lista = [m.strip() for m in miembros.replace(",", " ").split() if m.strip()]
+            if nombre and lista:
+                grupos[nombre] = lista
+            else:
+                malformed.append(line)
             continue
         if "::" in line and "-/->" not in line:
             # SUPERFICIE PÚBLICA: `MOD :: sim1, sim2` — a MOD solo se entra
@@ -572,13 +603,73 @@ def load_boundaries(root, path=None):
             continue
         parts = [p.strip() for p in line.split("-/->")]
         if len(parts) == 2 and parts[0] and parts[1]:
-            rules.append((parts[0], parts[1]))
+            # Los grupos se EXPANDEN aqui: de este punto hacia abajo todo el
+            # sistema sigue viendo pares de modulos y no hay una segunda
+            # semantica que mantener en dos sitios. Un nombre que no es grupo se
+            # queda como esta, que es lo que permite mezclar las dos formas.
+            for src in grupos.get(parts[0], [parts[0]]):
+                for dst in grupos.get(parts[1], [parts[1]]):
+                    if src != dst:      # un grupo contra si mismo no se acusa
+                        rules.append((src, dst))
         else:
             # Contenido que NO es una regla válida (flecha con typo, dos flechas,
             # un lado vacío): enforced nada. Se avisa en vez de descartarse mudo.
             malformed.append(line)
     return {"rules": rules, "surfaces": surfaces, "malformed": malformed,
             "error": None, "path": path}
+
+
+def proponer_fronteras(report, declaradas=()):
+    """Fronteras CANDIDATAS derivadas del grafo, para pegar en `.gb-boundaries`.
+
+    Responde a la pregunta que deja la página en blanco: *¿cuáles declaro?* No
+    hace falta inventarlas — se **fotografían**. Una frontera que ya estás
+    cruzando no es una frontera, es deuda; las que valen son las que tu código
+    YA cumple y te dolería perder.
+
+    De ahí sale la derivación, que es una sola idea con dos mitades que el grafo
+    ya sabe: el NÚCLEO es lo que importa mucha gente, y la ENTRADA es lo que no
+    importa nadie —la CLI, la vista, el `main`—, o sea el borde del sistema. Que
+    el núcleo dependa del borde es la inversión que duele, y se propone **solo
+    para los pares que hoy NO existen**: proponer algo que ya ocurre sería pedir
+    un commit roto.
+
+    Devuelve el reparto y los pares, no un veredicto. Es una propuesta que firmas
+    tú: una regla inferida por una máquina es una opinión, y las opiniones no
+    bloquean (regla 9). Ese reparto es justo lo que evita el falso positivo.
+    """
+    fan_in = report.get("fan_in") or {}
+    fan_out = report.get("fan_out") or {}
+    modulos = set(fan_in) | set(fan_out)
+    if len(modulos) < 4:
+        return {"nucleo": [], "entrada": [], "pares": [], "motivo":
+                "hacen falta al menos 4 modulos para que la forma signifique algo"}
+
+    # Inestabilidad = cuanto depende de fuera sobre el total de su acoplamiento.
+    # Cerca de 0 lo importa todo el mundo y el no importa a nadie (una base);
+    # cerca de 1 importa mucho y no lo importa nadie (un borde, una entrada). Es
+    # una proporcion, asi que no depende del tamano del repo — un umbral en
+    # numero de imports querria decir cosas distintas en cada proyecto.
+    def inestabilidad(m):
+        dentro, fuera = fan_in.get(m, 0), fan_out.get(m, 0)
+        return fuera / (dentro + fuera) if (dentro + fuera) else None
+
+    inest = {m: inestabilidad(m) for m in modulos}
+    nucleo = sorted(m for m, i in inest.items() if i is not None and i <= 0.25)
+    entradas = sorted(m for m, i in inest.items() if i is not None and i >= 0.75)
+    if not nucleo or not entradas:
+        return {"nucleo": [], "entrada": [], "pares": [], "motivo":
+                "no hay forma de base/borde en este grafo: nada que proponer"}
+
+    existentes = {(a, b) for a, b in (report.get("edge_list") or [])}
+    ya = {(a, b) for a, b in declaradas}
+    pares = []
+    for src in nucleo:
+        for dst in entradas:
+            if src == dst or (src, dst) in existentes:
+                continue          # ya se cruza: eso es deuda, no una frontera
+            pares.append({"src": src, "dst": dst, "ya_declarada": (src, dst) in ya})
+    return {"nucleo": nucleo, "entrada": entradas, "pares": pares, "motivo": ""}
 
 
 def find_boundaries(root, max_depth=2):

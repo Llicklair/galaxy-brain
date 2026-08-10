@@ -1080,6 +1080,50 @@ def cmd_off(args):
     return 0 if ok else 1
 
 
+def _proponer_fronteras(report, fronteras, args):
+    """Candidatas para pegar en `.gb-boundaries`. Propone, nunca escribe.
+
+    El fichero es tuyo y lo firmas tu: una regla que DECLARAS es un hecho, y por
+    eso puede bloquear; una que infiere una maquina es una opinion, y las
+    opiniones no bloquean (regla 9). Escribirlo solo convertiria el gate en
+    opinion enforced, que es la fabrica de falsos positivos.
+    """
+    from . import graph
+
+    p = graph.proponer_fronteras(report, fronteras.get("rules") or ())
+    if args.json:
+        emit(json.dumps(p, ensure_ascii=False, indent=2))
+        return 0
+    st = _style(args)
+    if p["motivo"]:
+        emit(st("sin candidatas: %s" % p["motivo"], "dim"))
+        return 0
+    ya = sum(1 for x in p["pares"] if x["ya_declarada"])
+    emit(st("FRONTERAS CANDIDATAS", "bold")
+         + " - pegalas en .gb-boundaries y borra lo que no")
+    emit("")
+    emit("BASE  = " + ", ".join(p["nucleo"]))
+    emit("BORDE = " + ", ".join(p["entrada"]))
+    emit("BASE -/-> BORDE")
+    emit("")
+    for linea in (
+        "BASE  la importan de dentro y ella casi no importa: es el suelo.",
+        "BORDE importa mucho y no la importa nadie: es la entrada al sistema.",
+        "Son %d pares y NINGUNO existe hoy: se declara lo que tu codigo YA cumple."
+        % len(p["pares"]),
+        "Una frontera que ya cruzas no es una frontera, es deuda.",
+    ):
+        emit(st("  " + linea, "dim"))
+    if ya:
+        emit(st("  %d de esos %d ya los tenias escritos a mano."
+                % (ya, len(p["pares"])), "dim"))
+    emit("")
+    emit(st("  Esto es la FORMA del grafo, no el significado: si un modulo de",
+            "dim"))
+    emit(st("  presentacion resulta ser estable, sale en BASE. Muevelo tu.", "dim"))
+    return 0
+
+
 def cmd_graph(args):
     from . import graph
 
@@ -1120,6 +1164,8 @@ def cmd_graph(args):
                           if (_fronteras.get("surfaces") or _fronteras.get("rules"))
                           else None),
     )
+    if getattr(args, "proponer_fronteras", False):
+        return _proponer_fronteras(report, _fronteras, args)
     if args.context:
         return _graph_context(report, root, args.if_changed)
     if args.html:
@@ -2296,6 +2342,10 @@ def build_parser():
     graph_p.add_argument("--since", metavar="REF", help="comparar con esta ref git; --gate falla solo con ciclos/cruces NUEVOS")
     graph_p.add_argument("--boundaries", metavar="FICHERO", help="reglas de frontera (por defecto .gb-boundaries en la raiz)")
     graph_p.add_argument("--smells", action="store_true", help="proxies de sobreingenieria (ADVISORY, no bloquea)")
+    graph_p.add_argument("--proponer-fronteras", action="store_true",
+                         dest="proponer_fronteras",
+                         help="candidatas para .gb-boundaries derivadas del grafo "
+                              "(propone, no escribe ni bloquea)")
     graph_p.add_argument(
         "--self-test",
         action="store_true",

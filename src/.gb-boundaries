@@ -1,50 +1,22 @@
 # galaxy-brain — invariantes de capas, comprobadas con `gb graph src --gate`.
-# El nucleo (captura, almacen, analisis, hooks, config) no debe importar la
-# presentacion (cli, render). Al reves si: la presentacion se apoya en el nucleo.
+#
+# El NUCLEO (captura, almacen, analisis, hooks, config) no debe importar la
+# PRESENTACION. Al reves si: la presentacion se apoya en el nucleo.
+#
+# Esto eran 45 lineas escritas a mano —el producto cartesiano de 15x3— que decian
+# esta unica frase. Con ese coste las fronteras no se escriben, y sobre todo no se
+# MANTIENEN: cada modulo nuevo entraba sin regla y nadie se enteraba. Ahora entra
+# anadiendo su nombre a la lista de arriba.
+#
 # Los nombres llevan el prefijo galaxybrain.* porque la raiz del analisis es src/
 # (no src/galaxybrain/): asi module_name conserva el paquete.
-galaxybrain.capture   -/->  galaxybrain.cli
-galaxybrain.capture   -/->  galaxybrain.render
-galaxybrain.store     -/->  galaxybrain.cli
-galaxybrain.store     -/->  galaxybrain.render
-galaxybrain.saferepr  -/->  galaxybrain.cli
-galaxybrain.saferepr  -/->  galaxybrain.render
-galaxybrain.graph     -/->  galaxybrain.cli
-galaxybrain.graph     -/->  galaxybrain.render
-galaxybrain.config    -/->  galaxybrain.cli
-galaxybrain.config    -/->  galaxybrain.render
-galaxybrain.hooks     -/->  galaxybrain.cli
-galaxybrain.hooks     -/->  galaxybrain.render
-galaxybrain.changes   -/->  galaxybrain.cli
-galaxybrain.changes   -/->  galaxybrain.render
-galaxybrain.floor     -/->  galaxybrain.cli
-galaxybrain.floor     -/->  galaxybrain.render
-galaxybrain.capture   -/->  galaxybrain.viz
-galaxybrain.store     -/->  galaxybrain.viz
-galaxybrain.saferepr  -/->  galaxybrain.viz
-galaxybrain.graph     -/->  galaxybrain.viz
-galaxybrain.config    -/->  galaxybrain.viz
-galaxybrain.hooks     -/->  galaxybrain.viz
-galaxybrain.changes   -/->  galaxybrain.viz
-galaxybrain.floor     -/->  galaxybrain.viz
-galaxybrain.companions -/->  galaxybrain.cli
-galaxybrain.companions -/->  galaxybrain.render
-galaxybrain.companions -/->  galaxybrain.viz
-galaxybrain.symbols   -/->  galaxybrain.cli
-galaxybrain.symbols   -/->  galaxybrain.render
-galaxybrain.symbols   -/->  galaxybrain.viz
-galaxybrain.memory    -/->  galaxybrain.cli
-galaxybrain.memory    -/->  galaxybrain.render
-galaxybrain.memory    -/->  galaxybrain.viz
-galaxybrain.impacted  -/->  galaxybrain.cli
-galaxybrain.impacted  -/->  galaxybrain.render
-galaxybrain.impacted  -/->  galaxybrain.viz
-galaxybrain.delta     -/->  galaxybrain.cli
-galaxybrain.delta     -/->  galaxybrain.render
-galaxybrain.delta     -/->  galaxybrain.viz
-galaxybrain.aislado   -/->  galaxybrain.cli
-galaxybrain.aislado   -/->  galaxybrain.render
-galaxybrain.aislado   -/->  galaxybrain.viz
-galaxybrain.actividad -/->  galaxybrain.cli
-galaxybrain.actividad -/->  galaxybrain.render
-galaxybrain.actividad -/->  galaxybrain.viz
+
+NUCLEO = galaxybrain.capture, galaxybrain.store, galaxybrain.saferepr,
+         galaxybrain.graph, galaxybrain.config, galaxybrain.hooks,
+         galaxybrain.changes, galaxybrain.floor, galaxybrain.companions,
+         galaxybrain.symbols, galaxybrain.memory, galaxybrain.impacted,
+         galaxybrain.delta, galaxybrain.aislado, galaxybrain.actividad
+
+PRESENTACION = galaxybrain.cli, galaxybrain.render, galaxybrain.viz
+
+NUCLEO -/-> PRESENTACION
