@@ -57,6 +57,10 @@ marcarlo como roto sería acusar a la caída segura. La licencia se lee de `LENG
 
 Los oráculos de abajo existen porque un banco escrito por quien lo mide no puede cerrar esta pregunta.
 
+**Antes de escribir un banco nuevo:** [docs/como-se-rompe-un-instrumento.md](../docs/como-se-rompe-un-instrumento.md).
+De catorce fallos en la sesión del 10–11 de agosto, **once eran del instrumento y tres del producto** —
+y los del instrumento salen todos en verde.
+
 ## Los bancos
 
 | Script | Qué mide | Necesita | Último resultado |
