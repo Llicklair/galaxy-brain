@@ -1,4 +1,10 @@
 {
+  "permissions": {
+    "allow": [
+      "Bash(python -m pytest tests/ -q)",
+      "Bash(gb graph *)"
+    ]
+  },
   "hooks": {
     "SessionStart": [
       {

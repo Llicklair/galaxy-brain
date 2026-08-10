@@ -20,6 +20,12 @@ dependencias del ecosistema.
 Un falso verde no es "menos ahorro": es la gate aprobando con el árbol roto. Es el único criterio de
 muerte de esta familia ([SCOPE.md](../SCOPE.md)).
 
+**Y ese criterio es necesario pero NO suficiente en un banco pequeño.** Medido con Rust el
+10-ago-2026: con seis módulos encadenados, perder un test que sí estaba impactado se tapa con que
+otro caiga rojo — el veredicto sale verde y la cascada está rota igualmente. Al leer un banco hay que
+mirar **cuántos ficheros selecciona cada rotura**, no solo su veredicto. Los oráculos de abajo
+existen porque un banco escrito por quien lo mide no puede cerrar esta pregunta.
+
 ## Los bancos
 
 | Script | Qué mide | Necesita | Último resultado |
@@ -27,10 +33,19 @@ muerte de esta familia ([SCOPE.md](../SCOPE.md)).
 | `bench_js.py` | selección de tests en JS | `node` | **0/7 falsos verdes**, 52 % ahorro, cascada exacta |
 | `bench_go.py` | ídem en Go, **multipaquete** (llamadas cualificadas) | `go` | **0/7**, 52 %, cascada exacta |
 | `bench_csharp.py` | ídem en C#, **métodos + llamadas cualificadas por clase** | `dotnet` + NuGet en caché | **0/7**, 52 %, cascada exacta |
-| `bench_rust.py` | ídem en Rust | `cargo` | **0/7**, pero cascada **incompleta** → sin licencia |
+| `bench_rust.py` | ídem en Rust | `cargo` | **0/7 y 64 % con licencia**, y aun así cascada **rota** → sin licencia |
 | `estres_tia.py` | roturas duras sobre un repo REAL | el runner de ese repo | 22/22 sin falsos verdes |
 | `estres_mutacion.py` | roturas **sutiles** (mutación semántica) | ídem | 0/20 falsos verdes |
-| `oraculo_cobertura.py` | la selección contra la verdad de **ejecución**, sobre ESTE repo | `coverage` | pendiente de su primera tirada |
+| `oraculo_cobertura.py` | la **selección** contra la verdad de ejecución, sobre ESTE repo | `coverage` | **0 falsos verdes** de 332 símbolos, 27 % ahorro |
+| `oraculo_aristas.py` | las **aristas** contra las llamadas que ocurren de verdad | nada (stdlib) | recall 96 %, **0 huecos sin puerta** |
+
+Los dos oráculos son la misma pregunta a dos alturas. El de cobertura dice **qué** se pierde (ficheros
+de test); el de aristas dice **por qué** (la llamada que el AST no vio). El primero dejó 91 falsos
+verdes cuyas dos causas hubo que encontrar leyendo a mano; el segundo automatiza esa lectura.
+
+Ninguno de los dos sale del grafo que juzga, que es la única razón por la que valen: los cinco bancos
+de arriba fabrican la rotura en un repo escrito por quien escribe el banco, y los cinco daban 0/7
+mientras el oráculo encontraba 118 fallos reales.
 
 Los tres primeros generan su propio proyecto y no dependen de nada externo. Los dos últimos reciben
 la ruta de un repo:

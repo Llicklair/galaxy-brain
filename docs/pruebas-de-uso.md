@@ -10,6 +10,109 @@ mismo detalle que los positivos, o más.
 
 ---
 
+## 2026-08-10 · El recall de aristas es 96%, y con eso se cae la explicación de los 91 falsos verdes
+
+Se fue a buscar un grafo de terceros que tapara el hueco que destapó el oráculo de cobertura. **Los
+tres candidatos con mejores números publicados no producen ni una arista sobre este repo**
+([docs/grafos-externos-2026-08-10.md](grafos-externos-2026-08-10.md)): PyCG está archivado y su
+paquete de PyPI ni importa —y con un shim revienta su propio hook de imports sobre los 22 módulos—;
+HeaderGen arrastra ~140 paquetes con tensorflow dentro; Jarvis no publica paquete. *Instalado ≠
+funcional* ya lo teníamos; ahora también **publicado ≠ instalable**.
+
+El pivote salió mejor que el plan: el runtime de Python da el hecho —«esta llamada ocurrió»— con
+`sys.setprofile` y cero dependencias, en vez de la estimación de un estático con 69,9% de recall.
+[bancos/oraculo_aristas.py](../bancos/oraculo_aristas.py).
+
+**El resultado va contra la hipótesis con la que se empezó.** De las 1.518 llamadas que la suite
+ejecuta de verdad, el grafo ve el **96%**. Los 63 huecos se reparten en 28 de despacho implícito y 31
+de paso-como-valor —ambos **ya tienen puerta** río abajo— y **4 sin puerta**. O sea que *las aristas
+que faltan no explican los 91 falsos verdes*: la causa está en otra capa y hay que ir a buscarla, no
+suponerla. Se había dado por hecho lo contrario al planificar.
+
+De los 4, **uno era el instrumento** (un closure de `converge` que se pasa a `_union`; el grafo no
+emite nodo para funciones anidadas y el localizador lo colapsaba en su padre). Los otros 3 tenían una
+sola causa: `from .graph import _git as _git_output` en `changes.py`. gb resolvía el alias dentro del
+módulo pero no al cruzarlo, así que `delta.analyze → changes._git_output` no llegaba a `graph._git`.
+Arreglado en `symbols._reexportado`, y **no roza el ADR 0008**: una sentencia `import ... as` no es
+una conjetura sobre lo que un nombre podría valer en ejecución, dice a qué símbolo apunta. **Quedan
+0 huecos sin puerta** y el grafo pasó de 2.486 a 2.498 aristas.
+
+**Confirmado midiendo, no razonando:** con el arreglo dentro, el oráculo de cobertura da **93 falsos
+verdes de 338 símbolos** (antes 91 de 332) y 40% de ahorro. La tasa no se mueve — 27,4% → 27,5%. El
+arreglo de la re-exportación es real y son 12 aristas nuevas, pero **no es la causa de los falsos
+verdes**, y era la explicación con la que se había planificado el trabajo siguiente.
+
+**Dónde está la causa, subiendo por el camino REAL del perfilador.** Los que se pierden llegan por
+enlaces que el grafo no tiene y que **ya tienen puerta**. O sea que el trabajo pendiente no era añadir
+aristas al grafo: era que **las puertas de la selección son más débiles de lo que se suponía**. Así
+que se midió antes de escribir nada — el oráculo de cobertura pasó a **atribuir cada falso verde a la
+puerta que lo dejó escapar**, subiendo por el camino del perfilador y devolviendo el primer eslabón
+que el grafo no tiene, clasificado. El resultado no fue una lista de casos sueltos:
+
+```
+=== POR QUE FALLA CADA UNO (la puerta, no el grafo) ===
+   93  valor: la puerta de opacos no llego
+       eslabon roto: galaxybrain.cli.main -> galaxybrain.cli.cmd_graph
+```
+
+**93 de 93, una sola causa**, y es la quinta media conexión de esta familia. `set_defaults(func=cmd_graph)`
+es despacho de argparse: no deja arista. La puerta que ya existía cubría *«cambió el símbolo opaco»* —
+entonces se corre todo— pero **no cubría el caso de al lado**, que era el único que fallaba: que el
+camino desde el símbolo cambiado hasta su test **pase por** un enlace opaco. Ahí la cadena de llamantes
+moría en seco y los tests del otro lado se perdían en silencio.
+
+El arreglo va en dos capas, y la separación es el punto: `symbols` registra **dónde** se nombró cada
+símbolo pasado como valor —hecho sintáctico, el `Name` está escrito en ese cuerpo— e
+`impacted._enlaza_pasados_como_valor` trata ese cuerpo como posible invocador, que **sí** es
+sobre-aproximar. El grafo dice hechos; la selección se pone en lo seguro.
+
+**Y el diagnóstico acertó la clase, no el alcance:** dijo 93/93 y el primer arreglo cerró 71. Los 22
+restantes eran la misma puerta en otro sitio — registros a nivel de módulo (`SONDAS = (..., _sonda_cruce)`),
+donde el cuerpo del módulo no es un nodo y por tanto no tiene llamantes, así que enlazarlo no llevaba a
+ningún test y la cadena moría igual que sin puerta. Se enlazan las funciones de ese módulo, que es la
+sobre-aproximación más estrecha que lo cierra.
+
+**Resultado final: 93 → 0 falsos verdes.** Precio: el ahorro medio baja de 40% a 27%. Es la decisión
+correcta por la regla de esta familia —un falso verde la mata, el ahorro no— pero **13 puntos son un
+precio real y se escriben, no se esconden**. Control de regresión: los huecos de arista siguen en 0 y
+el recall en 96%. 858 tests en verde, gate limpio.
+
+---
+
+## 2026-08-10 · Rust: 0/7 y 64% de ahorro, y aun así **sin licencia** — el banco pasaba por suerte
+
+Al ir a conceder la licencia que le faltaba a Rust salió lo contrario de lo buscado, y es el mejor
+resultado del día porque es el que evita un falso verde en producción.
+
+Con `tia=True` el banco da **0 falsos verdes de 7 y 64% de ahorro**. Con eso se firma una licencia
+cualquier día. Pero la cascada está **rota**: falta `informe.linea → factura.emitir`, porque el código
+es `format!("TOTAL {:.2}", emitir(xs))` y la llamada **no es el primer argumento del macro** — los tres
+patrones declarados solo cubren la primera posición. Rompiendo `iva`, el test de `informe` falla de
+verdad y la selección **no lo elige**; el banco sale verde únicamente porque otros tests ya salían
+rojos. **Un 0/7 que pasa por suerte de qué fichero cayó no demuestra nada**, y esta familia se mata con
+un falso verde.
+
+Se intentó arreglar y tampoco: `ast-grep` casa `$M!($A, $FN($$$))` y captura `$FN` —verificado con
+`--json`— pero gb sigue sin emitir la arista. **El hueco está en la extracción, no en la tabla de
+lenguajes.** Revertido todo, con el diagnóstico escrito junto a la entrada de `rust` para quien lo
+retome.
+
+**La lección de método, que vale más que el caso:** el criterio de muerte de esta familia (0 falsos
+verdes) es necesario y **no es suficiente** cuando el banco tiene pocos ficheros de test — con seis
+módulos encadenados, perder un test impactado se tapa con que otro caiga rojo. Un banco así puede
+aprobar con la cascada rota. Hay que mirar la cascada, no solo el veredicto.
+
+**Y el error de método, que costó dos tiradas de tres minutos y es el mismo de siempre.** Los datos se
+anotan por `(fichero, línea)`. Al editar `symbols.py` con datos de la tirada anterior en disco, las
+líneas se desplazaron y el informe salió lleno de huecos inventados **que parecían un hallazgo**. Se
+puso una huella del árbol… **de `src` solamente**, y a la tirada siguiente la misma trampa saltó por
+`tests`: los dos extremos de una arista son nodos, así que mover los tests desplaza al llamante igual
+que mover `src` desplaza al llamado. El hueco «superviviente» estaba, cómo no, en el fichero recién
+editado. Es la cuarta media conexión de esta familia: **una guardia que cubre una de las dos entradas
+se lee como verde**. Ahora la huella cubre el árbol entero y el banco se niega a contrastar si no casa.
+
+---
+
 ## 2026-08-09 · La escalera, medida: **el rechazo mueve al modelo; el aviso no** (6 tiradas)
 
 Tres tandas más sobre los mismos tres repos, ya con los agujeros del gate cerrados. La
