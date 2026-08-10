@@ -1652,11 +1652,40 @@ def cmd_calls(args):
         if parecidos:
             emit("parecidos: %s" % ", ".join(parecidos))
         return 1
+    nombrado_en = report.get("nombrado_como_valor_en") or {}
     for m in resultado["matches"]:
         emit(_linea_simbolo(m["symbol"]))
         _emit_onda("le llaman", m["callers"])
         _emit_onda("llama a", m["callees"])
+        _emit_como_valor(m["symbol"]["qual"], nombrado_en)
     return 0
+
+
+def _emit_como_valor(qual, nombrado_en):
+    """Los sitios que NOMBRAN el simbolo sin llamarlo. Callejon sin salida si no.
+
+    `TARIFAS = {'normal': precio}` y luego `TARIFAS[tarifa](...)`: no hay ninguna
+    llamada escrita, asi que ni el grafo ni un `grep precio(` la encuentran, y
+    quien toque el contrato de `precio` rompe ese sitio sin enterarse.
+
+    El grafo YA lo sabia —`nombrado_como_valor_en`, que es lo que usa la
+    seleccion de tests desde el 10-ago-2026— y `gb calls` no lo decia. Media
+    conexion, y en la peor superficie posible: `gb calls` es justo lo que un
+    agente lee antes de tocar codigo. Salio al montar el experimento de
+    correccion (11-ago-2026): el grafo reportaba 2 de 3 llamantes.
+
+    Va en su propia linea y no mezclado con "le llaman" porque no es lo mismo:
+    ahi hay una llamada escrita y aqui no. Decirlo junto seria fundir un hecho
+    con una advertencia.
+    """
+    sitios = nombrado_en.get(qual) or []
+    if not sitios:
+        return
+    legibles = [s[: -len(".<modulo>")] + " (a nivel de modulo)"
+                if s.endswith(".<modulo>") else s for s in sorted(sitios)]
+    emit("  se pasa como VALOR en (%d): %s" % (len(legibles), " · ".join(legibles[:6])))
+    emit("      quien lo invoca desde ahi no deja llamada escrita: "
+         "si cambias su contrato, mira esos sitios a mano")
 
 
 def _linea_simbolo(ficha):

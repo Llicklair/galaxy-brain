@@ -297,3 +297,28 @@ def test_el_hook_tolera_el_bom_de_powershell(tmp_path, monkeypatch, capsys):
 
     assert cli.main(["calls", "--hook"]) == 0
     assert "lib.ayuda" in capsys.readouterr().out
+
+
+def test_calls_dice_donde_se_pasa_como_VALOR(tmp_path, capsys):
+    """`TARIFAS = {'normal': precio}` y luego `TARIFAS[t](...)`: no hay llamada
+    escrita, asi que ni el grafo ni un `grep precio(` la encuentran.
+
+    El grafo YA lo sabia (`nombrado_como_valor_en`, que usa la seleccion de tests
+    desde el 10-ago-2026) y `gb calls` no lo decia: reportaba 2 de 3 llamantes.
+    Media conexion en la peor superficie, porque `gb calls` es lo que un agente
+    lee antes de tocar codigo. Salio montando el experimento de correccion.
+    """
+    (tmp_path / "lib").mkdir()
+    (tmp_path / "lib" / "__init__.py").write_text("", encoding="utf-8")
+    (tmp_path / "lib" / "precio.py").write_text(
+        "def precio(x):\n    return 1\n", encoding="utf-8")
+    (tmp_path / "lib" / "tarifas.py").write_text(
+        "from lib.precio import precio\n\n"
+        "TARIFAS = {'normal': precio}\n\n\n"
+        "def aplicar(x):\n"
+        "    return TARIFAS['normal'](x)\n", encoding="utf-8")
+
+    assert cli.main(["calls", "lib.precio.precio", str(tmp_path)]) == 0
+    salida = capsys.readouterr().out
+    assert "se pasa como VALOR" in salida
+    assert "lib.tarifas" in salida
