@@ -238,15 +238,53 @@ def _resolver_llamada(node, modulo, clase, tabla_global, modulos):
     return None, "expresion-dinamica"
 
 
-def _llamadas_en(cuerpo, origen, modulo, clase, tabla_global, modulos, aristas, motivos):
+def _llamadas_en(cuerpo, origen, modulo, clase, tabla_global, modulos, aristas, motivos,
+                 como_valor=None):
+    llamados = set()
     for node in ast.walk(cuerpo):
         if not isinstance(node, ast.Call):
             continue
+        llamados.add(id(node.func))
         destino, motivo = _resolver_llamada(node, modulo, clase, tabla_global, modulos)
         if destino and destino != origen:
             aristas.add((origen, destino, "CALLS"))
         elif motivo:
             motivos[motivo] = motivos.get(motivo, 0) + 1
+
+    if como_valor is None:
+        return
+    # Un simbolo NOMBRADO sin llamarlo se esta pasando como valor: a un
+    # parametro, a un registro, a un decorador. Desde ahi lo invoca alguien a
+    # quien el AST no puede seguir — la llamada acaba siendo `f(...)` sobre una
+    # variable, y ahi no hay nada que resolver (ADR 0008: no se adivina).
+    #
+    # No es un caso raro ni ajeno: gb lo hace en su propio nucleo
+    # (`(constructor or build_graph)(root, ...)`), y lo hace cualquier codigo con
+    # callbacks, estrategias o inyeccion. Lo destapo el oraculo de cobertura el
+    # 10-ago-2026 sobre este mismo repo: 118 de 334 simbolos tenian tests que los
+    # EJECUTABAN y la seleccion no elegia, y los cinco bancos escritos a mano
+    # habian dado 0/7 porque ninguno usaba ese patron.
+    for node in ast.walk(cuerpo):
+        if isinstance(node, (ast.Name, ast.Attribute)) and id(node) not in llamados:
+            if not isinstance(getattr(node, "ctx", None), ast.Load):
+                continue
+            destino, _ = _resolver_llamada(_ComoFuncion(node), modulo, clase,
+                                           tabla_global, modulos)
+            # Solo funciones y metodos. En `modulo.funcion()` el AST tambien
+            # visita el `modulo` de la izquierda, y en `Clase.metodo()` la clase:
+            # ninguno de los dos se esta pasando a ningun sitio, y contarlos
+            # ensuciaria el hecho hasta volverlo inservible.
+            if destino and tabla_global.get(destino, {}).get("kind") in ("function", "method"):
+                como_valor.add(destino)
+
+
+class _ComoFuncion:
+    """Envuelve un nodo para preguntarle a `_resolver_llamada` a quien nombraria
+    si fuera el `func` de una llamada. Reutiliza la resolucion entera —imports,
+    `self.`, `Clase.metodo`— en vez de escribir una segunda, que divergiria."""
+
+    def __init__(self, nodo):
+        self.func = nodo
 
 
 def analyze(root, skip=DEFAULT_SKIP, include_nested=False, since=None):
@@ -317,6 +355,7 @@ def analyze(root, skip=DEFAULT_SKIP, include_nested=False, since=None):
 
     aristas = set()
     motivos = {}
+    como_valor = set()
     for mod, info in modulos.items():
         for qual in info["functions"].values():
             aristas.add((mod, qual, "DEFINES"))
@@ -332,20 +371,28 @@ def analyze(root, skip=DEFAULT_SKIP, include_nested=False, since=None):
         # Llamadas dentro de funciones sueltas y dentro de metodos.
         for node in _def_nodes(info["tree"].body):
             _llamadas_en(node, info["functions"][node.name], info, None, tabla, modulos,
-                         aristas, motivos)
+                         aristas, motivos, como_valor)
         for nombre, origen_clase in info["classes"].items():
             for m in _def_nodes(
                 next(c for c in info["tree"].body
                      if isinstance(c, ast.ClassDef) and c.name == nombre).body
             ):
                 _llamadas_en(m, origen_clase["methods"][m.name], info, origen_clase,
-                             tabla, modulos, aristas, motivos)
+                             tabla, modulos, aristas, motivos, como_valor)
+        # Fuera de toda funcion: `TABLA = {"x": handler}` a nivel de modulo es
+        # exactamente el mismo caso y es donde viven los registros.
+        _llamadas_en(info["tree"], "%s.<modulo>" % info["module"], info, None, tabla,
+                     modulos, set(), {}, como_valor)
 
     resueltas = len([a for a in aristas if a[2] == "CALLS"])
     builtins_vistos = motivos.pop("builtin", 0)
     sin_resolver = sum(motivos.values())
     report["nodes"] = [dict(qual=q, **d) for q, d in sorted(tabla.items())]
     report["edges"] = sorted([list(a) for a in aristas])
+    # Simbolos NOMBRADOS sin llamarlos: se pasan como valor, asi que quien los
+    # invoca de verdad no deja arista. La seleccion de tests lo trata como
+    # opaco y corre todo, igual que con los subprocesos.
+    report["usados_como_valor"] = sorted(como_valor)
     report["calls_resolved"] = resueltas
     report["calls_builtin"] = builtins_vistos
     report["calls_total"] = resueltas + sin_resolver + builtins_vistos

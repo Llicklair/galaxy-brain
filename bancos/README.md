@@ -30,6 +30,7 @@ muerte de esta familia ([SCOPE.md](../SCOPE.md)).
 | `bench_rust.py` | ídem en Rust | `cargo` | **0/7**, pero cascada **incompleta** → sin licencia |
 | `estres_tia.py` | roturas duras sobre un repo REAL | el runner de ese repo | 22/22 sin falsos verdes |
 | `estres_mutacion.py` | roturas **sutiles** (mutación semántica) | ídem | 0/20 falsos verdes |
+| `oraculo_cobertura.py` | la selección contra la verdad de **ejecución**, sobre ESTE repo | `coverage` | pendiente de su primera tirada |
 
 Los tres primeros generan su propio proyecto y no dependen de nada externo. Los dos últimos reciben
 la ruta de un repo:
@@ -40,7 +41,15 @@ python bancos/bench_go.py
 python bancos/bench_rust.py
 python bancos/estres_tia.py       <ruta-worktree> [vistos|invisibles] [tope]
 python bancos/estres_mutacion.py  <ruta-worktree> [tope]
+python bancos/oraculo_cobertura.py --correr    # 1) la suite bajo coverage; 2) el contraste
 ```
+
+El oráculo es distinto de los demás y por eso está el último: los otros cinco **fabrican** una
+rotura y comprueban que la selección la atrapa, sobre un repo pequeño y con la verdad escrita por
+quien escribió el banco. El oráculo no fabrica nada. Corre la suite real de este repo con
+`coverage` y contextos dinámicos, que registra **qué test ejecutó de verdad cada línea**, y usa eso
+como verdad para todos los símbolos a la vez. Es la única medida de la selección que no sale del
+grafo que se está juzgando.
 
 ## Lo que han encontrado, que es el argumento para conservarlos
 

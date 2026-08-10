@@ -82,6 +82,32 @@ def _llamantes(edges):
     return tabla
 
 
+def _enlaza_dunders(nodes, llamantes):
+    """Quien usa la clase alcanza a los metodos que el LENGUAJE invoca por ella.
+
+    `Style(...)` ejecuta `Style.__init__` y no deja ninguna llamada a `__init__`
+    en el AST: la llamada es a la clase. Lo mismo `with x:` con `__enter__`, o
+    `x(...)` con `__call__`. No hay arista que extraer porque en el codigo NO
+    ESTA escrita — la pone Python.
+
+    Esto no inventa una arista en el grafo, que seguiria siendo falsa: enlaza
+    solo la CADENA DE LLAMANTES de la seleccion, que es donde vive el "ante la
+    duda, todo". El grafo dice hechos; la seleccion se pone en lo seguro.
+
+    Medido con el oraculo de cobertura (10-ago-2026): `render.Style.__init__`
+    tenia 16 ficheros de test ejecutandolo y la seleccion elegia 8.
+    """
+    for qual, nodo in nodes.items():
+        nombre = qual.rsplit(".", 1)[-1]
+        if nodo.get("kind") != "method":
+            continue
+        if not (nombre.startswith("__") and nombre.endswith("__")):
+            continue
+        duenio = nodo.get("owner") or qual.rsplit(".", 1)[0]
+        if duenio in nodes:
+            llamantes.setdefault(qual, set()).add(duenio)
+
+
 def tests_que_alcanzan(nodes, llamantes, semillas, max_depth=8):
     """Cierre transitivo de llamantes desde `semillas` hasta los tests.
 
@@ -305,7 +331,22 @@ def analyze(root, rev_range=None, staged=False, worktree=False, skip=None,
             "el diff toca .py pero no cae dentro de ningun simbolo del grafo "
             "(codigo a nivel de modulo, imports, constantes): todo")
 
+    # Un simbolo que alguien NOMBRA sin llamarlo se esta pasando como valor, y
+    # desde ahi lo invoca alguien a quien el AST no puede seguir: la llamada
+    # acaba siendo sobre una variable. Sus llamantes reales NO estan en el grafo,
+    # asi que estrechar por el es exactamente el verde falso que mata a esta
+    # familia. Medido con el oraculo de cobertura sobre este repo (10-ago-2026):
+    # `graph.analyze` invoca `(constructor or build_graph)(...)`, y por eso 22
+    # ficheros de test ejercitaban `build_graph` mientras la seleccion elegia 12.
+    por_valor = sorted(set(semillas) & set(grafo.get("usados_como_valor") or []))
+    if por_valor:
+        return correr_todo(
+            "%s se pasa(n) como valor a otro sitio (callback, inyeccion, registro): "
+            "quien los llama de verdad no deja arista que seguir, asi que se corre todo"
+            % ", ".join(por_valor[:3]))
+
     llamantes = _llamantes(grafo["edges"])
+    _enlaza_dunders(nodes, llamantes)
     tests, truncado = tests_que_alcanzan(nodes, llamantes, semillas)
     if truncado:
         return correr_todo("el cierre de llamantes no termino (¿ciclo de llamadas?): todo")

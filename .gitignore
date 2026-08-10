@@ -35,3 +35,7 @@ tmp*/
 bancos/bench-*/
 bancos/spike-*/
 bancos/cc/
+
+# datos del oraculo de cobertura (se regeneran corriendo la suite)
+.oraculo.cov*
+.oraculo.ini
