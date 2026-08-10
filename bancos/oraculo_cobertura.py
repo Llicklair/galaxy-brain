@@ -216,17 +216,24 @@ def contrastar():
     por_valor = set(grafo.get("usados_como_valor") or [])
 
     fallos, ahorros, total, cayeron = [], [], 0, 0
+    # El TECHO: los opacos (tests que lanzan subprocesos) entran SIEMPRE, elija lo
+    # que elija el grafo. Se mide aparte el ahorro que habria sin ese coste fijo,
+    # porque la diferencia dice si seguir puliendo el grafo puede mover la aguja
+    # o si el margen que queda no es suyo.
+    ahorros_sin_opacos = []
     for qual, tests_reales in sorted(verdad.items()):
         if qual in por_valor:
             cayeron += 1
         alcanzados, truncado = impacted.tests_que_alcanzan(nodes, llamantes, {qual})
         if truncado:
             continue                     # gb corre todo aqui: no hay nada que medir
-        ficheros_sel = set(impacted._ficheros_de(nodes, alcanzados)) | opacos
+        solo_grafo = set(impacted._ficheros_de(nodes, alcanzados))
+        ficheros_sel = solo_grafo | opacos
         ficheros_verdad = set(impacted._ficheros_de(nodes, tests_reales))
         perdidos = ficheros_verdad - ficheros_sel
         total += 1
         ahorros.append(1 - len(ficheros_sel) / max(len(todos), 1))
+        ahorros_sin_opacos.append(1 - len(solo_grafo) / max(len(todos), 1))
         if perdidos:
             fallos.append((qual, sorted(perdidos), len(ficheros_verdad)))
 
@@ -235,6 +242,10 @@ def contrastar():
     print("ficheros de test en el repo      : %d" % len(todos))
     print("pasados como VALOR (camino sobre-aproximado): %d  (%.0f%% de los medidos)"
           % (cayeron, 100 * cayeron / max(total, 1)))
+    print("OPACOS (subprocesos, van SIEMPRE): %d de %d ficheros (%.0f%% de la suite)"
+          % (len(opacos), len(todos), 100 * len(opacos) / max(len(todos), 1)))
+    print("  ahorro si su coste fuera cero  : %.0f%%  <- el techo que el grafo NO puede tocar"
+          % (100 * sum(ahorros_sin_opacos) / max(len(ahorros_sin_opacos), 1)))
     print("ahorro medio de la seleccion     : %.0f%%"
           % (100 * sum(ahorros) / max(len(ahorros), 1)))
     print("FALSOS VERDES                    : %d" % len(fallos))
