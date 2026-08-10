@@ -1086,17 +1086,24 @@ function pinta(t){
       cx.beginPath(); cx.arc(WX[i],WY[i],rr+6,0,6.284); cx.fill();
       cx.globalAlpha=1;
     }
-    if(n.ag && n.ag.length){
-      // ESTO si es un agente trabajando aqui AHORA, y lleva SU color, no el de
-      // la capa de cambio. Pulsa porque el movimiento es lo unico que el ojo
-      // coge sin buscar entre 900 nodos. Dos o mas agentes en el mismo nodo:
-      // aro blanco y grueso, que es el caso que hay que mirar.
+    // ESTO si es un agente trabajando aqui AHORA, y lleva SU color, no el de
+    // la capa de cambio. Pulsa porque el movimiento es lo unico que el ojo
+    // coge sin buscar entre 900 nodos. Dos o mas agentes en el mismo nodo:
+    // aro blanco y grueso, que es el caso que hay que mirar.
+    //
+    // Y se APAGA con la edad, con el mismo `vigorOnda` que las aristas. La
+    // politica ya estaba decidida —entera 3 min, muerta a los 10— pero solo
+    // gobernaba la onda, no el nodo: un mapa estatico de hace horas seguia
+    // pintando el aro fucsia y se leia como "hay alguien aqui ahora mismo".
+    // Costo una busqueda de un agente colgado que no existia (10-ago-2026).
+    const vigorAg = (n.ag && n.ag.length) ? vigorOnda(n.ag) : 0;
+    if(vigorAg>0){
       const ca = (AGENTES[n.ag[0]]||{}).c || OBRA_COLOR;
       const propio = agenteFoco===null || n.ag.indexOf(agenteFoco)>=0;
       const pu = 0.5 + 0.5*Math.sin(reloj/380 + i*0.7);
-      cx.globalAlpha=(0.22+0.5*pu)*(propio?1:0.12); cx.fillStyle=ca;
+      cx.globalAlpha=(0.22+0.5*pu)*(propio?1:0.12)*vigorAg; cx.fillStyle=ca;
       cx.beginPath(); cx.arc(WX[i],WY[i],rr+8+5*pu,0,6.284); cx.fill();
-      cx.globalAlpha=propio?1:0.15; cx.strokeStyle = n.ag.length>1 ? '#ffffff' : ca;
+      cx.globalAlpha=(propio?1:0.15)*vigorAg; cx.strokeStyle = n.ag.length>1 ? '#ffffff' : ca;
       cx.lineWidth = n.ag.length>1 ? 3 : 2.4;
       cx.beginPath(); cx.arc(WX[i],WY[i],rr+4,0,6.284); cx.stroke();
       cx.globalAlpha=1; cx.lineWidth=1;
@@ -1132,11 +1139,16 @@ function pinta(t){
     const n=NODOS[i];
     if(!n.ag || !n.ag.length) continue;
     if(agenteFoco!==null && n.ag.indexOf(agenteFoco)<0) continue;
+    if(vigorOnda(n.ag)<=0) continue;   // muerta: ni aro ni tarjeta, o el texto miente
     const varios = n.ag.length>1;
     const a = AGENTES[n.ag[0]] || {};
     const l1 = varios ? (n.ag.length+' agentes a la vez') : n.ag[0];
     let l2 = (a.nodos||0)+' nodo(s) - habla con '+(a.vecinos||0);
-    if(a.hace!=null) l2 += ' - hace '+(a.hace<90 ? a.hace+'s' : Math.round(a.hace/60)+'m');
+    // `haceAhora`, no `a.hace`: el del payload esta congelado en la foto y la
+    // tarjeta decia "hace 3s" para siempre. La funcion existia para esto y este
+    // sitio no la llamaba — media conexion, como el aro de arriba.
+    const _h = haceAhora(a);
+    if(_h!=null) l2 += ' - hace '+fmtHace(_h);
     const l3 = varios ? n.ag.join(' + ')
                       : ((a.fuera ? a.fuera+' fichero(s) aun sin sitio en el mapa' : '')
                          || (a.misma ? '' : 'OJO: parte de otra base ('+a.base+')'));

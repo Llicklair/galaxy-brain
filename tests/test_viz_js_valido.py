@@ -203,3 +203,62 @@ console.log(JSON.stringify(eventosEntre(prev, solocuerpo)));
 
     escribe3 = [e["d"] for e in json.loads(linea3) if e["t"] == "escribe"]
     assert len(escribe3) == 1 and "sin cambio de firma" in escribe3[0]
+
+
+def test_la_actividad_del_nodo_se_apaga_con_la_edad(tmp_path):
+    """Un mapa estatico de hace una hora NO puede pintar "hay alguien aqui ahora".
+
+    La politica ya estaba escrita —`vigorOnda`: entera 3 min, muerta a los 10— y
+    gobernaba la onda de las aristas. El ARO del nodo no estaba enganchado a
+    ella, asi que el fucsia se quedaba encendido para siempre en un fichero que
+    nadie reescribe. Costo buscar un agente colgado que no existia (10-ago-2026).
+
+    Se EJECUTA la funcion, no se busca la cadena: comprobar que el texto esta es
+    justo el tipo de test que dejo pasar el fallo de `const esc` de arriba.
+    """
+    if shutil.which("node") is None:
+        pytest.skip("sin node no se puede EJECUTAR el script del mapa")
+
+    js = _js(tmp_path)
+    trozos = [
+        re.search(r"function fmtHace\([\s\S]*?\n\}", js),
+        re.search(r"function haceAhora\([\s\S]*?\n\}", js),
+        re.search(r"const ONDA_FRESCA=[^\n]*\n", js),
+        re.search(r"function vigorOnda\([\s\S]*?\n\}", js),
+    ]
+    assert all(trozos), "la politica de envejecido tiene que estar en el mapa"
+
+    arnes = """
+const AHORA = Date.now()/1000;
+let GEN_TS = AHORA;                       // mapa recien generado
+const AGENTES = {a1:{hace:5}};
+""" + "".join(t.group(0) for t in trozos) + """
+console.log(JSON.stringify({fresco: vigorOnda(['a1'])}));
+GEN_TS = AHORA - 3600;                    // el mismo fichero, una hora despues
+console.log(JSON.stringify({viejo: vigorOnda(['a1']), texto: fmtHace(haceAhora(AGENTES.a1))}));
+"""
+    destino = tmp_path / "vigor.js"
+    destino.write_text(arnes.replace("let GEN_TS", "var GEN_TS"), encoding="utf-8")
+    r = subprocess.run(["node", str(destino)], capture_output=True, text=True, timeout=60)
+    assert r.returncode == 0, r.stderr
+    import json
+
+    recien, viejo = (json.loads(x) for x in r.stdout.strip().splitlines())
+    assert recien["fresco"] == 1, "recien generado el agente esta vivo"
+    assert viejo["viejo"] == 0, "una hora despues el aro NO puede seguir encendido"
+    # Y la tarjeta tiene que contar la edad real, no la congelada en la foto.
+    assert viejo["texto"] == "60m", viejo["texto"]
+
+
+def test_el_aro_del_nodo_esta_gobernado_por_esa_politica(tmp_path):
+    """Que la politica exista no sirve si el nodo no la consulta: ese era el fallo.
+
+    Media conexion — la regla implementada sobre una de las dos cosas que debia
+    gobernar. Se comprueba el cableado, que es lo que faltaba.
+    """
+    js = _js(tmp_path)
+    bloque = re.search(r"const vigorAg = [\s\S]{0,900}?\n\s*\}", js)
+    assert bloque, "el aro del agente tiene que derivar su vigor de la edad"
+    cuerpo = bloque.group(0)
+    assert "vigorOnda(n.ag)" in cuerpo
+    assert cuerpo.count("vigorAg") >= 3, "el vigor tiene que MULTIPLICAR lo que se pinta"
