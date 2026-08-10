@@ -42,8 +42,30 @@ def proyecto(tmp_path):
     _git(root, "config", "user.email", "t@t.t")
     _git(root, "config", "user.name", "t")
     _git(root, "add", "-A")
-    _git(root, "commit", "-qm", "base")
+    # FECHADO EN EL PASADO a proposito. Montar el repo no es trabajo en curso, y
+    # desde que un commit reciente cuenta como presencia (10-ago-2026) un commit
+    # de montaje con fecha de ahora hacia aparecer al arbol raiz como agente en
+    # CADA test — diez fallos que no eran del codigo sino del andamio. Poner la
+    # fecha real del hecho es mas honesto que relajar los tests.
+    _git_fechado(root, 7200, "commit", "-qm", "base")
     return root
+
+
+def _git_fechado(root, hace_seg, *args):
+    """Un commit con fecha explicita: la del hecho, no la del reloj del test.
+
+    En EPOCH y no en prosa: `GIT_COMMITTER_DATE="2 hours ago"` da
+    `fatal: invalid date format` en el git de esta maquina, y una fecha que
+    depende del formato que entienda cada git es un test que falla en el sitio
+    equivocado.
+    """
+    import os
+    import time
+
+    sello = "@%d +0000" % int(time.time() - hace_seg)
+    entorno = dict(os.environ, GIT_COMMITTER_DATE=sello, GIT_AUTHOR_DATE=sello)
+    subprocess.run(["git"] + list(args), cwd=str(root), check=True,
+                   capture_output=True, text=True, env=entorno)
 
 
 def _rama(repo, nombre):
@@ -410,3 +432,66 @@ def test_un_agente_con_consola_pero_arbol_limpio_aparece(proyecto):
     assert [a["nombre"] for a in foto["agentes"]] == ["rama_a"]
     assert foto["agentes"][0]["nodos"] == []
     assert foto["agentes"][0]["hace_seg"] is not None
+
+
+# --- presencia por COMMIT reciente ------------------------------------------
+#
+# La presencia salia solo del arbol sucio, y eso premia al reves: quien commitea
+# a menudo es invisible y quien acumula brilla. Medido el 10-ago-2026 sobre una
+# sesion entera de trabajo real con el mapa apagado casi todo el rato.
+
+
+def test_quien_acaba_de_commitear_sigue_presente(proyecto):
+    """Un commit de hace veinte segundos ES presencia: la persona esta ahi."""
+    import time
+
+    informe = symbols.analyze(str(proyecto))
+    (proyecto / "lib" / "nucleo.py").write_text(
+        "def suma(a, b):\n    return b + a\n", encoding="utf-8")
+    _git(proyecto, "add", "-A")
+    _git(proyecto, "-c", "user.email=b@b", "-c", "user.name=b", "commit", "-qm", "recien")
+
+    # el arbol queda LIMPIO: sin esta capa, el agente desapareceria del mapa
+    assert actividad.ficheros_tocados(str(proyecto)) == []
+
+    nodos, hace = actividad.commitados_recientes(str(proyecto), informe, time.time())
+    assert "lib.nucleo" in nodos
+    assert hace is not None and hace < 120
+
+
+def test_un_commit_viejo_ya_no_es_presencia(proyecto):
+    """La ventana es la misma con la que el mapa apaga la onda: pasado ese rato,
+    un commit es historia y no 'ahora'."""
+    import time
+
+    informe = symbols.analyze(str(proyecto))
+    (proyecto / "lib" / "nucleo.py").write_text(
+        "def suma(a, b):\n    return b + a\n", encoding="utf-8")
+    _git(proyecto, "add", "-A")
+    # Se FECHA una hora atras en vez de estrechar la ventana a cero: `--since` de
+    # git cuenta en segundos, y un commit hecho en el mismo segundo cae dentro de
+    # "hace 0 segundos". Un test que pasa o falla segun el reloj es peor que no
+    # tenerlo.
+    _git_fechado(proyecto, 3600, "commit", "-qm", "viejo")
+
+    nodos, _hace = actividad.commitados_recientes(str(proyecto), informe, time.time())
+    assert nodos == set()
+
+
+def test_el_commit_reciente_va_SEPARADO_del_arbol_sucio(proyecto):
+    """Dos hechos distintos, dos listas: el mapa los pinta distinto y el CRUCE se
+    sigue calculando solo con los sucios — dos que commitearon el mismo modulo
+    hace rato no estan chocando."""
+    informe = symbols.analyze(str(proyecto))
+    (proyecto / "lib" / "nucleo.py").write_text(
+        "def suma(a, b):\n    return b + a\n", encoding="utf-8")
+    _git(proyecto, "add", "-A")
+    _git(proyecto, "-c", "user.email=b@b", "-c", "user.name=b", "commit", "-qm", "recien")
+
+    foto = actividad.instantanea(str(proyecto), informe)
+    agente = foto["agentes"][0]
+    assert "lib.nucleo" in agente["commitados"]
+    assert agente["nodos"] == []          # nada sucio: no esta "encima" de nada
+    ficha = foto["por_nodo"]["lib.nucleo"]
+    assert ficha.get("commitaron") == [agente["nombre"]]
+    assert ficha["agentes"] == []         # y NO cuenta como agente encima

@@ -289,13 +289,6 @@ _COLOR_OBRA = "#e879f9"
 #: commitear— y "un agente trabajando aqui" es otra cosa: pintarlas igual daba el
 #: protagonismo a la señal equivocada. Validados a todos los pares el 5-ago-2026:
 #: ΔE 20,6 en vision normal y 8,6 en deuteranopia (suelos 15 y 8).
-#: TECHO DECLARADO: son CUATRO. Con cinco agentes vivos, el quinto reutiliza el
-#: color del primero y dos agentes distintos se leen igual — justo en el caso que
-#: mas importa mirar, que es el de varios a la vez. Visto en la demo del
-#: 10-ago-2026 al levantar cuatro worktrees. No se amplia a ojo: mas colores
-#: distinguibles sobre los dos fondos (claro y oscuro) hay que elegirlos con
-#: cuidado, y ampliarlo sin eso cambia "dos agentes iguales" por "dos agentes casi
-#: iguales", que es peor porque parece que distingue.
 _COLOR_AGENTE = ["#ff4d9d", "#a3e635", "#22d3ee", "#fb923c"]
 #: A partir del quinto no se generan tonos nuevos: se comparte uno neutro y la
 #: consola sigue diciendo el nombre. Inventar el color 9 es como se fabrica una
@@ -520,6 +513,11 @@ def render_graph_cloud(
     _act = actividad or {}
     _por_nodo = {q: d.get("agentes", []) for q, d in (_act.get("por_nodo") or {}).items()
                  if d.get("agentes")}
+    # Quien COMMITEO esto hace poco, en su propio indice: es otro hecho y se
+    # dibuja distinto (anillo fino, sin pulso). Un agente sobre el nodo dice
+    # "esta aqui"; un commit reciente dice "acaba de pasar por aqui".
+    _commitaron = {q: d.get("commitaron", []) for q, d in (_act.get("por_nodo") or {}).items()
+                   if d.get("commitaron")}
     _orden_agentes = sorted(a["nombre"] for a in (_act.get("agentes") or []))
     _color_agente = {
         nombre: (_COLOR_AGENTE[i] if i < len(_COLOR_AGENTE) else _COLOR_AGENTE_EXTRA)
@@ -609,6 +607,10 @@ def render_graph_cloud(
             # Que agentes (worktrees) estan tocando este nodo AHORA. Derivado del
             # disco, nadie lo declara. Vacio cuando no hay nadie trabajando.
             "ag": _por_nodo.get(n, []),
+            # Commit reciente: presencia tambien, pero de otro tipo. Separado de
+            # `ag` para que el mapa no funda "lo tiene sin commitear" con "lo
+            # acaba de commitear".
+            "agc": _commitaron.get(n, []),
         }
         for n in implicados
     ]
@@ -1103,6 +1105,17 @@ function pinta(t){
     // gobernaba la onda, no el nodo: un mapa estatico de hace horas seguia
     // pintando el aro fucsia y se leia como "hay alguien aqui ahora mismo".
     // Costo una busqueda de un agente colgado que no existia (10-ago-2026).
+    // Commit reciente: anillo FINO y SIN pulso, por debajo del aro del agente.
+    // El pulso significa "hay alguien aqui ahora"; un commit dice "acaba de
+    // pasar por aqui", que no es lo mismo y no debe leerse igual. Envejece con
+    // la misma curva: a los 10 minutos ni una cosa ni la otra son "ahora".
+    const vigorC = (n.agc && n.agc.length) ? vigorOnda(n.agc) : 0;
+    if(vigorC>0 && !(n.ag && n.ag.length)){
+      const cc = n.agc.length>1 ? '#ffffff' : ((AGENTES[n.agc[0]]||{}).c||OBRA_COLOR);
+      cx.globalAlpha=0.45*vigorC; cx.strokeStyle=cc; cx.lineWidth=1.2;
+      cx.beginPath(); cx.arc(WX[i],WY[i],rr+4,0,6.284); cx.stroke();
+      cx.globalAlpha=1; cx.lineWidth=1;
+    }
     const vigorAg = (n.ag && n.ag.length) ? vigorOnda(n.ag) : 0;
     if(vigorAg>0){
       const ca = (AGENTES[n.ag[0]]||{}).c || OBRA_COLOR;

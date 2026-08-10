@@ -101,6 +101,76 @@ def simbolos_tocados(root, informe_simbolos):
     return {q: nodes[q] for q in tocados if q in nodes}
 
 
+#: Cuanto cuenta un commit como PRESENCIA. Es la misma ventana con la que el mapa
+#: apaga la onda (`ONDA_MUERTA` en viz, 600 s): pasado ese rato ni el aro ni el
+#: commit dicen "ahora". Que sea el mismo numero no es casualidad — son la misma
+#: pregunta, y tenerlo en dos sitios distintos seria dos verdades sobre cuando
+#: alguien deja de estar presente.
+VENTANA_COMMIT = 600
+
+
+def commitados_recientes(root, informe_simbolos, ahora, ventana=VENTANA_COMMIT, base=""):
+    """Los modulos que este arbol COMMITEO hace poco. `(nodos, hace_seg)`.
+
+    La presencia salia solo del arbol sucio, y eso premia al reves: quien
+    commitea a menudo es invisible y quien acumula brilla. Medido el 10-ago-2026
+    — una sesion entera de trabajo real con el mapa apagado casi todo el rato,
+    porque cada cambio se commiteaba en cuanto la medicion aguantaba.
+
+    Un commit de hace veinte segundos ES presencia: la persona esta ahi. Lo que
+    no es presencia es un commit de ayer, y de eso ya se encarga la ventana mas
+    el envejecido del mapa. Asi que commitear deja de borrarte: te mueve de
+    "sucio" a "recien commiteado", y las dos cosas son recientes.
+
+    **Granularidad declarada: MODULO, no simbolo.** El arbol sucio da el simbolo
+    exacto porque hay un diff contra HEAD que intersecar; para un rango de
+    commits haria falta otra interseccion distinta, y colarla aqui seria
+    construir una pieza nueva escondida dentro de esta. El mapa enciende el
+    modulo y lo dice.
+
+    `--relative` no es cosmetico: sin el, git da las rutas desde el toplevel del
+    repo y los nodos las traen desde la raiz analizada. Es el mismo tropiezo que
+    ya documenta `simbolos_tocados`, y por eso se escribe aqui tambien.
+    """
+    nodes = {n["qual"]: n for n in informe_simbolos.get("nodes", []) if n.get("qual")}
+    if not nodes:
+        return set(), None
+    # `base..HEAD` cuando el arbol va por su cuenta: la historia es COMPARTIDA, y
+    # sin acotarla el commit reciente de UNO enciende a todos los worktrees, que
+    # nunca tocaron nada. Lo destapo un test que empezo a ver dos agentes donde
+    # habia uno — el fixture commitea al montarse y ese commit lo tienen todos.
+    # Sin base (el arbol raiz) se mira su propia historia, que ahi si es suya.
+    rango = ["%s..HEAD" % base] if base else []
+    salida = graph_mod._git(root, "log", *(rango + [
+        "--since=%d.seconds.ago" % int(ventana),
+        "--name-only", "--relative", "--format=%ct"]))
+    if not salida:
+        return set(), None
+
+    rutas, reciente = set(), 0
+    for linea in salida.splitlines():
+        linea = linea.strip()
+        if not linea:
+            continue
+        if linea.isdigit():
+            reciente = max(reciente, int(linea))
+            continue
+        rutas.add(os.path.normcase(os.path.abspath(os.path.join(root, linea))))
+    if not rutas:
+        return set(), None
+
+    tocados = set()
+    for qual, nodo in nodes.items():
+        ruta = nodo.get("file")
+        if not ruta or nodo.get("kind") != "module":
+            continue
+        entero = os.path.normcase(os.path.abspath(os.path.join(root, ruta)))
+        if entero in rutas:
+            tocados.add(qual)
+    hace = int(max(0, ahora - reciente)) if reciente else None
+    return tocados, hace
+
+
 def _tiene_diff(rangos, fichero):
     """¿Ese fichero aparece en el diff? Si sí, sus símbolos ya se decidieron por
     hunk y encenderlo entero seria mentir por exceso."""
@@ -319,15 +389,27 @@ def instantanea(raiz, informe_simbolos, ahora=None):
 
     for ruta, head in arboles:
         consola = consola_de(ruta)
-        # Un agente recien lanzado aun no toco nada, pero su consola ya habla:
-        # con log presente aparece igual (0 nodos), porque ya esta operando.
-        if not aislado._tiene_cambios(ruta) and not consola:
-            continue
+        # Aqui habia un filtro previo por `_tiene_cambios(ruta) or consola`, y al
+        # entrar la tercera fuente —el commit reciente— se quedo colgando: filtraba
+        # por dos de tres, asi que un arbol LIMPIO con un commit de hace veinte
+        # segundos no llegaba nunca a mirarse. La misma media conexion de siempre.
+        # Se quita y manda la puerta de abajo, que ya conoce las tres. Cuesta un
+        # `git status` mas por worktree, y esto corre por REGENERACION, no por
+        # tick del watch (que solo hace stat).
         analisis = os.path.normpath(os.path.join(ruta, rel)) if rel != "." else ruta
         if not os.path.isdir(analisis):
             continue
         ficheros = ficheros_tocados(analisis)
-        if not ficheros and not consola:
+        # Tercera fuente de presencia, junto al arbol sucio y la consola: lo que
+        # este arbol acaba de COMMITEAR. Sin ella, quien trabaja bien desaparece.
+        commitados, hace_commit = commitados_recientes(
+            analisis, informe_simbolos, ahora,
+            # El arbol raiz mira su propia historia; los demas, solo lo que han
+            # anadido POR ENCIMA de la base — o el commit de uno los enciende a
+            # todos. Se distingue por RUTA y no por HEAD: un worktree recien
+            # creado esta en el mismo commit que la raiz y no es la raiz.
+            base="" if os.path.abspath(ruta) == os.path.abspath(toplevel) else cabeza)
+        if not ficheros and not consola and not commitados:
             continue
         nodos = sorted(nodos_tocados(analisis, informe_simbolos))
         # Los simbolos van APARTE de los modulos, no en su lugar: la propagacion
@@ -350,8 +432,19 @@ def instantanea(raiz, informe_simbolos, ahora=None):
                 reciente = max(reciente, os.stat(_ruta_consola(ruta)).st_mtime)
             except OSError:
                 pass
+        # El commit tambien cuenta para "hace cuanto": si no, quien acaba de
+        # commitear saldria con la edad de su ultima edicion sin commitear, que
+        # puede ser de hace horas — o sin edad ninguna.
+        if hace_commit is not None:
+            desde_commit = ahora - hace_commit
+            reciente = max(reciente, desde_commit)
         foto["agentes"].append({
             "fuera_del_mapa": max(0, len(ficheros) - len(nodos)),
+            # SEPARADO de `nodos`, no sumado: "tiene esto sin commitear" y
+            # "acaba de commitear esto" son hechos distintos y el mapa los pinta
+            # distinto. Fundirlos ganaria cobertura y perderia precision, que es
+            # el intercambio que este proyecto rechaza en todas partes.
+            "commitados": sorted(commitados),
             "nombre": os.path.basename(os.path.normpath(ruta)),
             "ruta": ruta,
             "base": head[:7],
@@ -381,6 +474,13 @@ def instantanea(raiz, informe_simbolos, ahora=None):
         for qual in list(agente["nodos"]) + list(agente["simbolos"]):
             foto["por_nodo"].setdefault(qual, {"agentes": [], "vecino_de": []})
             foto["por_nodo"][qual]["agentes"].append(agente["nombre"])
+        # En su propia lista: el mapa dibuja el commit reciente distinto del
+        # arbol sucio, y el CRUCE (dos agentes a la vez) se sigue calculando solo
+        # con `agentes` — dos que commitearon el mismo modulo hace rato no estan
+        # chocando, y contarlo como choque llenaria el mapa de alarmas falsas.
+        for qual in agente.get("commitados") or ():
+            foto["por_nodo"].setdefault(qual, {"agentes": [], "vecino_de": []})
+            foto["por_nodo"][qual].setdefault("commitaron", []).append(agente["nombre"])
         for qual in agente["vecinos"]:
             foto["por_nodo"].setdefault(qual, {"agentes": [], "vecino_de": []})
             foto["por_nodo"][qual]["vecino_de"].append(agente["nombre"])
