@@ -204,6 +204,40 @@ def _resolver_nombre(nombre, modulo, tabla_global):
     return None
 
 
+def _reexportado(mod, atributo, tabla_global, modulos, saltos=4):
+    """`otro.nombre()` donde `nombre` no se DEFINE en `otro`, sino que lo importó.
+
+    `changes._git_output` no existe como `def` en `changes`; la línea 31 de ese
+    módulo dice `from .graph import _git as _git_output`. Eso no es una
+    conjetura sobre lo que el nombre podría valer en tiempo de ejecución: es la
+    sentencia de import, y dice exactamente a qué símbolo apunta. Por eso se
+    resuelve aquí y no hace falta romper el ADR 0008 — el grafo sigue diciendo
+    hechos.
+
+    Lo destapó `bancos/oraculo_aristas.py` el 10-ago-2026: de las 1.518 llamadas
+    que la suite ejecuta de verdad, las ÚNICAS tres que el grafo no veía y que no
+    tenían ya una puerta río abajo eran las tres de este patrón, todas contra
+    `graph._git`. Se re-exporta en cadena a veces (un `__init__` que reexpone lo
+    de un submódulo que a su vez reexpone), de ahí los saltos — con tope, porque
+    dos módulos que se importan en círculo colgarían el análisis.
+    """
+    visto = set()
+    for _ in range(saltos):
+        if mod not in modulos:
+            return None
+        destino = modulos[mod]["imports"].get(atributo)
+        if not destino or destino in visto:
+            return None
+        if destino in tabla_global:
+            return destino
+        visto.add(destino)
+        # El nombre viaja: `a.b.c` se parte en módulo `a.b` y atributo `c`.
+        mod, _, atributo = destino.rpartition(".")
+        if not mod:
+            return None
+    return None
+
+
 def _resolver_llamada(node, modulo, clase, tabla_global, modulos):
     """(símbolo destino, motivo). Solo lo demostrable; lo demás, motivo de por qué no."""
     func = node.func
@@ -227,6 +261,9 @@ def _resolver_llamada(node, modulo, clase, tabla_global, modulos):
                 candidato = "%s.%s" % (destino_mod, func.attr)
                 if candidato in tabla_global:
                     return candidato, None
+                reexport = _reexportado(destino_mod, func.attr, tabla_global, modulos)
+                if reexport:
+                    return reexport, None
             # `Clase.metodo()` con la clase definida o importada aqui.
             duenio = _resolver_nombre(base.id, modulo, tabla_global)
             if duenio:

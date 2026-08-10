@@ -42,6 +42,36 @@ def test_resuelve_a_traves_de_un_import(tmp_path):
     assert ("app.core.principal", "app.util.limpia") in _calls(symbols.analyze(root))
 
 
+def test_resuelve_un_nombre_reexportado_por_otro_modulo(tmp_path):
+    """`otro.nombre()` donde `otro` no lo define: lo importó con otro nombre.
+
+    Es el patrón que `bancos/oraculo_aristas.py` señaló el 10-ago-2026 como la
+    única causa sin puerta de las llamadas reales que el grafo no veía — en este
+    mismo repo, `changes._git_output` es `graph._git`.
+    """
+    root = str(tmp_path)
+    _write(root, "app/__init__.py", "")
+    _write(root, "app/base.py", "def crudo(x):\n    return x\n")
+    _write(root, "app/medio.py", "from app.base import crudo as envuelto\n")
+    _write(root, "app/core.py",
+           "from app import medio\n\ndef principal():\n    return medio.envuelto(1)\n")
+
+    assert ("app.core.principal", "app.base.crudo") in _calls(symbols.analyze(root))
+
+
+def test_la_reexportacion_en_circulo_no_cuelga(tmp_path):
+    """Dos módulos que se re-exportan mutuamente: se corta, no se gira."""
+    root = str(tmp_path)
+    _write(root, "app/__init__.py", "")
+    _write(root, "app/a.py", "from app.b import ping as pong\n")
+    _write(root, "app/b.py", "from app.a import pong as ping\n")
+    _write(root, "app/core.py",
+           "from app import a\n\ndef principal():\n    return a.pong(1)\n")
+
+    # Lo que importa es que TERMINE y no invente: no hay def en ningún extremo.
+    assert not [p for p in _calls(symbols.analyze(root)) if p[0] == "app.core.principal"]
+
+
 def test_resuelve_self_punto_metodo(tmp_path):
     """`self.metodo()` si es demostrable: el metodo esta escrito ahi al lado."""
     root = str(tmp_path)
