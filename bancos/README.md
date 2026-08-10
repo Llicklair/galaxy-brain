@@ -22,18 +22,50 @@ muerte de esta familia ([SCOPE.md](../SCOPE.md)).
 
 **Y ese criterio es necesario pero NO suficiente en un banco pequeño.** Medido con Rust el
 10-ago-2026: con seis módulos encadenados, perder un test que sí estaba impactado se tapa con que
-otro caiga rojo — el veredicto sale verde y la cascada está rota igualmente. Al leer un banco hay que
-mirar **cuántos ficheros selecciona cada rotura**, no solo su veredicto. Los oráculos de abajo
-existen porque un banco escrito por quien lo mide no puede cerrar esta pregunta.
+otro caiga rojo — el veredicto sale verde y la cascada está rota igualmente.
+
+Por eso los bancos ya no comparan booleanos. [`estricto.py`](estricto.py) corre **cada fichero de
+test por separado** para saber cuáles se ponen rojos de verdad, y exige que la selección los
+**contenga todos**:
+
+```
+rojos   = los tests que se ponen rojos al correrlos uno a uno
+elegido = lo que `gb tests` seleccionó
+FUGA    = rojos - elegido      <- un test que falla y no se corre
+```
+
+Se corre fichero a fichero a propósito: parsear qué test falló de la salida de cada runner sería un
+adaptador por lenguaje, frágil y distinto en cada uno, cuando todos los bancos ya tienen la primitiva
+*«corre estos ficheros y dime si hay rojo»*.
+
+**Control positivo, porque un detector sin él es decoración:** con la licencia puesta y ANTES del
+arreglo, Rust daba `0 FALSOS VERDES` y el criterio estricto marcó `CASCADA ROTA en 5 rotura(s)`,
+señalando `informe.rs` — exactamente la arista que faltaba.
+
+**Y el cero que no se cuenta como aprobado:** un lenguaje sin licencia cae a la suite entera, no puede
+fugarse nada y el contador sale a cero. Eso se lee «cascada exacta» cuando el hecho es «no he medido
+nada», así que el pie lo dice aparte: `cascada NO MEDIDA: cayó a la suite entera`.
+
+**La mitad que se puede medir sin intérprete.** El rojo/verde lo da el runtime y sin él no hay banco;
+la **cascada** —a cuántos tests llega gb desde lo que se rompió— sale del grafo y se mide en
+cualquier máquina. Y es justo la mitad que falló en Rust. Por eso `bench_multi.py` ya no se calla
+cuando falta el binario: comprueba la cascada contra la esperada (`3-2-1-1`) y lo dice. **No es una
+licencia** y la salida lo repite — para eso hacen falta rojos reales.
+
+Un lenguaje **sin licencia** cae a la suite entera *por diseño*: ahí no hay cascada que medir y
+marcarlo como roto sería acusar a la caída segura. La licencia se lee de `LENGUAJES`, no se copia.
+
+Los oráculos de abajo existen porque un banco escrito por quien lo mide no puede cerrar esta pregunta.
 
 ## Los bancos
 
 | Script | Qué mide | Necesita | Último resultado |
 |---|---|---|---|
-| `bench_js.py` | selección de tests en JS | `node` | **0/7 falsos verdes**, 52 % ahorro, cascada exacta |
+| `bench_js.py` | selección de tests en JS | `node` | **0/7 falsos verdes**, 52 %, cascada exacta |
 | `bench_go.py` | ídem en Go, **multipaquete** (llamadas cualificadas) | `go` | **0/7**, 52 %, cascada exacta |
 | `bench_csharp.py` | ídem en C#, **métodos + llamadas cualificadas por clase** | `dotnet` + NuGet en caché | **0/7**, 52 %, cascada exacta |
-| `bench_rust.py` | ídem en Rust | `cargo` | **0/7 y 64 % con licencia**, y aun así cascada **rota** → sin licencia |
+| `bench_rust.py` | ídem en Rust | `cargo` | **0/7**, 52 %, cascada exacta → **licencia ganada** el 10-ago |
+| `bench_multi.py` | java, php, lua y ruby con una sola tabla | su intérprete | cascada **exacta 4/4** en java/php/lua **sin runtime** (ver abajo) |
 | `estres_tia.py` | roturas duras sobre un repo REAL | el runner de ese repo | 22/22 sin falsos verdes |
 | `estres_mutacion.py` | roturas **sutiles** (mutación semántica) | ídem | 0/20 falsos verdes |
 | `oraculo_cobertura.py` | la **selección** contra la verdad de ejecución, sobre ESTE repo | `coverage` | **0 falsos verdes** de 332 símbolos, 27 % ahorro |

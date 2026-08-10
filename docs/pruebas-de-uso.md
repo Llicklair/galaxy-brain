@@ -79,6 +79,54 @@ el recall en 96%. 858 tests en verde, gate limpio.
 
 ---
 
+## 2026-08-10 · El criterio estricto: los cuatro bancos comparaban booleanos, y Rust gana su licencia
+
+Consecuencia directa del hallazgo de abajo. Si un banco puede aprobar con la cascada rota, el
+problema no es Rust: es **el criterio**, y lo comparten los cuatro. Los bancos preguntaban *«¿se
+puso roja la selección?»* — un booleano — cuando la pregunta es *«¿contiene la selección **todos**
+los tests que se ponen rojos?»*. [`bancos/estricto.py`](../bancos/estricto.py) corre cada fichero de
+test por separado y compara conjuntos.
+
+**Control positivo primero, porque un detector sin él es decoración.** Con la licencia puesta y antes
+de tocar nada, Rust seguía dando `0 FALSOS VERDES` y el criterio nuevo marcó `CASCADA ROTA en 5
+rotura(s)`, señalando `informe.rs` en las cinco — la arista exacta que faltaba. Detecta.
+
+**Y el arreglo de Rust apareció al mirar el sitio correcto.** El intento anterior había concluido que
+«ast-grep casa el patrón y gb no emite la arista, luego el hueco está en la extracción». Cierto, y la
+causa era de una línea: `$A` es la metavariable del **receptor** en `$A.$FN($$$)` (Java, Kotlin,
+Scala), y el extractor compone `receptor.llamado` cuando la ve. Con `$M!($A, $FN($$$))`, `$A`
+capturaba la cadena de formato y gb emitía `"TOTAL {:.2}".emitir`, que no resuelve contra nada. La
+misma metavariable llamada `$ARG` funciona. Un nombre.
+
+**Resultado, y la cifra que lo valida no es la más alta.** Rust pasa a `0 falsos verdes, cascada
+exacta, 52% de ahorro` — y **baja** desde el 64% que daba roto, porque aquel ahorro extra era el test
+que se dejaba. Los cuatro lenguajes con banco dan ahora exactamente **52% y cascada exacta** sobre la
+misma forma de proyecto: js, go, csharp y rust. Que coincidan es la señal; que uno destacara era el
+síntoma. Licencia concedida — ocho lenguajes con ella (nueve contando Python).
+
+**El otro cero mentiroso, cazado de paso.** Un lenguaje sin licencia cae a la suite entera, así que
+no puede fugarse nada y el contador de fuga sale a cero: el pie habría dicho «cascada exacta» cuando
+el hecho es «no he medido nada». Es el mismo cero que el gate ya persigue («cero violaciones» cuando
+no se miró), y ahora se dice aparte: `cascada NO MEDIDA: cayó a la suite entera`.
+
+**Y la pregunta incómoda que esto abre: java, php y lua tienen licencia del 9-ago, concedida con el
+criterio que acaba de demostrarse insuficiente.** En esta máquina no hay ruby, php, lua ni java, así
+que no se pueden remedir con rojos reales — y instalar cuatro runtimes no se hace por cuenta propia.
+Pero la mitad que falló en Rust **no necesita runtime**: el rojo/verde lo da el intérprete, la
+CASCADA sale del grafo. Así que `bench_multi.py` ya no se calla cuando falta el binario: genera el
+proyecto, rompe, y comprueba a cuántos tests llega la selección contra la cascada esperada `3-2-1-1`
+— que llevaba escrita en prosa en su cabecera desde el principio sin que nadie la comprobara.
+
+Resultado: **java, php y lua dan cascada EXACTA 4/4**. No es una licencia —para eso hacen falta rojos
+reales y se dice en la salida— pero es la mitad que estaba en duda, y sale limpia.
+
+**Tercer cero mentiroso, en mi propia herramienta y en la misma tirada.** La primera versión marcó a
+Ruby con `cascada ROTA 4/4`: Ruby no tiene licencia, así que cae a la suite entera **por diseño**, y
+eso es la caída segura funcionando. Acusarla era acusar justo al mecanismo que protege del verde
+falso. Ahora se lee la licencia de la tabla y se dice `cae a todo (sin licencia: es lo correcto)`.
+
+---
+
 ## 2026-08-10 · Rust: 0/7 y 64% de ahorro, y aun así **sin licencia** — el banco pasaba por suerte
 
 Al ir a conceder la licencia que le faltaba a Rust salió lo contrario de lo buscado, y es el mejor
