@@ -10,6 +10,48 @@ mismo detalle que los positivos, o más.
 
 ---
 
+## 2026-08-09 · La escalera, medida: **el rechazo mueve al modelo; el aviso no** (6 tiradas)
+
+Tres tandas más sobre los mismos tres repos, ya con los agujeros del gate cerrados. La
+pregunta era si el peldaño siguiente cambia de comportamiento cuando se le pone delante un
+hecho nuevo — y la respuesta, con la muestra que hay, es **no**.
+
+**Lo que sí funciona: rechazar.** `find_call_violations` paró la violación de Rust **3/3
+veces**, y en dos de ellas el agente se corrigió al peldaño siguiente. Go, cuando insistió,
+escaló por la regla del mismo rechazo dos veces. La escalera hace su trabajo.
+
+**Lo que no: avisar.** El hecho `simbolos_preexistentes` viajó al peldaño 1 en las tiradas C
+y D, y las **seis** ejecuciones siguieron degradando exactamente igual que sin él:
+
+| | tirada C | tirada D (mismo enunciado) |
+|---|---|---|
+| js | duplicó la suma | duplicó la suma |
+| go | correcto (aceptó en el 0) | escaló: insistió en cruzar |
+| rust | `let base = 60.0;` **hardcodeado** | duplicó la suma |
+
+Y hay un matiz que invalida parte del experimento y conviene escribir: en ese enunciado
+**modificar `carrito.total` era la tarea**. O sea que el aviso decía algo cierto y
+completamente irrelevante — era ruido. El hecho tiene valor cuando la tarea solo pedía
+AÑADIR y el agente destripó algo de paso (el caso de la tanda anterior, con `carrito.Total`
+vaciado); en una tarea de modificación no dice nada. **gb no puede saber en cuál está**, así
+que se queda en el veredicto —donde un humano lo lee con contexto— y no se le pide más.
+
+**El techo, ya con seis ejecuciones detrás:** duplicar una función, clavar el resultado
+esperado como constante y escribir el test que afirma tu propio error **no dejan rastro
+estructural**. No es un fallo del grafo ni se arregla con más nodos: es la frontera entre lo
+que la estructura puede demostrar y lo que no.
+
+**Y el error de método propio, que costó una tirada entera:** la primera versión de
+`simbolos_preexistentes` deducía del diff qué símbolo era nuevo (cuerpo entero dentro de
+líneas añadidas). Falso positivo inmediato: git alineó la llave de cierre de una función
+recién creada con la de la función vieja y la dejó como contexto, así que `iva.informe`
+—escrita en ese mismo intento— salió acusada de preexistente. La alineación de un diff es
+una heurística de presentación; qué existía lo sabe git. Ahora se le pregunta a él, y las
+listas pasaron de 2/3/3 símbolos a 1/1/1, todos ciertos. **La tirada C se midió con el
+instrumento roto y por eso hubo que repetirla entera.**
+
+---
+
 ## 2026-08-09 · Agentes reales en js/go/rust: **dos falsos verdes en el gate, y un tercero que bloqueaba siempre**
 
 Tres tandas de agentes escribiendo código de verdad en sus propios repos, con `.gb-boundaries`
