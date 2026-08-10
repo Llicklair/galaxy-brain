@@ -249,7 +249,108 @@ def contrastar():
         print("\nmuestra de pares sin puerta:")
         for o, d in crudo[:10]:
             print("  %s  ->  %s" % (o, d))
+
+    _precision(reales, estaticas, nodes)
     return 1 if crudo else 0
+
+
+def _precision(reales, estaticas, nodes):
+    """La otra mitad, que nadie habia medido: cuantas aristas del grafo SOBRAN.
+
+    Los dos oraculos median RECALL —que ve el grafo de lo que ocurre— y con eso
+    se puede tener un grafo perfecto en recall y lleno de aristas inventadas. Una
+    arista falsa no cuesta un verde falso, pero hace que `gb calls` mienta sobre
+    quien rompe algo, y eso es exactamente lo que un agente lee antes de tocar
+    codigo. Medir solo el recall es dar por bueno el lado que no se mira.
+
+    El metodo: una arista `a -> b` del grafo es SOSPECHOSA si el cuerpo de `a`
+    se ejecuto de verdad y la llamada a `b` no ocurrio ni una vez desde ahi.
+
+    **Es una COTA SUPERIOR, no una cuenta de aristas falsas**, y la diferencia
+    importa: una rama que la suite no toma (`if raro: b()`) da exactamente la
+    misma senal que una arista inventada. Lo que este numero acota es «como
+    mucho, tantas sobran»; para saber cuales de verdad hay que mirarlas a mano.
+    Decirlo asi no es cautela: es que el numero sin esa frase se leeria como una
+    acusacion demostrada, y no lo es.
+    """
+    ejecutadas = {o for o, _ in reales} | {d for _, d in reales}
+    if not ejecutadas:
+        return
+    dobles = _sustituidos_en_tests()
+    # SOLO donde el perfilador miraba. El filtro del callback exige que el LLAMADO
+    # viva bajo `src/galaxybrain`, asi que una arista hacia `bucle.*` o `bancos.*`
+    # jamas pudo observarse: contarla como sospechosa es acusar al grafo de un
+    # punto ciego del instrumento. La primera version lo hacia y las tres peores
+    # de la lista eran exactamente eso.
+    def _mirado(qual):
+        ruta = (nodes.get(qual) or {}).get("file") or ""
+        return os.path.normcase(os.path.join("src", "galaxybrain")) in os.path.normcase(ruta)
+
+    observables = [(a, b) for a, b in estaticas
+                   if a in ejecutadas and a in nodes and b in nodes and _mirado(b)]
+    sospechosas = sorted(p for p in observables if p not in reales)
+    # Un llamado que la suite SUSTITUYE no puede observarse aunque la arista sea
+    # cierta: lo que corre es el doble. Se descuenta, y se dice cuantas eran.
+    por_doble = [p for p in sospechosas if p[1] in dobles]
+    restantes = [p for p in sospechosas if p[1] not in dobles]
+
+    print("\n--- precision (la otra mitad, cota SUPERIOR) ---")
+    print("aristas observables (su llamante corrio) : %d" % len(observables))
+    print("confirmadas en ejecucion                 : %d  (%.0f%%)"
+          % (len(observables) - len(sospechosas),
+             100 * (len(observables) - len(sospechosas)) / max(len(observables), 1)))
+    print("no observadas, con DOBLE de test         : %d  (la arista es cierta, "
+          "corre el doble)" % len(por_doble))
+    print("no observadas, sin explicacion           : %d  (<= %.0f%% podrian sobrar)"
+          % (len(restantes), 100 * len(restantes) / max(len(observables), 1)))
+    print("  sigue siendo COTA: una rama que la suite no toma da la misma senal")
+    for a, b in restantes[:8]:
+        print("    %s  ->  %s" % (a, b))
+
+
+def _sustituidos_en_tests():
+    """Los simbolos que la suite SUSTITUYE (`monkeypatch.setattr(mod, "nombre", ...)`).
+
+    Se derivan del AST de los tests, no de una lista a mano: una lista paralela
+    se desincroniza —este repo ya lo ha pagado tres veces— y ademas nadie la
+    escribiria.
+
+    Existe porque la primera version de la medida de precision acuso a
+    `bootstrap.enable -> bootstrap.pth_path`, que es una llamada INCONDICIONAL en
+    la primera linea de la funcion. La arista es cierta; lo que pasa es que el
+    test cambia `pth_path` por un lambda, asi que lo que corre no es el simbolo.
+    41 sustituciones en esta suite, y golpean justo al codigo MEJOR probado — o
+    sea que sin descontarlas la medida acusa mas cuanto mejor esta el test.
+    """
+    import ast
+
+    nombres = set()
+    tests = os.path.join(RAIZ, "tests")
+    if not os.path.isdir(tests):
+        return nombres
+    for fichero in sorted(os.listdir(tests)):
+        if not fichero.endswith(".py"):
+            continue
+        try:
+            with open(os.path.join(tests, fichero), encoding="utf-8") as fh:
+                arbol = ast.parse(fh.read())
+        except (OSError, SyntaxError):
+            continue
+        for nodo in ast.walk(arbol):
+            if not isinstance(nodo, ast.Call) or len(nodo.args) < 2:
+                continue
+            func = nodo.func
+            if not (isinstance(func, ast.Attribute) and func.attr == "setattr"):
+                continue
+            modulo, atributo = nodo.args[0], nodo.args[1]
+            if not isinstance(atributo, ast.Constant) or not isinstance(atributo.value, str):
+                continue
+            base = modulo.id if isinstance(modulo, ast.Name) else None
+            if base:
+                # `setattr(bootstrap, "pth_path")` -> galaxybrain.bootstrap.pth_path
+                nombres.add("galaxybrain.%s.%s" % (base, atributo.value))
+                nombres.add("%s.%s" % (base, atributo.value))
+    return nombres
 
 
 if __name__ == "__main__":

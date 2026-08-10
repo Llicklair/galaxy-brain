@@ -69,7 +69,7 @@ Los oráculos de abajo existen porque un banco escrito por quien lo mide no pued
 | `estres_tia.py` | roturas duras sobre un repo REAL | el runner de ese repo | 22/22 sin falsos verdes |
 | `estres_mutacion.py` | roturas **sutiles** (mutación semántica) | ídem | 0/20 falsos verdes |
 | `oraculo_cobertura.py` | la **selección** contra la verdad de ejecución, sobre ESTE repo | `coverage` | **0 falsos verdes** de 332 símbolos, 27 % ahorro |
-| `oraculo_aristas.py` | las **aristas** contra las llamadas que ocurren de verdad | nada (stdlib) | recall 96 %, **0 huecos sin puerta** |
+| `oraculo_aristas.py` | las **aristas** contra las llamadas que ocurren de verdad | nada (stdlib) | recall 96 %, **0 huecos sin puerta**, precisión ≥ 97 % |
 
 Los dos oráculos son la misma pregunta a dos alturas. El de cobertura dice **qué** se pierde (ficheros
 de test); el de aristas dice **por qué** (la llamada que el AST no vio). El primero dejó 91 falsos

@@ -79,7 +79,37 @@ el recall en 96%. 858 tests en verde, gate limpio.
 
 ---
 
-## 2026-08-10 · El criterio estricto: los cuatro bancos comparaban booleanos, y Rust gana su licencia
+## 2026-08-10 · La precisión del grafo, medida por primera vez: **97%** — y las dos veces que el instrumento acusó al grafo de sus propios puntos ciegos
+
+Los dos oráculos medían **recall**: qué ve el grafo de lo que ocurre. Con eso se puede tener recall
+perfecto y el grafo lleno de aristas inventadas, y nadie se enteraría. Importa porque una arista falsa
+no cuesta un verde falso pero hace que `gb calls` **mienta sobre quién rompe algo** — que es
+justamente lo que un agente lee antes de tocar código.
+
+Método: una arista `a -> b` es sospechosa si el cuerpo de `a` corrió de verdad y la llamada a `b` no
+ocurrió ni una vez desde ahí. Es **cota superior**, nunca una cuenta de aristas falsas: una rama que
+la suite no toma da exactamente la misma señal.
+
+**Primera tirada: ≤35% (779 de 2.251).** Un número alarmante y falso. Dos confusores, los dos del
+instrumento:
+
+1. **Los dobles de test.** La primera acusada fue `bootstrap.enable -> bootstrap.pth_path`, que es una
+   llamada incondicional en la primera línea de la función. La arista es cierta; el test hace
+   `monkeypatch.setattr(bootstrap, "pth_path", lambda: pth)`, así que lo que corre no es el símbolo.
+   Hay 41 sustituciones en la suite y golpean al código **mejor** probado — sin descontarlas, la
+   medida acusa más cuanto mejor está el test. Se derivan del AST de los tests, no de una lista.
+2. **El punto ciego del perfilador**, que era el gordo: su filtro exige que el LLAMADO viva bajo
+   `src/galaxybrain`, así que toda arista hacia `bucle.*` o `bancos.*` era **inobservable por
+   construcción**. Las tres peores de la lista eran exactamente eso.
+
+**Con los dos descontados: 1.472 de 1.515 confirmadas en ejecución — 97%, y ≤3% (40) sin explicar.**
+Comprobada una a mano: `cmd_graph -> _abrir` vive tras `if args.open:`, una rama que la suite no toma
+porque abriría un navegador. La arista es cierta. El 3% parece dominado por ramas legítimas.
+
+**La lección, que es la misma del día por octava vez:** un instrumento nuevo acusa primero a lo que
+mide y casi nunca a sí mismo. Los dos confusores hacían que el número fuese *peor* cuanto mejor
+estaban el test y el reparto del código — cuando una medida empeora al mejorar lo medido, el defecto
+está en la medida.
 
 Consecuencia directa del hallazgo de abajo. Si un banco puede aprobar con la cascada rota, el
 problema no es Rust: es **el criterio**, y lo comparten los cuatro. Los bancos preguntaban *«¿se
