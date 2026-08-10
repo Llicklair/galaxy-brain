@@ -289,6 +289,18 @@ def instantanea(raiz, informe_simbolos, ahora=None):
     `raiz` es la ruta que se analizó para `informe_simbolos` (p. ej. `.../src`);
     de cada worktree se mira su ruta equivalente, para que los nodos casen con los
     del mapa canónico.
+
+    **Lo que esto mide, dicho de frente: el árbol SUCIO, no el trabajo hecho.**
+    La presencia sale de `git status`, así que un agente que commitea a menudo es
+    casi invisible y uno que acumula sin commitear brilla mucho — al revés de lo
+    que uno querría premiar. Se vio el 10-ago-2026: durante una sesión entera de
+    trabajo real el mapa estuvo apagado casi todo el rato, porque cada cambio se
+    commiteaba en cuanto la medición aguantaba.
+
+    No se arregla mirando también lo commiteado: eso sería historia, no presencia,
+    y el mapa dejaría de responder "¿quién está tocando esto AHORA?" — que es la
+    única pregunta que esta capa contesta y que nadie más contesta. Queda escrito
+    para que se lea el mapa por lo que dice y no por lo que parece.
     """
     ahora = time.time() if ahora is None else ahora
     foto = {"base": "", "agentes": [], "por_nodo": {}, "cruces": [], "motivo": ""}

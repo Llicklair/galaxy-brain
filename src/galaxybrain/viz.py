@@ -289,6 +289,13 @@ _COLOR_OBRA = "#e879f9"
 #: commitear— y "un agente trabajando aqui" es otra cosa: pintarlas igual daba el
 #: protagonismo a la señal equivocada. Validados a todos los pares el 5-ago-2026:
 #: ΔE 20,6 en vision normal y 8,6 en deuteranopia (suelos 15 y 8).
+#: TECHO DECLARADO: son CUATRO. Con cinco agentes vivos, el quinto reutiliza el
+#: color del primero y dos agentes distintos se leen igual — justo en el caso que
+#: mas importa mirar, que es el de varios a la vez. Visto en la demo del
+#: 10-ago-2026 al levantar cuatro worktrees. No se amplia a ojo: mas colores
+#: distinguibles sobre los dos fondos (claro y oscuro) hay que elegirlos con
+#: cuidado, y ampliarlo sin eso cambia "dos agentes iguales" por "dos agentes casi
+#: iguales", que es peor porque parece que distingue.
 _COLOR_AGENTE = ["#ff4d9d", "#a3e635", "#22d3ee", "#fb923c"]
 #: A partir del quinto no se generan tonos nuevos: se comparte uno neutro y la
 #: consola sigue diciendo el nombre. Inventar el color 9 es como se fabrica una
