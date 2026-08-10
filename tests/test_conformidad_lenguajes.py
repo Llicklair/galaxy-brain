@@ -236,21 +236,27 @@ def test_la_licencia_para_estrechar_es_opt_in():
     from galaxybrain import lenguajes as tabla
 
     concedidas = {i for i, cfg in tabla.LENGUAJES.items() if cfg["tia"]}
-    assert concedidas == {"js", "ts", "go", "csharp", "java", "php", "lua"}, (
+    assert concedidas == {"js", "ts", "go", "csharp", "java", "php", "lua", "rust"}, (
         "cada una salio de un banco con rojos REALES y cascada exacta: js/ts con "
-        "node --test, go con go test, csharp con dotnet test, y java/php/lua con "
-        "sus interpretes. Ruby y Rust NO la tienen, y su motivo esta en carencias. "
-        "Concedidas ahora: %s" % sorted(concedidas)
+        "node --test, go con go test, csharp con dotnet test, rust con cargo test, "
+        "y java/php/lua con sus interpretes. Ruby NO la tiene, y su motivo esta en "
+        "carencias. Concedidas ahora: %s" % sorted(concedidas)
     )
 
 
 def test_sin_licencia_la_seleccion_corre_todo_y_lo_dice():
-    """El contrato que evita el verde falso. Rust lo motivo: la llamada dentro de
-    `format!("...", emitir(xs))` es invisible, y con ella se caia un test de los
-    impactados — sin dar verde falso solo porque todos recorrian la cadena."""
+    """El contrato que evita el verde falso.
+
+    Lo motivo Rust: la llamada dentro de `format!("...", emitir(xs))` era
+    invisible y con ella se caia un test de los impactados. El 10-ago-2026 se
+    arreglo la extraccion (`$M!($ARG, $FN($$$))`) y Rust gano su licencia con
+    cascada exacta, asi que el ejemplo de "sin licencia" es ahora Ruby — pero el
+    contrato es el mismo y por eso el test se queda.
+    """
     from galaxybrain import impacted
 
-    assert impacted._sin_licencia_para_estrechar({"lenguajes": ["rust"]}) == "rust"
+    assert impacted._sin_licencia_para_estrechar({"lenguajes": ["ruby"]}) == "ruby"
+    assert impacted._sin_licencia_para_estrechar({"lenguajes": ["rust"]}) == ""
     assert impacted._sin_licencia_para_estrechar({"lenguajes": ["js"]}) == ""
     assert impacted._sin_licencia_para_estrechar({"lenguajes": ["js", "go"]}) == ""
     assert impacted._sin_licencia_para_estrechar({"lenguajes": ["csharp"]}) == ""

@@ -55,7 +55,17 @@ LLAMADA = ("$FN($$$)",)
 #: entera en las 7 roturas del banco. Los dos patrones extra son coincidencias
 #: de AST de verdad (ast-grep liga `$FN` dentro del macro), no rascado de texto:
 #: no pueden fabricar una arista que no exista.
-LLAMADA_RUST = ("$FN($$$)", "$M!($FN($$$), $$$)", "$M!($FN($$$))")
+#: El cuarto patron es la llamada que NO es el primer argumento del macro:
+#: `format!("TOTAL {:.2}", emitir(xs))`. Sin el, la cascada de Rust moria en
+#: `informe.linea -> factura.emitir` y el banco lo tapaba (ver bancos/estricto.py).
+#:
+#: Se llama `$ARG` y no `$A` por un motivo que costo un intento entero: `$A` es la
+#: metavariable del RECEPTOR en `$A.$FN($$$)` (Java, Kotlin, Scala), y el extractor
+#: compone `receptor.llamado` cuando la ve. Con `$A` aqui, ast-grep casaba y
+#: capturaba `FN` correctamente pero gb emitia `"TOTAL {:.2}".emitir`, que no
+#: resuelve contra nada — y el sintoma era «el patron casa y la arista no sale».
+LLAMADA_RUST = ("$FN($$$)", "$M!($FN($$$), $$$)", "$M!($FN($$$))",
+                "$M!($ARG, $FN($$$))")
 
 
 def _lang(ag, extensiones, simbolos, imports=(), llamada=LLAMADA, globales=_COMUNES,
@@ -153,22 +163,25 @@ LENGUAJES = {
          ("function", "fn $NAME($$$) { $$$ }"),
          ("class", "pub struct $NAME { $$$ }")),
         ("use $SRC;",),
-        llamada=LLAMADA_RUST, resolucion="paquete",
+        llamada=LLAMADA_RUST, resolucion="paquete", tia=True,
         dirs_test=("tests",),
-        # SIN licencia, y con la prueba de por que — medido el 10-ago-2026. Con
-        # `tia=True` el banco da 0/7 y 64% de ahorro, que parece licencia
-        # ganada, y NO lo es: la cascada esta rota en `informe.linea ->
-        # factura.emitir` (`format!("TOTAL {}", emitir(xs))`, la llamada no es
-        # el primer argumento del macro). Rompiendo `iva` el test de `informe`
-        # falla y la seleccion no lo elige; el banco sale verde solo porque
-        # OTROS tests ya salian rojos. Un 0/7 que pasa por suerte de que fichero
-        # cayo no demuestra nada, y esta familia se mata con un falso verde.
-        # Anadir `$M!($A, $FN($$$))` NO lo arregla: ast-grep casa ese patron y
-        # captura `$FN` (verificado con --json), pero gb sigue sin emitir la
-        # arista, asi que el hueco esta en la EXTRACCION, no en la tabla.
-        carencias=("las llamadas dentro de un macro solo se ven en las formas "
-                   "`m!(f(..))` y `m!(f(..), ..)`: el cuerpo de un macro es un arbol de "
-                   "tokens, no una expresion, asi que `assert!(f() > 0)` es invisible",),
+        # Licencia GANADA el 10-ago-2026, y con el criterio duro: 0 falsos verdes
+        # y **cascada exacta** en las 7 roturas, 52% de ahorro — el mismo 52% que
+        # js y go sobre la misma forma de proyecto, que es la señal de que la
+        # cascada esta entera y no de que ahorre mas.
+        #
+        # Lo que la bloqueaba y como se vio. Con `tia=True` el banco ya daba 0/7
+        # ANTES del arreglo, con 64% de ahorro: mas ahorro y aun asi peor, porque
+        # el extra venia de perder `tests/informe`. La cascada estaba rota en
+        # `informe.linea -> factura.emitir` y el veredicto salia verde solo
+        # porque OTROS tests ya estaban rojos. Lo destapo el criterio estricto
+        # (`bancos/estricto.py`), que exige que la seleccion CONTENGA todos los
+        # rojos en vez de conformarse con que alguno lo este.
+        carencias=("una llamada dentro de un macro se ve si es el primer argumento "
+                   "(`m!(f(..), ..)`) o el segundo (`m!(x, f(..))`), pero no en "
+                   "posiciones mas profundas ni anidada en una expresion: el cuerpo de "
+                   "un macro es un arbol de tokens, no una expresion, asi que "
+                   "`assert!(f() > 0)` sigue siendo invisible",),
     ),
     "java": _lang(
         # El patron CONTEXTUAL con `$MOD` caza cualquier combinacion de
