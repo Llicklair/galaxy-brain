@@ -42,3 +42,4 @@ bancos/cc/
 .oraculo.huella
 .oraculo_aristas.json
 bancos/bench-correccion/
+bancos/bench-correccion-tiradas/

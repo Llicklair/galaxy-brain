@@ -70,6 +70,7 @@ y los del instrumento salen todos en verde.
 | `bench_csharp.py` | ídem en C#, **métodos + llamadas cualificadas por clase** | `dotnet` + NuGet en caché | **0/7**, 52 %, cascada exacta |
 | `bench_rust.py` | ídem en Rust | `cargo` | **0/7**, 52 %, cascada exacta → **licencia ganada** el 10-ago |
 | `bench_multi.py` | java, php, lua y ruby con una sola tabla | su intérprete | cascada **exacta 4/4** en java/php/lua **sin runtime** (ver abajo) |
+| `experimento_correccion.py` | si el grafo mejora la **corrección** de un agente (A/B, suite oculta) | `claude` CLI · **gasta cuota** | 3/3 y 3/3 — **sin efecto** en una tarea que cabe en contexto |
 | `estres_tia.py` | roturas duras sobre un repo REAL | el runner de ese repo | 22/22 sin falsos verdes |
 | `estres_mutacion.py` | roturas **sutiles** (mutación semántica) | ídem | 0/20 falsos verdes |
 | `oraculo_cobertura.py` | la **selección** contra la verdad de ejecución, sobre ESTE repo | `coverage` | **0 falsos verdes** de 332 símbolos, 27 % ahorro |

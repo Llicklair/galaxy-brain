@@ -86,7 +86,13 @@ OCULTOS = (
     "def test_total_sigue_en_euros():\n"
     "    assert total(['pan', 'leche']) == 3\n\n\n"
     "def test_linea_sigue_en_euros():\n"
-    "    assert linea('pan') == 'pan: 2'\n\n\n"
+    "    # El VALOR en euros, no su FORMATO: '2' y '2.0' cumplen igual el\n"
+    "    # contrato que pedia la tarea. La primera version comparaba la cadena\n"
+    "    # entera y suspendia a un agente que habia adaptado bien los tres\n"
+    "    # llamantes, por elegir division real en vez de entera. Un oraculo que\n"
+    "    # mide formato no mide correccion, y los 0/3 de los DOS brazos venian\n"
+    "    # de aqui: parecian 'el grafo no sirve' y eran 'la medida no vale'.\n"
+    "    assert float(linea('pan').split(': ')[1]) == 2\n\n\n"
     "def test_descuento_sigue_en_euros():\n"
     "    assert abs(aplicar('pan') - 1.8) < 1e-9\n"
 )
@@ -217,13 +223,101 @@ def prompts():
     print(salida if salida.strip() else "(vacio, rc=%s)" % rc)
 
 
+def _copia_limpia(destino):
+    """Un proyecto recien generado en su propia carpeta, por tirada."""
+    genera()
+    shutil.rmtree(destino, ignore_errors=True)
+    shutil.copytree(BASE, destino, ignore=shutil.ignore_patterns(".git"))
+    return destino
+
+
+def _prompt(proyecto, brazo):
+    """Lo MISMO en los dos brazos salvo los hechos del grafo. Esa es la variable."""
+    texto = (TAREA + "\n\nEstas en la raiz del proyecto. No toques `tests/`. "
+             "No commitees. Cuando termines, di que ficheros cambiaste.\n")
+    if brazo != "B":
+        return texto
+    r = subprocess.run([sys.executable, "-m", "galaxybrain.cli", "calls",
+                        "tienda.precio.precio", "--depth", "2"],
+                       cwd=proyecto, capture_output=True, text=True, timeout=120,
+                       env=dict(os.environ, PYTHONPATH=proyecto))
+    return texto + ("\nHechos del grafo (`gb calls tienda.precio.precio`):\n\n%s\n"
+                    % (r.stdout or "(sin salida)"))
+
+
+def _corre_agente(proyecto, prompt, timeout_seg):
+    """`claude -p` headless, Opus. Devuelve (ok_arranco, motivo)."""
+    exe = shutil.which("claude")
+    if not exe:
+        return False, "claude CLI no esta en PATH"
+    # Fuera las GIT_* del proceso padre: el commit del banco heredaba fechas y
+    # rutas del repo de gb. Mismo motivo que en bucle.py, no se reinventa.
+    entorno = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    try:
+        r = subprocess.run([exe, "-p", prompt, "--model", "opus",
+                            "--permission-mode", "acceptEdits"],
+                           cwd=proyecto, capture_output=True, text=True,
+                           timeout=timeout_seg, env=entorno)
+    except subprocess.TimeoutExpired:
+        return False, "timeout de %ds" % timeout_seg
+    except OSError as error:
+        return False, "no arranco: %s" % error
+    return r.returncode == 0, "rc=%d" % r.returncode
+
+
+def tirada(n_por_brazo, timeout_seg):
+    """El experimento. El presupuesto se escribe ANTES y se imprime al empezar.
+
+    Este repo ya se comio 40 min y 150 llamadas por no escribir uno.
+    """
+    salon = os.path.join(RAIZ, "bancos", "bench-correccion-tiradas")
+    shutil.rmtree(salon, ignore_errors=True)
+    os.makedirs(salon, exist_ok=True)
+    resultados = {"A": [], "B": []}
+    print("presupuesto: %d tiradas (%d por brazo), tope %ds cada una\n"
+          % (2 * n_por_brazo, n_por_brazo, timeout_seg), flush=True)
+    for brazo in ("A", "B"):
+        for i in range(n_por_brazo):
+            proyecto = _copia_limpia(os.path.join(salon, "%s%d" % (brazo, i + 1)))
+            prompt = _prompt(proyecto, brazo)
+            arranco, motivo = _corre_agente(proyecto, prompt, timeout_seg)
+            if not arranco:
+                resultados[brazo].append(None)
+                print("  %s%d  NO SE PUDO CORRER (%s)" % (brazo, i + 1, motivo), flush=True)
+                continue
+            ok, _salida = evalua(proyecto)
+            resultados[brazo].append(ok)
+            print("  %s%d  suite oculta: %s" % (brazo, i + 1, "verde" if ok else "ROJA"),
+                  flush=True)
+    print("\n=== CORRECCION (suite oculta, que el agente nunca vio) ===")
+    for brazo, etiqueta in (("A", "control (sin grafo)"), ("B", "con `gb calls`")):
+        hechas = [x for x in resultados[brazo] if x is not None]
+        print("  %-22s %d de %d correctas" % (etiqueta, sum(1 for x in hechas if x),
+                                              len(hechas)))
+    a = [x for x in resultados["A"] if x is not None]
+    b = [x for x in resultados["B"] if x is not None]
+    if len(a) < n_por_brazo or len(b) < n_por_brazo:
+        print("\n  OJO: faltan tiradas; con menos muestra de la fijada no se concluye.")
+    elif sum(a) == sum(b):
+        print("\n  EMPATE: con esta muestra el grafo no cambia la correccion.")
+    return resultados
+
+
 if __name__ == "__main__":
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--dry", action="store_true",
                    help="valida el oraculo con dos agentes simulados, sin gastar cuota")
     p.add_argument("--prompts", action="store_true", help="enseñar los dos prompts")
+    p.add_argument("--tirada", action="store_true",
+                   help="EL EXPERIMENTO: gasta cuota (claude -p, Opus)")
+    p.add_argument("--n", type=int, default=3, help="tiradas por brazo (por defecto 3)")
+    p.add_argument("--timeout", type=int, default=300,
+                   help="tope por tirada en segundos (por defecto 300)")
     args = p.parse_args()
     if args.prompts:
         prompts()
+        raise SystemExit(0)
+    if args.tirada:
+        tirada(args.n, args.timeout)
         raise SystemExit(0)
     raise SystemExit(dry())

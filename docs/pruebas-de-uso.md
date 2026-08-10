@@ -79,6 +79,50 @@ el recall en 96%. 858 tests en verde, gate limpio.
 
 ---
 
+## 2026-08-11 · ¿El grafo mejora la CORRECCIÓN de un agente? Con esta tarea, **no**: 3/3 y 3/3
+
+La pregunta que el proyecto no había respondido nunca. Todo lo medido hasta ayer —ahorro, recall,
+precisión, falsos verdes— es **gasto y seguridad**; que `gb calls` haga escribir código más correcto
+se daba por supuesto porque suena obvio.
+
+**El montaje.** Proyecto generado con tres llamantes de `precio()`: uno normal, uno con **alias de
+import** (`grep "precio("` no lo encuentra) y uno en **tabla de despacho** (no hay llamada escrita
+que grepear). La tarea cambia el contrato a céntimos manteniendo el comportamiento externo. Lo único
+que separa los brazos es que B lleva pegada la salida de `gb calls`. El oráculo es una **suite oculta**
+que el agente no ve nunca: si el oráculo es visible mide obediencia, no corrección — los commits de
+agentes tocan tests un 23 % frente al 13 % de los humanos.
+
+**Presupuesto escrito antes de disparar:** 3 por brazo, 6 tiradas, 300 s de tope. Opus headless.
+
+**Resultado: 3/3 en los dos brazos.** Los seis agentes encontraron y adaptaron los **tres** llamantes,
+incluido el de la tabla de despacho. Es un efecto **techo**, no suelo:
+
+> Con esta tarea el grafo no cambia la corrección — Opus la resuelve sin él.
+
+Y era predecible, porque se avisó antes de lanzar: cuatro ficheros de veinte líneas **caben enteros en
+el contexto**, y el grafo no puede aportar donde no falta información. Lo que queda sin probar es la
+hipótesis contraria, que necesita otro montaje: un repo donde los llamantes **no quepan**. Este banco
+no la toca y no debe citarse como si lo hiciera.
+
+**Lo que el montaje sí destapó, antes de gastar un agente:** `gb calls` reportaba **2 de 3** llamantes
+— se dejaba el de la tabla de despacho. El grafo lo sabía (`nombrado_como_valor_en`, que alimenta la
+selección de tests desde el 10-ago) y la superficie que lee el agente no lo decía. Décima media
+conexión, y en el peor sitio posible. Arreglado antes de medir: con el bug, el brazo B habría corrido
+lastrado y el resultado habría salido en contra por el motivo equivocado.
+
+**Y el fallo de método, el tercero igual en dos días.** El primer veredicto fue **0-0**, leído como
+«el grafo no cambia la corrección» — la conclusión correcta por el motivo equivocado, y a punto de
+firmarse. El oráculo comparaba `linea('pan') == 'pan: 2'` y los agentes producían `'pan: 2.0'`:
+**medía formato, no valor**. Los dos brazos marcaban cero y el empate parecía el resultado. Corregido
+el oráculo y re-evaluados los mismos seis árboles —sin gastar una tirada más— salió 3/3 y 3/3.
+
+Es exactamente el mecanismo 5 de [como-se-rompe-un-instrumento](como-se-rompe-un-instrumento.md): un
+cero que significa «no he mirado» se lee igual que uno que significa «no hay efecto». Y entre medias,
+dos `print` de éxito **incondicionales** afirmando que un reemplazo se había aplicado cuando
+`grep -c` daba 0 — el mecanismo 4, tres veces en el mismo día.
+
+---
+
 ## 2026-08-10 · La precisión del grafo, medida por primera vez: **97%** — y las dos veces que el instrumento acusó al grafo de sus propios puntos ciegos
 
 Los dos oráculos medían **recall**: qué ve el grafo de lo que ocurre. Con eso se puede tener recall
