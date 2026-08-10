@@ -71,25 +71,83 @@ def test_un_candado_caducado_se_releva_y_se_suelta_al_salir(tmp_path, monkeypatc
     assert not os.path.exists(ruta)
 
 
-def test_borrar_el_mapa_apaga_el_watch(tmp_path, monkeypatch, capsys):
+def test_borrar_el_mapa_lo_REPONE_en_vez_de_apagar_el_watch(tmp_path, monkeypatch):
+    """El mapa es la fuente de verdad del usuario, no el mando del proceso.
+
+    Antes su ausencia era el opt-out: para matar un watch de fondo había que
+    borrarle el mapa. Pasó en una demo el 10-ago-2026 — se destruyó un mapa
+    bueno solo para parar un proceso. Ahora que falte lo repone, y el apagador
+    es el candado, que vive fuera del repo y es del proceso.
+
+    Ojo al detalle que hace el test no trivial: se borra SIN tocar ningún .py,
+    así que la firma del árbol no cambia. Si la reposición dependiera solo de
+    esa firma, el mapa no volvería nunca.
+    """
     import time
 
     root = _proyecto(tmp_path)
     destino = str(tmp_path / "mapa.html")
-    with open(destino, "w", encoding="utf-8") as handle:
-        handle.write("<!-- viejo -->")
 
-    def _borra_y_sigue(_segundos):
-        if os.path.exists(destino):
-            os.remove(destino)
+    tics = {"n": 0}
+
+    def _borra_una_vez_y_corta(_segundos):
+        tics["n"] += 1
+        if tics["n"] == 1:
+            os.remove(destino)          # el usuario borra su mapa
             return
-        raise AssertionError("el watch dio otra vuelta con el mapa ya borrado")
+        assert os.path.exists(destino), "el watch tenia que reponer el mapa"
+        raise KeyboardInterrupt
 
-    monkeypatch.setattr(time, "sleep", _borra_y_sigue)
-    rc = cli.main(["symbols", root, "--html", destino, "--watch"])
-    assert rc == 0
+    monkeypatch.setattr(time, "sleep", _borra_una_vez_y_corta)
+    assert cli.main(["symbols", root, "--html", destino, "--watch"]) == 0
+    assert os.path.exists(destino)
+
+
+def test_soltar_el_candado_apaga_el_watch(tmp_path, monkeypatch, capsys):
+    """El apagador de verdad: el candado, que es del proceso y no del usuario."""
+    import time
+
+    root = _proyecto(tmp_path)
+    destino = str(tmp_path / "mapa.html")
+
+    def _suelta_y_sigue(_segundos):
+        candado = cli._ruta_candado(destino)
+        if os.path.exists(candado):
+            os.remove(candado)
+            return
+        raise AssertionError("el watch dio otra vuelta con el candado ya suelto")
+
+    monkeypatch.setattr(time, "sleep", _suelta_y_sigue)
+    assert cli.main(["symbols", root, "--html", destino, "--watch"]) == 0
     assert "watch apagado" in capsys.readouterr().out
-    assert not os.path.exists(cli._ruta_candado(destino))
+    # Y el mapa NO se toca al apagar: es lo que distingue este apagador del viejo.
+    assert os.path.exists(destino)
+
+
+def test_parar_apaga_sin_borrar_el_mapa(tmp_path, capsys):
+    """`gb symbols --html X --parar`: suelta el candado y deja el mapa intacto."""
+    root = _proyecto(tmp_path)
+    destino = str(tmp_path / "mapa.html")
+    with open(destino, "w", encoding="utf-8") as handle:
+        handle.write("<!-- el mapa del usuario -->")
+    candado = cli._ruta_candado(destino)
+    os.makedirs(os.path.dirname(candado), exist_ok=True)
+    with open(candado, "w", encoding="utf-8") as handle:
+        handle.write("{}")
+
+    assert cli.main(["symbols", root, "--html", destino, "--parar"]) == 0
+    assert "candado soltado" in capsys.readouterr().out
+    assert not os.path.exists(candado)
+    with open(destino, encoding="utf-8") as handle:
+        assert handle.read() == "<!-- el mapa del usuario -->"
+
+
+def test_parar_sin_watch_vivo_lo_dice_y_no_rompe(tmp_path, capsys):
+    """Un apagador que grita cuando no hay nada que apagar acaba desactivado."""
+    root = _proyecto(tmp_path)
+    destino = str(tmp_path / "mapa.html")
+    assert cli.main(["symbols", root, "--html", destino, "--parar"]) == 0
+    assert "no habia ningun watch vivo" in capsys.readouterr().out
 
 
 def test_leer_una_captura_regenera_el_mapa_solo(tmp_path, monkeypatch):

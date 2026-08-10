@@ -1473,11 +1473,16 @@ def _vigilar(root, args):
     motor = _codigo_del_motor()
     try:
         while True:
-            if anterior is not None and not os.path.exists(destino):
-                # Borrar el mapa ES el apagador: el fichero era el opt-in y su
-                # ausencia es el opt-out. Sin esto, un watch lanzado en fondo
-                # no tendria una forma razonable de morir.
-                emit("el mapa ya no esta — watch apagado")
+            # Que falte el mapa NO apaga nada: lo REPONE. Antes su ausencia era
+            # el opt-out, y eso convertia el artefacto del usuario en el mando
+            # del proceso — para parar un watch habia que borrarle el mapa, que
+            # es su fuente de verdad. Pasó de verdad el 10-ago-2026 en una demo:
+            # se borro un mapa bueno solo para matar un proceso de fondo.
+            # El apagador es el CANDADO, que ya vivia fuera del repo (regla 7) y
+            # es del proceso, no del usuario: `--parar` lo borra.
+            falta_mapa = not os.path.exists(destino)
+            if candado and not os.path.exists(candado):
+                emit("el candado ya no esta — watch apagado")
                 return 0
             if _codigo_del_motor() != motor:
                 # Un vigilante con el codigo viejo congelado en memoria pisa las
@@ -1497,7 +1502,11 @@ def _vigilar(root, args):
                 break
             _latir(candado)
             actual = (_firma_py(root), _firma_capas(root), _firma_actividad(base_worktrees))
-            if actual != anterior:
+            # `falta_mapa` fuerza la vuelta aunque nada haya cambiado en disco:
+            # si solo se mirara la firma, un mapa borrado no volveria hasta que
+            # alguien tocase un fichero, y el usuario se quedaria sin su fuente
+            # de verdad esperando a un evento que quiza no llega.
+            if actual != anterior or falta_mapa:
                 # La actividad NO es forma: los agentes cambian consolas y
                 # worktrees sin tocar un simbolo del proyecto, y el guard de
                 # forma-igual se comia justo esas regeneraciones — el lienzo
@@ -1507,7 +1516,8 @@ def _vigilar(root, args):
                 report = symbols_mod.analyze(root, since=args.since)
                 if not report["root_error"]:
                     grafo = graph_mod.analyze(root)
-                    if cambio_actividad or not _html_forma_igual(root, destino, report, grafo):
+                    if (falta_mapa or cambio_actividad
+                            or not _html_forma_igual(root, destino, report, grafo)):
                         try:
                             # Misma escritura atomica que en los one-shot: aqui
                             # es donde MAS importa, el watch reescribe a menudo.
@@ -1730,6 +1740,20 @@ def cmd_symbols(args):
     from . import symbols
 
     root = os.path.abspath(args.path or ".")
+
+    if getattr(args, "parar", False):
+        # El apagador del watch, y el mapa NO se toca. Antes se paraba borrando
+        # el mapa —el artefacto del usuario haciendo de mando del proceso— y eso
+        # obligaba a destruir una fuente de verdad para matar un proceso.
+        destino = _destino_mapa(args.html)
+        candado = _ruta_candado(destino)
+        if os.path.exists(candado):
+            _soltar_candado(candado)
+            emit("candado soltado: el watch de %s se apaga en el proximo tick"
+                 % os.path.basename(destino))
+        else:
+            emit("no habia ningun watch vivo para %s" % os.path.basename(destino))
+        return 0
 
     if getattr(args, "watch", False):
         if not args.html:
@@ -2432,6 +2456,11 @@ def build_parser():
         default=2,
         metavar="SEGUNDOS",
         help="cada cuanto mira el disco en --watch (por defecto 2)",
+    )
+    syms.add_argument(
+        "--parar",
+        action="store_true",
+        help="apagar el watch de este mapa SIN borrar el mapa",
     )
     syms.add_argument(
         "--refresco",
