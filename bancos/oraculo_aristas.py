@@ -126,7 +126,7 @@ def _localiza(idx, fichero, linea, exacto=False):
                 mejor = (inicio, fin, qual)
     if mejor:
         return (None, True) if exacto else (mejor[2], True)
-    for inicio, fin, qual in lista:
+    for inicio, _fin, qual in lista:
         if 0 < inicio - linea <= 5:
             return qual, False
     return None, False
@@ -240,7 +240,7 @@ def contrastar():
 
     if crudo:
         cuenta = {}
-        for o, d in crudo:
+        for _o, d in crudo:
             cuenta[d] = cuenta.get(d, 0) + 1
         print("\nlos llamados que mas llamantes pierden:")
         for d, n in sorted(cuenta.items(), key=lambda x: -x[1])[:15]:
