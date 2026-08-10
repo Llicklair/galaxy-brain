@@ -23,6 +23,9 @@ import shutil
 import subprocess
 import sys
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import estricto  # noqa: E402  (el banco es un script, no un paquete)
+
 RAIZ = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bench-cs")
 GB = [sys.executable, "-m", "galaxybrain.cli"]
 DOTNET = shutil.which("dotnet")
@@ -151,7 +154,7 @@ OBJETIVOS = [("Iva", "Get"), ("Carrito", "Subtotal"), ("Carrito", "Total"),
              ("Descuento", "Aplicar"), ("Factura", "Emitir"),
              ("Informe", "Linea"), ("Texto", "Mayus")]
 
-falsos = ahorro = 0
+falsos = ahorro = con_fuga = medidas = 0
 for modulo, metodo in OBJETIVOS:
     limpia()
     rompe(modulo, metodo)
@@ -160,7 +163,11 @@ for modulo, metodo in OBJETIVOS:
         print("%-24s  ERROR: %s" % ("%s.%s" % (modulo, metodo), error[:44]))
         continue
     rojo_sel = dotnet_test(sel) if sel and not todo else dotnet_test()
-    rojo_full = dotnet_test()
+    # Criterio ESTRICTO: la seleccion tiene que contener TODOS los
+    # rojos. Un banco pequenio tapa la fuga con que otro caiga rojo.
+    rojos, fugados = estricto.fuga(
+        sel, todo, ["%s.cs" % k for k in TESTS], dotnet_test)
+    rojo_full = bool(rojos)
     if rojo_full and not rojo_sel:
         v, falsos = "*** FALSO VERDE ***", falsos + 1
     elif rojo_full:
@@ -168,10 +175,15 @@ for modulo, metodo in OBJETIVOS:
         ahorro += len(TESTS) - (len(sel) if sel and not todo else len(TESTS))
     else:
         v = "sin cobertura"
-    print("%-24s %4d %9s %10s  %s"
-          % ("%s.%s" % (modulo, metodo), len(sel), rojo_sel, rojo_full, v))
+    if not todo:
+        medidas += 1
+    if fugados:
+        con_fuga += 1
+    print("%-24s %4d %9s %10s  %s%s"
+          % ("%s.%s" % (modulo, metodo), len(sel), rojo_sel, rojo_full, v,
+             estricto.linea_extra(rojos, fugados)))
 
 limpia()
 print("-" * 82)
-print("%d roturas · %d FALSOS VERDES · ahorro medio %.0f%% de la suite"
-      % (len(OBJETIVOS), falsos, 100.0 * ahorro / (len(OBJETIVOS) * len(TESTS))))
+print(estricto.resumen(len(OBJETIVOS), falsos, con_fuga,
+                       100.0 * ahorro / (len(OBJETIVOS) * len(TESTS)), medidas))

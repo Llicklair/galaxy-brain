@@ -16,6 +16,9 @@ import shutil
 import subprocess
 import sys
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import estricto  # noqa: E402  (el banco es un script, no un paquete)
+
 RAIZ = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bench-js-tia")
 GB = [sys.executable, "-m", "galaxybrain.cli"]
 
@@ -88,6 +91,11 @@ def node_test(ficheros=None):
     return corre(cmd)[0] != 0
 
 
+def rojo_de(nombres):
+    """Las claves del banco (`carrito.test.js`) a las rutas que come el runner."""
+    return node_test(["test/%s" % n for n in nombres])
+
+
 def limpia():
     subprocess.run(["git", "checkout", "HEAD", "--", "."], cwd=RAIZ, capture_output=True)
 
@@ -132,7 +140,7 @@ OBJETIVOS = [("iva.js", "iva"), ("carrito.js", "subtotal"), ("carrito.js", "tota
              ("descuento.js", "conDescuento"), ("factura.js", "emitir"),
              ("informe.js", "linea"), ("texto.js", "mayus")]
 
-falsos = ahorro = 0
+falsos = ahorro = con_fuga = medidas = 0
 for modulo, funcion in OBJETIVOS:
     limpia()
     rompe(modulo, funcion)
@@ -141,7 +149,11 @@ for modulo, funcion in OBJETIVOS:
         print("%-26s  ERROR: %s" % ("%s:%s" % (modulo, funcion), error[:44]))
         continue
     rojo_sel = node_test(sel) if sel else node_test()   # sin lista, la suite entera
-    rojo_full = node_test()
+    # El criterio estricto: no basta con que la seleccion se ponga roja, tiene
+    # que CONTENER todos los rojos. Rust pasaba 0/7 con la cascada rota porque
+    # bastaba un rojo cualquiera (ver bancos/estricto.py).
+    rojos, fugados = estricto.fuga(sel, todo, list(TESTS), rojo_de)
+    rojo_full = bool(rojos)
     if rojo_full and not rojo_sel:
         v = "*** FALSO VERDE ***"
         falsos += 1
@@ -150,10 +162,15 @@ for modulo, funcion in OBJETIVOS:
         ahorro += len(TESTS) - (len(sel) if sel and not todo else len(TESTS))
     else:
         v = "sin cobertura"
-    print("%-26s %4d %9s %10s  %s"
-          % ("%s:%s" % (modulo, funcion), len(sel), rojo_sel, rojo_full, v))
+    if not todo:
+        medidas += 1
+    if fugados:
+        con_fuga += 1
+    print("%-26s %4d %9s %10s  %s%s"
+          % ("%s:%s" % (modulo, funcion), len(sel), rojo_sel, rojo_full, v,
+             estricto.linea_extra(rojos, fugados)))
 
 limpia()
 print("-" * 84)
-print("%d roturas · %d FALSOS VERDES · ahorro medio %.0f%% de la suite"
-      % (len(OBJETIVOS), falsos, 100.0 * ahorro / (len(OBJETIVOS) * len(TESTS))))
+print(estricto.resumen(len(OBJETIVOS), falsos, con_fuga,
+                       100.0 * ahorro / (len(OBJETIVOS) * len(TESTS)), medidas))

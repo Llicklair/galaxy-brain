@@ -23,6 +23,9 @@ import shutil
 import subprocess
 import sys
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import estricto  # noqa: E402  (el banco es un script, no un paquete)
+
 BASE = os.path.dirname(os.path.abspath(__file__))
 GB = [sys.executable, "-m", "galaxybrain.cli"]
 
@@ -204,12 +207,17 @@ def genera(lang):
     return raiz
 
 
+def ficheros_de(lang, raiz):
+    """Los ficheros de test tal como los nombra el runner de ese lenguaje."""
+    cfg = FUENTES[lang]
+    return sorted(os.path.join(cfg["tdir"], f)
+                  for f in os.listdir(os.path.join(raiz, cfg["tdir"])))
+
+
 def corre_tests(lang, raiz, ficheros=None):
     """True si algo se pone ROJO. Sin `ficheros`, la suite entera."""
     cfg = FUENTES[lang]
-    todos = sorted(os.path.join(cfg["tdir"], f)
-                   for f in os.listdir(os.path.join(raiz, cfg["tdir"])))
-    objetivo = ficheros if ficheros else todos
+    objetivo = ficheros if ficheros else ficheros_de(lang, raiz)
     if cfg.get("compila"):
         rc, _ = _corre(["javac", "-d", "out", "-cp", cfg["dir"]]
                        + [os.path.join(cfg["dir"], f) for f in os.listdir(os.path.join(raiz, cfg["dir"]))]
@@ -238,10 +246,85 @@ def seleccion(raiz):
     return list(d.get("tests") or []), bool(d.get("todo")), None
 
 
+#: Lo que la seleccion DEBE traer en cada rotura, por la forma de la cadena:
+#: `iva <- carrito <- factura`, mas `texto` aislado. Estaba escrito en prosa en
+#: la cabecera de este fichero desde el principio y no lo comprobaba nadie.
+CASCADA_ESPERADA = (3, 2, 1, 1)
+
+
+def cascada(lang):
+    """La mitad del banco que NO necesita runtime: cuantos tests elige gb.
+
+    Que un test se ponga rojo lo dice el interprete y sin el no hay banco. Pero
+    la CASCADA —a cuantos tests llega gb desde lo que se rompio— sale del grafo
+    y se puede comprobar en cualquier maquina. Y es justo la mitad que fallo en
+    Rust: alli el rojo/verde salia bien y lo que estaba roto era el alcance.
+
+    Sirve para vigilar las licencias concedidas ANTES del criterio estricto
+    (java, php, lua: 9-ago-2026) en una maquina que no tiene sus interpretes. No
+    es una licencia —para eso hacen falta rojos reales— pero un fallo aqui SI es
+    prueba de que la cascada esta rota.
+    """
+    raiz = genera(lang)
+    sentencia, abre = ROTURA[lang]
+    filas, mal = [], 0
+    for (nombre, funcion), esperado in zip(ORDEN[lang], CASCADA_ESPERADA):
+        subprocess.run(["git", "checkout", "HEAD", "--", "."], cwd=raiz, capture_output=True)
+        ruta = os.path.join(raiz, cfg_de(lang, "dir"), nombre + cfg_de(lang, "ext"))
+        roto = rompe_funcion(open(ruta, encoding="utf-8").read(), funcion, sentencia, abre)
+        if roto is None:
+            filas.append((nombre, None, esperado, "no se pudo romper"))
+            mal += 1
+            continue
+        open(ruta, "w", encoding="utf-8", newline="").write(roto)
+        sel, todo, error = seleccion(raiz)
+        n = len(FUENTES[lang]["test"]) if todo else len(sel or ())
+        nota = "" if error is None else error[:40]
+        if todo and not con_licencia(lang):
+            # Sin licencia, caer a la suite entera es lo CORRECTO, no un fallo:
+            # es la caida segura funcionando. Contarlo como cascada rota seria
+            # acusar al comportamiento que protege del verde falso.
+            nota = "cae a todo (sin licencia: es lo correcto)"
+        elif error or todo or n != esperado:
+            mal += 1
+            nota = nota or ("cayo a todo" if todo else "esperaba %d" % esperado)
+        filas.append((nombre, n, esperado, nota))
+    subprocess.run(["git", "checkout", "HEAD", "--", "."], cwd=raiz, capture_output=True)
+    return filas, mal
+
+
+def con_licencia(lang):
+    """Si gb puede estrechar en ese lenguaje. Se lee de la tabla, no se copia."""
+    sys.path.insert(0, os.path.join(os.path.dirname(BASE), "src"))
+    from galaxybrain import lenguajes as tabla
+
+    return bool(tabla.LENGUAJES.get(lang, {}).get("tia"))
+
+
+def cfg_de(lang, clave):
+    return FUENTES[lang][clave]
+
+
 def banco(lang):
     cfg = FUENTES[lang]
     if not shutil.which(cfg["bin"]) or (cfg.get("compila") and not shutil.which("javac")):
-        print("== %s ==  SIN RUNTIME (%s no esta): no se puede medir\n" % (lang, cfg["bin"]))
+        # Sin interprete no hay rojos, pero la CASCADA si se puede mirar — y es
+        # la mitad que fallo en Rust. Callarse aqui seria dar por bueno lo que no
+        # se ha comprobado, que es el error que este repo persigue todo el dia.
+        filas, mal = cascada(lang)
+        print("== %s ==  SIN RUNTIME (%s no esta): no hay rojos reales, pero la "
+              "CASCADA si se mide" % (lang, cfg["bin"]))
+        for nombre, n, esperado, nota in filas:
+            print("   %-10s sel=%-4s esperado=%d  %s"
+                  % (nombre, "?" if n is None else n, esperado,
+                     "<<< %s" % nota if nota else "ok"))
+        if not con_licencia(lang):
+            print("   -> sin licencia: cae a la suite entera por diseño, asi que "
+                  "aqui no hay cascada que medir.\n")
+        else:
+            print("   -> cascada %s (%d de %d roturas mal). NO es una licencia: "
+                  "para eso hacen falta rojos reales, y sin %s no los hay.\n"
+                  % ("EXACTA" if not mal else "ROTA", mal, len(filas), cfg["bin"]))
         return
     raiz = genera(lang)
     if corre_tests(lang, raiz):
@@ -249,7 +332,7 @@ def banco(lang):
         return
     n = len(cfg["test"])
     print("== %s ==  %d modulos, %d tests" % (lang, len(cfg["mod"]), n))
-    falsos = ahorro = 0
+    falsos = ahorro = con_fuga = medidas = 0
     sentencia, abre = ROTURA[lang]
     for nombre, funcion in ORDEN[lang]:
         subprocess.run(["git", "checkout", "HEAD", "--", "."], cwd=raiz, capture_output=True)
@@ -265,7 +348,13 @@ def banco(lang):
             print("   %-10s ERROR: %s" % (nombre, error[:46]))
             continue
         rojo_sel = corre_tests(lang, raiz, sel) if sel and not todo else corre_tests(lang, raiz)
-        rojo_full = corre_tests(lang, raiz)
+        # Criterio ESTRICTO: no basta con que la seleccion se ponga roja, tiene
+        # que CONTENER todos los rojos. Con pocos tests encadenados, perder uno
+        # impactado se tapa con que otro caiga (ver bancos/estricto.py).
+        rojos, fugados = estricto.fuga(
+            sel, todo, ficheros_de(lang, raiz),
+            lambda fs: corre_tests(lang, raiz, list(fs)))
+        rojo_full = bool(rojos)
         if rojo_full and not rojo_sel:
             v, falsos = "*** FALSO VERDE ***", falsos + 1
         elif rojo_full:
@@ -273,11 +362,16 @@ def banco(lang):
             ahorro += n - (len(sel) if sel and not todo else n)
         else:
             v = "sin cobertura"
-        print("   %-10s sel=%d rojo_sel=%-5s rojo_full=%-5s %s"
-              % (nombre, len(sel), rojo_sel, rojo_full, v))
+        if not todo:
+            medidas += 1
+        if fugados:
+            con_fuga += 1
+        print("   %-10s sel=%d rojo_sel=%-5s rojo_full=%-5s %s%s"
+              % (nombre, len(sel), rojo_sel, rojo_full, v,
+                 estricto.linea_extra(rojos, fugados)))
     subprocess.run(["git", "checkout", "HEAD", "--", "."], cwd=raiz, capture_output=True)
-    print("   -> %d falsos verdes · ahorro medio %.0f%%\n"
-          % (falsos, 100.0 * ahorro / (len(ORDEN[lang]) * n)))
+    print("   -> " + estricto.resumen(len(ORDEN[lang]), falsos, con_fuga,
+                                      100.0 * ahorro / (len(ORDEN[lang]) * n), medidas) + "\n")
 
 
 for lang in (sys.argv[1:] or sorted(FUENTES)):
