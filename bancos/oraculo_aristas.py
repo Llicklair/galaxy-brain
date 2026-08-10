@@ -235,7 +235,8 @@ def contrastar():
     print("HUECOS (ocurren y no estan)    : %d  (%.0f%% de las reales)"
           % (len(huecos), 100 * len(huecos) / max(len(reales), 1)))
     print("  de ellos, despacho implicito : %d  (ya enlazado por _enlaza_dunders)" % len(dunder))
-    print("  de ellos, usados como valor  : %d  (ya opacos en la seleccion)" % len(valor))
+    print("  de ellos, usados como valor  : %d  (la seleccion sube por quien los NOMBRA)"
+          % len(valor))
     print("  SIN PUERTA                   : %d  <- la lista de trabajo" % len(crudo))
 
     if crudo:

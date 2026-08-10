@@ -381,19 +381,19 @@ def analyze(root, rev_range=None, staged=False, worktree=False, skip=None,
             "el diff toca .py pero no cae dentro de ningun simbolo del grafo "
             "(codigo a nivel de modulo, imports, constantes): todo")
 
-    # Un simbolo que alguien NOMBRA sin llamarlo se esta pasando como valor, y
-    # desde ahi lo invoca alguien a quien el AST no puede seguir: la llamada
-    # acaba siendo sobre una variable. Sus llamantes reales NO estan en el grafo,
-    # asi que estrechar por el es exactamente el verde falso que mata a esta
-    # familia. Medido con el oraculo de cobertura sobre este repo (10-ago-2026):
-    # `graph.analyze` invoca `(constructor or build_graph)(...)`, y por eso 22
-    # ficheros de test ejercitaban `build_graph` mientras la seleccion elegia 12.
+    # Un simbolo que alguien NOMBRA sin llamarlo se pasa como valor, y desde ahi
+    # lo invoca alguien a quien el AST no puede seguir: la llamada acaba siendo
+    # sobre una variable. Esto CAIA a la suite entera, con el motivo de que sus
+    # llamantes reales no estaban en el grafo — y era cierto hasta que
+    # `_enlaza_pasados_como_valor` empezo a poner el cuerpo que lo nombra como
+    # llamante. Ahora si hay por donde subir, asi que se estrecha y se dice.
+    #
+    # La asimetria de antes no se sostenia: para el simbolo del OTRO lado del
+    # enlace ya se sobre-aproximaba por el sitio de nombrado (es lo que cerro los
+    # 93 falsos verdes), y para este se corria todo. La misma puerta, los dos
+    # sentidos. Quien decide no es el argumento sino el oraculo de cobertura:
+    # se acepto porque siguio dando 0 falsos verdes sobre este repo.
     por_valor = sorted(set(semillas) & set(grafo.get("usados_como_valor") or []))
-    if por_valor:
-        return correr_todo(
-            "%s se pasa(n) como valor a otro sitio (callback, inyeccion, registro): "
-            "quien los llama de verdad no deja arista que seguir, asi que se corre todo"
-            % ", ".join(por_valor[:3]))
 
     llamantes = _llamantes(grafo["edges"])
     _enlaza_dunders(nodes, llamantes)
@@ -423,4 +423,13 @@ def analyze(root, rev_range=None, staged=False, worktree=False, skip=None,
         report["avisos"].append(
             "%d fichero(s) mas por lanzar subprocesos: ejercitan el codigo sin "
             "dejar arista que seguir, asi que van siempre" % len(opacos))
+    if por_valor:
+        # Se estrecha, pero el usuario tiene derecho a saber por donde: aqui la
+        # cadena no sube por una llamada escrita, sino por el cuerpo que NOMBRA
+        # el simbolo. Es sobre-aproximacion, no un hecho, y se dice.
+        report["avisos"].append(
+            "%s se pasa(n) como valor (callback, inyeccion, registro): quien los "
+            "invoca no deja arista, asi que la seleccion sube por el cuerpo que "
+            "los NOMBRA — se sobre-aproxima, no se demuestra"
+            % ", ".join(por_valor[:3]))
     return report

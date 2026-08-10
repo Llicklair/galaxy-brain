@@ -204,17 +204,21 @@ def contrastar():
         return 2
 
     # Las MISMAS puertas que `impacted.analyze`, o esto mediria una seleccion que
-    # no existe. Un simbolo que se pasa como valor hace que gb corra la suite
-    # entera: cuesta ahorro y por eso se cuenta aparte.
+    # no existe. Los pasados como valor SE MIDEN como los demas desde que la
+    # seleccion estrecha por el cuerpo que los nombra; se siguen contando aparte
+    # porque su camino es sobre-aproximado y conviene saber cuantos son.
+    #
+    # Antes se saltaban con `continue` y ahorro 0, replicando el "corre todo" de
+    # entonces. Cuando la seleccion dejo de caer, el oraculo siguio saltandolos y
+    # dio el MISMO numero que antes del cambio: un instrumento que copia la
+    # conducta que juzga no puede medir que cambie. Cazado el 10-ago-2026, al ver
+    # 27% de ahorro identico antes y despues.
     por_valor = set(grafo.get("usados_como_valor") or [])
 
     fallos, ahorros, total, cayeron = [], [], 0, 0
     for qual, tests_reales in sorted(verdad.items()):
         if qual in por_valor:
             cayeron += 1
-            ahorros.append(0.0)
-            total += 1
-            continue
         alcanzados, truncado = impacted.tests_que_alcanzan(nodes, llamantes, {qual})
         if truncado:
             continue                     # gb corre todo aqui: no hay nada que medir
@@ -229,7 +233,7 @@ def contrastar():
     print("\n=== ORACULO DE COBERTURA ===")
     print("simbolos con verdad de ejecucion : %d" % total)
     print("ficheros de test en el repo      : %d" % len(todos))
-    print("caen a 'corre todo' por valor    : %d  (%.0f%% de los medidos)"
+    print("pasados como VALOR (camino sobre-aproximado): %d  (%.0f%% de los medidos)"
           % (cayeron, 100 * cayeron / max(total, 1)))
     print("ahorro medio de la seleccion     : %.0f%%"
           % (100 * sum(ahorros) / max(len(ahorros), 1)))
