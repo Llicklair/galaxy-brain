@@ -8,6 +8,7 @@ paso posterior, separado y descartable (ARCHITECTURE, reglas 6 y 8).
 import datetime
 import linecache
 import os
+import re
 import sys
 import sysconfig
 import traceback
@@ -248,6 +249,67 @@ def build_record(exc_type, exc, tb, source="excepthook", thread=None):
     except BaseException:  # noqa: BLE001
         argv = []
 
+    return _registro(exc_type, exc, source, thread, frames, trimmed, text, cwd, argv)
+
+
+#: Un subcomando: minuscula, corto, sin separadores. Deliberadamente
+#: estrecho — lo que no case se tapa, que es el lado seguro del error.
+_RE_SUBCOMANDO = re.compile(r"^[a-z][a-z0-9_-]{0,20}$")
+
+
+def forma_de_argv(argv):
+    """La FORMA del comando, sin sus valores: `gb calls <arg> --depth <val>`.
+
+    El registro guardaba `program` y `argv_count`, y `argv` entero solo con
+    `GB_KEEP_ARGV`. El motivo del defecto es bueno y no se toca: los secretos
+    viven en los flags (`--token=...`) y guardarlos crudos ya fue una fuga a
+    disco (S3). Pero el precio se midió el 11-ago-2026 investigando por qué la
+    consola se abandona (regla 5): de 136 capturas, **0 sabían qué comando había
+    muerto**. Ante 44 que dicen `program: .../Scripts/gb` no se puede saber si
+    fue `gb calls`, `gb tests` o un hook — y sin eso, actuar sobre la captura
+    cuesta lo mismo que reejecutar. Que es justo lo que se hace en vez de leerla.
+
+    El punto medio: el NOMBRE de un flag casi nunca es secreto; su VALOR casi
+    siempre puede serlo. Así que se conservan los nombres y se tapan los valores.
+    `--token=abc` se parte y se tapa igual, que es donde vivía la fuga.
+    """
+    if not argv:
+        return []
+    forma = [os.path.basename(str(argv[0]))]
+    for indice, bruto in enumerate(argv[1:]):
+        pieza = str(bruto)
+        # Solo `argv[1]` puede ser subcomando: la forma clasica `tool sub ...`.
+        # Con "la primera posicional" a secas, `python -c codigo` conservaba el
+        # CODIGO —`-c` contaba como flag y el codigo como primera posicional— y
+        # eso es contenido del programa yendo a disco. Cazado con una tabla de
+        # casos antes de tocar nada, no despues.
+        primero = indice == 0
+        if not pieza.startswith("-"):
+            # El SUBCOMANDO se conserva, y solo el primero. Sin el, el campo no
+            # sirve para nada: `gb <arg> <arg>` no distingue `gb calls` de
+            # `gb tests`, que es exactamente la pregunta que no se podia
+            # responder. El patron es estrecho a proposito —minuscula, corto, sin
+            # separadores ni mayusculas— asi que una ruta, un token o un secreto
+            # con pinta de tal NO pasa. Riesgo residual declarado: un secreto que
+            # fuese la PRIMERA posicional y ademas pareciese un subcomando
+            # (`mytool clave`) se guardaria; el modelo de amenaza documentado
+            # dice que los secretos van en flags, y esos siguen tapados.
+            if primero and _RE_SUBCOMANDO.match(pieza):
+                forma.append(pieza)
+            else:
+                forma.append("<arg>")
+            primero = False
+            continue
+        if "=" in pieza:
+            # `--token=secreto`: el nombre se queda, el valor se tapa. Sin esto
+            # el propio caso que motivo el defecto seguiria yendo a disco.
+            forma.append(pieza.split("=", 1)[0] + "=<val>")
+            continue
+        forma.append(pieza)
+    return forma
+
+
+def _registro(exc_type, exc, source, thread, frames, trimmed, text, cwd, argv):
     return {
         "schema": 1,
         "ts": datetime.datetime.now().astimezone().isoformat(timespec="seconds"),
@@ -278,6 +340,8 @@ def build_record(exc_type, exc, tb, source="excepthook", thread=None):
             "program": argv[0] if argv else None,
             "argv": argv if config.keep_argv() else None,
             "argv_count": len(argv),
+            # La FORMA del comando, siempre: nombres de flag sí, valores no.
+            "argv_forma": forma_de_argv(argv),
             "python": sys.version.split()[0],
             "executable": sys.executable,
             "platform": sys.platform,
