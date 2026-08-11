@@ -79,6 +79,43 @@ el recall en 96%. 858 tests en verde, gate limpio.
 
 ---
 
+## 2026-08-11 · A escala (215 ficheros) tampoco: 3/3 y 3/3, y el motivo es peor — **`grep "from X import"` da los mismos llamantes**
+
+Segunda tirada, montada para arreglar el techo de la primera: si el grafo no aportaba nada en un
+proyecto de 4 ficheros porque cabía en contexto, la prueba honesta es un proyecto donde **no quepa**.
+
+**El montaje:** 215 ficheros. 12 llamantes reales de `precio()` —4 directos, 4 con **alias de import**,
+4 en **tabla de despacho**— y 200 módulos de ruido que hablan de precios sin llamar a `precio`. Un
+`grep precio` ingenuo devuelve **226 aciertos**: un pajar. Verificado antes de disparar que el brazo B
+recibe **los 12 exactos**, con los de tabla en su propia línea.
+
+**Resultado: 3/3 en los dos brazos, otra vez.**
+
+**Y el motivo no es el techo de la primera vez, es peor.** Mi diseño nunca fue hostil al grep: escondí
+la LLAMADA (alias, tabla) pero no el IMPORT.
+
+```
+grep -rl "from tienda.precio import" tienda/   ->  12 de 12
+```
+
+En Python, con imports explícitos, **el import es un proxy casi perfecto de «este módulo usa esto»**.
+El agente no necesita leer 215 ficheros: greapea el import y lee 12. La afirmación *«`gb calls`
+encuentra llamantes que grep no encuentra»* es **falsa a nivel de módulo**, y es la parte del pitch
+que más se repite.
+
+**Lo que sigue en pie**, y no se ha probado ni a favor ni en contra:
+
+- **granularidad de símbolo** — qué función dentro del módulo y en qué línea; el grep da el fichero
+- **transitividad** — `--depth 2` es un cierre; a grep le costaría N pasadas encadenadas a mano
+- **`import tienda.precio as m`** y luego `m.precio()`, que el generador ni siquiera produjo
+
+**Decisión de método, y es la parte incómoda:** se para de gastar. Doce tiradas Opus, dos resultados
+nulos, y un tercer diseño elegido DESPUÉS de ver fallar los dos primeros empieza a ser buscar el
+montaje que dé el resultado que uno quiere. Eso ya no es medir. Si se retoma, el diseño se fija antes
+y con los tres huecos de arriba nombrados de antemano.
+
+---
+
 ## 2026-08-11 · ¿El grafo mejora la CORRECCIÓN de un agente? Con esta tarea, **no**: 3/3 y 3/3
 
 La pregunta que el proyecto no había respondido nunca. Todo lo medido hasta ayer —ahorro, recall,

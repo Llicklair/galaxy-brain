@@ -30,8 +30,25 @@ repo. Pero conviene decirlo claro — **la tarea se elige con casos donde el gra
 tiene algo que aportar**. Si el resultado sale a favor de B, mide eso y no "los
 agentes son mejores con gb" en general.
 
+RESULTADO MEDIDO (11-ago-2026, 12 tiradas Opus): **3/3 y 3/3 en las dos escalas**.
+Ni con 4 ficheros ni con 215 el grafo cambia la correccion. Y el motivo de la
+escala grande es el que hay que leer antes de citar este banco:
+
+    grep -rl "from tienda.precio import" tienda/   ->  12 de 12
+
+El diseno nunca fue hostil al grep. Escondi la LLAMADA (alias, tabla de despacho)
+pero no el IMPORT, y en Python el import explicito es un proxy casi perfecto de
+"este modulo usa esto". La afirmacion "`gb calls` encuentra llamantes que grep no
+encuentra" es FALSA a nivel de modulo.
+
+Lo que sigue sin probarse, ni a favor ni en contra, y seria el diseno siguiente:
+granularidad de SIMBOLO (que funcion, en que linea), TRANSITIVIDAD (`--depth 2`
+es un cierre; a grep le cuesta N pasadas), y `import x as m` + `m.precio()`, que
+este generador ni siquiera produce.
+
     python bancos/experimento_correccion.py --dry   # control: valida el oraculo
     python bancos/experimento_correccion.py --prompts
+    python bancos/experimento_correccion.py --dry --escala grande
 """
 
 import argparse
@@ -41,6 +58,8 @@ import subprocess
 import sys
 
 RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+#: "pequeno" (4 ficheros, cabe en contexto) o "grande" (212, no cabe).
+ESCALA = "pequeno"
 BASE = os.path.join(RAIZ, "bancos", "bench-correccion")
 
 MODULOS = {
@@ -105,10 +124,83 @@ TAREA = (
 )
 
 
+#: Cuantos llamantes REALES y cuanto ruido lleva la escala grande.
+#: 12 llamantes (4 de cada forma) entre 200 modulos de ruido que hablan de
+#: precios sin llamar a `precio`: `grep precio` devuelve cientos de aciertos y
+#: leerlos todos no cabe en una sesion. Es el caso que gb dice atacar, y el
+#: pequeno demostro que sin el no hay nada que medir — 3/3 en los dos brazos.
+GRANDE_LLAMANTES = 4
+GRANDE_RUIDO = 200
+
+
+def _modulos_grandes():
+    """Un proyecto donde la lista de llamantes NO cabe en contexto.
+
+    Tres formas, cuatro de cada una, porque el grep las trata distinto:
+      directo_i  `precio(a)`            -> `grep "precio("` lo encuentra
+      alias_i    `p(a)` tras `as p`     -> NO lo encuentra
+      tabla_i    `TARIFAS['x'](a)`      -> no hay llamada escrita que encontrar
+
+    Y 200 modulos de ruido que MENCIONAN precios sin llamar a `precio`, para que
+    grepear el nombre devuelva un pajar en vez de una lista. El ruido no es
+    decoracion: sin el, `grep precio` da 12 aciertos y el experimento vuelve a
+    medir un proyecto que cabe en la cabeza.
+    """
+    modulos = {
+        "tienda/__init__.py": "",
+        "tienda/precio.py": (
+            '"""El contrato que cambia."""\n\n\n'
+            "def precio(articulo):\n"
+            '    """Devuelve el precio EN EUROS."""\n'
+            "    return {'pan': 2, 'leche': 1}.get(articulo, 0)\n"
+        ),
+    }
+    for i in range(1, GRANDE_LLAMANTES + 1):
+        modulos["tienda/directo_%d.py" % i] = (
+            "from tienda.precio import precio\n\n\n"
+            "def valor(articulo):\n"
+            "    return precio(articulo)\n")
+        modulos["tienda/alias_%d.py" % i] = (
+            "from tienda.precio import precio as p\n\n\n"
+            "def valor(articulo):\n"
+            "    return p(articulo)\n")
+        modulos["tienda/tabla_%d.py" % i] = (
+            "from tienda.precio import precio\n\n"
+            "TARIFAS = {'normal': precio}\n\n\n"
+            "def valor(articulo, tarifa='normal'):\n"
+            "    return TARIFAS[tarifa](articulo)\n")
+    for i in range(1, GRANDE_RUIDO + 1):
+        modulos["tienda/ruido_%d.py" % i] = (
+            '"""Modulo %d: habla de precios pero NO llama a precio()."""\n\n'
+            "PRECIO_BASE = %d\n\n\n"
+            "def precio_estimado(unidades):\n"
+            "    return PRECIO_BASE * unidades\n\n\n"
+            "def informe_de_precios(unidades):\n"
+            '    return "precio: %%s" %% precio_estimado(unidades)\n' % (i, i))
+    return modulos
+
+
+def _ocultos_grandes():
+    """La suite oculta de la escala grande: los 12 llamantes, uno a uno."""
+    lineas = ['"""Suite OCULTA: el agente nunca la ve. Contrato nuevo = CENTIMOS."""',
+              "from tienda.precio import precio", ""]
+    for forma in ("directo", "alias", "tabla"):
+        for i in range(1, GRANDE_LLAMANTES + 1):
+            lineas.append("from tienda.%s_%d import valor as %s_%d" % (forma, i, forma, i))
+    lineas += ["", "", "def test_precio_en_centimos():", "    assert precio('pan') == 200",
+               "", ""]
+    for forma in ("directo", "alias", "tabla"):
+        for i in range(1, GRANDE_LLAMANTES + 1):
+            lineas += ["def test_%s_%d_sigue_en_euros():" % (forma, i),
+                       "    assert float(%s_%d('pan')) == 2" % (forma, i), "", ""]
+    return "\n".join(lineas)
+
+
 def genera():
     """El proyecto que ve el agente. Sin la suite oculta, obviamente."""
     shutil.rmtree(BASE, ignore_errors=True)
-    for rel, cuerpo in MODULOS.items():
+    fuentes = MODULOS if ESCALA == "pequeno" else _modulos_grandes()
+    for rel, cuerpo in fuentes.items():
         ruta = os.path.join(BASE, rel.replace("/", os.sep))
         os.makedirs(os.path.dirname(ruta), exist_ok=True)
         with open(ruta, "w", encoding="utf-8", newline="") as fh:
@@ -134,7 +226,7 @@ def evalua(proyecto):
     """La suite OCULTA sobre el arbol que dejo el agente. (ok, salida)."""
     ruta = os.path.join(proyecto, "tests", "test_oculto.py")
     with open(ruta, "w", encoding="utf-8", newline="") as fh:
-        fh.write(OCULTOS)
+        fh.write(OCULTOS if ESCALA == "pequeno" else _ocultos_grandes())
     try:
         entorno = dict(os.environ, PYTHONPATH=proyecto)
         r = subprocess.run([sys.executable, "-m", "pytest", ruta, "-q"],
@@ -145,8 +237,41 @@ def evalua(proyecto):
         os.remove(ruta)      # que no quede en el arbol que se inspecciona luego
 
 
+def _parche_grande(proyecto, completo):
+    """Igual que el pequeno pero a escala: `completo=False` arregla solo los
+    `directo_*`, que son los unicos que `grep "precio("` encuentra."""
+    def escribe(rel, texto):
+        with open(os.path.join(proyecto, rel.replace("/", os.sep)),
+                  "w", encoding="utf-8", newline="") as fh:
+            fh.write(texto)
+
+    escribe("tienda/precio.py",
+            '"""El contrato que cambia."""\n\n\n'
+            "def precio(articulo):\n"
+            '    """Devuelve el precio EN CENTIMOS."""\n'
+            "    return {'pan': 200, 'leche': 100}.get(articulo, 0)\n")
+    for i in range(1, GRANDE_LLAMANTES + 1):
+        escribe("tienda/directo_%d.py" % i,
+                "from tienda.precio import precio\n\n\n"
+                "def valor(articulo):\n"
+                "    return precio(articulo) / 100\n")
+        if not completo:
+            continue
+        escribe("tienda/alias_%d.py" % i,
+                "from tienda.precio import precio as p\n\n\n"
+                "def valor(articulo):\n"
+                "    return p(articulo) / 100\n")
+        escribe("tienda/tabla_%d.py" % i,
+                "from tienda.precio import precio\n\n"
+                "TARIFAS = {'normal': precio}\n\n\n"
+                "def valor(articulo, tarifa='normal'):\n"
+                "    return TARIFAS[tarifa](articulo) / 100\n")
+
+
 def _parche(proyecto, completo):
     """Simula a un agente. `completo=False` arregla SOLO lo que grep encuentra."""
+    if ESCALA != "pequeno":
+        return _parche_grande(proyecto, completo)
     def escribe(rel, texto):
         with open(os.path.join(proyecto, rel.replace("/", os.sep)),
                   "w", encoding="utf-8", newline="") as fh:
@@ -313,7 +438,10 @@ if __name__ == "__main__":
     p.add_argument("--n", type=int, default=3, help="tiradas por brazo (por defecto 3)")
     p.add_argument("--timeout", type=int, default=300,
                    help="tope por tirada en segundos (por defecto 300)")
+    p.add_argument("--escala", choices=("pequeno", "grande"), default="pequeno",
+                   help="pequeno: 4 ficheros (cabe en contexto). grande: 212 (no cabe)")
     args = p.parse_args()
+    ESCALA = args.escala
     if args.prompts:
         prompts()
         raise SystemExit(0)
