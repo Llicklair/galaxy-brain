@@ -79,6 +79,40 @@ el recall en 96%. 858 tests en verde, gate limpio.
 
 ---
 
+## 2026-08-11 · El abandono de la consola, investigado (regla 5): no está vacía — **el 82 % lleva estado**
+
+La regla 5 dice que el abandono se investiga, no se blinda. Había dataset y era inmejorable: **136
+capturas en disco, 35 sin leer en este proyecto, y las de hoy son mías**. Durante toda la sesión
+diagnostiqué reejecutando con `grep` y `print` en vez de leer lo ya capturado — exactamente lo que
+CLAUDE.md manda hacer al revés. El sujeto del abandono era yo, con los datos delante.
+
+**Hallazgo 1 — de 136 capturas, CERO sabían qué comando había muerto.** El registro guarda `program`
+y `argv_count`; ante 44 que dicen `program: .../Scripts/gb` no hay forma de saber si fue `gb calls`,
+`gb tests` o un hook. Sin eso, actuar sobre una captura cuesta lo mismo que reejecutar — que es lo
+que se hace. No era un fallo: `argv` está apagado por defecto porque los secretos viven en los flags
+y guardarlos crudos ya fue una fuga. Se cierra con el punto medio: se guarda la **forma**
+(`gb calls <arg> --depth <arg>`), nombres de flag sí, valores no.
+
+**Hallazgo 2 — la consola NO está vacía.** 113 de 137 capturas (**82 %**) llevan estado en algún frame
+de código propio, con mediana de 6 variables y máximo 41. Solo 12 no llevan nada, y otras 12 son
+`SyntaxError`, que por construcción no dejan frame. O sea que el abandono no se explica por «no dice
+nada»: dice bastante.
+
+**Y el error de medida, el undécimo del sprint y el mismo de siempre.** La primera cifra fue 64 %,
+mirando solo el frame MÁS PROFUNDO. En 34 casos ese frame es de la stdlib —`open`, `import`,
+`json.loads`— donde gb no captura estado **a propósito**, y el estado que importa está un frame más
+arriba, en código propio, que es justo donde el diseño lo pone. Midiendo el frame correcto: 64 % → 82 %.
+Otra vez el instrumento acusando al producto de una decisión de diseño que el instrumento no miraba.
+
+**Lo que queda, y es la hipótesis incómoda:** si la consola lleva contenido y aun así no se lee, el
+motivo no es el contenido sino que **el traceback ya está en pantalla**. Su nicho real serían los
+procesos cuyo fallo nadie ve: fondo, detached, hooks. Hoy hubo tres casos —los huérfanos que murieron
+en silencio y un watch que se creyó vivo dos veces—. Esa fracción **no se puede medir con las 136
+viejas** porque no guardan el comando; con `argv_forma` puesta, las nuevas sí lo permitirán. Se mide
+cuando haya datos, no antes.
+
+---
+
 ## 2026-08-11 · A escala (215 ficheros) tampoco: 3/3 y 3/3, y el motivo es peor — **`grep "from X import"` da los mismos llamantes**
 
 Segunda tirada, montada para arreglar el techo de la primera: si el grafo no aportaba nada en un
