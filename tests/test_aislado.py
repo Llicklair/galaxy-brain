@@ -391,6 +391,22 @@ def test_lo_que_una_rama_CREA_viaja_a_la_union(repo):
     ramas = {r["nombre"]: r["veredicto"] for r in informe["ramas"]}
     assert ramas == {"rama_a": 0, "rama_b": 0}, informe["ramas"]
     assert informe["union"]["veredicto"] != 0, informe["union"]
+    # Y se NOMBRA, como el rescate: deducirlo cruzando "todas en 0" con
+    # "union != 0" es justo lo que nadie hace al leer una salida.
+    assert informe["choque_semantico"] is True
+
+
+def test_una_rama_rota_no_es_choque_semantico(repo):
+    """Si una rama ya falla sola, la union roja no dice nada nuevo: el choque es
+    que NINGUNA este mal y juntas rompan. Gritar aqui seria un falso positivo."""
+    a = _rama(repo, "rama_a")
+    (a / "lib" / "nucleo.py").write_text(
+        "def suma(a, b):\n    return a - b\n", encoding="utf-8")
+    b = _rama(repo, "rama_b")
+    (b / "lib" / "otro.py").write_text("VALOR = 1\n", encoding="utf-8")
+
+    informe = aislado.converge(str(repo))
+    assert informe["choque_semantico"] is False, informe
 
 
 def test_dos_ramas_que_crean_el_mismo_fichero_distinto_es_colision(repo):

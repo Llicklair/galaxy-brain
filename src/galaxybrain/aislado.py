@@ -240,6 +240,7 @@ def converge(root, traza=None):
         "ramas": [],
         "union": None,
         "rescatados": [],
+        "choque_semantico": False,
         "veredicto": 1,
     }
 
@@ -300,6 +301,26 @@ def converge(root, traza=None):
             r["nombre"] for r in informe["ramas"]
             if r["exit_code"] not in (None, 0)
         )
+
+    # El caso INVERSO al rescate, y el que hay que gritar: todas verdes solas y
+    # la union rota. No es que una rama este mal — es que dos cambios correctos
+    # se contradicen al componerse, y ninguna de las dos lo puede ver desde
+    # dentro. El sector lo nombra como la clase mas dificil y sin dueno
+    # (ago-2026, tasa medida del 5-10%): «el CI en verde te dice que los tests
+    # que ya tenias siguen pasando; no te dice que tres cambios son correctos
+    # JUNTOS». Un merge tool no puede decidirlo porque mira TEXTO; aqui se corre
+    # lo que el grafo dice que toca sobre el arbol compuesto.
+    #
+    # Se nombra en su propio campo por el mismo motivo que `rescatados`: deducirlo
+    # cruzando "todas las ramas en 0" con "union != 0" es justo lo que nadie hace
+    # al leer una salida.
+    informe["choque_semantico"] = bool(
+        informe["union"]
+        and informe["union"]["veredicto"] != 0
+        and not informe["union"]["conflictos"]
+        and len(informe["ramas"]) > 1
+        and all(r["veredicto"] == 0 for r in informe["ramas"])
+    )
 
     veredictos = [r["veredicto"] for r in informe["ramas"]]
     if informe["union"]:

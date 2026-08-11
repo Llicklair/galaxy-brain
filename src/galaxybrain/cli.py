@@ -2082,6 +2082,17 @@ def _corre_union(root):
             emit("  %s" % nombre)
         emit("su verde lo puso otra rama, no su propio trabajo.")
 
+    if informe.get("choque_semantico"):
+        # El caso inverso, y el que hay que gritar: ninguna rama esta mal, y
+        # juntas rompen. Ninguna puede verlo desde dentro, y el merge sale limpio
+        # porque el choque es de SIGNIFICADO y no de texto — por eso ni git ni un
+        # merge tool lo cazan. Deducirlo cruzando "todas en ok" con "union ROJA"
+        # es justo lo que nadie hace leyendo una salida.
+        emit("")
+        emit("CHOQUE SEMANTICO: cada rama pasa SOLA y juntas rompen.")
+        emit("  ningun merge tool lo ve: los diffs componen limpio y el choque es")
+        emit("  de significado. Mira que asume cada una del trabajo de la otra.")
+
     return informe["veredicto"]
 
 
