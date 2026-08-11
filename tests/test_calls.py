@@ -322,3 +322,32 @@ def test_calls_dice_donde_se_pasa_como_VALOR(tmp_path, capsys):
     salida = capsys.readouterr().out
     assert "se pasa como VALOR" in salida
     assert "lib.tarifas" in salida
+
+
+def test_el_nivel_se_DICE_en_vez_de_sangrarse(tmp_path, capsys):
+    """Sangrar cada nivel dibujaba un arbol que el dato no sostiene.
+
+    `descuento` salia indentado bajo `iva_test` y se leia como "a iva_test le
+    llama descuento", cuando el dato solo dice "los dos alcanzan a iva, uno a un
+    salto y otro a dos". El contenido era correcto —los `depth` bien puestos— y
+    aun asi la lectura era falsa.
+
+    Salio USANDO gb sobre los bancos de lenguajes (11-ago-2026), no midiendolo:
+    ninguna metrica mira como se LEE una salida, y esta la lee un agente antes de
+    tocar codigo.
+    """
+    (tmp_path / "lib").mkdir()
+    (tmp_path / "lib" / "__init__.py").write_text("", encoding="utf-8")
+    (tmp_path / "lib" / "base.py").write_text("def base():\n    return 1\n", encoding="utf-8")
+    (tmp_path / "lib" / "medio.py").write_text(
+        "from lib.base import base\n\n\ndef medio():\n    return base()\n", encoding="utf-8")
+    (tmp_path / "lib" / "lejos.py").write_text(
+        "from lib.medio import medio\n\n\ndef lejos():\n    return medio()\n", encoding="utf-8")
+
+    assert cli.main(["calls", "lib.base.base", str(tmp_path), "--depth", "2"]) == 0
+    lineas = [x for x in capsys.readouterr().out.splitlines() if x.strip()]
+    assert any(x.strip() == "a 2 saltos:" for x in lineas), lineas
+    # y NADIE se sangra mas que el primer nivel: el arbol falso desaparece
+    for linea in lineas:
+        if "lib.medio" in linea or "lib.lejos" in linea:
+            assert linea.startswith("    ") and not linea.startswith("        "), linea

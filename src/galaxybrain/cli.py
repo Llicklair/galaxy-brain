@@ -1709,10 +1709,22 @@ def _emit_onda(titulo, fichas):
     emit("  %s (%s):" % (titulo, cuenta))
     # src primero dentro de cada nivel: lo que puede romperse antes que la red.
     orden = sorted(fichas, key=lambda f: (f.get("depth", 1), symbols.es_de_test(f["qual"]), f["qual"]))
+    # El nivel se DICE, no se sangra. Sangrar cada nivel un poco mas dibujaba un
+    # arbol que el dato no sostiene: `descuento.ConDescuento` salia indentado bajo
+    # `iva_test.TestIva` y se leia como "a TestIva le llama ConDescuento", cuando
+    # el dato solo dice "los dos alcanzan a iva.Iva, uno a un salto y otro a dos".
+    # El contenido era correcto —depth 1 y 2 bien puestos— y aun asi la lectura
+    # era falsa. Salio USANDO gb sobre los bancos de lenguajes (11-ago-2026), no
+    # midiendolo: ninguna metrica mira como se lee una salida, y esta la lee un
+    # agente antes de tocar codigo.
+    nivel_dicho = 1
     for ficha in orden:
-        sangria = "    " * ficha.get("depth", 1)
-        emit("%s%s · %s:%s"
-             % (sangria, ficha["qual"], ficha.get("file") or "?", ficha.get("line") or "?"))
+        profundidad = ficha.get("depth", 1)
+        if profundidad > nivel_dicho:
+            emit("    a %d saltos:" % profundidad)
+            nivel_dicho = profundidad
+        emit("    %s · %s:%s"
+             % (ficha["qual"], ficha.get("file") or "?", ficha.get("line") or "?"))
 
 
 def _calls_hook():
