@@ -43,3 +43,4 @@ bancos/cc/
 .oraculo_aristas.json
 bancos/bench-correccion/
 bancos/bench-correccion-tiradas/
+bancos/bench-convergencia/

@@ -346,3 +346,70 @@ def test_el_entorno_de_un_hook_de_git_no_contamina(repo, monkeypatch, tmp_path):
         env={k: v for k, v in __import__("os").environ.items() if not k.startswith("GIT_")},
     ).stdout
     assert ajeno_status.strip() == ""
+
+
+# --- la union: lo que un agente CREA tambien tiene que viajar -----------------
+
+
+def _rama(repo, nombre):
+    ruta = repo.parent / nombre
+    _git(repo, "worktree", "add", "-q", "--detach", str(ruta), "HEAD")
+    return ruta
+
+
+def test_lo_que_una_rama_CREA_viaja_a_la_union(repo):
+    """Cada rama VERDE sola y la union ROJA: el conflicto semantico.
+
+    El sector lo nombra como la clase mas dificil y sin dueno (ago-2026): «el CI
+    en verde te dice que los tests que ya tenias siguen pasando; no te dice que
+    tres cambios son correctos JUNTOS». Aqui A cambia las unidades y adapta a su
+    consumidor; B anade un consumidor NUEVO escrito contra las unidades viejas.
+    Los diffs tocan ficheros distintos, asi que el merge sale limpio y git no ve
+    nada — el choque es de SIGNIFICADO.
+
+    Y el fallo que esto fija: los ficheros nuevos no van en `git diff HEAD`, asi
+    que la union se montaba SIN el trabajo de B y daba VERDE. Un falso verde en
+    la capa que existe para cazarlos. El dato ya estaba (`sin_trackear` por
+    rama); lo que faltaba era usarlo.
+    """
+    a = _rama(repo, "rama_a")
+    (a / "lib" / "nucleo.py").write_text(
+        "def suma(a, b):\n    return (a + b) * 100\n", encoding="utf-8")
+    (a / "tests" / "test_suma.py").write_text(
+        "from lib.nucleo import suma\n\n\ndef test_suma_va():\n"
+        "    assert suma(1, 2) == 300\n", encoding="utf-8")
+
+    b = _rama(repo, "rama_b")
+    (b / "lib" / "encima.py").write_text(
+        "from lib.nucleo import suma\n\n\ndef doble(x):\n"
+        "    return suma(x, x)\n", encoding="utf-8")
+    (b / "tests" / "test_encima.py").write_text(
+        "from lib.encima import doble\n\n\ndef test_doble():\n"
+        "    assert doble(2) == 4\n", encoding="utf-8")
+
+    informe = aislado.converge(str(repo))
+    ramas = {r["nombre"]: r["veredicto"] for r in informe["ramas"]}
+    assert ramas == {"rama_a": 0, "rama_b": 0}, informe["ramas"]
+    assert informe["union"]["veredicto"] != 0, informe["union"]
+
+
+def test_dos_ramas_que_crean_el_mismo_fichero_distinto_es_colision(repo):
+    """Que gane la ultima en copiarse seria inventar un arbol que nadie escribio."""
+    a = _rama(repo, "rama_a")
+    (a / "lib" / "nuevo.py").write_text("VALOR = 1\n", encoding="utf-8")
+    b = _rama(repo, "rama_b")
+    (b / "lib" / "nuevo.py").write_text("VALOR = 2\n", encoding="utf-8")
+
+    informe = aislado.converge(str(repo))
+    assert informe["union"]["conflictos"], informe["union"]
+    assert "nuevo.py" in informe["union"]["motivo"]
+
+
+def test_el_mismo_fichero_IDENTICO_en_dos_ramas_no_es_colision(repo):
+    """Sin nada que decidir no hay conflicto: gritar aqui seria un falso positivo."""
+    for nombre in ("rama_a", "rama_b"):
+        rama = _rama(repo, nombre)
+        (rama / "lib" / "igual.py").write_text("VALOR = 1\n", encoding="utf-8")
+
+    informe = aislado.converge(str(repo))
+    assert informe["union"]["conflictos"] == [], informe["union"]

@@ -308,6 +308,41 @@ def converge(root, traza=None):
     return informe
 
 
+def _lleva_los_nuevos(activos, arbol):
+    """Copia a la union los ficheros SIN TRACKEAR de cada rama. Devuelve colisiones.
+
+    Dos ramas que crean la MISMA ruta con contenido distinto es una colision de
+    verdad —igual que si tocaran las mismas lineas— y se reporta como tal en vez
+    de que gane la ultima en copiarse. Con contenido identico no hay nada que
+    decidir y pasa en silencio.
+    """
+    colisiones, puestos = [], {}
+    for ruta, _head in activos:
+        for rel in _sin_trackear(ruta):
+            origen = os.path.join(ruta, rel.replace("/", os.sep))
+            if not os.path.isfile(origen):
+                continue                       # una carpeta sin trackear: no es un fichero
+            try:
+                with open(origen, "rb") as fh:
+                    cuerpo = fh.read()
+            except OSError:
+                continue
+            if rel in puestos:
+                if puestos[rel] != cuerpo:
+                    colisiones.append("%s (dos ramas crean %s distinto)"
+                                      % (os.path.basename(ruta), rel))
+                continue
+            destino = os.path.join(arbol, rel.replace("/", os.sep))
+            try:
+                os.makedirs(os.path.dirname(destino), exist_ok=True)
+                with open(destino, "wb") as fh:
+                    fh.write(cuerpo)
+            except OSError:
+                continue
+            puestos[rel] = cuerpo
+    return colisiones
+
+
 def _union(raiz, base, activos, decir, impacted, incompletas=()):
     """Los N diffs superpuestos sobre un arbol limpio, y la suite que toca encima."""
     salida = {"veredicto": 1, "exit_code": None, "conflictos": [], "motivo": ""}
@@ -332,6 +367,22 @@ def _union(raiz, base, activos, decir, impacted, incompletas=()):
             if rc != 0:
                 # Colision textual de verdad: dos ramas tocan las mismas lineas.
                 salida["conflictos"].append(os.path.basename(ruta))
+
+        # Los ficheros NUEVOS no van en `git diff HEAD`, asi que sin esto no
+        # viajan y la union se monta SIN el trabajo de quien creo modulos. Y no
+        # se quedaba callada: daba VERDE sobre un arbol al que le faltaba una
+        # rama entera — un falso verde en la capa que existe para cazarlos.
+        #
+        # Medido el 11-ago-2026 con `bancos/banco_convergencia.py`: rama A pasa
+        # `precio` a centimos y adapta su consumidor; rama B anade un consumidor
+        # NUEVO escrito contra euros. Cada una verde, los diffs mergean limpios
+        # —tocan ficheros distintos— y la union tenia que estar rota. Salia verde
+        # porque `informe.py` y su test no llegaban.
+        #
+        # El dato ya estaba (`sin_trackear` por rama): lo que faltaba era usarlo.
+        # El guardia de la union miraba `ausentes`, que es otra cosa — lo que le
+        # falto a la rama al verificarse EN SU PROPIO arbol.
+        salida["conflictos"].extend(_lleva_los_nuevos(activos, arbol))
 
         if salida["conflictos"]:
             salida["motivo"] = "no se pudo componer la union: %s" % ", ".join(salida["conflictos"])
