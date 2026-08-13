@@ -7,17 +7,22 @@ el alcance y lo que queda fuera, en [SCOPE.md](SCOPE.md); la evidencia, en
 
 En una frase, lo que hace:
 
-> **Deriva del código un grafo de símbolos y módulos —quién llama a quién, qué importa qué— y hace
-> aterrizar sobre sus nodos todo hecho determinista que haga mejor al agente.**
+> **Cuando agentes escriben código —uno o varios a la vez—, gb dice la verdad: qué se rompe solo,
+> qué se rompe junto, qué tests lo prueban y con qué estado murió. Hechos deterministas, cero
+> modelos, en el segundo.**
 
-Esa es la columna vertebral: **el grafo** (`graph`/`symbols`/`calls`), siempre derivado, nunca
-declarado ni mantenido a mano — y las reglas de entorno que lo protegen (presupuestos de latencia,
-gates solo sobre hechos, cero modelos en el camino caliente). Lo demás son capas que aterrizan
-sobre sus nodos: la consola de errores fue la primera (cuando algo peta, te dice dónde y con qué
-estado sin reproducirlo a mano — y cada captura trae su nodo y sus llamantes); después la onda de
-cada cambio (`check`/`tests`/`delta`), el suelo (`floor`, en la cabecera del mapa) y la memoria
-cross-repo (`memory`). **Una sola herramienta, `gb`**, un paquete Python, cero modelos en el
-camino, cero dependencias fuera de la librería estándar.
+Esa es la columna vertebral (refocalizada el 13-ago-2026 con respaldo medido, sentencia por capa
+en [SCOPE.md](SCOPE.md)): **la verificación del trabajo de agentes** — la rama sola y la unión
+(`tests --isolated/--union`, con el choque semántico nombrado), la selección de qué correr
+(`tests`), el gate sobre hechos (`graph --gate`) y la consola del estado del proceso que murió
+(`last`/`show`, cada captura anclada a su nodo). Debajo está **el grafo**
+(`graph`/`symbols`/`calls`), siempre derivado, nunca declarado ni mantenido a mano: el **motor**
+del que sale todo lo anterior, medido por lo que sus consumidores detectan, no por lo que enseña —
+protegido por las reglas de entorno de siempre (presupuestos de latencia, gates solo sobre hechos,
+cero modelos en el camino caliente). Alrededor, las capas que quedaron con evidencia:
+`check`/`delta` como comandos, el suelo (`floor`) y la memoria cross-repo (`memory`). **Una sola
+herramienta, `gb`**, un paquete Python, cero modelos en el camino, cero dependencias fuera de la
+librería estándar.
 
 Idioma: español para los documentos de decisión (coherencia). Inglés para cualquier cosa que llegue
 a publicarse. Hoy no se publica nada.
@@ -73,9 +78,9 @@ a publicarse. Hoy no se publica nada.
   cosmética fabrica el `--no-verify` que la regla 11 persigue. Llegaron a decir 445 tests con 641
   reales (8-ago); un número viejo es una mentira que el lector no puede detectar.
 - Para saber **quién llama a un símbolo** — o qué rompes al tocarlo — `gb calls <símbolo> [--depth 2]`
-  antes de grepear o abrir ficheros a mano. Al buscar con Grep/Glob el hook ya inyecta las fichas de
-  los símbolos que casan (fichero:línea + cuentas); el detalle se pide al grafo, no se re-descubre
-  leyendo. Lo mismo al leer un fallo: la ficha de `gb show` ya trae el nodo y sus llamantes.
+  antes de grepear o abrir ficheros a mano; el detalle se pide al grafo, no se re-descubre leyendo.
+  Lo mismo al leer un fallo: la ficha de `gb show` ya trae el nodo y sus llamantes. (El hook que
+  inyectaba fichas en cada Grep/Glob se retiró el 13-ago-2026: informar no cambia nada, 0/6.)
 - Cuando falle un **test**: repetir con `pytest -l` (locales de todos los frames) antes de añadir
   ningún `print`. Casi siempre el `-l` ya trae la respuesta, y galaxy-brain **no** cubre este caso —
   pytest atrapa la excepción y no llega a `sys.excepthook`

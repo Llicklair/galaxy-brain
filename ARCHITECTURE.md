@@ -20,12 +20,14 @@ Reportar hechos no necesita juicio, y por eso puede ser instantáneo y no equivo
 
 Y los hechos necesitan un sitio donde aterrizar: **el grafo**, símbolos y módulos derivados del
 código en cada mirada, nunca declarados ni mantenidos a mano. Una captura se ancla a su nodo y
-enseña a sus llamantes; un diff es una onda sobre las aristas; la actividad de un agente es
-presencia sobre nodos; el suelo y el embudo viajan en la cabecera del mapa; el gate del pre-commit
-y la selección de tests salen de sus aristas. La columna vertebral es el grafo; la consola de
-errores fue la primera capa que lo demostró. (Respaldo medido el 6-ago-2026: `graph`←5 y
-`symbols`←4 son, tras `cli`, lo más importado del paquete; 10 de 15 comandos derivan del grafo; la
-maquinaria del grafo es ~44% del código frente a ~14% del núcleo de captura.)
+enseña a sus llamantes; un diff es una onda sobre las aristas; el gate del pre-commit y la
+selección de tests salen de sus aristas; el cruce de firmas del rechazo también. El grafo es el
+**motor**; la columna del producto es la **verificación del trabajo de agentes** — cada rama sola,
+la unión y su choque semántico, la selección que decide qué correr, el estado del proceso que
+murió. (Refocalizado el 13-ago-2026 con respaldo medido: `converge` 10/10 con agentes reales y dos
+falsos verdes estructurales cazados por sus controles; el rechazo con llamadas exactas corrige 4/4
+y la señal que solo informa, 0/6; el canvas midió empate dos veces y se retiró. Sentencia por capa
+en SCOPE.md; los datos, en la libreta, 13-ago.)
 
 ---
 
@@ -52,7 +54,7 @@ Regla derivada, y es la que decide la supervivencia a los meses:
 Una sola herramienta, `gb`, con una sola filosofía. Los comandos caen en familias; un comando nuevo
 tiene que caer en una de ellas o no entra:
 
-- **Qué forma tiene** — `graph · symbols · calls`. **La columna vertebral.** El mapa de acoplamiento
+- **Qué forma tiene** — `graph · symbols · calls`. **El motor.** El mapa de acoplamiento
   (imports, ciclos, hotspots), el grafo de símbolos (quién llama a quién, con su cobertura) y la
   consulta puntual (`calls`: llamantes y llamados de un símbolo con fichero:línea, también como hook
   de búsqueda). Las demás familias aterrizan sus hechos sobre estos nodos.

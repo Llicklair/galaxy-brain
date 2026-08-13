@@ -7,15 +7,44 @@ la evidencia, en [docs/research-report.md](docs/research-report.md) y [docs/prue
 
 ## La frase
 
-> **Deriva del código un grafo de símbolos y módulos —quién llama a quién, qué importa qué— y hace
-> aterrizar sobre sus nodos todo hecho determinista que haga mejor al agente.**
+> **Cuando agentes escriben código —uno o varios a la vez—, gb dice la verdad: qué se rompe solo,
+> qué se rompe junto, qué tests lo prueban y con qué estado murió. Hechos deterministas, cero
+> modelos, en el segundo.**
 
-Esa es la columna vertebral: **el grafo** (`graph`/`symbols`/`calls`), siempre derivado, nunca
-declarado ni mantenido a mano. Lo demás son capas que aterrizan sobre sus nodos: la consola de
-errores fue la primera (cuando algo peta, te dice dónde y con qué estado sin reproducirlo — y cada
-captura trae su nodo y sus llamantes), después la onda de cada cambio (`check`/`tests`/`delta`), el
-suelo (`floor`) y la memoria cross-repo (`memory`). Ninguno emite veredictos; todos devuelven
-material en el mismo segundo.
+Esa es la columna vertebral: **la verificación del trabajo de agentes** — la rama sola y la unión
+(`tests --isolated/--union`, con el choque semántico nombrado), la selección derivada de qué correr
+(`tests`), el gate sobre hechos (`graph --gate`) y la consola que guarda el estado del proceso que
+murió (`last`/`show`). Debajo de todas está **el grafo** (`graph`/`symbols`/`calls`), siempre
+derivado, nunca declarado ni mantenido a mano: es el **motor** — la selección sube por sus aristas,
+el rechazo del bucle cruza sus firmas, cada captura se ancla a su nodo — y se mide por lo que sus
+consumidores detectan, no por lo que enseña. Ninguno emite veredictos sobre proxies; todos
+devuelven material en el mismo segundo.
+
+### La refocalización (2026-08-13), con su evidencia
+
+La columna anterior («el grafo, y capas que aterrizan sobre sus nodos») describía el motor, no el
+producto. El uso real lo dijo primero — de 6.015 invocaciones en 7 días, casi todo era la
+maquinaria invocándose a sí misma; `last` tecleado a mano: 5 — y la libreta lo confirmó midiendo:
+**lo que bloquea o produce un hecho único funciona siempre; lo que informa, nunca.**
+
+| Capa | Evidencia (libreta/memoria) | Sentencia |
+|---|---|---|
+| `converge` (rama sola + unión) | 10/10 choques con agentes reales (13-ago); 2 falsos verdes estructurales cazados y fijados | **columna** |
+| rechazo por adopción (bucle, fuera de gb) | corrige 4/4, siempre; la señal preventiva se ignora 4/4 | **columna** (consume gb) |
+| `tests` (selección TIA) | 5/5 mismo veredicto, 20–97 % de ahorro; blindada el 13-ago | queda |
+| consola (`last/list/show/on/off/status`) | criterio 3/3; el estado irreproducible solo existe aquí | queda |
+| `graph --gate` (ciclos/fronteras) | bloquear corrige 3/3 (9-ago); 0 bloqueos espurios | queda |
+| grafo (`graph/symbols/calls`) | motor de todo lo anterior | queda como **motor** |
+| `floor` / `memory` | 0 avisos falsos / uso diario real | quedan |
+| `check` / `delta` | check: 2 señales, 0 FP sobre 67 commits ajenos | quedan como comandos |
+| hooks informativos por acción (`calls --hook`, `delta` por edición) | informar no cambia nada: 0/6 (9-ago); el modelo paga por donde no hay medida | **se cortan del defecto** |
+| canvas/watch (`viz`, `symbols --html --watch --fondo`) | dos A/B en empate (3/3 y 3/3); `grep` daba los mismos llamantes; procesos colgados (10-ago) | **se corta** |
+| `graph --context` (mapa de sesión, una vez) | outcome plano en los mismos A/B; coste una-vez-por-sesión | en observación: si en 5 sesiones reales no cambia ninguna decisión (anotado en libreta), se corta |
+| `actividad` (presencia derivada) | consumidor real: el bucle | queda como motor del orquestador |
+
+El recorte se ejecuta por fases, cada una con la suite en verde: (1) los hooks informativos fuera
+del defecto — la norma va en el defecto, y un defecto que no cambia resultados es ruido pagado;
+(2) `viz.py` y su superficie fuera del árbol, con sus tests. Nada de esto toca el alcance duro.
 
 ### Alcance duro
 
@@ -55,7 +84,7 @@ Los catorce comandos, por familia — si uno nuevo no cae en ninguna, no entra
 
 | Familia | Comandos |
 |---|---|
-| **Qué forma tiene** (la columna) | `graph` · `symbols` · `calls` |
+| **Qué forma tiene** (el motor) | `graph` · `symbols` · `calls` |
 | Dónde petó y con qué estado | `last` · `list` · `show` · `on` · `off` · `status` |
 | Qué le hizo cada cambio | `check` · `tests` · `delta` |
 | Qué le falta de base | `floor` |
@@ -101,6 +130,9 @@ otro coste. Si la excepción propaga fuera de `asyncio.run()`, ya se captura por
 - **No cubre `asyncio` ni `multiprocessing`** en la consola: hilo principal e hilos de `threading`.
 - **No reproduce el pasado paso a paso.** El estado es el del momento en que muere el proceso, no un
   depurador con viaje en el tiempo.
+- **No enseña un canvas.** El mapa HTML con watch midió empate dos veces (3/3 y 3/3) frente a no
+  tenerlo, y se retiró el 13-ago-2026; los hechos se consumen por CLI y por los gates. Si una capa
+  visual vuelve algún día, vuelve por una medición, no por bonita.
 - **No es un servidor MCP** (decidido 2026-07-31, tras plantearlo para ganar persistencia y tener el
   grafo siempre delante). Ninguna de las dos cosas la da MCP: la persistencia ya está resuelta en
   ficheros (`~/.galaxy-brain`, el vault de `memory`) y MCP es transporte, no almacenamiento; y un
