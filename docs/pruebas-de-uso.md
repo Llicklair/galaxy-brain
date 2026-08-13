@@ -10,6 +10,34 @@ mismo detalle que los positivos, o más.
 
 ---
 
+## 2026-08-13 · La letra pequeña del verde, medida ANTES de construirla: sobre este repo, humo — y el porqué es el mejor dato del día
+
+La candidata a "gran diferencia": que cada verde diga qué símbolos tocados NO ejecutó ningún test
+(grafo + selección + oráculo runtime, todo ya construido). Criterio escrito antes: 20 commits
+reales; si ~0 llevaban hueco, la feature es humo y se escribe.
+
+**Resultado: 16 commits medibles, 0 con símbolos de `src` tocados sin pisar, 0 huecos de
+selección.** Los 5 "con letra" eran todos de `bancos/` — instrumentos que se corren a mano y no
+llevan tests a propósito: señalarlos cada commit sería el falso positivo recurrente que mata
+familias (regla 9). Humo, dicho sin anestesia.
+
+**La lectura que importa más que el número:** este repo es el peor sitio del mundo para medir esa
+feature — 764 tests para 11½ mil líneas, dos oráculos, y una disciplina que ya pagó todo lo que la
+letra pequeña cobraría. Eso explica la sensación de la mañana («la mejoría con el grafo es muy
+estrecha») mejor que cualquier teoría: **la estrechez no es del grafo — es de que este repo ya vive
+en su techo de verificación.** Cualquier capa nueva compite aquí contra un margen que no existe.
+Donde el techo no existe —repos construidos por agentes sin esta disciplina, integración paralela—
+la feature queda SIN MEDIR: ni validada ni descartada, y no se construye hasta que un repo real
+enseñe el hueco.
+
+**El colateral, real y capturado en vivo:** el falso verde del PROPIO Python. En Windows,
+`subprocess.run(text=True)` decodifica el stdout del hijo con cp1252 **en un hilo lector**; un byte
+UTF-8 sin mapa (0x81, de los subjects con tildes de hoy) mata el hilo y `run()` devuelve **rc=0
+con stdout=None** — verde con la salida perdida. La consola capturó la excepción del hilo
+(`threading.excepthook`, la puerta 2 de SCOPE) y el diagnóstico salió de `gb show` sin re-ejecutar.
+Cura: `encoding="utf-8"` explícito en todo subprocess que capture texto. Va también a la memoria de
+trampas de la máquina.
+
 ## 2026-08-13 · LA REFOCALIZACIÓN, ejecutada: la columna es el verificador — y el recorte que ordena, hecho el mismo día
 
 La frase que lo disparó fue de Marcos, de viva voz: «independientemente no aporta demasiado». La
