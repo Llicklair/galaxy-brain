@@ -934,7 +934,7 @@ def render_delta(report, style, brief=False):
                + len(report.get("guardas_eliminadas") or []))
 
     if not cuantos:
-        linea = "Sin errores clasicos anadidos en %s (%d fichero(s) .py mirados)" % (
+        linea = "Sin errores clasicos anadidos en %s (%d fichero(s) mirados)" % (
             report.get("range") or "el cambio", report.get("ficheros") or 0)
         sin_trackear = report.get("untracked_py") or []
         if sin_trackear:

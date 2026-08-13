@@ -14,8 +14,10 @@ Exception: pass` puede ser exactamente lo correcto (gb tiene 22, y son la regla 
 cumplida a rajatabla). Gatear proxies fabrica los falsos positivos que acaban en
 `--no-verify`, y ese error ya se pagó una vez.
 
-Cero dependencias: `ast` de la librería estándar. ast-grep habría servido, pero
-una señal que solo aparece si el usuario instaló algo es una señal que no aparece.
+Para Python: `ast` de la librería estándar, cero dependencias. Para el resto de
+lenguajes: ast-grep (el mismo binario que usa `lenguajes.py` para el grafo), via
+`delta_multi`. Sin ast-grep los ficheros no-Python se saltan en silencio — el
+usuario ya sabe que no lo tiene porque `gb graph` se lo dice.
 """
 
 import ast
@@ -206,17 +208,28 @@ def analyze(root, rev_range=None, staged=False, worktree=False):
         derecha = rev_range.split("..")[-1] if ".." in rev_range else rev_range
         ahora_ref = derecha or "HEAD"
 
+    from . import lenguajes as _lang_mod
+
     for ruta in sorted(changes._hunks_py(diff)):
         texto_ahora = _texto_en(root, ruta, ahora_ref)
         if texto_ahora is None:
             continue
-        hechos_ahora = _hechos(texto_ahora)
+
+        lang_id = _lang_mod.lenguaje_de(ruta)
+        if lang_id:
+            from . import delta_multi
+            hechos_ahora = delta_multi.hechos(texto_ahora, lang_id)
+        else:
+            hechos_ahora = _hechos(texto_ahora)
         if hechos_ahora is None:
             continue
         report["ficheros"] += 1
 
         texto_antes = _texto_en(root, ruta, base)
-        hechos_antes = _hechos(texto_antes) if texto_antes is not None else None
+        if lang_id and texto_antes is not None:
+            hechos_antes = delta_multi.hechos(texto_antes, lang_id)
+        else:
+            hechos_antes = _hechos(texto_antes) if texto_antes is not None else None
 
         for clave in ("silencios", "amplios", "pendientes"):
             previas = getattr(hechos_antes, clave) if hechos_antes else None
