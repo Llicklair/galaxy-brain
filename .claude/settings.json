@@ -2,7 +2,11 @@
   "permissions": {
     "allow": [
       "Bash(python -m pytest tests/ -q)",
-      "Bash(gb graph *)"
+      "Bash(gb graph *)",
+      "Bash(gb tests *)",
+      "Bash(python -m pytest tests/ -q --tb=no -p no:cacheprovider)",
+      "Bash(gb check *)",
+      "Bash(gb delta *)"
     ]
   },
   "hooks": {
