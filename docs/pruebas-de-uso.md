@@ -10,6 +10,38 @@ mismo detalle que los positivos, o más.
 
 ---
 
+## 2026-08-13 · La tirada por parejas: 6/6 — y `contrato` rompió su predicción en la dirección buena
+
+12 agentes Opus (3 parejas × 2 rondas), 0 caídas, 0 timeouts. Las seis rondas iguales por fuera —
+cada rama verde sola, unión roja, choque nombrado — y cada pareja contando una cosa distinta:
+
+- **`firma` 2/2, con la firma exacta del arreglo**: el test nuevo de B viajó, corrió, y el
+  ImportError del símbolo renombrado puso la unión en rojo. Antes de fecc3a2 esto salía verde:
+  el fix aguanta escritores reales.
+- **`formato` 2/2 — el "bimodal" salió unimodal**: las dos veces B testeó llamando a `etiqueta()`
+  de verdad (una además con un artículo inexistente), nunca contra un literal congelado. Con n=2
+  no es ley: es la primera muestra de que Opus tiende al test de integración aquí.
+- **`contrato` 2/2 CONTRA su predicción (0/2)** — y la lectura importa: el techo del detector
+  (converge solo ve lo que algún test pisa) sigue siendo cierto — lo confirmó el control
+  sembrado — pero los agentes reales no se quedaron en mi siembra: las dos veces B escribió el
+  camino triste (`test_no_disponible_sin_precio`) sin que nadie se lo pidiera, y ese test
+  convirtió el choque invisible en visible.
+
+**Las honestidades:**
+
+1. **n=2 por pareja**: dirección, no ley. Y las tres siguen poniendo el contrato en el camino
+   crítico — esto mide detección y estilo de test de los agentes, no tasa base del fenómeno.
+2. **La predicción de `contrato` estaba MAL y se dice**: subestimé al tester. El techo teórico
+   existe, pero dos Opus de serie no lo rozaron — escribieron el test que lo tapa. El caso que
+   sigue SIN red es el del consumidor VIEJO sin tocar (entrada anterior): ahí nadie escribe test
+   nuevo porque nadie toca ese código, y la referencia colgante no suma arista.
+3. Coste del día completo: 20 agentes Opus (8 de `escala` + 12 de parejas), 0 caídas, 0 timeouts.
+
+**Consecuencia:** cuatro clases medidas con escritores reales — **10/10 choques visibles
+detectados** (4 escala + 2 firma + 2 formato + 2 contrato) y 0 falsos verdes de unión tras el fix.
+Lo siguiente con valor no es otra pareja: es la cirugía de columna del "import interno roto"
+(consumidor viejo), el único hueco con nombre que queda.
+
 ## 2026-08-13 · Cuatro parejas con predicción previa — y el control de `firma` cazó un falso verde de la unión ANTES de gastar un agente
 
 El banco de convergencia aprende parejas: cuatro clases de choque, cada una con su control sembrado
