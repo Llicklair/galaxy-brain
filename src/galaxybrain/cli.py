@@ -1130,38 +1130,70 @@ def cmd_who(args):
     if informe["root_error"]:
         sys.stderr.write("[gb who] %s\n" % informe["root_error"])
         return 1
-    foto = actividad.instantanea(root, informe)
 
-    if args.json:
-        emit(json.dumps(foto, ensure_ascii=False, indent=2))
+    def _pinta(foto):
+        if foto.get("motivo"):
+            emit(foto["motivo"])
+            return
+        if not foto["agentes"]:
+            emit("Nadie esta tocando nada ahora mismo (base %s)." % (foto.get("base") or "?"))
+            emit("La presencia se deriva del arbol sucio, la consola y el commit "
+                 "reciente: quien commiteo hace rato no aparece — es historia, no presencia.")
+            return
+        for a in foto["agentes"]:
+            hace = ("hace %ds" % a["hace_seg"]) if a.get("hace_seg") is not None else "sin edad"
+            base = a["base"] + ("" if a.get("misma_base") else " (BASE DISTINTA)")
+            emit("%s  [%s, base %s]  %d fichero(s)" % (a["nombre"], hace, base, a["ficheros"]))
+            for s in (a.get("simbolos") or a.get("nodos") or [])[:8]:
+                emit("  toca %s" % s)
+            if a.get("fuera_del_mapa"):
+                emit("  + %d fichero(s) aun fuera del mapa (codigo nuevo)" % a["fuera_del_mapa"])
+            if a.get("commitados"):
+                emit("  commiteo hace poco: %s" % ", ".join(a["commitados"][:5]))
+        if foto["cruces"]:
+            emit("")
+            emit("CRUCES — dos o mas agentes sobre el mismo nodo:")
+            for qual in foto["cruces"]:
+                quienes = foto["por_nodo"][qual]["agentes"]
+                emit("  ! %s  <- %s" % (qual, ", ".join(quienes)))
+
+    if not args.watch:
+        foto = actividad.instantanea(root, informe)
+        if args.json:
+            emit(json.dumps(foto, ensure_ascii=False, indent=2))
+            return 0
+        _pinta(foto)
         return 0
 
-    if foto.get("motivo"):
-        emit(foto["motivo"])
-        return 0
-    if not foto["agentes"]:
-        emit("Nadie esta tocando nada ahora mismo (base %s)." % (foto.get("base") or "?"))
-        emit("La presencia se deriva del arbol sucio, la consola y el commit "
-             "reciente: quien commiteo hace rato no aparece — es historia, no presencia.")
-        return 0
+    # --watch: "tiempo real" aqui significa SONDEO (doc de orquestacion:
+    # watchdog se midio el 5-ago y NO se paga). Dos velocidades: la presencia
+    # se re-deriva en cada tick (git status por worktree, barato); el mapa
+    # canonico solo cuando alguna huella de fichero cambio — que es el atajo
+    # honesto de mapa.sin_cambios: "no he mirado de nuevo porque nada cambio".
+    import time as _time
 
-    for a in foto["agentes"]:
-        hace = ("hace %ds" % a["hace_seg"]) if a.get("hace_seg") is not None else "sin edad"
-        base = a["base"] + ("" if a.get("misma_base") else " (BASE DISTINTA)")
-        emit("%s  [%s, base %s]  %d fichero(s)" % (a["nombre"], hace, base, a["ficheros"]))
-        for s in (a.get("simbolos") or a.get("nodos") or [])[:8]:
-            emit("  toca %s" % s)
-        if a.get("fuera_del_mapa"):
-            emit("  + %d fichero(s) aun fuera del mapa (codigo nuevo)" % a["fuera_del_mapa"])
-        if a.get("commitados"):
-            emit("  commiteo hace poco: %s" % ", ".join(a["commitados"][:5]))
-    if foto["cruces"]:
-        emit("")
-        emit("CRUCES — dos o mas agentes sobre el mismo nodo:")
-        for qual in foto["cruces"]:
-            quienes = foto["por_nodo"][qual]["agentes"]
-            emit("  ! %s  <- %s" % (qual, ", ".join(quienes)))
-    return 0
+    from . import mapa as _mapa
+
+    huellas_base = {"huellas": _mapa.huellas(root, informe)}
+    try:
+        while True:
+            foto = actividad.instantanea(root, informe)
+            emit("\033[2J\033[H[gb who --watch] %s  refresco %ds — Ctrl+C para salir"
+                 % (_time.strftime("%H:%M:%S"), args.watch))
+            emit("")
+            _pinta(foto)
+            try:
+                sys.stdout.flush()   # sin esto, un pipe no ve ningun tick
+            except OSError:
+                return 0             # el lector cerro: no hay a quien pintar
+            _time.sleep(args.watch)
+            if not _mapa.sin_cambios(root, huellas_base):
+                informe = _analiza_simbolos(root)
+                if informe["root_error"]:
+                    continue          # un estado transitorio no tumba el watch
+                huellas_base = {"huellas": _mapa.huellas(root, informe)}
+    except KeyboardInterrupt:
+        return 0
 
 
 def cmd_dead(args):
@@ -1778,6 +1810,10 @@ def build_parser():
     )
     who_p.add_argument("path", nargs="?", default=".", help="raiz del proyecto")
     who_p.add_argument("--json", action="store_true", help="salida cruda")
+    who_p.add_argument(
+        "--watch", type=int, nargs="?", const=3, default=0, metavar="SEG",
+        help="refrescar cada SEG segundos (por defecto 3; el mapa solo se "
+             "re-deriva si algun fichero cambio)")
     who_p.set_defaults(func=cmd_who)
 
     dead_p = subparsers.add_parser(
