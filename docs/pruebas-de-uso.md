@@ -10,6 +10,42 @@ mismo detalle que los positivos, o más.
 
 ---
 
+## 2026-08-13 · Cuatro parejas con predicción previa — y el control de `firma` cazó un falso verde de la unión ANTES de gastar un agente
+
+El banco de convergencia aprende parejas: cuatro clases de choque, cada una con su control sembrado
+gratis y su predicción escrita antes de correr nada — `escala` (la medida 4/4 esta mañana), `firma`
+(renombre de un símbolo público), `formato` (¿el test cruza el contrato o congela un literal?) y
+`contrato` (0→KeyError sin test que lo pise, diseñada para NO verse: declara el techo — converge
+solo ve lo que algún test corre).
+
+**Primera pasada de controles: 3/4 — `firma` NO CUMPLE, y era un bug de verdad.** La unión salió
+verde cuando debía ser roja: los ficheros nuevos viajaban al árbol compuesto (404c624) pero no al
+índice, así que el diff de la unión no los declaraba y sus símbolos nunca eran semillas. Mientras
+una arista viva subiera hasta ellos (`escala`, `contrato`) no se notaba; el renombre de `firma`
+deja la referencia del otro agente COLGANTE — sin nodo del que subir — y el test que probaba el
+choque no corría: **unión VERDE con un ImportError dentro**. Arreglo: `add -N` sobre el árbol
+compuesto (`aislado._union`) — el test nuevo es semilla de sí mismo. Regresión fijada en
+test_aislado; segunda pasada: **4/4 CUMPLE**, incluido el no-visto esperado de `contrato`.
+
+**Las honestidades:**
+
+1. **El control costó cero y pagó más que la tirada**: el falso verde lo destapó la pareja
+   sembrada, no los 8 agentes de la mañana — que con `escala` no podían verlo.
+2. **Pendiente que esto NO arregla**: la referencia colgante sigue invisible cuando el consumidor
+   roto es VIEJO (no viaja en ningún diff) — un renombre con un consumidor preexistente sin tocar
+   no corre el test de ese consumidor ni en la rama sola ni en la unión. El grafo distingue hoy
+   tres motivos de no-resolución e "import interno roto" no es uno: darle categoría propia y que la
+   selección lo lea como hecho duro (la promesa "un símbolo que no resuelve devuelve TODO" de la
+   cabecera de impacted.py) es cirugía de columna y va con su propio criterio, no de tapadillo.
+3. **Pregunta abierta, anotada sin investigar**: una rama cuyo trabajo es SOLO ficheros nuevos no
+   corre pytest en su verificación en solitario (diff trackeado vacío → "nada que correr") y sale
+   verde. Si eso esconde un falso "rama sana", tiene que salir en su propio control, no aquí.
+
+**Consecuencia:** catálogo listo para la tirada real por pareja (`--agentes --pareja X`). Lo que
+cada una mediría con agentes: `firma` que el arreglo aguanta escritores reales; `formato` si los
+agentes testean a través del contrato o contra un literal (bimodal, el dato nuevo); `contrato` si
+algún agente escribe el test del camino triste sin que se lo pidan (y entonces el choque se ve).
+
 ## 2026-08-13 · Agentes REALES en el banco de convergencia: el choque ocurre solo — **4/4, y `converge` lo vio las 4**
 
 Primera tirada del modo `--agentes` (8dc967a): 4 rondas × 2 `claude -p` (Opus) sobre worktrees
