@@ -1235,6 +1235,14 @@ def cmd_dead(args):
                 emit("  %s:%s  %s  (%s)" % (s["file"], s["line"] or "?", s["qual"], s["kind"]))
             if len(report["sin_llamantes"]) > 30:
                 emit("  ... y %d mas (--json para todos)" % (len(report["sin_llamantes"]) - 30))
+        if report.get("solo_tests"):
+            emit("")
+            emit("Simbolos que SOLO los tests llaman (produccion sin uso real):")
+            for s in report["solo_tests"][:30]:
+                emit("  %s:%s  %s  (%d test(s) lo mantienen vivo)"
+                     % (s["file"], s["line"] or "?", s["qual"], s.get("tests", 0)))
+            if len(report["solo_tests"]) > 30:
+                emit("  ... y %d mas (--json para todos)" % (len(report["solo_tests"]) - 30))
     emit("")
     emit("Lo que esta tecnica NO puede ver:")
     for item in report["not_covered"]:

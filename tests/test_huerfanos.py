@@ -96,3 +96,25 @@ def test_el_entry_point_con_guard_main_no_es_huerfano(tmp_path):
     modulos = [m["module"] for m in report["modulos_huerfanos"]]
     # El guard es un hecho detectable: el ejecutable del proyecto no es huerfano.
     assert "principal" not in modulos
+
+
+def test_llamado_solo_desde_tests_sale_en_su_propia_lista(tmp_path):
+    raiz = tmp_path / "p"
+    raiz.mkdir()
+    (raiz / "calc.py").write_text(
+        "def viva(x):\n    return x\n\n\ndef zombi(x):\n    return x\n",
+        encoding="utf-8")
+    (raiz / "app.py").write_text(
+        "from calc import viva\n\n\ndef main():\n    return viva(1)\n",
+        encoding="utf-8")
+    (raiz / "test_calc.py").write_text(
+        "from calc import viva, zombi\n\n\n"
+        "def test_viva():\n    assert viva(1) == 1\n\n\n"
+        "def test_zombi():\n    assert zombi(1) == 1\n", encoding="utf-8")
+    report = _dead(str(raiz))
+    solo = [s["qual"] for s in report["solo_tests"]]
+    # zombi: solo sus tests lo mantienen vivo -> a su lista, no a sin_llamantes
+    assert "calc.zombi" in solo
+    assert "calc.zombi" not in [s["qual"] for s in report["sin_llamantes"]]
+    # viva: la llama produccion ADEMAS del test -> no es candidata a nada
+    assert "calc.viva" not in solo

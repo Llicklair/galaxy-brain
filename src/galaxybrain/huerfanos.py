@@ -46,6 +46,7 @@ def analyze(informe, aristas_imports=None):
     """
     report = {
         "sin_llamantes": [],
+        "solo_tests": [],
         "modulos_huerfanos": [],
         "not_covered": [
             "despacho dinamico, registros y decoradores: usan codigo sin dejar "
@@ -66,30 +67,59 @@ def analyze(informe, aristas_imports=None):
     por_qual = {n["qual"]: n for n in nodos}
 
     # Usos que dejan arista: llamadas y herencia. MEMBER_OF y DEFINES son
-    # estructura, no uso.
-    con_uso = set()
+    # estructura, no uso. Se guarda QUIEN usa, no solo que se usa: hace falta
+    # para distinguir "nadie lo llama" de "solo los tests lo llaman".
+    entrantes = {}
     for arista in informe.get("edges") or []:
         origen, destino, tipo = arista[0], arista[1], arista[2]
         if tipo in ("CALLS", "EXTENDS"):
-            con_uso.add(destino)
+            entrantes.setdefault(destino, set()).add(origen)
 
     como_valor = set(informe.get("usados_como_valor") or [])
+
+    def _origen_es_test(origen):
+        # Por FICHERO, no por nombre: `changes.test_signals` es produccion
+        # (detecta senales sobre tests) y por nombre contaba como test — con lo
+        # que `_replacement_asserts` salio como "solo tests lo llaman" en la
+        # primera tirada sobre este mismo repo. El fichero no engana: un test
+        # vive donde el runner colecciona.
+        nodo_origen = por_qual.get(origen)
+        if nodo_origen is not None and nodo_origen.get("file"):
+            rel = nodo_origen["file"].replace("\\", "/")
+            base = rel.rsplit("/", 1)[-1]
+            partes = rel.split("/")[:-1]
+            return (base.startswith("test_") or base.endswith("_test.py")
+                    or ".test." in base or ".spec." in base
+                    or any(p in ("tests", "test", "spec", "__tests__") for p in partes))
+        if nodo_origen is not None and nodo_origen.get("test"):
+            return True
+        return _es_test(origen, informe)
 
     for nodo in nodos:
         if nodo.get("kind") not in ("function", "class"):
             continue
         qual = nodo["qual"]
-        if qual in con_uso or qual in como_valor:
+        if qual in como_valor:
             continue
         if nodo.get("test") or _es_test(qual, informe):
             continue
         nombre = _nombre_pelado(qual)
         if nombre.startswith("__") or nombre in _INVOCADOS_POR_FUERA:
             continue
-        report["sin_llamantes"].append({
+        ficha = {
             "qual": qual, "kind": nodo["kind"],
             "file": nodo.get("file", ""), "line": nodo.get("line"),
-        })
+        }
+        llamantes = entrantes.get(qual)
+        if not llamantes:
+            report["sin_llamantes"].append(ficha)
+        elif all(_origen_es_test(o) for o in llamantes):
+            # Produccion que SOLO los tests mantienen vivo: sin uso real, pero
+            # sobrevive a cualquier limpieza porque su suite pasa. Encontrado
+            # como carencia en el experimento del 14-ago: gb contaba el test
+            # como llamante valido y esta clase entera quedaba invisible.
+            ficha["tests"] = len(llamantes)
+            report["solo_tests"].append(ficha)
 
     # --- modulos que nadie importa NI llama ---
     if aristas_imports is None:
@@ -128,6 +158,7 @@ def analyze(informe, aristas_imports=None):
             })
 
     report["sin_llamantes"].sort(key=lambda s: (s["file"], s["line"] or 0))
+    report["solo_tests"].sort(key=lambda s: (s["file"], s["line"] or 0))
     report["modulos_huerfanos"].sort(key=lambda m: m["module"])
     return report
 
@@ -162,4 +193,5 @@ def _es_test(qual, informe):
 
 
 def total(report):
-    return len(report["sin_llamantes"]) + len(report["modulos_huerfanos"])
+    return (len(report["sin_llamantes"]) + len(report["solo_tests"])
+            + len(report["modulos_huerfanos"]))
