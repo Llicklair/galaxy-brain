@@ -38,6 +38,8 @@ class _Visitante(ast.NodeVisitor):
         self.amplios = []        # (linea, texto) — captura todo, aunque haga algo
         self.pendientes = []     # (linea, texto) — NotImplementedError, TODO/FIXME
         self.cuerpos = {}        # nombre -> (inicio, fin)
+        self.tipos_retorno = {}  # nombre -> (linea, tipo_str)
+        self.guardas = []        # (linea, texto) — precondiciones if: raise
 
     def visit_ExceptHandler(self, node):
         cuerpo = [s for s in node.body
@@ -70,7 +72,39 @@ class _Visitante(ast.NodeVisitor):
         fin = getattr(node, "end_lineno", None)
         if fin:
             self.cuerpos[node.name] = (node.lineno, fin)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            if node.returns:
+                try:
+                    self.tipos_retorno[node.name] = (node.lineno, ast.unparse(node.returns))
+                except Exception:
+                    pass
+            self._buscar_guardas(node)
         self.generic_visit(node)
+
+    def _buscar_guardas(self, node):
+        """Guard clauses: `if` al inicio del cuerpo cuyo cuerpo es un solo `raise`.
+
+        Solo `raise`, no `return`: los return-guards son demasiado ruidosos (el
+        experimento midio ~100 early returns vs ~35 raise-guards, y los returns
+        mezclan idiomatic exits con precondiciones reales). Un raise-guard eliminado
+        amplia el dominio de la funcion, y eso siempre es noticia.
+        """
+        cuerpo = node.body
+        if (cuerpo and isinstance(cuerpo[0], ast.Expr)
+                and isinstance(cuerpo[0].value, ast.Constant)):
+            cuerpo = cuerpo[1:]
+        for stmt in cuerpo[:3]:
+            if not isinstance(stmt, ast.If) or stmt.orelse:
+                continue
+            if (stmt.body and isinstance(stmt.body[-1], ast.Raise)
+                    and stmt.body[-1].exc is not None):
+                try:
+                    texto = "if %s: raise %s" % (
+                        ast.unparse(stmt.test),
+                        ast.unparse(stmt.body[-1].exc))
+                except Exception:
+                    texto = "guarda raise"
+                self.guardas.append((stmt.lineno, texto[:80]))
 
     visit_FunctionDef = _registrar
     visit_AsyncFunctionDef = _registrar
@@ -142,6 +176,8 @@ def analyze(root, rev_range=None, staged=False, worktree=False):
         "amplios": [],      # capturas demasiado anchas
         "pendientes": [],   # trabajo declarado sin terminar
         "crecidos": [],     # cuerpos que engordaron de golpe
+        "tipos_cambiados": [],   # tipo de retorno que cambio (T -> Optional[T])
+        "guardas_eliminadas": [],  # precondiciones raise eliminadas
         "ficheros": 0,
     }
     if not os.path.isdir(root):
@@ -199,6 +235,25 @@ def analyze(root, rev_range=None, staged=False, worktree=False):
                         "grew": crecio, "now": fin - inicio,
                     })
 
+            # Tipo de retorno cambiado: T -> Optional[T] es el patron peligroso,
+            # los llamantes que no hacen None-check se rompen en silencio.
+            for nombre, (linea, tipo) in hechos_ahora.tipos_retorno.items():
+                viejo = hechos_antes.tipos_retorno.get(nombre)
+                if not viejo or viejo[1] == tipo:
+                    continue
+                report["tipos_cambiados"].append({
+                    "file": ruta, "line": linea, "name": nombre,
+                    "old": viejo[1], "new": tipo,
+                    "nullable": _nullable(tipo) and not _nullable(viejo[1]),
+                })
+
+            # Guardas eliminadas: precondiciones raise que estaban y ya no estan.
+            # _nuevas(ahora, antes) da las de `antes` sin par en `ahora` = eliminadas.
+            for linea, texto in _nuevas(hechos_ahora.guardas, hechos_antes.guardas):
+                report["guardas_eliminadas"].append({
+                    "file": ruta, "line": linea, "what": texto,
+                })
+
     report["crecidos"].sort(key=lambda c: -c["grew"])
 
     # Ficheros nuevos sin trackear: el diff no los ve.
@@ -208,5 +263,13 @@ def analyze(root, rev_range=None, staged=False, worktree=False):
     return report
 
 
+def _nullable(tipo):
+    """¿El tipo incluye None? Cubre `Optional[T]`, `T | None`, `None`, `Union[..., None]`."""
+    return "None" in tipo
+
+
 def total(report):
-    return sum(len(report[k]) for k in ("silencios", "amplios", "pendientes", "crecidos"))
+    return sum(len(report[k]) for k in (
+        "silencios", "amplios", "pendientes", "crecidos",
+        "tipos_cambiados", "guardas_eliminadas",
+    ))

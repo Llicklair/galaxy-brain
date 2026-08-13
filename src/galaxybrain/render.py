@@ -928,7 +928,10 @@ def render_delta(report, style, brief=False):
         ("amplios", "Capturas demasiado anchas (nuevas)"),
         ("pendientes", "Trabajo declarado sin terminar (nuevo)"),
     )
-    cuantos = sum(len(report.get(k) or []) for k, _ in grupos) + len(report.get("crecidos") or [])
+    cuantos = (sum(len(report.get(k) or []) for k, _ in grupos)
+               + len(report.get("crecidos") or [])
+               + len(report.get("tipos_cambiados") or [])
+               + len(report.get("guardas_eliminadas") or []))
 
     if not cuantos:
         linea = "Sin errores clasicos anadidos en %s (%d fichero(s) .py mirados)" % (
@@ -947,6 +950,10 @@ def render_delta(report, style, brief=False):
                   for k, n in grupos if report.get(k)]
         if report.get("crecidos"):
             partes.append("%d cuerpo(s) crecido(s)" % len(report["crecidos"]))
+        if report.get("tipos_cambiados"):
+            partes.append("%d tipo(s) de retorno cambiado(s)" % len(report["tipos_cambiados"]))
+        if report.get("guardas_eliminadas"):
+            partes.append("%d guarda(s) eliminada(s)" % len(report["guardas_eliminadas"]))
         return style("[gb delta] %s (detalle: gb delta)" % ", ".join(partes), DIM)
 
     lines = [style("%d senal(es) que este cambio ANADIO:" % cuantos, BOLD), ""]
@@ -967,6 +974,26 @@ def render_delta(report, style, brief=False):
         for item in crecidos[:10]:
             lines.append("  %s:%d  %s  +%d lineas (ahora %d)" % (
                 item["file"], item["line"], item["name"], item["grew"], item["now"]))
+        lines.append("")
+
+    tipos = report.get("tipos_cambiados") or []
+    if tipos:
+        lines.append(style("Tipo de retorno cambiado (los llamantes pueden romperse)", BOLD))
+        for item in tipos[:10]:
+            marca = style("!", YELLOW) if item.get("nullable") else style("~", DIM)
+            lines.append("  %s %s:%d  %s  %s -> %s" % (
+                marca, item["file"], item["line"], item["name"], item["old"], item["new"]))
+        if len(tipos) > 10:
+            lines.append(style("  ... y %d mas" % (len(tipos) - 10), DIM))
+        lines.append("")
+
+    guardas = report.get("guardas_eliminadas") or []
+    if guardas:
+        lines.append(style("Guarda(s) eliminada(s) (la funcion acepta mas entradas)", BOLD))
+        for item in guardas[:10]:
+            lines.append("  %s %s:%d  %s" % (style("-", YELLOW), item["file"], item["line"], item["what"]))
+        if len(guardas) > 10:
+            lines.append(style("  ... y %d mas" % (len(guardas) - 10), DIM))
         lines.append("")
 
     sin_trackear = report.get("untracked_py") or []
