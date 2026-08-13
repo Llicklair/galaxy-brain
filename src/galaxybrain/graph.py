@@ -1128,6 +1128,7 @@ def analyze(root, skip=DEFAULT_SKIP, since=None, boundaries=None, smells=False,
         "new_cycles": [],
         "new_pairs": [],
         "new_violations": [],
+        "new_edges_sin_regla": [],
     }
     if since is not None:
         base = build_graph_from_git(root, since, skip, include_nested)
@@ -1158,6 +1159,25 @@ def analyze(root, skip=DEFAULT_SKIP, since=None, boundaries=None, smells=False,
             report["new_violations"] = [
                 v for v in violations if (v["importer"], v["imported"]) not in base_keys
             ]
+            # Aristas NUEVAS sin ninguna regla que las gobierne. Una arista que
+            # ninguna regla cubre es un punto ciego: si la dependencia es un
+            # error, gb no lo cazaria. Solo se miran las NUEVAS porque las
+            # preexistentes ya son decision del autor (delta, no estado).
+            # Hallado en prueba real (live-code, 13-ago-2026): `inyector ->
+            # json_hostil` paso en verde porque no existia la regla, y el
+            # unico aviso fue `modulos_sin_regla`, que no lo cubria porque
+            # ambos modulos SI aparecian en otras reglas.
+            if rules:
+                actual_edges = {(m, d) for m, deps in edges.items() for d in deps}
+                base_edge_set = {(m, d) for m, deps in base_edges.items() for d in deps}
+                nuevas = actual_edges - base_edge_set
+                report["new_edges_sin_regla"] = sorted(
+                    ({"src": s, "dst": d}
+                     for s, d in nuevas
+                     if not any(_under(s, rs) and _under(d, rd) for rs, rd in rules)
+                     and not es_modulo_de_test(s)),
+                    key=lambda e: (e["src"], e["dst"]),
+                )
     return report
 
 

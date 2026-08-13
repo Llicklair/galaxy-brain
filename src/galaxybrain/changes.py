@@ -648,6 +648,7 @@ def analyze(root, rev_range=None, skip=None, include_nested=False, staged=False)
                 "base": base,
                 "new_pairs": coupling["new_pairs"],
                 "new_violations": coupling["new_violations"],
+                "new_edges_sin_regla": coupling.get("new_edges_sin_regla", []),
                 "modules": coupling["modules"],
                 "boundaries": coupling["boundaries"],
             }

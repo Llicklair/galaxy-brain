@@ -376,7 +376,15 @@ def render_changes(report, style, brief=False):
                         violation["rule"],
                     )
                 )
-        else:
+        sin_regla = coupling.get("new_edges_sin_regla") or []
+        if sin_regla:
+            lines.append(style(
+                "Dependencia(s) nueva(s) sin regla de frontera (punto ciego — informa, no bloquea):", BOLD))
+            for edge in sin_regla[:5]:
+                lines.append("  %s %s  ->  %s   [sin regla]" % (style("?", YELLOW), edge["src"], edge["dst"]))
+            if len(sin_regla) > 5:
+                lines.append(style("  ... y %d mas" % (len(sin_regla) - 5), DIM))
+        if not (coupling["new_pairs"] or coupling["new_violations"]) and not sin_regla:
             lines.append(
                 style("Sin acoplamiento nuevo vs %s (%d modulos)." % (coupling["base"], coupling["modules"]), DIM)
             )
