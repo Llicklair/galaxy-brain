@@ -925,6 +925,13 @@ def render_delta(report, style, brief=False):
     if not cuantos:
         linea = "Sin errores clasicos anadidos en %s (%d fichero(s) .py mirados)" % (
             report.get("range") or "el cambio", report.get("ficheros") or 0)
+        sin_trackear = report.get("untracked_py") or []
+        if sin_trackear:
+            linea += "\n" + style(
+                "%d fichero(s) .py sin trackear NO analizados: %s"
+                % (len(sin_trackear),
+                   ", ".join(sin_trackear[:5]) + (" ..." if len(sin_trackear) > 5 else "")),
+                YELLOW)
         return style(linea, DIM)
 
     if brief:
@@ -952,6 +959,17 @@ def render_delta(report, style, brief=False):
         for item in crecidos[:10]:
             lines.append("  %s:%d  %s  +%d lineas (ahora %d)" % (
                 item["file"], item["line"], item["name"], item["grew"], item["now"]))
+        lines.append("")
+
+    sin_trackear = report.get("untracked_py") or []
+    if sin_trackear:
+        lines.append(style(
+            "%d fichero(s) .py sin trackear NO analizados (git add para incluirlos):"
+            % len(sin_trackear), YELLOW))
+        for f in sin_trackear[:5]:
+            lines.append(style("  %s" % f, DIM))
+        if len(sin_trackear) > 5:
+            lines.append(style("  ... y %d mas" % (len(sin_trackear) - 5), DIM))
         lines.append("")
 
     lines.append(style(

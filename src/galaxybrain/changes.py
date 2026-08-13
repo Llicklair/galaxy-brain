@@ -99,6 +99,22 @@ _HUNK = re.compile(r"^@@ -\d+(?:,\d+)? \+\d+(?:,\d+)? @@\s*(.*)$")
 _HUNK_RANGO = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@")
 
 
+def untracked_py(root):
+    """Ficheros .py sin trackear en el working tree — invisibles para el diff.
+
+    Un agente que escribe codigo nuevo y lo valida con `gb check` o `gb delta`
+    antes de commitear recibe "0 senales" sin que gb haya mirado ese codigo.
+    Listarlos cierra esa via: el silencio deja de parecer aprobacion.
+    """
+    salida = _git_output(root, "ls-files", "--others", "--exclude-standard")
+    if not salida:
+        return []
+    return sorted(
+        line.strip() for line in salida.split("\n")
+        if line.strip().endswith(".py")
+    )
+
+
 def _code_only(line):
     """La línea con sus literales de cadena vaciados (`"x"` -> `""`).
 
@@ -666,6 +682,16 @@ def analyze(root, rev_range=None, skip=None, include_nested=False, staged=False)
             )
     else:
         report["not_covered"].append("acoplamiento: el rango no trae base comparable")
+
+    # Ficheros nuevos sin trackear: el diff no los ve, pero estan ahi.
+    sin_trackear = untracked_py(root)
+    report["untracked_py"] = sin_trackear
+    if sin_trackear:
+        report["not_covered"].append(
+            "%d fichero(s) .py sin trackear NO analizados (git add para incluirlos): %s"
+            % (len(sin_trackear), ", ".join(sin_trackear[:5])
+               + (" ..." if len(sin_trackear) > 5 else ""))
+        )
 
     # Dicho de frente, no omitido: lo que esta revision NO mira.
     report["not_covered"].append(

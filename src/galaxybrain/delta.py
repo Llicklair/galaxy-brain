@@ -200,6 +200,11 @@ def analyze(root, rev_range=None, staged=False, worktree=False):
                     })
 
     report["crecidos"].sort(key=lambda c: -c["grew"])
+
+    # Ficheros nuevos sin trackear: el diff no los ve.
+    sin_trackear = changes.untracked_py(root)
+    report["untracked_py"] = sin_trackear
+
     return report
 
 

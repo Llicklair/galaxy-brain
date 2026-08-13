@@ -518,4 +518,16 @@ def analyze(root, rev_range=None, staged=False, worktree=False, skip=None,
             "invoca no deja arista, asi que la seleccion sube por el cuerpo que "
             "los NOMBRA — se sobre-aproxima, no se demuestra"
             % ", ".join(por_valor[:3]))
+
+    # Ficheros de test nuevos sin trackear: el diff no los ve.
+    sin_trackear = changes.untracked_py(root)
+    tests_sin_trackear = [f for f in sin_trackear if changes.TEST_FILE.search(f)]
+    if tests_sin_trackear:
+        report["avisos"].append(
+            "%d fichero(s) de test sin trackear NO incluidos en la seleccion (git add "
+            "para incluirlos): %s"
+            % (len(tests_sin_trackear),
+               ", ".join(tests_sin_trackear[:5])
+               + (" ..." if len(tests_sin_trackear) > 5 else "")))
+
     return report
