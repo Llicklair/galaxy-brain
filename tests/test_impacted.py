@@ -414,3 +414,37 @@ def test_lanzar_un_binario_AJENO_no_contagia_opacidad(tmp_path):
     """
     root = _proyecto_con_lanzador(tmp_path, '["git", "status"]')
     assert "tests/test_indirecto.py" not in _opacos_de(root)
+
+
+def test_el_import_interno_roto_devuelve_todo_con_su_motivo(repo):
+    """El consumidor VIEJO, el caso sin red: nadie lo toca, asi que ningun diff
+    lo trae y ningun "test tocado" lo rescata — y su referencia colgante no
+    deja arista por la que subir. Sin esta puerta la seleccion salia estrecha
+    y VERDE con un ImportError dentro (control 'firma' del banco de
+    convergencia, 13-ago-2026). La promesa de la cabecera —"un simbolo que no
+    resuelve devuelve TODO"— se cumple aqui o el falso verde es estructural.
+    """
+    (repo / "lib" / "carrito.py").write_text(
+        "from lib.nucleo import suma\n\n\ndef total(xs):\n    return suma(xs[0], xs[1])\n",
+        encoding="utf-8")
+    (repo / "tests" / "test_carrito.py").write_text(
+        "from lib.carrito import total\n\n\ndef test_total():\n    assert total([1, 2]) == 3\n",
+        encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "carrito")
+    # El renombre adapta a SU consumidor conocido (carrito); tests/test_suma.py,
+    # el consumidor viejo, queda con la referencia colgante y sin viajar.
+    _tocar(repo, "lib/nucleo.py", "def suma(", "def suma_total(")
+    _tocar(repo, "lib/carrito.py", "import suma", "import suma_total")
+    _tocar(repo, "lib/carrito.py", "suma(xs", "suma_total(xs")
+
+    report = impacted.analyze(str(repo), worktree=True)
+    assert report["todo"] is True
+    assert "import interno roto" in report["motivo"]
+    assert "test_suma" in report["motivo"], report["motivo"]
+    assert any("test_suma.py" in f for f in report["tests"])
+    # Y de frente: la seleccion corre y paga el rojo que antes no se veia.
+    r = subprocess.run([sys.executable, "-m", "pytest", "-q", "--tb=no",
+                        "-p", "no:cacheprovider", *report["tests"]],
+                       cwd=str(repo), capture_output=True, text=True)
+    assert r.returncode != 0, r.stdout

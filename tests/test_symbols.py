@@ -205,3 +205,95 @@ def test_since_sin_repo_lo_dice_no_lo_calla(tmp_path):
     report = symbols.analyze(root, since="HEAD")
     assert report["baseline_ok"] is False
     assert any("baseline" in x for x in report["not_covered"])
+
+
+# --- el import interno roto: un hecho, declarado ------------------------------
+
+
+def test_el_import_interno_roto_se_declara_con_fichero_y_linea(tmp_path):
+    """La referencia colgante que dejaba ciega a la seleccion (control 'firma'
+    del banco de convergencia, 13-ago-2026): el modulo es del proyecto y el
+    nombre ya no esta. Hecho duro, con su sitio."""
+    root = str(tmp_path)
+    _write(root, "app/__init__.py", "")
+    _write(root, "app/precio.py", "def precio_unitario(articulo):\n    return 2\n")
+    _write(root, "app/informe.py", "from app.precio import precio\n")
+
+    rotos = symbols.analyze(root)["imports_rotos"]
+    assert len(rotos) == 1, rotos
+    assert rotos[0]["import"] == "from app.precio import precio"
+    assert rotos[0]["file"].endswith("informe.py")
+    assert rotos[0]["line"] == 1
+
+
+def test_un_import_externo_no_se_acusa(tmp_path):
+    root = str(tmp_path)
+    _write(root, "app/__init__.py", "")
+    _write(root, "app/core.py", "from requests import get\n")
+
+    assert symbols.analyze(root)["imports_rotos"] == []
+
+
+def test_una_constante_asignada_no_es_un_roto(tmp_path):
+    """Las constantes no son nodos del grafo: el censo mira el AST entero, no
+    la tabla de simbolos — acusar a `from m import TARIFA` seria el falso
+    positivo recurrente que mata la familia."""
+    root = str(tmp_path)
+    _write(root, "app/__init__.py", "")
+    _write(root, "app/conf.py", "TARIFA = 2\n")
+    _write(root, "app/core.py", "from app.conf import TARIFA\n")
+
+    assert symbols.analyze(root)["imports_rotos"] == []
+
+
+def test_un_reexport_no_es_un_roto(tmp_path):
+    root = str(tmp_path)
+    _write(root, "app/__init__.py", "")
+    _write(root, "app/bajo.py", "def util():\n    return 1\n")
+    _write(root, "app/medio.py", "from app.bajo import util\n")
+    _write(root, "app/alto.py", "from app.medio import util\n")
+
+    assert symbols.analyze(root)["imports_rotos"] == []
+
+
+def test_con_import_estrella_no_hay_censo_y_se_calla(tmp_path):
+    root = str(tmp_path)
+    _write(root, "app/__init__.py", "")
+    _write(root, "app/mezcla.py", "from os.path import *\n")
+    _write(root, "app/core.py", "from app.mezcla import join\n")
+
+    assert symbols.analyze(root)["imports_rotos"] == []
+
+
+def test_un_getattr_de_modulo_hace_el_censo_imposible_y_se_calla(tmp_path):
+    """PEP 562: un `__getattr__` de modulo sirve nombres que ningun censo
+    estatico ve. Sin censo completo no hay acusacion."""
+    root = str(tmp_path)
+    _write(root, "app/__init__.py", "")
+    _write(root, "app/magico.py", "def __getattr__(nombre):\n    return 1\n")
+    _write(root, "app/core.py", "from app.magico import loquesea\n")
+
+    assert symbols.analyze(root)["imports_rotos"] == []
+
+
+def test_importar_un_submodulo_no_es_un_roto(tmp_path):
+    root = str(tmp_path)
+    _write(root, "app/__init__.py", "")
+    _write(root, "app/sub.py", "def f():\n    return 1\n")
+    _write(root, "app/core.py", "from app import sub\n")
+
+    assert symbols.analyze(root)["imports_rotos"] == []
+
+
+def test_el_import_con_fallback_no_se_acusa(tmp_path):
+    """`try: from m import x / except ImportError:` es el patron de
+    compatibilidad: el codigo YA maneja la ausencia. Solo se censan los
+    imports directos del cuerpo del modulo."""
+    root = str(tmp_path)
+    _write(root, "app/__init__.py", "")
+    _write(root, "app/viejo.py", "def nuevo():\n    return 1\n")
+    _write(root, "app/core.py",
+           "try:\n    from app.viejo import antiguo\nexcept ImportError:\n"
+           "    antiguo = None\n")
+
+    assert symbols.analyze(root)["imports_rotos"] == []

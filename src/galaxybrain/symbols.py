@@ -68,6 +68,98 @@ def _imports(tree, mod, is_pkg):
     return tabla
 
 
+def _nombres_atados(tree):
+    """Todo nombre que el fichero ATA en cualquier parte: defs, clases,
+    asignaciones, imports, `except ... as`, bucles.
+
+    Es el censo contra el que se comprueba un `from M import y`, y NO puede ser
+    la tabla de simbolos: las constantes no son nodos del grafo y acusar a
+    `from m import TARIFA` seria el falso positivo recurrente que mata la
+    familia. El censo es deliberadamente ANCHO (un `for y in ...` local tambien
+    cuenta, aunque no cree atributo de modulo): se prefiere callar un roto real
+    a acusar uno falso — regla 9."""
+    nombres = set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            nombres.add(node.name)
+        elif isinstance(node, ast.Name) and isinstance(node.ctx, (ast.Store, ast.Del)):
+            nombres.add(node.id)
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                nombres.add(alias.asname or alias.name.split(".")[0])
+        elif isinstance(node, ast.ImportFrom):
+            for alias in node.names:
+                if alias.name != "*":
+                    nombres.add(alias.asname or alias.name)
+        elif isinstance(node, ast.ExceptHandler) and node.name:
+            nombres.add(node.name)
+        elif isinstance(node, (ast.Global, ast.Nonlocal)):
+            nombres.update(node.names)
+    return nombres
+
+
+def _sin_censo_posible(tree):
+    """`from x import *` o un `__getattr__` de modulo (PEP 562): el modulo puede
+    servir nombres que ningun censo estatico ve, asi que no hay acusacion."""
+    if any(isinstance(n, ast.FunctionDef) and n.name == "__getattr__" for n in tree.body):
+        return True
+    return any(isinstance(n, ast.ImportFrom) and any(a.name == "*" for a in n.names)
+               for n in ast.walk(tree))
+
+
+def _imports_rotos(root, modulos):
+    """`from M import y` donde M es un modulo DEL PROYECTO e `y` no existe en el.
+
+    El hecho que dejaba ciega a la seleccion de tests: una referencia colgante
+    no produce arista, la cadena de llamantes no puede subir por ella, y el
+    test del consumidor roto no corre — el falso verde que destapo el control
+    'firma' del banco de convergencia (13-ago-2026). El caso sin red ninguna es
+    el consumidor VIEJO: no viaja en ningun diff, asi que ningun "test tocado"
+    lo rescata. Aqui solo se DECLARA el hecho; que hacer con el lo decide la
+    seleccion (ADR 0008: el grafo dice hechos).
+
+    Conservador a proposito (regla 9): solo imports directos del cuerpo del
+    modulo — uno dentro de `try`/`if` es un patron de fallback y ya maneja la
+    ausencia —, solo destinos del proyecto con censo posible, y con el
+    filesystem como arbitro para submodulos que el barrido no vio (skip,
+    anidados). Fuera de alcance y dicho: `import M.viejo` roto (sin `from`).
+    """
+    rotos = []
+    censo = {}
+    for mod, info in sorted(modulos.items()):
+        es_pkg = os.path.basename(info.get("path") or "") == "__init__.py"
+        for node in info["tree"].body:
+            if not isinstance(node, ast.ImportFrom):
+                continue
+            base = _resolve_base(node, mod, es_pkg)
+            if not base or base not in modulos:
+                continue
+            destino = modulos[base]
+            if base not in censo:
+                censo[base] = (None if _sin_censo_posible(destino["tree"])
+                               else _nombres_atados(destino["tree"]))
+            nombres = censo[base]
+            if nombres is None:
+                continue
+            for alias in node.names:
+                if alias.name == "*" or alias.name in nombres:
+                    continue
+                if (base + "." + alias.name) in modulos:
+                    continue                      # importa un submodulo
+                if os.path.basename(destino.get("path") or "") == "__init__.py":
+                    carpeta = os.path.dirname(os.path.join(root, destino["path"]))
+                    if (os.path.exists(os.path.join(carpeta, alias.name)) or
+                            os.path.exists(os.path.join(carpeta, alias.name + ".py"))):
+                        continue                  # submodulo que el barrido no vio
+                rotos.append({
+                    "file": (info.get("path") or "").replace(os.sep, "/"),
+                    "line": node.lineno,
+                    "import": "from %s import %s" % (base, alias.name),
+                    "falta": base + "." + alias.name,
+                })
+    return rotos
+
+
 def _resumen(node):
     """La PRIMERA línea del docstring, o "".
 
@@ -344,6 +436,7 @@ def analyze(root, skip=DEFAULT_SKIP, include_nested=False, since=None):
         "calls_resolved": 0,
         "unresolved": {},
         "errors": {},
+        "imports_rotos": [],
         "not_covered": [],
     }
     if not os.path.isdir(root):
@@ -367,6 +460,11 @@ def analyze(root, skip=DEFAULT_SKIP, include_nested=False, since=None):
         # La ruta RELATIVA a la raiz analizada: lo que un lector (o un agente)
         # puede abrir tal cual desde donde se lanzo el comando.
         modulos[mod]["path"] = os.path.relpath(path, root)
+
+    # Los imports internos que apuntan a algo que ya no existe: hecho duro,
+    # declarado para quien seleccione. La decision de correr todo vive en
+    # `impacted`, no aqui — el grafo dice hechos, no dictamina.
+    report["imports_rotos"] = _imports_rotos(root, modulos)
 
     # Tabla global de simbolos: modulos, clases, funciones y metodos.
     tabla = {}

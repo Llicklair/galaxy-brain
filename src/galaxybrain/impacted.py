@@ -437,6 +437,24 @@ def analyze(root, rev_range=None, staged=False, worktree=False, skip=None,
     if not rangos:
         return correr_todo("el diff no toca ningun .py que el grafo vea: todo")
 
+    # Una referencia colgante interna (`from M import y` con `y` desaparecido)
+    # no deja arista: la cadena de llamantes no puede subir por ahi y los tests
+    # del consumidor roto se caen de la seleccion EN SILENCIO — el falso verde
+    # exacto de la cabecera. Lo destapo el control 'firma' del banco de
+    # convergencia (13-ago-2026), y el caso sin red es el consumidor VIEJO:
+    # no viaja en ningun diff, asi que ningun "test tocado" lo rescata. Es un
+    # hecho, no un proxy — el modulo es del proyecto y el nombre no esta — y
+    # la cabecera de este fichero lo promete desde el principio: ante la duda,
+    # todo, con el motivo escrito.
+    rotos = grafo.get("imports_rotos") or []
+    if rotos:
+        primero = rotos[0]
+        mas = "" if len(rotos) == 1 else " (y %d mas)" % (len(rotos) - 1)
+        return correr_todo(
+            "import interno roto: `%s` (%s:%s) apunta a algo que ya no existe%s — "
+            "una referencia colgante no deja arista por la que subir, se corre todo"
+            % (primero["import"], primero["file"], primero["line"], mas))
+
     # Los símbolos que el diff toca: la misma intersección que hace la onda del
     # cambio, pero sobre el grafo YA calculado. Llamar a `_onda_del_diff` aquí
     # volvería a analizar el repo entero (lo hace por su cuenta), y el
