@@ -1157,8 +1157,24 @@ def cmd_who(args):
                 quienes = foto["por_nodo"][qual]["agentes"]
                 emit("  ! %s  <- %s" % (qual, ", ".join(quienes)))
 
+    # --html: el mapa vivo como UN fichero autocontenido (la version fina del
+    # canvas recortado en 3229ddd — sin servidor ni proceso que pueda morir).
+    # Por defecto vive FUERA del proyecto observado (regla 7); una ruta
+    # explicita es eleccion del usuario.
+    destino_html = None
+    if args.html:
+        if args.html == "AUTO":
+            destino_html = os.path.join(str(config.home()),
+                                        store._slug(root), "mapa.html")
+        else:
+            destino_html = os.path.abspath(args.html)
+
     if not args.watch:
         foto = actividad.instantanea(root, informe)
+        if destino_html:
+            from . import mapa_html
+            if mapa_html.escribir(destino_html, foto):
+                sys.stderr.write("[gb who] mapa escrito: %s\n" % destino_html)
         if args.json:
             emit(json.dumps(foto, ensure_ascii=False, indent=2))
             return 0
@@ -1175,9 +1191,15 @@ def cmd_who(args):
     from . import mapa as _mapa
 
     huellas_base = {"huellas": _mapa.huellas(root, informe)}
+    if destino_html:
+        from . import mapa_html
+        sys.stderr.write("[gb who] mapa vivo en: %s (abrelo en el navegador; "
+                         "se refresca solo)\n" % destino_html)
     try:
         while True:
             foto = actividad.instantanea(root, informe)
+            if destino_html:
+                mapa_html.escribir(destino_html, foto, refresco=args.watch)
             emit("\033[2J\033[H[gb who --watch] %s  refresco %ds — Ctrl+C para salir"
                  % (_time.strftime("%H:%M:%S"), args.watch))
             emit("")
@@ -1822,6 +1844,10 @@ def build_parser():
         "--watch", type=int, nargs="?", const=3, default=0, metavar="SEG",
         help="refrescar cada SEG segundos (por defecto 3; el mapa solo se "
              "re-deriva si algun fichero cambio)")
+    who_p.add_argument(
+        "--html", nargs="?", const="AUTO", default=None, metavar="RUTA",
+        help="escribir el mapa como HTML autocontenido (por defecto en "
+             "GB_HOME, fuera del proyecto; con --watch se refresca solo)")
     who_p.set_defaults(func=cmd_who)
 
     dead_p = subparsers.add_parser(
