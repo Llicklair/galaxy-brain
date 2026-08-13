@@ -409,6 +409,17 @@ def _union(raiz, base, activos, decir, impacted, incompletas=()):
             salida["motivo"] = "no se pudo componer la union: %s" % ", ".join(salida["conflictos"])
             return salida
 
+        # Viajar no basta: tambien tienen que CORRER. Los nuevos llegaban al
+        # arbol pero no al indice, asi que el diff de la union no los declaraba
+        # y sus simbolos nunca eran semillas. Mientras una arista viva llegara
+        # hasta ellos, la seleccion los alcanzaba igual y no se notaba; el
+        # control 'firma' del banco lo destapo (13-ago-2026): un RENOMBRE deja
+        # la referencia del otro agente COLGANTE — sin nodo del que subir — y el
+        # test que probaba el choque se quedaba fuera: union VERDE con un
+        # ImportError dentro. `-N` declara la intencion sin tocar el contenido,
+        # igual que en el bucle, y con eso el test nuevo es semilla de si mismo.
+        _git(arbol, "add", "-N", "-A")
+
         ficheros = (impacted.analyze(arbol, None, worktree=True).get("tests") or [])
         if not ficheros:
             salida["veredicto"] = 0

@@ -396,6 +396,38 @@ def test_lo_que_una_rama_CREA_viaja_a_la_union(repo):
     assert informe["choque_semantico"] is True
 
 
+def test_el_renombre_que_deja_la_arista_colgante_tambien_choca(repo):
+    """El control 'firma' del banco de convergencia, fijado (13-ago-2026).
+
+    A renombra `suma` a `suma_total` y adapta lo suyo; B crea un consumidor
+    NUEVO contra el nombre viejo. Cada rama verde sola, y en la union el import
+    de B ya no resuelve — pero la seleccion subia por ARISTAS desde lo tocado,
+    y un simbolo renombrado no deja arista de la que subir: el test de B no
+    corria y la union daba VERDE con un ImportError dentro. Lo que una rama
+    crea no solo viaja: CORRE, aunque el grafo no tenga por donde llegarle.
+    """
+    a = _rama(repo, "rama_a")
+    (a / "lib" / "nucleo.py").write_text(
+        "def suma_total(a, b):\n    return a + b\n", encoding="utf-8")
+    (a / "tests" / "test_suma.py").write_text(
+        "from lib.nucleo import suma_total\n\n\ndef test_suma_va():\n"
+        "    assert suma_total(1, 2) == 3\n", encoding="utf-8")
+
+    b = _rama(repo, "rama_b")
+    (b / "lib" / "encima.py").write_text(
+        "from lib.nucleo import suma\n\n\ndef doble(x):\n"
+        "    return suma(x, x)\n", encoding="utf-8")
+    (b / "tests" / "test_encima.py").write_text(
+        "from lib.encima import doble\n\n\ndef test_doble():\n"
+        "    assert doble(2) == 4\n", encoding="utf-8")
+
+    informe = aislado.converge(str(repo))
+    ramas = {r["nombre"]: r["veredicto"] for r in informe["ramas"]}
+    assert ramas == {"rama_a": 0, "rama_b": 0}, informe["ramas"]
+    assert informe["union"]["veredicto"] != 0, informe["union"]
+    assert informe["choque_semantico"] is True
+
+
 def test_una_rama_rota_no_es_choque_semantico(repo):
     """Si una rama ya falla sola, la union roja no dice nada nuevo: el choque es
     que NINGUNA este mal y juntas rompan. Gritar aqui seria un falso positivo."""
