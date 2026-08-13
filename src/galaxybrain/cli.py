@@ -5,6 +5,7 @@ codigo. Un comando nuevo tiene que caer en una de ellas, o no entra:
 
   last · list · show · on · off · status   ->  donde peto y con que estado
   graph · symbols · calls · dead           ->  que forma tiene
+  who                                      ->  quien toca que, ahora mismo
   check                                    ->  que le hizo cada cambio
   floor                                    ->  que le falta de base
   memory                                   ->  que se aprendio, cross-repo
@@ -1113,6 +1114,56 @@ def cmd_symbols(args):
     return 0
 
 
+def cmd_who(args):
+    """Quien esta tocando que, ahora mismo — derivado, no declarado.
+
+    La foto que un agente (o su orquestador) consulta ANTES de trabajar y
+    DURANTE: presencia derivada de los worktrees (arbol sucio + consola +
+    commit reciente), simbolo exacto tocado, y los CRUCES — dos agentes en el
+    mismo sitio. Hechos para coordinarse; la decision de parar o seguir vive
+    fuera (ADR 0006: gb provee, no orquesta).
+    """
+    from . import actividad
+
+    root = os.path.abspath(args.path or ".")
+    informe = _analiza_simbolos(root)
+    if informe["root_error"]:
+        sys.stderr.write("[gb who] %s\n" % informe["root_error"])
+        return 1
+    foto = actividad.instantanea(root, informe)
+
+    if args.json:
+        emit(json.dumps(foto, ensure_ascii=False, indent=2))
+        return 0
+
+    if foto.get("motivo"):
+        emit(foto["motivo"])
+        return 0
+    if not foto["agentes"]:
+        emit("Nadie esta tocando nada ahora mismo (base %s)." % (foto.get("base") or "?"))
+        emit("La presencia se deriva del arbol sucio, la consola y el commit "
+             "reciente: quien commiteo hace rato no aparece — es historia, no presencia.")
+        return 0
+
+    for a in foto["agentes"]:
+        hace = ("hace %ds" % a["hace_seg"]) if a.get("hace_seg") is not None else "sin edad"
+        base = a["base"] + ("" if a.get("misma_base") else " (BASE DISTINTA)")
+        emit("%s  [%s, base %s]  %d fichero(s)" % (a["nombre"], hace, base, a["ficheros"]))
+        for s in (a.get("simbolos") or a.get("nodos") or [])[:8]:
+            emit("  toca %s" % s)
+        if a.get("fuera_del_mapa"):
+            emit("  + %d fichero(s) aun fuera del mapa (codigo nuevo)" % a["fuera_del_mapa"])
+        if a.get("commitados"):
+            emit("  commiteo hace poco: %s" % ", ".join(a["commitados"][:5]))
+    if foto["cruces"]:
+        emit("")
+        emit("CRUCES — dos o mas agentes sobre el mismo nodo:")
+        for qual in foto["cruces"]:
+            quienes = foto["por_nodo"][qual]["agentes"]
+            emit("  ! %s  <- %s" % (qual, ", ".join(quienes)))
+    return 0
+
+
 def cmd_dead(args):
     """Candidatos a codigo muerto. INFORMA, no bloquea: son proxies (regla 9)."""
     from . import graph, huerfanos
@@ -1721,6 +1772,13 @@ def build_parser():
     syms.add_argument("--json", action="store_true", help="salida cruda")
     syms.add_argument("--color", choices=["auto", "always", "never"], default="auto")
     syms.set_defaults(func=cmd_symbols)
+
+    who_p = subparsers.add_parser(
+        "who", help="quien esta tocando que ahora mismo (derivado de los worktrees) y los cruces"
+    )
+    who_p.add_argument("path", nargs="?", default=".", help="raiz del proyecto")
+    who_p.add_argument("--json", action="store_true", help="salida cruda")
+    who_p.set_defaults(func=cmd_who)
 
     dead_p = subparsers.add_parser(
         "dead", help="candidatos a codigo muerto: simbolos sin llamantes y modulos huerfanos"
