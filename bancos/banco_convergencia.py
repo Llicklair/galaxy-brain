@@ -103,8 +103,17 @@ def _escribe(raiz, ficheros):
             fh.write(cuerpo)
 
 
-def genera():
-    """El repo base y dos worktrees, uno por 'agente'."""
+def genera(sembrar=True):
+    """El repo base y dos worktrees, uno por 'agente'.
+
+    `sembrar=True` escribe el trabajo de las dos ramas a mano: es el CONTROL, que
+    comprueba que `converge` detecta el choque cuando el choque existe.
+
+    `sembrar=False` deja los worktrees LIMPIOS, que es lo unico valido cuando
+    escriben agentes de verdad. Sembrar y luego lanzar agentes encima seria
+    fabricar el conflicto y llamarlo hallazgo — el experimento no mediria si
+    ocurre, solo que yo se escribirlo.
+    """
     shutil.rmtree(BASE, ignore_errors=True)
     os.makedirs(BASE, exist_ok=True)
     _escribe(BASE, MODULOS)
@@ -118,7 +127,8 @@ def genera():
     for nombre, ficheros in (("agente-a", RAMA_A), ("agente-b", RAMA_B)):
         ruta = os.path.join(BASE, ".worktrees", nombre)
         _git(BASE, "worktree", "add", "-q", "--detach", ruta, "HEAD")
-        _escribe(ruta, ficheros)
+        if sembrar:
+            _escribe(ruta, ficheros)
         ramas.append(ruta)
     return BASE, ramas
 
@@ -135,6 +145,78 @@ def corre():
     from galaxybrain import aislado
 
     return aislado.converge(BASE, traza=None)
+
+
+#: Las dos tareas de los agentes REALES. Independientes, plausibles, y ninguno
+#: sabe del otro — que es la condicion de la vida real. NO se les pide que
+#: choquen: se les pide trabajo normal sobre un contrato compartido, y si el
+#: choque aparece es porque aparece.
+TAREAS = (
+    ("agente-a",
+     "En `tienda/precio.py`, `precio()` devuelve euros y tiene que pasar a "
+     "devolver CENTIMOS (multiplicar por 100). Adapta lo que haga falta para que "
+     "el resto siga comportandose igual desde fuera. Corre `python -m pytest tests/` "
+     "antes de terminar. No commitees."),
+    ("agente-b",
+     "Anade `tienda/informe.py` con una funcion `linea(articulo)` que devuelva "
+     "'total: N euros' usando el precio del articulo, y su test en "
+     "`tests/test_informe.py`. Corre `python -m pytest tests/` antes de terminar. "
+     "No commitees."),
+)
+
+
+def _agente(ruta, prompt, timeout_seg):
+    """`claude -p` headless, Opus, dentro del worktree de esa rama."""
+    exe = shutil.which("claude")
+    if not exe:
+        return False, "claude CLI no esta en PATH"
+    entorno = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    try:
+        r = subprocess.run([exe, "-p", prompt, "--model", "opus",
+                            "--permission-mode", "acceptEdits"],
+                           cwd=ruta, capture_output=True, text=True,
+                           timeout=timeout_seg, env=entorno)
+    except subprocess.TimeoutExpired:
+        return False, "timeout de %ds" % timeout_seg
+    except OSError as error:
+        return False, "no arranco: %s" % error
+    return r.returncode == 0, "rc=%d" % r.returncode
+
+
+def tirada(rondas, timeout_seg):
+    """Agentes REALES escribiendo, y `converge` mirando. Gasta cuota.
+
+    Presupuesto escrito antes: `rondas` x 2 agentes x `timeout_seg`.
+
+    Y la calibracion, dicha antes de ver nada: con una tasa base publicada del
+    5-10%, cuatro rondas tienen ~70% de no ver nada AUNQUE el fenomeno sea real.
+    Por eso las tareas tocan un contrato compartido —es lo que pasa de verdad
+    cuando dos agentes trabajan a la vez— y por eso un cero aqui NO se leera como
+    "no ocurre", sino como "no lo vi en N rondas", que es otra frase.
+    """
+    print("presupuesto: %d ronda(s) x 2 agentes, tope %ds cada uno\n"
+          % (rondas, timeout_seg), flush=True)
+    vistos = 0
+    for ronda in range(1, rondas + 1):
+        _, ramas = genera(sembrar=False)   # los agentes escriben, no yo
+        for (nombre, prompt), ruta in zip(TAREAS, ramas):
+            ok, motivo = _agente(ruta, prompt, timeout_seg)
+            if not ok:
+                print("  ronda %d  %s NO CORRIO (%s)" % (ronda, nombre, motivo), flush=True)
+        informe = corre()
+        ramas_v = {r["nombre"]: r["veredicto"] for r in informe.get("ramas") or []}
+        union = (informe.get("union") or {}).get("veredicto")
+        choque = informe.get("choque_semantico")
+        vistos += 1 if choque else 0
+        print("  ronda %d  ramas=%s union=%s  choque=%s"
+              % (ronda, {k: ("ok" if v == 0 else "ROJA") for k, v in sorted(ramas_v.items())},
+                 "ok" if union == 0 else "ROJA", "SI" if choque else "no"), flush=True)
+        limpia()
+    print("\n=== CHOQUES SEMANTICOS VISTOS: %d de %d rondas ===" % (vistos, rondas))
+    if not vistos:
+        print("  cero en %d rondas NO es 'no ocurre': con tasa base del 5-10%%," % rondas)
+        print("  esta muestra no puede distinguir una cosa de la otra.")
+    return vistos
 
 
 def main():
@@ -167,8 +249,15 @@ def main():
 if __name__ == "__main__":
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--limpiar", action="store_true", help="quitar los worktrees y salir")
+    p.add_argument("--agentes", action="store_true",
+                   help="agentes REALES (claude -p, Opus): GASTA CUOTA")
+    p.add_argument("--rondas", type=int, default=4, help="rondas de 2 agentes (por defecto 4)")
+    p.add_argument("--timeout", type=int, default=300, help="tope por agente en segundos")
     args = p.parse_args()
     if args.limpiar:
         limpia()
+        raise SystemExit(0)
+    if args.agentes:
+        tirada(args.rondas, args.timeout)
         raise SystemExit(0)
     raise SystemExit(main())
