@@ -10,6 +10,33 @@ mismo detalle que los positivos, o más.
 
 ---
 
+## 2026-08-13 · Agentes REALES en el banco de convergencia: el choque ocurre solo — **4/4, y `converge` lo vio las 4**
+
+Primera tirada del modo `--agentes` (8dc967a): 4 rondas × 2 `claude -p` (Opus) sobre worktrees
+**limpios** — nadie siembra, nadie les pide chocar. Tareas independientes sobre un contrato
+compartido: A pasa `precio()` de euros a céntimos; B escribe `informe.linea()` consumiendo ese
+precio. Presupuesto impreso antes de arrancar; 8 agentes, 0 caídas, 0 timeouts (tope 300 s).
+
+**Resultado: choque en las 4 rondas, con firma idéntica.** Cada rama en verde POR SEPARADO — ambos
+corrieron su pytest y terminaron limpios — y la unión en rojo las 4 veces:
+`'total: 200 euros' != 'total: 2 euros'`. El falso verde por rama que 1e15dba nombró, reproducido
+con escritores de verdad al primer intento.
+
+**Las honestidades:**
+
+1. **Esto mide DETECCIÓN, no tasa base.** La calibración previa (tasa publicada 5–10% → ~70% de no
+   ver nada en 4 rondas) saltó por los aires porque estas dos tareas ponen el contrato compartido en
+   el camino crítico: el choque es casi determinista *por diseño de la tarea*. Lo medido es que
+   cuando el choque existe, `converge` lo ve — 4/4 con cero falsos verdes de unión — no cuánto
+   ocurre en la vida real.
+2. **n=4 con UNA pareja de tareas.** Firma idéntica las cuatro veces: es un escenario repetido,
+   no cuatro escenarios. Lo que convertiría esto en medición de cobertura es variar la pareja —
+   choques que no sean de escala numérica (renombrar, contrato de tipos, orden de argumentos).
+
+**Consecuencia:** el control sembrado deja de ser la única evidencia — el fenómeno aparece sin
+sembrarlo y el detector lo caza donde cada rama daba verde. Siguiente paso con valor: más parejas
+de tareas, no más rondas de esta.
+
 ## 2026-08-10 · El recall de aristas es 96%, y con eso se cae la explicación de los 91 falsos verdes
 
 Se fue a buscar un grafo de terceros que tapara el hueco que destapó el oráculo de cobertura. **Los
