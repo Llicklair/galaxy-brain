@@ -18,22 +18,36 @@ from . import lenguajes as _lang
 
 # ---------------------------------------------------------------------------
 # Patrones de error tragado (silencios) por lenguaje.
-# Solo lenguajes con try/catch sintatico; Go, Rust, C y Lua no lo tienen.
-# Cada entrada: (patron, selector_opcional)
+# Cada entrada: (patron, selector_opcional, mensaje). Dos familias:
+# - try/catch con cuerpo vacio (los lenguajes que lo tienen)
+# - el idioma de descartar el error donde NO hay excepciones: `_ =` / `v, _ :=`
+#   en Go, `let _ =` / `.ok();` en Rust. Medidos con sonda (13-ago): el patron
+#   de Go NO casa `_ = v` (sin llamada) ni el acceso a mapa — cero ruido.
+# Lua queda FUERA a proposito: `pcall($$$)` casa tambien `local ok = pcall(f)`
+# (el caso COMPROBADO), y marcar eso seria el falso positivo que manda una
+# revision a --no-verify. Falso negativo > falso positivo.
 # ---------------------------------------------------------------------------
 
+_CATCH = "error tragado: catch vacio"
+
 _SILENCIOS = {
-    "js":     [("try { $$$ } catch($E) { }", None)],
-    "ts":     [("try { $$$ } catch($E) { }", None)],
-    "tsx":    [("try { $$$ } catch($E) { }", None)],
-    "java":   [("try { $$$ } catch ($T $E) { }", None)],
-    "kotlin": [("try { $$$ } catch ($E: $T) { }", None)],
-    "csharp": [("try { $$$ } catch ($T $E) { }", None),
-               ("try { $$$ } catch { }", None)],
-    "php":    [("try { $$$ } catch ($T $E) { }", None)],
-    "scala":  [("try { $$$ } catch { case $E => }", None)],
-    "swift":  [("do { $$$ } catch { }", None)],
-    "dart":   [("try { $$$ } catch ($E) { }", None)],
+    "js":     [("try { $$$ } catch($E) { }", None, _CATCH)],
+    "ts":     [("try { $$$ } catch($E) { }", None, _CATCH)],
+    "tsx":    [("try { $$$ } catch($E) { }", None, _CATCH)],
+    "java":   [("try { $$$ } catch ($T $E) { }", None, _CATCH)],
+    "kotlin": [("try { $$$ } catch ($E: $T) { }", None, _CATCH)],
+    "csharp": [("try { $$$ } catch ($T $E) { }", None, _CATCH),
+               ("try { $$$ } catch { }", None, _CATCH)],
+    "php":    [("try { $$$ } catch ($T $E) { }", None, _CATCH)],
+    "scala":  [("try { $$$ } catch { case $E => }", None, _CATCH)],
+    "swift":  [("do { $$$ } catch { }", None, _CATCH)],
+    "dart":   [("try { $$$ } catch ($E) { }", None, _CATCH)],
+    "go":     [("_ = $F($$$)", None, "error descartado: _ ="),
+               ("$A, _ := $F($$$)", None, "error descartado: v, _ :="),
+               ("defer func() { recover() }()", None,
+                "error tragado: recover() vacio")],
+    "rust":   [("let _ = $F($$$);", None, "Result descartado: let _ ="),
+               ("$E.ok();", None, "Result descartado: .ok() sin usar")],
 }
 
 # ---------------------------------------------------------------------------
@@ -138,11 +152,10 @@ def hechos(texto, lang_id):
         with open(ruta, "w", encoding="utf-8") as f:
             f.write(texto)
 
-        # --- silencios: try/catch con cuerpo vacio ---
-        for patron, selector in _SILENCIOS.get(lang_id, []):
+        # --- silencios: catch vacio, o el error descartado del lenguaje ---
+        for patron, selector, mensaje in _SILENCIOS.get(lang_id, []):
             for m in _corre(ag, patron, cfg["ag"], ruta, selector):
-                resultado.silencios.append(
-                    (_linea(m), "error tragado: catch vacio"))
+                resultado.silencios.append((_linea(m), mensaje))
 
         # --- guardas: precondiciones que lanzan ---
         vistos_guardas = set()
