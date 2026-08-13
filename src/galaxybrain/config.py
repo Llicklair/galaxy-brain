@@ -98,18 +98,6 @@ def capture_library_locals():
     return _flag("GB_ALL_FRAMES", False)
 
 
-def capture_threads():
-    """Capturar tambien las excepciones de hilos.
-
-    Cuesta lo que cuesta `import threading` en el arranque: 5,2 ms medidos de
-    los 6,4 ms totales del hook (Python 3.11, Windows). La mayoria de programas
-    reales importan threading de todas formas — logging, asyncio, requests — asi
-    que ahi el coste no se anade, se adelanta. Para un CLI diminuto que jamas
-    toca hilos, este interruptor lo devuelve.
-    """
-    return not _flag("GB_NO_THREADS", False)
-
-
 def keep_argv():
     """Guardar la linea de comandos ENTERA en el registro.
 

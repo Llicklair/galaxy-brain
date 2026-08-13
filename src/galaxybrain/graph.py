@@ -1260,21 +1260,6 @@ _SONDAS = (
 )
 
 
-def _primer_subdirectorio(root):
-    """El primer subdirectorio con codigo, para las relaciones que comparan
-    raiz contra subarbol. None si no hay ninguno: la relacion se salta."""
-    try:
-        for nombre in sorted(os.listdir(root)):
-            sub = os.path.join(root, nombre)
-            if nombre.startswith(".") or nombre in DEFAULT_SKIP or not os.path.isdir(sub):
-                continue
-            if analyze(sub)["modules"]:
-                return sub
-    except OSError:
-        pass
-    return None
-
-
 def _rel_idempotencia(root, _sym):
     a, b = shape(analyze(root)), shape(analyze(root))
     return a == b, "dos analisis seguidos dan la misma forma", None
