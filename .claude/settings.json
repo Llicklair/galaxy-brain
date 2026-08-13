@@ -18,40 +18,6 @@
             "type": "command",
             "command": "gb graph --context",
             "timeout": 15
-          },
-          {
-            "type": "command",
-            "command": "gb symbols --html --watch --fondo --refresco 3",
-            "timeout": 15
-          }
-        ]
-      }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": "Edit|Write|NotebookEdit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "gb graph --context --if-changed",
-            "timeout": 15
-          },
-          {
-            "type": "command",
-            "command": "gb delta --worktree --brief",
-            "timeout": 15
-          }
-        ]
-      }
-    ],
-    "PreToolUse": [
-      {
-        "matcher": "Grep|Glob",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "gb calls --hook",
-            "timeout": 10
           }
         ]
       }
