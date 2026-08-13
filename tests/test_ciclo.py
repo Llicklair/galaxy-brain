@@ -11,7 +11,7 @@ import datetime
 import os
 import subprocess
 
-from galaxybrain import changes, cli, graph, store, symbols
+from galaxybrain import changes, cli, store, symbols
 
 
 def _run(cwd, *args):
@@ -210,52 +210,6 @@ def test_el_batch_de_commits_dice_lo_mismo_que_el_camino_por_fichero(tmp_path):
         assert batch[clave] == changes._ultimo_commit(root, fichero, {})
     # Commits distintos de verdad: si el parseo mezclara cabeceras, coincidirian.
     assert batch[claves[uno]][0] != batch[claves[dos]][0]
-
-
-def test_una_captura_nueva_invalida_la_forma_registrada_del_mapa(tmp_path):
-    """--if-changed y el mantenimiento comparaban solo la forma del CODIGO: una
-    captura nueva no regeneraba el mapa y el ciclo pintado mentia por omision
-    toda la sesion. La forma registrada lleva ahora la huella del historico."""
-    root = _repo(tmp_path)
-    fichero = _write(root, "app.py")
-    _commit(root, "inicial")
-    destino = str(tmp_path / "mapa.html")
-    assert cli.main(["graph", root, "--html", destino]) == 0
-
-    informe = symbols.analyze(root)
-    grafo = graph.analyze(root)
-    assert cli._html_forma_igual(root, destino, informe, grafo) is True
-
-    _captura(root, fichero, _ahora())
-    assert cli._html_forma_igual(root, destino, informe, grafo) is False
-
-
-def test_la_palabra_prohibida_no_aparece_ni_en_status_ni_en_el_html(tmp_path, capsys, monkeypatch):
-    """gb no puede verificar un arreglo (seria re-ejecutar), asi que la salida no
-    puede afirmarlo ni en el estado mas verde del ciclo. Test literal."""
-    root = _repo(tmp_path)
-    fichero = _write(root, "app.py")
-    ident = _captura(root, fichero, _ahora() - datetime.timedelta(days=1))
-    store.mark_read(ident, project=root)
-    _commit(root, "toca app.py")
-    monkeypatch.chdir(root)
-
-    assert cli.main(["status"]) == 0
-    salida = capsys.readouterr().out
-    assert "ciclo" in salida
-    assert "1 capturadas · 1 leidas · 1 intervenidas · 1 sin reaparecer" in salida
-    assert "corregido" not in salida.lower()
-
-    destino = str(tmp_path / "mapa.html")
-    assert cli.main(["graph", root, "--html", destino]) == 0
-    capsys.readouterr()
-    with open(destino, "r", encoding="utf-8") as handle:
-        html = handle.read()
-    assert "corregido" not in html.lower()
-    # Los otros dos sitios: la cabecera lleva el embudo y el nodo su cadena.
-    assert "sin reaparecer" in html
-    assert "en-silencio" in html
-    assert "tocado despues" in html
 
 
 def test_sin_capturas_del_proyecto_status_no_ensena_embudo(tmp_path, capsys, monkeypatch):

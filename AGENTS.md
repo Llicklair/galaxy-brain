@@ -35,8 +35,8 @@ El pre-commit corre suite + gate + `gb check --staged`. No se commitea en rojo.
 
 - `src/galaxybrain/` — un paquete. Núcleo: `cli` (entrada), `store` (capturas),
   `graph`/`symbols` (el grafo se DERIVA, nunca se declara), `changes` (ciclo del
-  error), `viz` (el mapa HTML autocontenido), `floor` (el suelo), `capture` (el
-  excepthook). Fronteras declaradas en `src/.gb-boundaries`.
+  error), `floor` (el suelo), `capture` (el excepthook). Fronteras declaradas
+  en `src/.gb-boundaries`.
 - `tests/` — pytest plano, un fichero por tema, sobre repos git de verdad.
 - `docs/` — evidencia (research-report, pruebas-de-uso). Español a propósito.
 

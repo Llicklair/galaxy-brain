@@ -17,6 +17,6 @@ NUCLEO = galaxybrain.capture, galaxybrain.store, galaxybrain.saferepr,
          galaxybrain.symbols, galaxybrain.memory, galaxybrain.impacted,
          galaxybrain.delta, galaxybrain.aislado, galaxybrain.actividad
 
-PRESENTACION = galaxybrain.cli, galaxybrain.render, galaxybrain.viz
+PRESENTACION = galaxybrain.cli, galaxybrain.render
 
 NUCLEO -/-> PRESENTACION

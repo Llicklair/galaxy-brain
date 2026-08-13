@@ -101,11 +101,10 @@ def simbolos_tocados(root, informe_simbolos):
     return {q: nodes[q] for q in tocados if q in nodes}
 
 
-#: Cuanto cuenta un commit como PRESENCIA. Es la misma ventana con la que el mapa
-#: apaga la onda (`ONDA_MUERTA` en viz, 600 s): pasado ese rato ni el aro ni el
-#: commit dicen "ahora". Que sea el mismo numero no es casualidad — son la misma
-#: pregunta, y tenerlo en dos sitios distintos seria dos verdades sobre cuando
-#: alguien deja de estar presente.
+#: Cuanto cuenta un commit como PRESENCIA: 600 s. La cifra nacio emparejada con
+#: la onda del mapa (retirado el 13-ago-2026), porque eran la misma pregunta —
+#: cuando alguien deja de estar "ahora" — y dos numeros habrian sido dos
+#: verdades. El mapa se fue; la pregunta y su respuesta se quedan aqui.
 VENTANA_COMMIT = 600
 
 

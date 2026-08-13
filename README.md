@@ -189,9 +189,6 @@ Aider, so the awareness is not tied to one vendor.
 none of this is Claude-specific: point any orchestrator at `gb <command> --json` and you have the
 same evidence.
 
-Meanwhile `gb symbols … --html m.html --watch` keeps the human's map fresh in the browser,
-atomically, using nothing but the filesystem — the same facts, in the form a person reads.
-
 ---
 
 ## What it saves you
@@ -304,18 +301,15 @@ ship — there is no "small exception", because small exceptions are exactly how
 | `gb graph --smells` | Over-engineering proxies — **advisory, never blocks** |
 | `gb graph --self-test` | Injects known defects and fails if the gate does **not** see them |
 | `gb graph --context` | The compressed map as a session payload; silent when there is nothing to say |
-| `gb graph --html F --open` | The navigable canvas |
 | `gb symbols <path>` | Symbol graph: who calls whom, with its resolution coverage |
-| `gb symbols --html F --watch` | The **live** map: regenerates whenever any `.py` changes |
-| `gb symbols --capas` | Layered view instead of the cloud |
 | `gb symbols --since REF` | What grew since that ref, marked apart |
 | `gb calls <symbol>` | Callers and callees of a symbol, with `file:line` |
 | `gb calls <symbol> --depth 2` | The wave: also who calls the callers |
 | `gb calls --hook` | PreToolUse mode: reads hook JSON from stdin, silent when there is nothing |
 
-Shared flags worth knowing: `--json` on every command for raw output, `--if-changed` to skip
-rewriting HTML when the shape did not move (cheap for a hook), `--refresco N` for browser
-self-reload, `--fondo` to detach `--watch` as an independent process.
+Shared flags worth knowing: `--json` on every command for raw output. (The HTML canvas and its
+`--watch` were retired on 2026-08-13: measured twice against not having them, they changed no
+outcome — the sentence per layer lives in SCOPE.md.)
 
 ### What each change did
 
@@ -410,8 +404,7 @@ dirties the project it is watching (rule 7).
 </p>
 
 The forward-looking half: what shape the project has and who calls whom — the questions an agent
-answers today by opening files and grepping. All deterministic, zero models, zero dependencies. **`graph --html` and `symbols --html`
-lead to the same page**: modules, symbols, imports and calls on one navigable canvas.
+answers today by opening files and grepping. All deterministic, zero models, zero dependencies.
 
 Clicking a node answers with **facts**: its description (taken from the docstring, not from a
 model), who calls it, whom it calls, what it imports, whether it sits in a cycle — plus the layers
@@ -659,7 +652,7 @@ The pre-commit ([.githooks/pre-commit](.githooks/pre-commit)) runs lint + suite 
 --no-verify` skips it — and that skip is a datum, not a rule.
 
 The console's layering rules live in [src/.gb-boundaries](src/.gb-boundaries): the core (capture,
-store, analysis) does not import the presentation (`cli`, `render`, `viz`). A new crossing stops
+store, analysis) does not import the presentation (`cli`, `render`). A new crossing stops
 the commit; a test-softening signal only informs.
 
 Commits are `type: short description` (`feat`, `fix`, `refactor`, `docs`, `chore`), one logical

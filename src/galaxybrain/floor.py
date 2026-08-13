@@ -445,12 +445,12 @@ def _plantilla_claude_settings():
     """El arnés del agente, a nivel de PROYECTO: viaja con el repo, mergea con
     lo global de cada máquina y no toca la configuración personal de nadie.
 
-    Los tres canales que hacen el grafo ambiental para el LLM: el mapa al
-    arrancar la sesión, el delta tras cada edición (o silencio), y las fichas
-    de símbolos en cada búsqueda. Sin esto, la consciencia de gb era artesanía
-    del settings global de UNA máquina (prueba de uso, 4-ago): el usuario nuevo
-    instalaba, capturaba… y su agente nunca veía el mapa. El modelo no sabe que
-    gb existe; lo sabe su contexto — y el contexto se cablea aquí.
+    UN canal: el mapa comprimido al arrancar la sesión. Hubo tres — delta tras
+    cada edición, fichas en cada búsqueda — y se retiraron el 13-ago-2026 con
+    la medición delante: informar por acción no cambia nada (0/6), y un defecto
+    que no cambia resultados es ruido pagado (sentencia por capa en SCOPE.md).
+    El de sesión queda en observación con criterio de muerte escrito. El modelo
+    no sabe que gb existe; lo sabe su contexto — y el contexto se cablea aquí.
     """
     return """{
   "hooks": {
@@ -458,25 +458,7 @@ def _plantilla_claude_settings():
       {
         "matcher": "",
         "hooks": [
-          { "type": "command", "command": "gb graph --context", "timeout": 15 },
-          { "type": "command", "command": "gb symbols --html --watch --fondo --refresco 3", "timeout": 15 }
-        ]
-      }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": "Edit|Write|NotebookEdit",
-        "hooks": [
-          { "type": "command", "command": "gb graph --context --if-changed", "timeout": 15 },
-          { "type": "command", "command": "gb delta --worktree --brief", "timeout": 15 }
-        ]
-      }
-    ],
-    "PreToolUse": [
-      {
-        "matcher": "Grep|Glob",
-        "hooks": [
-          { "type": "command", "command": "gb calls --hook", "timeout": 10 }
+          { "type": "command", "command": "gb graph --context", "timeout": 15 }
         ]
       }
     ]
@@ -758,34 +740,6 @@ def scaffold(root):
         else:
             hechos.append({"path": "core.hooksPath", "action": "no-pude"})
 
-    # El mapa de la raiz es un artefacto DERIVADO que el watch reescribe cada
-    # vez que algo cambia: sin esta linea, todo repo con el arnes vive con el
-    # arbol sucio («mapa.html baila en cada git status» — reporte de uso real,
-    # 7-ago). Aditivo, nunca pisa: si la linea exacta ya esta, no se toca.
-    contenido = _read(root, ".gitignore")
-    if any(linea.strip() == "mapa.html" for linea in contenido.splitlines()):
-        hechos.append({"path": ".gitignore", "action": "ya-cubria mapa.html"})
-    else:
-        try:
-            # Respetar el EOL del fichero que se edita: añadir lineas LF a un
-            # .gitignore CRLF lo deja w/mixed (cazado con `git ls-files --eol`
-            # en uso real, 7-ago). El olfato va en BYTES — leerlo en modo texto
-            # traduce los \r\n antes de poder verlos — y newline="" apaga la
-            # traduccion al escribir: el EOL lo decide el fichero, no la
-            # plataforma.
-            try:
-                with open(os.path.join(root, ".gitignore"), "rb") as crudo_f:
-                    crudo = crudo_f.read()
-            except OSError:
-                crudo = b""
-            eol = "\r\n" if b"\r\n" in crudo else "\n"
-            with open(os.path.join(root, ".gitignore"), "a", encoding="utf-8", newline="") as handle:
-                if contenido and not contenido.endswith("\n"):
-                    handle.write(eol)
-                handle.write("# el mapa de gb es derivado: lo reescribe el watch" + eol + "mapa.html" + eol)
-            hechos.append({"path": ".gitignore", "action": "mapa.html ignorado"})
-        except OSError as error:
-            hechos.append({"path": ".gitignore", "action": "error: %s" % error})
     return hechos
 
 

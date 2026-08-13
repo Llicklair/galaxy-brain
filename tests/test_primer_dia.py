@@ -44,9 +44,11 @@ def test_init_no_pisa_un_precommit_existente(tmp_path):
 
 
 def test_init_cablea_el_arnes_del_agente(tmp_path):
-    """El modelo no sabe que gb existe; lo sabe su contexto. Los tres hooks del
-    grafo viajan con el repo — sin esto, la consciencia del LLM era artesania
-    del settings global de una sola maquina."""
+    """El modelo no sabe que gb existe; lo sabe su contexto. UN hook viaja con
+    el repo: el mapa de sesion. Hubo tres — delta por edicion, fichas por
+    busqueda, watch — y se retiraron el 13-ago-2026 con la medicion delante
+    (informar 0/6; sentencia por capa en SCOPE.md): un arnes que reinstala
+    ruido pagado en cada repo nuevo propaga el defecto equivocado."""
     root = _repo(tmp_path)
 
     hechos = {h["path"]: h["action"] for h in floor.scaffold(root)}
@@ -55,13 +57,10 @@ def test_init_cablea_el_arnes_del_agente(tmp_path):
         settings = json.load(handle)  # JSON valido o este open revienta el test
     texto = json.dumps(settings)
     assert "gb graph --context" in texto
-    assert "gb graph --context --if-changed" in texto
-    assert "gb calls --hook" in texto
-    # El pulso del mapa, de serie: sin un watch vivo, la capa de actividad dice
-    # cero aunque haya trabajo — una sesion entera paso invisible el 7-ago
-    # ("fracaso absoluto", feedback real). --fondo vuelve al instante (hook) y
-    # el candado evita duplicados entre sesiones.
-    assert "gb symbols --html --watch --fondo" in texto
+    # Los retirados NO vuelven de tapadillo por la plantilla.
+    assert "gb calls --hook" not in texto
+    assert "gb delta" not in texto
+    assert "--watch" not in texto
 
 
 def test_init_no_pisa_un_settings_existente(tmp_path):
@@ -144,46 +143,3 @@ def test_init_respeta_un_hookspath_ajeno(tmp_path):
     assert salida.stdout.strip() == "mis-hooks"
 
 
-def test_init_deja_el_mapa_fuera_de_git(tmp_path):
-    """El mapa de la raiz lo reescribe el watch: trackeado, el arbol vive sucio
-    («mapa.html baila en cada git status» — reporte de uso real, 7-ago). --init
-    lo ignora de forma ADITIVA: crea o añade la linea, jamas pisa lo que hay."""
-    root = _repo(tmp_path)
-    with open(os.path.join(root, ".gitignore"), "w", encoding="utf-8") as handle:
-        handle.write("*.log\n")
-
-    hechos = {h["path"]: h["action"] for h in floor.scaffold(root)}
-    assert hechos[".gitignore"] == "mapa.html ignorado"
-    with open(os.path.join(root, ".gitignore"), encoding="utf-8") as handle:
-        contenido = handle.read()
-    assert "*.log" in contenido          # lo que habia, intacto
-    assert "\nmapa.html\n" in "\n" + contenido
-
-    # idempotente: la segunda pasada no duplica la linea
-    hechos = {h["path"]: h["action"] for h in floor.scaffold(root)}
-    assert hechos[".gitignore"] == "ya-cubria mapa.html"
-    with open(os.path.join(root, ".gitignore"), encoding="utf-8") as handle:
-        assert handle.read().count("mapa.html") == 1
-
-    # y una ruta DISTINTA que contiene el nombre no cuenta como cubierta
-    otro = _repo(tmp_path / "b")
-    with open(os.path.join(otro, ".gitignore"), "w", encoding="utf-8") as handle:
-        handle.write("docs/mapa.html\n")
-    hechos = {h["path"]: h["action"] for h in floor.scaffold(otro)}
-    assert hechos[".gitignore"] == "mapa.html ignorado"
-
-
-def test_el_ignore_del_mapa_respeta_el_eol_del_fichero(tmp_path):
-    """Añadir lineas LF a un .gitignore CRLF lo deja w/mixed — cazado con
-    `git ls-files --eol` en uso real (7-ago). El EOL lo decide el fichero que
-    se edita, no la plataforma."""
-    root = _repo(tmp_path)
-    with open(os.path.join(root, ".gitignore"), "wb") as handle:
-        handle.write(b"*.log\r\n")
-
-    floor.scaffold(root)
-    with open(os.path.join(root, ".gitignore"), "rb") as handle:
-        datos = handle.read()
-    assert b"\r\nmapa.html\r\n" in b"\r\n" + datos
-    # ni una sola linea con EOL distinto: todos los \n van precedidos de \r
-    assert datos.count(b"\n") == datos.count(b"\r\n")

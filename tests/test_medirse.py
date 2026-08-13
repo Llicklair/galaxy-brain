@@ -16,7 +16,7 @@ impedir que dejes de mirar.
 
 import json
 
-from galaxybrain import cli, store, viz
+from galaxybrain import cli, store
 
 
 def _captura(gb_home, ident, project="/proyecto"):
@@ -81,35 +81,6 @@ def test_una_linea_corrupta_no_invalida_el_recuento(gb_home):
     with open(store.root() / store.READS_NAME, "a", encoding="utf-8") as handle:
         handle.write("{esto no es json\n")
     assert store.read_stats()[1] == 1
-
-
-def test_el_html_dice_de_cuando_es(tmp_path):
-    informe = {"nodes": [], "edges": [], "root": str(tmp_path)}
-    salida = viz.render_graph_cloud(informe, procedencia="generado el 2026-08-01 desde abc1234")
-    assert "2026-08-01" in salida
-    assert "abc1234" in salida
-
-
-def test_sin_sello_el_renderizador_sigue_siendo_determinista(tmp_path):
-    """El sello lo inyecta quien llama, no se lee del reloj dentro: si `viz`
-    mirara la hora, dos capturas del mismo proyecto dejarian de compararse."""
-    informe = {"nodes": [], "edges": [], "root": str(tmp_path)}
-    assert viz.render_graph_cloud(informe) == viz.render_graph_cloud(informe)
-    assert viz.render_graph_cloud(informe, procedencia="A") != viz.render_graph_cloud(
-        informe, procedencia="B"
-    )
-
-
-def test_el_sello_no_se_come_lo_que_ya_habia_en_el_pie(tmp_path):
-    informe = {
-        "nodes": [],
-        "edges": [],
-        "root": str(tmp_path),
-        "unresolved": {"atributo-de-variable": 7},
-    }
-    salida = viz.render_graph_cloud(informe, procedencia="sello")
-    assert "sello" in salida
-    assert "sin resolver" in salida
 
 
 # --- La libreta de usos: la otra mitad del termometro (regla 10) ---------------
@@ -316,33 +287,3 @@ def test_show_entrega_un_id_de_otro_proyecto(gb_home, capsys):
     assert "ValueError" in salida
 
 
-def test_el_sello_no_se_ensucia_con_su_propio_temporal(tmp_path, gb_home, monkeypatch):
-    """El Heisenberg del sello (7-ago, tercera reproduccion en uso real): el
-    .tmp del mapa se abria ANTES de computar la procedencia, git veia un
-    untracked fabricado por gb y el sello estampaba '+sin-commitear' con el
-    arbol limpio. Renderizar primero, abrir despues."""
-    import os as _os
-    import subprocess
-
-    from galaxybrain import cli
-
-    root = str(tmp_path / "repo")
-    _os.makedirs(root)
-    subprocess.run(["git", "init", "-q"], cwd=root, check=True, capture_output=True)
-    subprocess.run(["git", "config", "user.email", "t@t"], cwd=root, check=True)
-    subprocess.run(["git", "config", "user.name", "t"], cwd=root, check=True)
-    with open(_os.path.join(root, "app.py"), "w", encoding="utf-8") as handle:
-        handle.write("X = 1\n")
-    with open(_os.path.join(root, ".gitignore"), "w", encoding="utf-8") as handle:
-        handle.write("mapa.html\n")
-    subprocess.run(["git", "add", "-A"], cwd=root, check=True, capture_output=True)
-    subprocess.run(["git", "commit", "-q", "-m", "inicial"], cwd=root, check=True, capture_output=True)
-
-    monkeypatch.chdir(root)
-    assert cli.main(["symbols", root, "--html"]) == 0
-    with open(_os.path.join(root, "mapa.html"), encoding="utf-8") as handle:
-        html = handle.read()
-    # el sello sucio es '+sin-commitear' (con el +): a secas tambien vive en un
-    # comentario JS del template y daria falso rojo sobre un mapa limpio
-    assert "+sin-commitear" not in html
-    assert "generado el" in html
