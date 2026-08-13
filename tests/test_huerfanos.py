@@ -84,3 +84,15 @@ def test_cli_dead_termina_bien_y_dice_sus_limites(tmp_path):
         capture_output=True, text=True, timeout=120)
     assert p.returncode == 0
     assert "NO puede ver" in p.stdout
+
+
+def test_el_entry_point_con_guard_main_no_es_huerfano(tmp_path):
+    raiz = tmp_path / "p"
+    raiz.mkdir()
+    (raiz / "principal.py").write_text(
+        "def arranca():\n    return 1\n\n\n"
+        "if __name__ == \"__main__\":\n    arranca()\n", encoding="utf-8")
+    report = _dead(str(raiz))
+    modulos = [m["module"] for m in report["modulos_huerfanos"]]
+    # El guard es un hecho detectable: el ejecutable del proyecto no es huerfano.
+    assert "principal" not in modulos

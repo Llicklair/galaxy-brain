@@ -22,6 +22,9 @@ Funciona sobre el informe de CUALQUIER motor (stdlib `ast` o ast-grep): ambos
 devuelven la misma forma, que es el punto entero del ADR 0009.
 """
 
+import os
+import re
+
 #: Nombres que invoca el runtime o el runner, no el codigo del proyecto.
 #: `cli` esta porque es el entry point tipico de un script de pyproject —
 #: medido sobre este mismo repo: salia como "huerfano" siendo el ejecutable.
@@ -118,6 +121,8 @@ def analyze(informe, aristas_imports=None):
             nombre = _nombre_pelado(mod)
             if nombre.startswith("__") or nombre in _INVOCADOS_POR_FUERA:
                 continue
+            if _es_entry_point(informe.get("root"), nodo.get("file")):
+                continue
             report["modulos_huerfanos"].append({
                 "module": mod, "file": nodo.get("file", ""),
             })
@@ -125,6 +130,28 @@ def analyze(informe, aristas_imports=None):
     report["sin_llamantes"].sort(key=lambda s: (s["file"], s["line"] or 0))
     report["modulos_huerfanos"].sort(key=lambda m: m["module"])
     return report
+
+
+_GUARD_MAIN = re.compile(r"""__name__\s*==\s*["']__main__["']""")
+
+
+def _es_entry_point(root, rel):
+    """¿El fichero tiene el guard `if __name__ == "__main__"`?
+
+    Hecho detectable, no heuristica — y cerro un falso positivo real: en el
+    experimento del 14-ago `gb dead` listo `principal.py` como huerfano siendo
+    el ejecutable del proyecto. La funcion `main` estaba exenta; su modulo no.
+    Un fichero ilegible cuenta como no-entry: en la duda, el candidato se
+    lista (es un proxy, no un veredicto) antes que esconderse.
+    """
+    if not root or not rel:
+        return False
+    try:
+        with open(os.path.join(root, rel), "r", encoding="utf-8-sig",
+                  errors="replace") as f:
+            return bool(_GUARD_MAIN.search(f.read()))
+    except OSError:
+        return False
 
 
 def _es_test(qual, informe):
