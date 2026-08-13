@@ -36,6 +36,31 @@ _SILENCIOS = {
     "dart":   [("try { $$$ } catch ($E) { }", None)],
 }
 
+# ---------------------------------------------------------------------------
+# Patrones de guarda (precondicion que lanza) por lenguaje. La eliminacion de
+# una de estas ensancha en silencio el dominio de entradas de la funcion —
+# la misma senal que delta.py caza en Python con `if ...: raise`.
+# A diferencia de Python no se exige "al principio de la funcion": el patron
+# posicional no se puede expresar barato en ast-grep, y un `if cond: throw`
+# eliminado en CUALQUIER punto sigue siendo informacion.
+# ---------------------------------------------------------------------------
+
+_GUARDAS = {
+    "js":     [("if ($C) { throw $E; }", None), ("if ($C) throw $E;", None)],
+    "ts":     [("if ($C) { throw $E; }", None), ("if ($C) throw $E;", None)],
+    "tsx":    [("if ($C) { throw $E; }", None), ("if ($C) throw $E;", None)],
+    "java":   [("if ($C) { throw $E; }", None), ("if ($C) throw $E;", None)],
+    "kotlin": [("if ($C) { throw $E }", None), ("if ($C) throw $E", None)],
+    "csharp": [("if ($C) { throw $E; }", None), ("if ($C) throw $E;", None)],
+    "php":    [("if ($C) { throw $E; }", None)],
+    "scala":  [("if ($C) throw $E", None)],
+    "swift":  [("guard $C else { throw $E }", None)],
+    "dart":   [("if ($C) { throw $E; }", None), ("if ($C) throw $E;", None)],
+    "ruby":   [("raise $E if $C", None)],
+    "go":     [("if $C { panic($E) }", None)],
+    "rust":   [("if $C { panic!($$$) }", None)],
+}
+
 # Cache del binario de ast-grep: una sola comprobacion por proceso.
 _ag_cache = None
 
@@ -118,6 +143,17 @@ def hechos(texto, lang_id):
             for m in _corre(ag, patron, cfg["ag"], ruta, selector):
                 resultado.silencios.append(
                     (_linea(m), "error tragado: catch vacio"))
+
+        # --- guardas: precondiciones que lanzan ---
+        vistos_guardas = set()
+        for patron, selector in _GUARDAS.get(lang_id, []):
+            for m in _corre(ag, patron, cfg["ag"], ruta, selector):
+                linea = _linea(m)
+                texto = " ".join((m.get("text") or "").split())[:80]
+                if (linea, texto) in vistos_guardas:
+                    continue      # una guarda puede casar con dos formas
+                vistos_guardas.add((linea, texto))
+                resultado.guardas.append((linea, texto))
 
         # --- tipos de retorno y cuerpos: reutilizar patrones de LENGUAJES ---
         for entrada in cfg["simbolos"]:
