@@ -10,6 +10,43 @@ mismo detalle que los positivos, o más.
 
 ---
 
+## 2026-08-13 · LA REFOCALIZACIÓN, ejecutada: la columna es el verificador — y el recorte que ordena, hecho el mismo día
+
+La frase que lo disparó fue de Marcos, de viva voz: «independientemente no aporta demasiado». La
+regla 5 dice qué hacer con eso — investigar, no blindar — y la investigación ya estaba hecha, solo
+había que leerla junta: **lo que bloquea o produce un hecho único funciona siempre (converge 10/10,
+rechazo 4/4, gate 3/3, la captura irreproducible); lo que informa, nunca** (0/6, empates 3/3 dos
+veces, y de 6.015 invocaciones en 7 días casi todo era la maquinaria invocándose a sí misma —
+`last` a mano: 5).
+
+**La ley** (`5f7c803`): frase nueva en SCOPE/CLAUDE/ARCHITECTURE — cuando agentes escriben código,
+gb dice la verdad: qué se rompe solo, qué se rompe junto, qué tests lo prueban y con qué estado
+murió. El grafo deja de ser la frase del producto y pasa a MOTOR, medido por lo que sus
+consumidores detectan. Sentencia por capa con su evidencia citada en SCOPE.md.
+
+**El recorte** (`07a5a0c` + `3229ddd`, cada fase con la suite en verde):
+
+- Fase 1: los hooks informativos por acción fuera del defecto (`calls --hook`, `delta` por edición,
+  `graph --context --if-changed`). Queda el mapa de sesión, una vez, EN OBSERVACIÓN con criterio de
+  muerte escrito.
+- Fase 2: **−5.025 líneas** — viz.py entero (1.803), la superficie CLI del canvas, la maquinaria
+  del watch, la capa de obra que solo pintaba el halo, y la plantilla de `floor`, que reinstalaba
+  los hooks retirados en cada repo nuevo (el arnés ya no propaga el defecto muerto). Suite
+  888 → 764 (124 tests eran del canvas); cli.py 2.688 → 1.808; src 11.479 líneas. Cortado por
+  consumidores con detector de referencias a punto fijo; `gb check` emitió 15 señales de tests
+  borrados y las 15 están justificadas aquí — informó, no bloqueó, que es su contrato.
+
+**Las honestidades:**
+
+1. La actividad derivada NO se fue con el canvas: la consume el bucle (agente/escalera), y ahí
+   sigue. Lo que el mapa enseñaba con consumidor real sigue vivo por otra puerta: embudo en
+   `status`/`list`, suelo en `floor`, procedencia en `--context`.
+2. El README describe ahora menos de lo que el árbol sabía hacer ayer; los números del badge se
+   remedirán al subir versión (regla del workflow), no aquí.
+3. Lo retirado está en la historia de git, no destruido. Si una capa visual vuelve, vuelve por una
+   medición — la sentencia lo dice en SCOPE — y con la lección de este día pagada: dos A/B en
+   empate no se discuten, se obedecen.
+
 ## 2026-08-13 · La cirugía del import roto: el hueco con nombre, cerrado — y 0 falsos positivos sobre este repo
 
 El caso sin red de las entradas de hoy: un consumidor VIEJO con la referencia colgante no viaja en
