@@ -306,6 +306,15 @@ profundo costaría algo más.
   y mentir con cara de hecho es peor que no estar. El mapa se deriva siempre; lo que se persiste son
   las capturas.
 
+> **REVERTIDO (14-ago-2026, decision del owner): el mapa SI se persiste — pero solo como memoria,
+> nunca como estado.** La objecion de arriba sigue siendo cierta y por eso el snapshot jamas se sirve
+> como "el grafo actual": cada mirada RE-DERIVA (437 ms medidos sobre este repo), compara con el
+> snapshot anterior, emite "desde tu ultima mirada: +N simbolos, ..." y lo sobrescribe. Un snapshot
+> viejo no puede mentir: como mucho produce un delta mas gordo. Las huellas (mtime+size por fichero)
+> habilitan el atajo honesto "sin cambios desde <ts>" sin recalcular. Implementacion: `mapa.py`;
+> vive en `GB_HOME/<slug>/mapa.json`, fuera del proyecto observado (regla 7).
+
+
 **Y la atribución sale gratis:** la identidad del agente **es la ruta de su worktree**. No hace falta
 que nadie declare nada — cae del lado derivado de la ley del apartado 1. (Esto corrige lo que se dijo
 antes: derivar la actividad no cuesta perder el «quién», siempre que haya worktrees.)

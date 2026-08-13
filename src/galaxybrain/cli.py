@@ -1055,6 +1055,16 @@ def cmd_symbols(args):
         sys.stderr.write("[gb symbols] %s\n" % report["root_error"])
         return 1
 
+    # El mapa persistente: comparar con la ultima mirada y sobrescribirla.
+    # Tambien en --json: un agente que pide JSON tambien "miro", y el delta
+    # viaja dentro del informe en vez de perderse.
+    from . import mapa
+
+    _viejo = mapa.cargar(root)
+    _cambios = mapa.delta(_viejo, report)
+    mapa.guardar(root, report)
+    report["mapa"] = _cambios
+
     if args.json:
         emit(json.dumps(report, ensure_ascii=False, indent=2))
         return 0
@@ -1068,6 +1078,19 @@ def cmd_symbols(args):
 
     emit("%s" % ", ".join("%d %s" % (v, k) for k, v in sorted(tipos.items())))
     emit(", ".join("%d %s" % (v, k) for k, v in sorted(relaciones.items())))
+    if _cambios is None:
+        emit("[mapa] primera mirada: %d simbolos guardados" % len(report["nodes"]))
+    elif mapa.vacio(_cambios):
+        emit("[mapa] sin cambios desde tu ultima mirada (%s)" % _cambios["ts"])
+    else:
+        emit("[mapa] desde tu ultima mirada (%s): +%d simbolo(s), -%d, "
+             "+%d arista(s), -%d" % (
+                 _cambios["ts"], len(_cambios["nuevos"]), len(_cambios["idos"]),
+                 len(_cambios["aristas_nuevas"]), len(_cambios["aristas_idas"])))
+        for q in _cambios["nuevos"][:5]:
+            emit("  + %s" % q)
+        for q in _cambios["idos"][:5]:
+            emit("  - %s" % q)
     if report.get("baseline_ok"):
         emit("vs %s: +%d simbolos, +%d llamadas, -%d desaparecidos"
              % (report["since"], len(report["new_nodes"]), len(report["new_calls"]),
