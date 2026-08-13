@@ -4,7 +4,7 @@ Cada comando cae en una familia, una por tipo de hecho determinista sobre el
 codigo. Un comando nuevo tiene que caer en una de ellas, o no entra:
 
   last · list · show · on · off · status   ->  donde peto y con que estado
-  graph · symbols · calls                  ->  que forma tiene
+  graph · symbols · calls · dead           ->  que forma tiene
   check                                    ->  que le hizo cada cambio
   floor                                    ->  que le falta de base
   memory                                   ->  que se aprendio, cross-repo
@@ -1113,6 +1113,52 @@ def cmd_symbols(args):
     return 0
 
 
+def cmd_dead(args):
+    """Candidatos a codigo muerto. INFORMA, no bloquea: son proxies (regla 9)."""
+    from . import graph, huerfanos
+
+    root = os.path.abspath(args.path or ".")
+    informe = _analiza_simbolos(root)
+    if informe["root_error"]:
+        sys.stderr.write("[gb dead] %s\n" % informe["root_error"])
+        return 1
+
+    # El grafo de imports pone el "nadie lo importa"; sin el, la parte de
+    # modulos se declara no cubierta en vez de adivinarse.
+    try:
+        _nodos, aristas_imports, _err = graph.build_graph(root, graph.DEFAULT_SKIP)
+    except Exception:
+        aristas_imports = None
+    report = huerfanos.analyze(informe, aristas_imports)
+
+    if args.json:
+        emit(json.dumps(report, ensure_ascii=False, indent=2))
+        return 0
+
+    cuantos = huerfanos.total(report)
+    if not cuantos:
+        emit("Sin candidatos a codigo muerto (con los limites de abajo).")
+    else:
+        emit("%d candidato(s) — proxies, no veredictos:" % cuantos)
+        if report["modulos_huerfanos"]:
+            emit("")
+            emit("Modulos que nadie importa ni llama:")
+            for m in report["modulos_huerfanos"]:
+                emit("  %s  (%s)" % (m["module"], m["file"]))
+        if report["sin_llamantes"]:
+            emit("")
+            emit("Simbolos sin un solo llamante resuelto:")
+            for s in report["sin_llamantes"][:30]:
+                emit("  %s:%s  %s  (%s)" % (s["file"], s["line"] or "?", s["qual"], s["kind"]))
+            if len(report["sin_llamantes"]) > 30:
+                emit("  ... y %d mas (--json para todos)" % (len(report["sin_llamantes"]) - 30))
+    emit("")
+    emit("Lo que esta tecnica NO puede ver:")
+    for item in report["not_covered"]:
+        emit("  - %s" % item)
+    return 0
+
+
 def cmd_floor(args):
     from . import floor
 
@@ -1675,6 +1721,13 @@ def build_parser():
     syms.add_argument("--json", action="store_true", help="salida cruda")
     syms.add_argument("--color", choices=["auto", "always", "never"], default="auto")
     syms.set_defaults(func=cmd_symbols)
+
+    dead_p = subparsers.add_parser(
+        "dead", help="candidatos a codigo muerto: simbolos sin llamantes y modulos huerfanos"
+    )
+    dead_p.add_argument("path", nargs="?", default=".", help="raiz del proyecto")
+    dead_p.add_argument("--json", action="store_true", help="salida cruda")
+    dead_p.set_defaults(func=cmd_dead)
 
     calls_p = subparsers.add_parser(
         "calls", help="quien llama a un simbolo y a quien llama el, con fichero:linea"
