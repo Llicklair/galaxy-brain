@@ -10,6 +10,33 @@ mismo detalle que los positivos, o más.
 
 ---
 
+## 2026-08-13 · La cirugía del import roto: el hueco con nombre, cerrado — y 0 falsos positivos sobre este repo
+
+El caso sin red de las entradas de hoy: un consumidor VIEJO con la referencia colgante no viaja en
+ningún diff, su arista no existe, y su test no corre **ni en la rama sola ni en la unión**. Falso
+verde estructural, y violaba la promesa escrita en la cabecera de `impacted.py` desde el principio:
+"un símbolo que no resuelve devuelve TODO".
+
+**Lo construido** (criterio escrito antes, `e9c98f0`): el grafo declara `imports_rotos` — `from M
+import y` con M del proyecto e `y` desaparecido, fichero:línea — y la selección lo lee como hecho
+duro y cae a todo con el import nombrado en el motivo. El grafo dice el hecho; la decisión vive en
+la selección (ADR 0008, mismo reparto que `nombrado_como_valor_en`).
+
+**Los conservadurismos, porque un falso positivo recurrente mata la familia (regla 9):** solo
+imports directos del cuerpo del módulo (uno dentro de `try`/`if` es fallback y ya maneja la
+ausencia); censo ANCHO de nombres del destino — las constantes no son nodos del grafo, así que el
+censo mira el AST entero, no la tabla; sin acusación posible con `import *` ni `__getattr__` de
+módulo (PEP 562); y el filesystem como árbitro para submódulos que el barrido no vio.
+
+**Medido:** 0 imports_rotos sobre galaxy-brain entero (la selección de este repo no pierde ni un
+ahorro); 8 tests del hecho + 1 de la selección que ejecuta pytest de frente y paga el rojo que
+antes no se veía; los 4 controles del banco sin moverse (4/4 CUMPLE); 888 en verde.
+
+**Las honestidades:** `import M.viejo` roto (sin `from`) queda fuera de alcance y dicho en el
+docstring; el motor multilenguaje no está cubierto (su licencia TIA ya gobierna qué estrecha); y
+el censo ancho puede callar un roto real enmascarado por un nombre local homónimo — se eligió
+callar antes que acusar, y esa elección está escrita en el código.
+
 ## 2026-08-13 · La tirada por parejas: 6/6 — y `contrato` rompió su predicción en la dirección buena
 
 12 agentes Opus (3 parejas × 2 rondas), 0 caídas, 0 timeouts. Las seis rondas iguales por fuera —
