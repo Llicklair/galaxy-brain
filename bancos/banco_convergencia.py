@@ -23,7 +23,8 @@ Lo que este banco comprueba es la direccion que el sector senala:
 Sin fabricar un conflicto de texto: los dos diffs mergean limpios. Se contradicen
 en el SIGNIFICADO, que es justo lo que git no ve.
 
-    python bancos/banco_convergencia.py          # el control, sin gastar agentes
+    python bancos/banco_convergencia.py                          # controles, gratis
+    python bancos/banco_convergencia.py --agentes --pareja firma # agentes: GASTA CUOTA
 """
 
 import argparse
@@ -59,35 +60,195 @@ MODULOS = {
     ),
 }
 
-#: RAMA A: `precio` pasa a CENTIMOS y adapta a su unico consumidor. Coherente y
-#: verde: A toca los dos ficheros que conoce.
-RAMA_A = {
-    "tienda/precio.py": (
-        '"""Precio unitario, EN CENTIMOS."""\n\n\n'
-        "def precio(articulo):\n"
-        "    return {'pan': 200}.get(articulo, 0)\n"
-    ),
-    "tienda/carrito.py": (
-        "from tienda.precio import precio\n\n\n"
-        "def total(articulos):\n"
-        "    return sum(precio(a) for a in articulos) / 100\n"
-    ),
-}
-
-#: RAMA B: anade un consumidor NUEVO, escrito contra el contrato que veia (euros).
-#: Verde sola, porque en su arbol `precio` sigue devolviendo euros. Y no toca
-#: ninguno de los ficheros de A: el merge sale limpio.
-RAMA_B = {
-    "tienda/informe.py": (
-        "from tienda.precio import precio\n\n\n"
-        "def linea(articulo):\n"
-        "    return 'total: %d euros' % precio(articulo)\n"
-    ),
-    "tests/test_informe.py": (
-        "from tienda.informe import linea\n\n\n"
-        "def test_linea():\n"
-        "    assert linea('pan') == 'total: 2 euros'\n"
-    ),
+#: Cada pareja es una CLASE de choque distinta. Las dos tareas son independientes,
+#: plausibles, y ninguna sabe de la otra — la condicion de la vida real. NO se les
+#: pide chocar: trabajo normal sobre un contrato compartido, y si el choque
+#: aparece es porque aparece. `siembra_*` es el CONTROL (lo que escribiria un
+#: agente tipico, a mano y gratis) y `choque_esperado` la prediccion ESCRITA
+#: ANTES de correr nada. Para 'contrato' es False A PROPOSITO: el choque existe
+#: pero ningun test lo pisa — que el control lo confirme es lo que declara el
+#: techo del detector (converge solo ve lo que algun test corre).
+PAREJAS = {
+    # Escala numerica del contrato (euros -> centimos). Medida con agentes
+    # reales el 13-ago: 4/4 rondas vistas (libreta).
+    "escala": {
+        "base_extra": {},
+        "choque_esperado": True,
+        "siembra_a": {
+            "tienda/precio.py": (
+                '"""Precio unitario, EN CENTIMOS."""\n\n\n'
+                "def precio(articulo):\n"
+                "    return {'pan': 200}.get(articulo, 0)\n"
+            ),
+            "tienda/carrito.py": (
+                "from tienda.precio import precio\n\n\n"
+                "def total(articulos):\n"
+                "    return sum(precio(a) for a in articulos) / 100\n"
+            ),
+        },
+        "siembra_b": {
+            "tienda/informe.py": (
+                "from tienda.precio import precio\n\n\n"
+                "def linea(articulo):\n"
+                "    return 'total: %d euros' % precio(articulo)\n"
+            ),
+            "tests/test_informe.py": (
+                "from tienda.informe import linea\n\n\n"
+                "def test_linea():\n"
+                "    assert linea('pan') == 'total: 2 euros'\n"
+            ),
+        },
+        "tareas": (
+            ("agente-a",
+             "En `tienda/precio.py`, `precio()` devuelve euros y tiene que pasar a "
+             "devolver CENTIMOS (multiplicar por 100). Adapta lo que haga falta para que "
+             "el resto siga comportandose igual desde fuera. Corre `python -m pytest tests/` "
+             "antes de terminar. No commitees."),
+            ("agente-b",
+             "Anade `tienda/informe.py` con una funcion `linea(articulo)` que devuelva "
+             "'total: N euros' usando el precio del articulo, y su test en "
+             "`tests/test_informe.py`. Corre `python -m pytest tests/` antes de terminar. "
+             "No commitees."),
+        ),
+    },
+    # Renombre de un simbolo publico: la referencia del otro agente queda
+    # COLGANTE — sin nodo del que subir, la seleccion de la union no llegaba al
+    # test de B y daba VERDE con un ImportError dentro. Este control lo destapo
+    # el 13-ago-2026 ANTES de gastar un agente; el arreglo (aislado._union:
+    # los nuevos entran al indice con -N) quedo fijado en test_aislado.
+    "firma": {
+        "base_extra": {},
+        "choque_esperado": True,
+        "siembra_a": {
+            "tienda/precio.py": (
+                '"""Precio unitario, EN EUROS."""\n\n\n'
+                "def precio_unitario(articulo):\n"
+                "    return {'pan': 2}.get(articulo, 0)\n"
+            ),
+            "tienda/carrito.py": (
+                "from tienda.precio import precio_unitario\n\n\n"
+                "def total(articulos):\n"
+                "    return sum(precio_unitario(a) for a in articulos)\n"
+            ),
+        },
+        "siembra_b": {
+            "tienda/informe.py": (
+                "from tienda.precio import precio\n\n\n"
+                "def linea(articulo):\n"
+                "    return 'total: %d euros' % precio(articulo)\n"
+            ),
+            "tests/test_informe.py": (
+                "from tienda.informe import linea\n\n\n"
+                "def test_linea():\n"
+                "    assert linea('pan') == 'total: 2 euros'\n"
+            ),
+        },
+        "tareas": (
+            ("agente-a",
+             "En `tienda/precio.py` renombra `precio()` a `precio_unitario()` — el "
+             "nombre actual es ambiguo. Adapta todos los usos que encuentres. Corre "
+             "`python -m pytest tests/` antes de terminar. No commitees."),
+            ("agente-b",
+             "Anade `tienda/informe.py` con una funcion `linea(articulo)` que devuelva "
+             "'total: N euros' usando el precio del articulo, y su test en "
+             "`tests/test_informe.py`. Corre `python -m pytest tests/` antes de terminar. "
+             "No commitees."),
+        ),
+    },
+    # Formato de un texto compartido. La prediccion lleva condicion: el choque
+    # solo es visible si el test de B cruza el contrato (llama a etiqueta() de
+    # verdad). El control siembra ESE caso; con agentes reales lo que se mide es
+    # justo si testean a traves del contrato o contra un literal congelado.
+    "formato": {
+        "base_extra": {
+            "tienda/etiqueta.py": (
+                "from tienda.precio import precio\n\n\n"
+                "def etiqueta(articulo):\n"
+                "    return '%s: %d EUR' % (articulo, precio(articulo))\n"
+            ),
+            "tests/test_etiqueta.py": (
+                "from tienda.etiqueta import etiqueta\n\n\n"
+                "def test_etiqueta():\n"
+                "    assert etiqueta('pan') == 'pan: 2 EUR'\n"
+            ),
+        },
+        "choque_esperado": True,
+        "siembra_a": {
+            "tienda/etiqueta.py": (
+                "from tienda.precio import precio\n\n\n"
+                "def etiqueta(articulo):\n"
+                "    return '%d EUR - %s' % (precio(articulo), articulo)\n"
+            ),
+            "tests/test_etiqueta.py": (
+                "from tienda.etiqueta import etiqueta\n\n\n"
+                "def test_etiqueta():\n"
+                "    assert etiqueta('pan') == '2 EUR - pan'\n"
+            ),
+        },
+        "siembra_b": {
+            "tienda/inventario.py": (
+                "def nombre_de(linea):\n"
+                "    return linea.split(': ')[0]\n"
+            ),
+            "tests/test_inventario.py": (
+                "from tienda.etiqueta import etiqueta\n"
+                "from tienda.inventario import nombre_de\n\n\n"
+                "def test_nombre():\n"
+                "    assert nombre_de(etiqueta('pan')) == 'pan'\n"
+            ),
+        },
+        "tareas": (
+            ("agente-a",
+             "En `tienda/etiqueta.py` el formato de `etiqueta()` cambia de "
+             "'articulo: N EUR' a 'N EUR - articulo' (peticion de diseno). Adapta lo "
+             "que haga falta. Corre `python -m pytest tests/` antes de terminar. No "
+             "commitees."),
+            ("agente-b",
+             "Anade `tienda/inventario.py` con una funcion `nombre_de(linea)` que, "
+             "dada una linea producida por `tienda.etiqueta.etiqueta()`, devuelva el "
+             "nombre del articulo, y su test en `tests/test_inventario.py`. Corre "
+             "`python -m pytest tests/` antes de terminar. No commitees."),
+        ),
+    },
+    # Contrato de comportamiento (0 -> KeyError en desconocidos), disenado para
+    # ser INVISIBLE: B solo pisa el camino feliz, asi que la union queda verde
+    # con el choque dentro. Si este control dijera choque=SI, o el detector
+    # cambio o la comprension del detector esta mal — se investiga.
+    "contrato": {
+        "base_extra": {},
+        "choque_esperado": False,
+        "siembra_a": {
+            "tienda/precio.py": (
+                '"""Precio unitario, EN EUROS. Lanza KeyError si no existe."""\n\n\n'
+                "def precio(articulo):\n"
+                "    return {'pan': 2}[articulo]\n"
+            ),
+        },
+        "siembra_b": {
+            "tienda/stock.py": (
+                "from tienda.precio import precio\n\n\n"
+                "def disponible(articulo):\n"
+                "    return precio(articulo) > 0\n"
+            ),
+            "tests/test_stock.py": (
+                "from tienda.stock import disponible\n\n\n"
+                "def test_disponible():\n"
+                "    assert disponible('pan')\n"
+            ),
+        },
+        "tareas": (
+            ("agente-a",
+             "En `tienda/precio.py`, `precio()` devuelve 0 para articulos "
+             "desconocidos y eso esconde errores: tiene que pasar a lanzar KeyError. "
+             "Adapta lo que haga falta. Corre `python -m pytest tests/` antes de "
+             "terminar. No commitees."),
+            ("agente-b",
+             "Anade `tienda/stock.py` con una funcion `disponible(articulo)` que "
+             "devuelva True si el articulo tiene precio mayor que 0, y su test en "
+             "`tests/test_stock.py`. Corre `python -m pytest tests/` antes de "
+             "terminar. No commitees."),
+        ),
+    },
 }
 
 
@@ -103,11 +264,12 @@ def _escribe(raiz, ficheros):
             fh.write(cuerpo)
 
 
-def genera(sembrar=True):
-    """El repo base y dos worktrees, uno por 'agente'.
+def genera(pareja, sembrar=True):
+    """El repo base (mas el extra de la pareja) y dos worktrees, uno por 'agente'.
 
     `sembrar=True` escribe el trabajo de las dos ramas a mano: es el CONTROL, que
-    comprueba que `converge` detecta el choque cuando el choque existe.
+    comprueba la PREDICCION de la pareja — incluida la de 'contrato', cuyo choque
+    NO debe verse.
 
     `sembrar=False` deja los worktrees LIMPIOS, que es lo unico valido cuando
     escriben agentes de verdad. Sembrar y luego lanzar agentes encima seria
@@ -117,6 +279,7 @@ def genera(sembrar=True):
     shutil.rmtree(BASE, ignore_errors=True)
     os.makedirs(BASE, exist_ok=True)
     _escribe(BASE, MODULOS)
+    _escribe(BASE, pareja["base_extra"])
     _git(BASE, "init", "-q")
     _git(BASE, "config", "user.email", "b@b")
     _git(BASE, "config", "user.name", "b")
@@ -124,11 +287,12 @@ def genera(sembrar=True):
     _git(BASE, "commit", "-qm", "base")
 
     ramas = []
-    for nombre, ficheros in (("agente-a", RAMA_A), ("agente-b", RAMA_B)):
+    for nombre, siembra in (("agente-a", pareja["siembra_a"]),
+                            ("agente-b", pareja["siembra_b"])):
         ruta = os.path.join(BASE, ".worktrees", nombre)
         _git(BASE, "worktree", "add", "-q", "--detach", ruta, "HEAD")
         if sembrar:
-            _escribe(ruta, ficheros)
+            _escribe(ruta, siembra)
         ramas.append(ruta)
     return BASE, ramas
 
@@ -145,24 +309,6 @@ def corre():
     from galaxybrain import aislado
 
     return aislado.converge(BASE, traza=None)
-
-
-#: Las dos tareas de los agentes REALES. Independientes, plausibles, y ninguno
-#: sabe del otro — que es la condicion de la vida real. NO se les pide que
-#: choquen: se les pide trabajo normal sobre un contrato compartido, y si el
-#: choque aparece es porque aparece.
-TAREAS = (
-    ("agente-a",
-     "En `tienda/precio.py`, `precio()` devuelve euros y tiene que pasar a "
-     "devolver CENTIMOS (multiplicar por 100). Adapta lo que haga falta para que "
-     "el resto siga comportandose igual desde fuera. Corre `python -m pytest tests/` "
-     "antes de terminar. No commitees."),
-    ("agente-b",
-     "Anade `tienda/informe.py` con una funcion `linea(articulo)` que devuelva "
-     "'total: N euros' usando el precio del articulo, y su test en "
-     "`tests/test_informe.py`. Corre `python -m pytest tests/` antes de terminar. "
-     "No commitees."),
-)
 
 
 def _agente(ruta, prompt, timeout_seg):
@@ -183,26 +329,27 @@ def _agente(ruta, prompt, timeout_seg):
     return r.returncode == 0, "rc=%d" % r.returncode
 
 
-def tirada(rondas, timeout_seg):
-    """Agentes REALES escribiendo, y `converge` mirando. Gasta cuota.
+def tirada(rondas, timeout_seg, nombre, pareja):
+    """Agentes REALES escribiendo la pareja elegida, y `converge` mirando. Gasta cuota.
 
     Presupuesto escrito antes: `rondas` x 2 agentes x `timeout_seg`.
 
-    Y la calibracion, dicha antes de ver nada: con una tasa base publicada del
-    5-10%, cuatro rondas tienen ~70% de no ver nada AUNQUE el fenomeno sea real.
-    Por eso las tareas tocan un contrato compartido —es lo que pasa de verdad
-    cuando dos agentes trabajan a la vez— y por eso un cero aqui NO se leera como
-    "no ocurre", sino como "no lo vi en N rondas", que es otra frase.
+    Lo que mide (calibrado por la tirada del 13-ago, 4/4 con 'escala'): estas
+    tareas ponen el contrato compartido en el camino critico, asi que el numero
+    NO es la tasa base del fenomeno — es DETECCION cuando el choque existe, y en
+    'formato', ADEMAS, si los agentes testean a traves del contrato o contra un
+    literal congelado (solo lo primero hace visible el choque). Un cero se lee
+    "no lo vi en N rondas", nunca "no ocurre".
     """
-    print("presupuesto: %d ronda(s) x 2 agentes, tope %ds cada uno\n"
-          % (rondas, timeout_seg), flush=True)
+    print("pareja '%s' — presupuesto: %d ronda(s) x 2 agentes, tope %ds cada uno\n"
+          % (nombre, rondas, timeout_seg), flush=True)
     vistos = 0
     for ronda in range(1, rondas + 1):
-        _, ramas = genera(sembrar=False)   # los agentes escriben, no yo
-        for (nombre, prompt), ruta in zip(TAREAS, ramas):
+        _, ramas = genera(pareja, sembrar=False)   # los agentes escriben, no yo
+        for (quien, prompt), ruta in zip(pareja["tareas"], ramas):
             ok, motivo = _agente(ruta, prompt, timeout_seg)
             if not ok:
-                print("  ronda %d  %s NO CORRIO (%s)" % (ronda, nombre, motivo), flush=True)
+                print("  ronda %d  %s NO CORRIO (%s)" % (ronda, quien, motivo), flush=True)
         informe = corre()
         ramas_v = {r["nombre"]: r["veredicto"] for r in informe.get("ramas") or []}
         union = (informe.get("union") or {}).get("veredicto")
@@ -212,38 +359,44 @@ def tirada(rondas, timeout_seg):
               % (ronda, {k: ("ok" if v == 0 else "ROJA") for k, v in sorted(ramas_v.items())},
                  "ok" if union == 0 else "ROJA", "SI" if choque else "no"), flush=True)
         limpia()
-    print("\n=== CHOQUES SEMANTICOS VISTOS: %d de %d rondas ===" % (vistos, rondas))
+    print("\n=== CHOQUES SEMANTICOS VISTOS: %d de %d rondas (pareja '%s') ===" % (vistos, rondas, nombre))
     if not vistos:
-        print("  cero en %d rondas NO es 'no ocurre': con tasa base del 5-10%%," % rondas)
-        print("  esta muestra no puede distinguir una cosa de la otra.")
+        print("  cero en %d rondas NO es 'no ocurre': o no aparecio, o aparecio y" % rondas)
+        print("  ningun test lo piso — 'contrato' existe para distinguir esas dos frases.")
     return vistos
 
 
-def main():
-    genera()
+def control(nombre, pareja):
+    """La pareja sembrada a mano, gratis. Comprueba la PREDICCION, no 'detecta':
+    para 'contrato' cumplir es que el choque NO se vea."""
+    genera(pareja)
     try:
         informe = corre()
     finally:
-        pass
-
+        limpia()
     ramas = {r["nombre"]: r["veredicto"] for r in informe.get("ramas") or []}
     union = (informe.get("union") or {}).get("veredicto")
-    print("\n=== BANCO DE CONVERGENCIA ===")
-    print("monto la union       : %s" % informe.get("monto"))
-    for nombre, veredicto in sorted(ramas.items()):
-        print("  %-10s sola     : %s" % (nombre, "VERDE" if veredicto == 0 else "ROJA"))
-    print("  union (las dos)    : %s" % ("VERDE" if union == 0 else "ROJA"))
-    print("  rescatados         : %s" % (informe.get("rescatados") or "ninguno"))
-    if informe.get("motivo"):
-        print("  motivo             : %s" % informe["motivo"])
+    choque = bool(informe.get("choque_semantico"))
+    esperado = pareja["choque_esperado"]
+    verdes = bool(ramas) and all(v == 0 for v in ramas.values())
+    cumple = verdes and choque == esperado
+    print("  %-9s ramas=%s union=%s  choque=%s esperado=%s  -> %s"
+          % (nombre, {k: ("ok" if v == 0 else "ROJA") for k, v in sorted(ramas.items())},
+             "ok" if union == 0 else "ROJA", "SI" if choque else "no",
+             "SI" if esperado else "no", "CUMPLE" if cumple else "NO CUMPLE"))
+    return cumple
 
-    # El caso que el sector llama el mas dificil: las dos verdes, la union rota.
-    verdes = ramas and all(v == 0 for v in ramas.values())
-    detecta = verdes and union not in (0, None)
-    print("\n%s" % ("DETECTA el conflicto semantico: las dos verdes, la union ROJA"
-                    if detecta else
-                    "NO lo detecta — y sin eso este banco no demuestra nada"))
-    return 0 if detecta else 1
+
+def main(nombres):
+    print("=== BANCO DE CONVERGENCIA — controles sembrados (gratis) ===")
+    fallos = [n for n in nombres if not control(n, PAREJAS[n])]
+    if fallos:
+        print("\nNO CUMPLEN SU PREDICCION: %s — o el detector cambio o la prediccion"
+              " estaba mal; se investiga ANTES de gastar agentes" % ", ".join(fallos))
+    else:
+        print("\ntodas las parejas cumplen su prediccion — incluido el NO-visto de"
+              " 'contrato', que declara el techo: converge solo ve lo que algun test pisa")
+    return 1 if fallos else 0
 
 
 if __name__ == "__main__":
@@ -251,6 +404,8 @@ if __name__ == "__main__":
     p.add_argument("--limpiar", action="store_true", help="quitar los worktrees y salir")
     p.add_argument("--agentes", action="store_true",
                    help="agentes REALES (claude -p, Opus): GASTA CUOTA")
+    p.add_argument("--pareja", choices=sorted(PAREJAS), default=None,
+                   help="que pareja; sin ella el control corre TODAS y --agentes usa 'escala'")
     p.add_argument("--rondas", type=int, default=4, help="rondas de 2 agentes (por defecto 4)")
     p.add_argument("--timeout", type=int, default=300, help="tope por agente en segundos")
     args = p.parse_args()
@@ -258,6 +413,7 @@ if __name__ == "__main__":
         limpia()
         raise SystemExit(0)
     if args.agentes:
-        tirada(args.rondas, args.timeout)
+        nombre = args.pareja or "escala"
+        tirada(args.rondas, args.timeout, nombre, PAREJAS[nombre])
         raise SystemExit(0)
-    raise SystemExit(main())
+    raise SystemExit(main([args.pareja] if args.pareja else sorted(PAREJAS)))
