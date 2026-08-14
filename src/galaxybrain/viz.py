@@ -787,6 +787,9 @@ _NUBE = """<!doctype html>
             overflow:auto;padding:.7em .9em;z-index:6;font-size:12px}
   #archivos .cabecera{color:var(--suave);letter-spacing:.14em;font-size:.72em;
             margin:.1em 0 .7em;font-weight:bold}
+  #archivos .cabecera .cerrar{float:right;cursor:pointer;color:var(--suave);
+            font-size:1.25em;letter-spacing:0;line-height:.8}
+  #archivos .cabecera .cerrar:hover{color:var(--tinta)}
   #archivos .cabecera .cuenta{background:#7c5cff22;border:1px solid #7c5cff44;
             color:#c4b5fd;border-radius:8px;padding:0 .5em;margin-left:.4em;
             letter-spacing:0}
@@ -844,7 +847,7 @@ _NUBE = """<!doctype html>
   *{box-sizing:border-box}
   body{margin:0;background:var(--fondo);color:var(--tinta);overflow:hidden;
        font:13px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
-  header{position:fixed;top:0;left:0;right:0;z-index:5;padding:10px 14px;
+  header{position:fixed;top:0;left:0;right:0;z-index:9;padding:10px 14px;
          background:var(--panel);border-bottom:1px solid var(--linea);
          display:flex;gap:14px;align-items:center;flex-wrap:wrap}
   h1{font:600 14px ui-monospace,Consolas,monospace;margin:0;letter-spacing:-.02em}
@@ -1952,10 +1955,24 @@ medir(); recupera(); requestAnimationFrame(bucle);
 // (fijado + muestraFicha, la misma mecanica del clic en el lienzo). El editor
 // queda como salto secundario (&#8599;). Todo se renueva con cada regeneracion.
 (function(){
+  // Todo el cajon+inspector va dentro de un try: si algo peta aqui, JAMAS
+  // puede tumbar el arranque del lienzo, que corre despues (regla 9, version
+  // navegador: el extra falla en silencio, el mapa se dibuja igual).
+  try{
   const panel = document.getElementById('archivos');
   const btn = document.getElementById('btnArchivos');
   const modal = document.getElementById('codigo');
   const IDX = {}; NODOS.forEach((n, i) => { IDX[n.id] = i; });
+  // Los paneles empiezan DEBAJO de la cabecera real, medida — no adivinada:
+  // con 52px fijos, una cabecera que envolvia en pantallas estrechas tapaba
+  // la X del inspector (y antes, el panel tapaba los botones). Se mide y listo.
+  function _alinea(){
+    const alto = document.querySelector('header').offsetHeight + 'px';
+    panel.style.top = alto;
+    modal.style.top = alto;
+  }
+  _alinea();
+  window.addEventListener('resize', _alinea);
   function esc(t){ return String(t).replace(/[&<>"']/g, c => '&#' + c.charCodeAt(0) + ';'); }
   function urlEditor(f, l){ return 'vscode://file/' + RAIZ + '/' + f + (l ? ':' + l : ''); }
   // Resaltado de Python SIN barras invertidas en el regex: dentro de la
@@ -2013,7 +2030,14 @@ medir(); recupera(); requestAnimationFrame(bucle);
   }
   function cierraCodigo(){ modal.hidden = true; modalF = null; guardaCodigo(); }
   document.getElementById('cerrarCodigo').addEventListener('click', cierraCodigo);
-  document.addEventListener('keydown', ev => { if (ev.key === 'Escape') cierraCodigo(); });
+  document.addEventListener('keydown', ev => {
+    if (ev.key !== 'Escape') return;
+    if (!modal.hidden){ cierraCodigo(); return; }
+    // Escape tambien SUELTA el foco fijado: con los paneles abiertos media
+    // pantalla ya no es lienzo y el "clic en vacio" no siempre llega a el
+    // (reportado: mapa atenuado sin salida aparente).
+    fijado = null; muestraFicha(null); recuerda();
+  });
   cuerpo.addEventListener('scroll', () => { if (modalF) guardaCodigo(); });
   // El panel SOBREVIVE al refresco del mapa: fichero, linea y scroll vuelven
   // solos (reportado en uso real: cada recarga lo cerraba y no se podia leer).
@@ -2021,7 +2045,8 @@ medir(); recupera(); requestAnimationFrame(bucle);
     const g = JSON.parse(sessionStorage.getItem('gb-codigo') || 'null');
     if (g && g.f){ abrirCodigo(g.f, g.l || 0, ''); cuerpo.scrollTop = g.s || 0; }
   }catch(_){}
-  let html = '<div class="cabecera">ARCHIVOS DEL PROYECTO'
+  let html = '<div class="cabecera"><span class="cerrar" id="cerrarArchivos">&#10005;</span>'
+           + 'ARCHIVOS DEL PROYECTO'
            + '<span class="cuenta">' + Object.keys(ARCHIVOS).length + '</span></div>'
            + '<input id="filtroArch" placeholder="filtrar fichero o simbolo...">';
   let dirAnterior = null;
@@ -2047,6 +2072,8 @@ medir(); recupera(); requestAnimationFrame(bucle);
     });
   });
   panel.innerHTML = html;
+  document.getElementById('cerrarArchivos').addEventListener('click',
+    () => estado(false));
   panel.addEventListener('click', ev => {
     const a = ev.target.closest('a[data-f]');
     if (!a) return;
@@ -2067,6 +2094,7 @@ medir(); recupera(); requestAnimationFrame(bucle);
   }
   btn.addEventListener('click', () => estado(panel.style.display !== 'block'));
   try{ if (sessionStorage.getItem('gb-archivos')) estado(true); }catch(_){}
+  }catch(_){ /* el cajon nunca tumba el lienzo */ }
 })();
 
 // ============ la foto no puede leerse en presente (fosil, 14-ago) ============
