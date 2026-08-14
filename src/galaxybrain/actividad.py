@@ -200,6 +200,33 @@ def nodos_tocados(root, informe_simbolos):
     return tocados
 
 
+def modulos_nacientes(root, informe_simbolos):
+    """Los módulos que este árbol está CREANDO: ficheros .py tocados cuyo
+    nombre de módulo aún no existe en el mapa canónico.
+
+    El complemento exacto de nodos_tocados, con nombre propio: 'cuentas.top
+    naciendo' dice más que '+1 fichero fuera del mapa' — sin esto, el agente
+    que más construye es el más invisible (medido en la tirada de cuatro,
+    14-ago). Mismo join delicado por normcase.
+    """
+    modulos = {
+        os.path.normcase(n.get("qual") or "")
+        for n in informe_simbolos.get("nodes", [])
+        if n.get("kind") == "module"
+    }
+    nacientes = set()
+    for fichero in ficheros_tocados(root):
+        if not fichero.endswith(".py"):
+            continue
+        try:
+            mod = graph_mod.module_name(fichero, root)
+        except ValueError:  # otra unidad de disco en Windows
+            continue
+        if os.path.normcase(mod) not in modulos:
+            nacientes.add(mod)
+    return sorted(nacientes)
+
+
 #: Tope de hechos por agente en la foto: la consola tiene que caber en un
 #: vistazo, y un refactor masivo se resume, no se vuelca.
 MAX_CAMBIOS = 20
@@ -439,6 +466,10 @@ def instantanea(raiz, informe_simbolos, ahora=None):
             reciente = max(reciente, desde_commit)
         foto["agentes"].append({
             "fuera_del_mapa": max(0, len(ficheros) - len(nodos)),
+            # Con NOMBRE: lo que este arbol esta creando y aun no es nodo. El
+            # nacedero del mapa los pinta pulsando hasta que la union los haga
+            # estrellas de verdad.
+            "nacientes": modulos_nacientes(analisis, informe_simbolos),
             # SEPARADO de `nodos`, no sumado: "tiene esto sin commitear" y
             # "acaba de commitear esto" son hechos distintos y el mapa los pinta
             # distinto. Fundirlos ganaria cobertura y perderia precision, que es

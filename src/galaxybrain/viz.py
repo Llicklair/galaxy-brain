@@ -591,6 +591,9 @@ def render_graph_cloud(
             "vecinos": len(a.get("vecinos") or []),
             "hace": a.get("hace_seg"),
             "fuera": a.get("fuera_del_mapa", 0),
+            # Los modulos que esta CREANDO, con nombre: el nacedero los pinta
+            # pulsando hasta que la union los haga estrellas (14-ago).
+            "nace": a.get("nacientes") or [],
             "base": a.get("base", ""),
             "misma": 1 if a.get("misma_base") else 0,
             # Qué escribió, exactamente: firmas contra el mapa canónico. La
@@ -815,6 +818,15 @@ _NUBE = """<!doctype html>
   #archivos .pt.class{background:#fb923c}
   #archivos .pt.function{background:#60a5fa}
   #archivos .pt.method{background:#2dd4bf}
+  #nacedero{position:fixed;left:.6em;bottom:.6em;display:none;z-index:6;
+    background:#0f1420f2;border:1px solid var(--linea);border-radius:8px;
+    padding:.5em .9em;font-size:12px;color:var(--tinta);max-width:340px}
+  #nacedero b{color:var(--suave);letter-spacing:.12em;font-size:.72em}
+  #nacedero .cria{margin-top:.3em;animation:nace 1.6s ease-in-out infinite}
+  #nacedero .cria i{display:inline-block;width:8px;height:8px;
+    border-radius:50%%;margin-right:.5em;font-style:normal}
+  #nacedero .cria span{color:var(--suave);font-size:.85em}
+  @keyframes nace{50%%{opacity:.45}}
   #codigo{position:fixed;left:0;top:52px;bottom:0;width:min(44%%,640px);
           z-index:7;background:#0d1119f7;border-right:1px solid var(--linea);
           display:flex;flex-direction:column;box-shadow:8px 0 30px #0009}
@@ -964,12 +976,32 @@ _NUBE = """<!doctype html>
 <div id="errores"></div>
 <div id="archivos"></div>
 <div id="codigo" hidden><div id="codigoCabecera"><span class="cerrar" id="cerrarCodigo">&#10005;</span><span class="chip">fichero</span><b id="codigoTitulo"></b><a id="codigoEditor" href="#">editor &#8599;</a></div><pre id="codigoCuerpo"></pre></div>
+<div id="nacedero"></div>
 <div id="pie">%(pie)s</div>
 <div id="vieja" hidden style="position:fixed;right:.6em;bottom:.6em;padding:.3em .7em;border-radius:6px;font-size:.78em;z-index:99;max-width:44%%;%(estilo_vieja)s">%(aviso_vieja)s<span id="edadfoto"></span></div>
 <script>
 // ================= datos =================
 const NODOS = %(nodos)s, ARISTAS = %(aristas)s, LADO = 1000, GEN_TS = %(gen_ts)s;
 const ARCHIVOS = %(archivos)s, RAIZ = %(raiz)s, CODIGO = %(codigo)s;
+// ============ el lienzo confiesa (14-ago: demasiados errores mudos) =========
+// Un error de runtime dejaba el mapa en blanco o congelado SIN DECIR NADA
+// (el salto-de-linea sin doblar, el foco zombi...). Ahora cualquier excepcion
+// pinta su franja roja arriba: se lee, se reporta y se caza — nunca mas un
+// blanco misterioso. La primera manda; el resto no la pisa.
+window.onerror = function(mensaje, origen, linea){
+  try{
+    if (document.getElementById('confesion')) return false;
+    const franja = document.createElement('div');
+    franja.id = 'confesion';
+    franja.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99;'
+      + 'background:#7f1d1d;color:#fecaca;padding:.5em 1em;'
+      + 'font:13px Consolas,monospace';
+    franja.textContent = 'EL LIENZO PETO: ' + mensaje + ' (linea ' + linea
+      + ') - recarga con F5; si persiste es un bug del mapa, no tuyo';
+    document.body.appendChild(franja);
+  }catch(_){}
+  return false;
+};
 const IMPORT_COLOR = '%(color_import)s', CICLO_COLOR = '%(color_ciclo)s';
 const OBRA_COLOR = '%(color_obra)s';
 const AGENTES = %(agentes)s;
@@ -2102,6 +2134,31 @@ medir(); recupera(); requestAnimationFrame(bucle);
   btn.addEventListener('click', () => estado(panel.style.display !== 'block'));
   try{ if (sessionStorage.getItem('gb-archivos')) estado(true); }catch(_){}
   }catch(_){ /* el cajon nunca tumba el lienzo */ }
+})();
+
+// ============ el nacedero: las estrellas que aun no existen =================
+// Un agente creando modulos NUEVOS no toca ningun nodo del mapa — su codigo
+// aun no es nodo — asi que el que mas construye era el mas invisible (medido
+// en la tirada de cuatro, 14-ago). DOM y no canvas a proposito: un fichero
+// sin posicion en el grafo no se inventa una posicion; pulsa en su cuna con
+// el color de su agente hasta que la union lo haga estrella.
+(function(){
+  try{
+    const caja = document.getElementById('nacedero');
+    let filas = '';
+    Object.keys(AGENTES).sort().forEach(nom => {
+      const a = AGENTES[nom];
+      (a.nace || []).forEach(m => {
+        filas += '<div class="cria"><i style="background:' + a.c + '"></i>'
+               + escapa(m) + ' <span>&middot; naciendo &middot; '
+               + escapa(nom) + '</span></div>';
+      });
+    });
+    if (filas){
+      caja.innerHTML = '<b>NACIENDO</b>' + filas;
+      caja.style.display = 'block';
+    }
+  }catch(_){ /* el nacedero nunca tumba el lienzo */ }
 })();
 
 // ============ la foto no puede leerse en presente (fosil, 14-ago) ============

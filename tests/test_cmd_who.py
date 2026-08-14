@@ -73,6 +73,8 @@ def test_html_es_el_canvas_con_su_consola(tmp_path):
     assert 'id="codigo"' in html and ", CODIGO = " in html
     assert "def suma(a, b):" in html  # el CODIGO viaja embebido, listo p/modal
     assert "muestraFicha(fijado)" in html  # el clic enciende nodo + tarjeta
+    assert "window.onerror" in html and "EL LIENZO PETO" in html  # confiesa
+    assert 'id="nacedero"' in html    # la cuna de las estrellas nuevas
 
 
 def test_html_sin_mapa_en_la_raiz_escribe_fuera_del_proyecto(tmp_path):
@@ -150,6 +152,31 @@ def test_el_js_del_mapa_compila(tmp_path):
     q = subprocess.run([node, "--check", str(js)], capture_output=True,
                        text=True, timeout=60)
     assert q.returncode == 0, q.stderr[:400]
+
+
+def test_un_modulo_naciendo_sale_con_su_nombre(tmp_path):
+    """El agente que crea un modulo NUEVO era el mas invisible (tirada de
+    cuatro): ahora su fichero aun-sin-nodo viaja con nombre en `nacientes`."""
+    raiz = tmp_path / "proyecto"
+    raiz.mkdir()
+    (raiz / "calc.py").write_text("def suma(a, b):\n    return a + b\n",
+                                  encoding="utf-8")
+    for orden in (["git", "init", "-q"], ["git", "add", "-A"],
+                  ["git", "-c", "user.name=t", "-c", "user.email=t@t.t",
+                   "commit", "-q", "-m", "base"]):
+        subprocess.run(orden, cwd=str(raiz), timeout=60)
+    wt = tmp_path / "wt-agente"
+    subprocess.run(["git", "worktree", "add", str(wt), "-b", "agente-x"],
+                   cwd=str(raiz), capture_output=True, timeout=60)
+    (wt / "novedad.py").write_text("def brilla():\n    return 1\n",
+                                   encoding="utf-8")
+    import json
+    p = subprocess.run(
+        [sys.executable, "-m", "galaxybrain.cli", "who", "--json"],
+        cwd=str(raiz), capture_output=True, text=True, timeout=180)
+    assert p.returncode == 0, p.stderr[:300]
+    agentes = {a["nombre"]: a for a in json.loads(p.stdout)["agentes"]}
+    assert agentes["wt-agente"]["nacientes"] == ["novedad"]
 
 
 def test_json_trae_las_claves_del_contrato(tmp_path):
