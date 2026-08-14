@@ -200,6 +200,52 @@ def nodos_tocados(root, informe_simbolos):
     return tocados
 
 
+def enlaces_nacientes(root, informe_simbolos):
+    """Los módulos EXISTENTES que el código naciente ya importa.
+
+    El AST del fichero nuevo es un hecho: sus imports dicen a qué se está
+    conectando ANTES de la unión ('si los nodos que toca son del grafo, ha de
+    tocarlos, iluminarlos y propagar' — petición directa, 14-ago). Con esto el
+    mapa enciende esos nodos con el color del agente y ancla su terminal.
+    Tolerante a medias-ediciones: un fichero que no parsea todavía se calla —
+    el agente está escribiendo, no roto. Y va en su propio carril (`enlazan`,
+    nunca `agentes`): dos agentes LEYENDO el mismo nodo no es un cruce.
+    """
+    modulos = {
+        os.path.normcase(n.get("qual") or ""): n.get("qual")
+        for n in informe_simbolos.get("nodes", [])
+        if n.get("kind") == "module"
+    }
+    enlaces = set()
+    for fichero in ficheros_tocados(root):
+        if not fichero.endswith(".py"):
+            continue
+        try:
+            mod = graph_mod.module_name(fichero, root)
+        except ValueError:
+            continue
+        if os.path.normcase(mod) in modulos:
+            continue  # ya es nodo: eso es "toca", no "enlaza"
+        try:
+            with open(fichero, encoding="utf-8", errors="replace") as fh:
+                arbol = ast.parse(fh.read())
+        except (OSError, SyntaxError):
+            continue
+        es_paquete = os.path.basename(fichero) == "__init__.py"
+        for destino in graph_mod._import_targets(arbol, mod, es_paquete):
+            # El destino llega con el nombre importado dentro (`calc.suma`,
+            # `cuentas.informes.eur`): se recorta por la derecha hasta dar con
+            # un modulo del mapa — el mismo baile que hace el grafo.
+            partes = destino.split(".")
+            while partes:
+                qual = modulos.get(os.path.normcase(".".join(partes)))
+                if qual:
+                    enlaces.add(qual)
+                    break
+                partes.pop()
+    return sorted(enlaces)
+
+
 def modulos_nacientes(root, informe_simbolos):
     """Los módulos que este árbol está CREANDO: ficheros .py tocados cuyo
     nombre de módulo aún no existe en el mapa canónico.
@@ -470,6 +516,9 @@ def instantanea(raiz, informe_simbolos, ahora=None):
             # nacedero del mapa los pinta pulsando hasta que la union los haga
             # estrellas de verdad.
             "nacientes": modulos_nacientes(analisis, informe_simbolos),
+            # Los nodos EXISTENTES que su codigo nuevo ya importa: se encienden
+            # con su color y anclan su terminal, sin contar como cruce.
+            "enlaza": enlaces_nacientes(analisis, informe_simbolos),
             # SEPARADO de `nodos`, no sumado: "tiene esto sin commitear" y
             # "acaba de commitear esto" son hechos distintos y el mapa los pinta
             # distinto. Fundirlos ganaria cobertura y perderia precision, que es
@@ -511,6 +560,12 @@ def instantanea(raiz, informe_simbolos, ahora=None):
         for qual in agente.get("commitados") or ():
             foto["por_nodo"].setdefault(qual, {"agentes": [], "vecino_de": []})
             foto["por_nodo"][qual].setdefault("commitaron", []).append(agente["nombre"])
+        # En su propio carril, como commitaron: el codigo naciente ENLAZA con
+        # estos nodos (los importa) — el mapa los enciende, pero dos agentes
+        # leyendo el mismo nodo no es un choque y el cruce no los cuenta.
+        for qual in agente.get("enlaza") or ():
+            foto["por_nodo"].setdefault(qual, {"agentes": [], "vecino_de": []})
+            foto["por_nodo"][qual].setdefault("enlazan", []).append(agente["nombre"])
         for qual in agente["vecinos"]:
             foto["por_nodo"].setdefault(qual, {"agentes": [], "vecino_de": []})
             foto["por_nodo"][qual]["vecino_de"].append(agente["nombre"])

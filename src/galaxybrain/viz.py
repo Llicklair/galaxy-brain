@@ -579,6 +579,11 @@ def render_graph_cloud(
     # "esta aqui"; un commit reciente dice "acaba de pasar por aqui".
     _commitaron = {q: d.get("commitaron", []) for q, d in (_act.get("por_nodo") or {}).items()
                    if d.get("commitaron")}
+    # Los nodos que el codigo NACIENTE de cada agente ya importa: se pintan
+    # igual que los tocados (halo, hilo de terminal, onda) — el cruce no los
+    # cuenta porque llegan por su carril y actividad no los mete en `agentes`.
+    _enlazan = {q: d.get("enlazan", []) for q, d in (_act.get("por_nodo") or {}).items()
+                if d.get("enlazan")}
     _orden_agentes = sorted(a["nombre"] for a in (_act.get("agentes") or []))
     _color_agente = {
         nombre: (_COLOR_AGENTE[i] if i < len(_COLOR_AGENTE) else _COLOR_AGENTE_EXTRA)
@@ -670,7 +675,7 @@ def render_graph_cloud(
             "tc": 1 if n in tocados else 0,
             # Que agentes (worktrees) estan tocando este nodo AHORA. Derivado del
             # disco, nadie lo declara. Vacio cuando no hay nadie trabajando.
-            "ag": _por_nodo.get(n, []),
+            "ag": sorted(set(_por_nodo.get(n, [])) | set(_enlazan.get(n, []))),
             # Commit reciente: presencia tambien, pero de otro tipo. Separado de
             # `ag` para que el mapa no funda "lo tiene sin commitear" con "lo
             # acaba de commitear".

@@ -179,6 +179,38 @@ def test_un_modulo_naciendo_sale_con_su_nombre(tmp_path):
     assert agentes["wt-agente"]["nacientes"] == ["novedad"]
 
 
+def test_el_codigo_naciente_enlaza_con_los_nodos_que_importa(tmp_path):
+    """'Si los nodos que toca son del grafo, ha de tocarlos, iluminarlos y
+    propagar' (14-ago): los imports del fichero NUEVO son un hecho del AST y
+    encienden los nodos existentes — por su carril, sin fabricar cruces."""
+    raiz = tmp_path / "proyecto"
+    raiz.mkdir()
+    (raiz / "calc.py").write_text("def suma(a, b):\n    return a + b\n",
+                                  encoding="utf-8")
+    for orden in (["git", "init", "-q"], ["git", "add", "-A"],
+                  ["git", "-c", "user.name=t", "-c", "user.email=t@t.t",
+                   "commit", "-q", "-m", "base"]):
+        subprocess.run(orden, cwd=str(raiz), timeout=60)
+    for quien in ("a", "b"):  # DOS agentes enlazando al mismo nodo
+        wt = tmp_path / ("wt-" + quien)
+        subprocess.run(["git", "worktree", "add", str(wt), "-b", "rama-" + quien],
+                       cwd=str(raiz), capture_output=True, timeout=60)
+        (wt / ("nuevo_%s.py" % quien)).write_text(
+            "from calc import suma\n\n\ndef doble_%s(x):\n"
+            "    return suma(x, x)\n" % quien, encoding="utf-8")
+    import json
+    p = subprocess.run(
+        [sys.executable, "-m", "galaxybrain.cli", "who", "--json"],
+        cwd=str(raiz), capture_output=True, text=True, timeout=180)
+    assert p.returncode == 0, p.stderr[:300]
+    foto = json.loads(p.stdout)
+    agentes = {a["nombre"]: a for a in foto["agentes"]}
+    assert agentes["wt-a"]["enlaza"] == ["calc"]
+    assert agentes["wt-b"]["enlaza"] == ["calc"]
+    assert sorted(foto["por_nodo"]["calc"]["enlazan"]) == ["wt-a", "wt-b"]
+    assert "calc" not in foto["cruces"]  # leer juntos NO es chocar
+
+
 def test_json_trae_las_claves_del_contrato(tmp_path):
     import json
 
