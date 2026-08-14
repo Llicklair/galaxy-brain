@@ -319,12 +319,10 @@ def _limite_foto(refresco):
 def _aviso_vieja(refresco):
     """El texto del aviso, decidido al generar: el modo se conoce aqui."""
     if refresco:
-        return ("EL WATCH YA NO ESCRIBE — esta foto deberia renovarse cada "
-                "%ds y lleva demasiado quieta. El mapa esta congelado, no "
-                "vacio: relanza gb who --watch --html" % refresco)
-    return ("FOTO VIEJA — mas antigua que cualquier presencia que pueda "
-            "enseñar. Lo que ves fue verdad al generarse, no ahora. El mapa "
-            "vivo: gb who --watch --html")
+        return ("EL WATCH YA NO ESCRIBE — mapa congelado, no vacio; "
+                "relanza gb who --watch --html")
+    return ("FOTO VIEJA — fue verdad al generarse; "
+            "regenera con gb who --html")
 
 
 def render_graph_cloud(
@@ -853,7 +851,7 @@ _NUBE = """<!doctype html>
 <div id="consola"></div>
 <div id="errores"></div>
 <div id="pie">%(pie)s</div>
-<div id="vieja" hidden style="position:fixed;left:50%%;bottom:2.6em;transform:translateX(-50%%);background:#2d1517;border:1px solid #f85149;color:#ffa198;padding:.6em 1.2em;border-radius:8px;font-weight:bold;z-index:99;max-width:80%%">%(aviso_vieja)s</div>
+<div id="vieja" hidden style="position:fixed;right:.6em;bottom:.6em;background:#2d1517cc;border:1px solid #f85149;color:#ffa198;padding:.3em .7em;border-radius:6px;font-size:.78em;z-index:99;max-width:44%%">%(aviso_vieja)s<span id="edadfoto"></span></div>
 <script>
 // ================= datos =================
 const NODOS = %(nodos)s, ARISTAS = %(aristas)s, LADO = 1000, GEN_TS = %(gen_ts)s;
@@ -1834,9 +1832,14 @@ medir(); recupera(); requestAnimationFrame(bucle);
 // viejo que la ventana de presencia. Con watch: 3 ticks sin reescribirse — el
 // reload por JS recarga este MISMO fichero congelado, y sin esto pareceria vivo.
 const LIMITE_FOTO = %(limite_foto)s;
+function _fmtFoto(s){ return s<3600 ? Math.floor(s/60)+'m' : Math.floor(s/3600)+'h'+Math.floor(s%%3600/60)+'m'; }
 setInterval(()=>{
-  if(GEN_TS!=null && (Date.now()/1000 - GEN_TS) > LIMITE_FOTO)
+  if(GEN_TS==null) return;
+  const edad = Date.now()/1000 - GEN_TS;
+  if(edad > LIMITE_FOTO){
     document.getElementById('vieja').hidden = false;
+    document.getElementById('edadfoto').textContent = ' · hace ' + _fmtFoto(edad);
+  }
 }, 1000);
 </script>
 """
