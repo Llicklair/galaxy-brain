@@ -38,14 +38,32 @@ def test_html_refresca_el_mapa_de_la_raiz_si_ya_existe(tmp_path):
                                   encoding="utf-8")
     subprocess.run(["git", "init", "-q"], cwd=str(raiz), timeout=60)
     viejo = raiz / "mapa.html"
-    viejo.write_text("<html>canvas fosil</html>", encoding="utf-8")
+    viejo.write_text("<html>foto vieja</html>", encoding="utf-8")
     hogar = tmp_path / "hogar"
     p = _who(str(raiz), "--html", env={"GB_HOME": str(hogar)})
     assert p.returncode == 0
     nuevo = viejo.read_text(encoding="utf-8")
-    assert "canvas fosil" not in nuevo and "gb who" in nuevo
+    assert "foto vieja" not in nuevo and "lienzo" in nuevo
     if hogar.exists():
         assert not list(hogar.glob("*/mapa.html"))
+
+
+def test_html_es_el_canvas_con_su_consola(tmp_path):
+    """El mapa principal es el canvas de viz.py (restaurado 14-ago): el grafo
+    navegable y la consola de errores, no una pagina de presencia."""
+    raiz = tmp_path / "proyecto"
+    raiz.mkdir()
+    (raiz / "calc.py").write_text("def suma(a, b):\n    return a + b\n",
+                                  encoding="utf-8")
+    subprocess.run(["git", "init", "-q"], cwd=str(raiz), timeout=60)
+    destino = raiz / "mapa.html"
+    p = _who(str(raiz), "--html", str(destino),
+             env={"GB_HOME": str(tmp_path / "hogar")})
+    assert p.returncode == 0
+    html = destino.read_text(encoding="utf-8")
+    assert '<canvas id="lienzo">' in html
+    assert "const CAPTURAS" in html   # la consola de errores viaja siempre
+    assert "GEN_TS" in html           # y la actividad envejece en el navegador
 
 
 def test_html_sin_mapa_en_la_raiz_escribe_fuera_del_proyecto(tmp_path):

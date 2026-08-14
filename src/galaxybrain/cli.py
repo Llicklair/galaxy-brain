@@ -284,6 +284,89 @@ def _capturas_para_mapa(root, informe_simbolos, tope=10):
     return capturas
 
 
+# Los tres ayudantes siguientes volvieron el 14-ago con viz.py (decision del
+# owner: el mapa principal es el canvas). Son los del cli previo al recorte
+# 3229ddd, verbatim: solo datos para el lienzo, cero maquinaria de watch.
+
+def _suelo_para_mapa(root):
+    """'N/M capas' para la cabecera del mapa: la fase de construccion tambien
+    pasa por el grafo. Solo el recuento — el detalle es de `gb floor` — y None
+    si floor no puede leer la raiz (el mapa calla, regla 9)."""
+    from . import floor
+
+    try:
+        report = floor.analyze(root)
+    except Exception:
+        return None
+    niveles = report.get("levels") or []
+    if not niveles:
+        return None
+    ok = sum(1 for nivel in niveles if nivel.get("status") == "ok")
+    return "%d/%d capas" % (ok, len(niveles))
+
+
+def _ficheros_tocados(root):
+    """Los .py tocados respecto a HEAD: modificados, anadidos, renombrados o
+    untracked, esten o no en el indice. Rutas absolutas.
+
+    UNA fuente: `git status --porcelain` trae staged, unstaged y untracked en
+    una pasada. Sin repo git devuelve lista vacia y la capa de cambio calla
+    (regla 9): el mapa funciona igual. Un `git status` por REGENERACION entra
+    en presupuesto (~30 ms << 1 s por edicion).
+    """
+    from . import graph as graph_mod
+
+    salida = graph_mod._git(root, "status", "--porcelain")
+    if not salida:
+        return []
+    # git da las rutas relativas al TOPLEVEL del repo y con '/', no a root.
+    toplevel = (graph_mod._git(root, "rev-parse", "--show-toplevel") or "").strip()
+    base = toplevel or os.path.abspath(root)
+    ficheros = []
+    for linea in salida.splitlines():
+        if len(linea) < 4:
+            continue
+        estado, ruta = linea[:2], linea[3:]
+        if "D" in estado:
+            continue  # borrado: ya no hay fichero, luego no hay nodo que marcar
+        if " -> " in ruta:
+            # Rename/copia: "R  viejo.py -> nuevo.py". El fichero que EXISTE en
+            # el arbol —y que el mapa dibuja— es el destino.
+            ruta = ruta.split(" -> ")[-1]
+        if not ruta.endswith(".py"):
+            continue
+        ficheros.append(os.path.join(base, *ruta.split("/")))
+    return ficheros
+
+
+def _tocados_para_mapa(root, informe_simbolos):
+    """La capa de cambio como viaja al mapa: el conjunto de nodos modulo cuyo
+    fichero esta tocado sin commitear.
+
+    Mismo join delicado que _ciclo_para_mapa (la trampa 'c:' vs 'C:' de Windows,
+    separadores mezclados): git devuelve el toplevel con su caja canonica y root
+    puede venir escrito de cualquier manera, asi que los dos lados se comparan
+    por normcase, nunca por igualdad literal.
+    """
+    from . import graph as graph_mod
+
+    modulos = {
+        os.path.normcase(n.get("qual") or ""): n.get("qual")
+        for n in informe_simbolos.get("nodes", [])
+        if n.get("kind") == "module"
+    }
+    tocados = set()
+    for fichero in _ficheros_tocados(root):
+        try:
+            mod = graph_mod.module_name(fichero, root)
+        except ValueError:  # otra unidad de disco en Windows
+            continue
+        qual = modulos.get(os.path.normcase(mod))
+        if qual:
+            tocados.add(qual)
+    return tocados
+
+
 def _shape_cache(root):
     """Donde se recuerda la ultima forma vista de un proyecto.
 
@@ -1157,14 +1240,17 @@ def cmd_who(args):
                 quienes = foto["por_nodo"][qual]["agentes"]
                 emit("  ! %s  <- %s" % (qual, ", ".join(quienes)))
 
-    # --html: el mapa vivo como UN fichero autocontenido (la version fina del
-    # canvas recortado en 3229ddd — sin servidor ni proceso que pueda morir).
+    # --html: EL mapa — el canvas de siempre (grafo navegable + consola de
+    # errores), restaurado el 14-ago por decision del owner. El recorte 3229ddd
+    # se llevo el renderer junto con la maquinaria, pero solo la maquinaria era
+    # culpable: viz.py vuelve VERBATIM y la entrega es la fina — escribe este
+    # comando (one-shot o watch por sondeo), escritura atomica, el navegador se
+    # refresca solo (camara en sessionStorage) — cero candados, cero
+    # relanzamientos, cero procesos que puedan quedar colgados.
     # Si el proyecto YA tiene un mapa.html en la raiz, se refresca ESE: es la
     # costumbre del usuario declarada en disco, y escribir en otro sitio la
-    # deja pudrirse (medido 14-ago: el mapa de GB_HOME no lo miro nadie
-    # mientras el de la raiz, fosil del canvas, se consultaba a diario). Si no
-    # existe, fuera del proyecto observado (regla 7): gb no ensucia por
-    # defecto un repo que nunca pidio un mapa. Una ruta explicita gana a todo.
+    # deja pudrirse (medido 14-ago). Si no existe, fuera del proyecto observado
+    # (regla 7): gb no ensucia por defecto un repo que nunca pidio un mapa.
     destino_html = None
     if args.html:
         if args.html == "AUTO":
@@ -1177,11 +1263,47 @@ def cmd_who(args):
         else:
             destino_html = os.path.abspath(args.html)
 
+    if destino_html:
+        import time as _t
+
+        from . import graph as _graph
+        from . import viz
+
+        def _canvas(inf, foto):
+            try:
+                grafo = _graph.analyze(root)
+            except Exception:
+                grafo = None
+            return viz.render_graph_cloud(
+                inf,
+                title="mapa · %s" % os.path.basename(root),
+                graph_report=grafo,
+                procedencia=_procedencia(root),
+                refresco=args.watch or 0,
+                gen_ts=_t.time(),
+                ciclo=_ciclo_para_mapa(root, inf),
+                tocados=_tocados_para_mapa(root, inf),
+                actividad=foto,
+                capturas=_capturas_para_mapa(root, inf),
+                suelo=_suelo_para_mapa(root),
+                sin_leer=_capturas_sin_leer(root),
+            )
+
+        def _escribe_canvas(html):
+            tmp = destino_html + ".tmp"
+            try:
+                os.makedirs(os.path.dirname(destino_html) or ".", exist_ok=True)
+                with open(tmp, "w", encoding="utf-8") as fh:
+                    fh.write(html)
+                os.replace(tmp, destino_html)
+            except OSError:
+                return None
+            return destino_html
+
     if not args.watch:
         foto = actividad.instantanea(root, informe)
         if destino_html:
-            from . import mapa_html
-            if mapa_html.escribir(destino_html, foto):
+            if _escribe_canvas(_canvas(informe, foto)):
                 sys.stderr.write("[gb who] mapa escrito: %s\n" % destino_html)
         if args.json:
             emit(json.dumps(foto, ensure_ascii=False, indent=2))
@@ -1200,14 +1322,28 @@ def cmd_who(args):
 
     huellas_base = {"huellas": _mapa.huellas(root, informe)}
     if destino_html:
-        from . import mapa_html
         sys.stderr.write("[gb who] mapa vivo en: %s (abrelo en el navegador; "
                          "se refresca solo)\n" % destino_html)
+
+    def _foto_clave(f):
+        # La foto sin sus edades: hace_seg avanza cada tick y regenerar el
+        # canvas entero por eso seria pagar graph+floor+layout sin que nada
+        # haya cambiado. Las edades ya envejecen en el navegador (GEN_TS).
+        sin_edad = dict(f)
+        sin_edad["agentes"] = [
+            {k: v for k, v in a.items() if k != "hace_seg"}
+            for a in f.get("agentes") or []]
+        return json.dumps(sin_edad, sort_keys=True, ensure_ascii=False)
+
+    clave_pintada = None
     try:
         while True:
             foto = actividad.instantanea(root, informe)
             if destino_html:
-                mapa_html.escribir(destino_html, foto, refresco=args.watch)
+                clave = _foto_clave(foto)
+                if clave != clave_pintada:
+                    _escribe_canvas(_canvas(informe, foto))
+                    clave_pintada = clave
             emit("\033[2J\033[H[gb who --watch] %s  refresco %ds — Ctrl+C para salir"
                  % (_time.strftime("%H:%M:%S"), args.watch))
             emit("")
@@ -1222,6 +1358,7 @@ def cmd_who(args):
                 if informe["root_error"]:
                     continue          # un estado transitorio no tumba el watch
                 huellas_base = {"huellas": _mapa.huellas(root, informe)}
+                clave_pintada = None  # forma nueva: el canvas se regenera
     except KeyboardInterrupt:
         return 0
 
@@ -1854,9 +1991,10 @@ def build_parser():
              "re-deriva si algun fichero cambio)")
     who_p.add_argument(
         "--html", nargs="?", const="AUTO", default=None, metavar="RUTA",
-        help="escribir el mapa como HTML autocontenido (si ya existe "
-             "mapa.html en la raiz se refresca ESE; si no, en GB_HOME, "
-             "fuera del proyecto; con --watch se refresca solo)")
+        help="escribir el canvas del proyecto (grafo navegable + consola de "
+             "errores) como UN fichero autocontenido; si ya existe mapa.html "
+             "en la raiz se refresca ESE, si no va a GB_HOME, fuera del "
+             "proyecto; con --watch se refresca solo")
     who_p.set_defaults(func=cmd_who)
 
     dead_p = subparsers.add_parser(
