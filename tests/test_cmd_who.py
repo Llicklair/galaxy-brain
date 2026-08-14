@@ -9,6 +9,8 @@ import os
 import subprocess
 import sys
 
+import pytest
+
 
 def _who(*args, env=None):
     entorno = dict(os.environ)
@@ -119,6 +121,35 @@ def test_el_limite_de_foto_no_deriva_de_la_ventana_de_presencia():
     # el rojo de averia es SOLO del watch muerto; el reposo va en gris
     assert "f85149" in viz._estilo_vieja(3)
     assert "f85149" not in viz._estilo_vieja(0)
+
+
+def test_el_js_del_mapa_compila(tmp_path):
+    """Un error de sintaxis en el JS deja el mapa EN BLANCO entero (paso el
+    14-ago: un \\n sin escapar en la plantilla — Python lo convirtio en salto
+    de linea DENTRO de un string JS y ningun test lo vio). node --check caza
+    la clase completa, no el caso: cualquier rotura sintactica futura."""
+    import re
+    import shutil
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("sin node en la maquina")
+    raiz = tmp_path / "proyecto"
+    raiz.mkdir()
+    (raiz / "calc.py").write_text("def suma(a, b):\n    return a + b\n",
+                                  encoding="utf-8")
+    subprocess.run(["git", "init", "-q"], cwd=str(raiz), timeout=60)
+    destino = raiz / "mapa.html"
+    p = _who(str(raiz), "--html", str(destino),
+             env={"GB_HOME": str(tmp_path / "hogar")})
+    assert p.returncode == 0
+    scripts = re.findall(r"<script>(.*?)</script>",
+                         destino.read_text(encoding="utf-8"), re.S)
+    assert scripts
+    js = tmp_path / "mapa.js"
+    js.write_text("\n;\n".join(scripts), encoding="utf-8")
+    q = subprocess.run([node, "--check", str(js)], capture_output=True,
+                       text=True, timeout=60)
+    assert q.returncode == 0, q.stderr[:400]
 
 
 def test_json_trae_las_claves_del_contrato(tmp_path):

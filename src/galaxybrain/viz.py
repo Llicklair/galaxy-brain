@@ -1936,9 +1936,9 @@ medir(); recupera(); requestAnimationFrame(bucle);
     if (src == null){
       cuerpo.innerHTML = '<span>este fichero no viajo embebido — abrelo en el editor</span>';
     } else {
-      cuerpo.innerHTML = src.split('\n').map((t, i) =>
+      cuerpo.innerHTML = src.split('\\n').map((t, i) =>
         '<span class="ln' + ((i + 1) === linea ? ' hit' : '') + '" id="L' + (i + 1) + '">'
-        + String(i + 1).padStart(4, ' ') + '  ' + esc(t) + '</span>').join('\n');
+        + String(i + 1).padStart(4, ' ') + '  ' + esc(t) + '</span>').join('\\n');
     }
     modal.hidden = false;
     if (linea){ const el = document.getElementById('L' + linea); if (el) el.scrollIntoView({block: 'center'}); }
