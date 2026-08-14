@@ -367,6 +367,30 @@ def _tocados_para_mapa(root, informe_simbolos):
     return tocados
 
 
+def _codigo_para_mapa(root, informe, tope_fichero=120_000):
+    """El texto de cada fichero del grafo, embebido para el modal del mapa
+    (14-ago, peticion directa: ver el codigo SIN salir del mapa, como gitnexus;
+    la pagina no puede leer disco desde file://, asi que viaja dentro). Tope
+    por fichero: un mapa de megas por un fichero monstruo no compensa — el
+    modal lo dice y el editor queda a un clic. Fichero ilegible = ausente."""
+    codigo = {}
+    for n in informe.get("nodes", []):
+        rel = n.get("file") or ""
+        clave = rel.replace("\\", "/")
+        if not rel or clave in codigo:
+            continue
+        try:
+            with open(os.path.join(root, rel), encoding="utf-8",
+                      errors="replace") as fh:
+                texto = fh.read(tope_fichero + 1)
+        except OSError:
+            continue
+        if len(texto) > tope_fichero:
+            texto = texto[:tope_fichero] + "\n… [truncado: abre en el editor]"
+        codigo[clave] = texto
+    return codigo
+
+
 def _shape_cache(root):
     """Donde se recuerda la ultima forma vista de un proyecto.
 
@@ -1287,6 +1311,7 @@ def cmd_who(args):
                 capturas=_capturas_para_mapa(root, inf),
                 suelo=_suelo_para_mapa(root),
                 sin_leer=_capturas_sin_leer(root),
+                codigo=_codigo_para_mapa(root, inf),
             )
 
         def _escribe_canvas(html):

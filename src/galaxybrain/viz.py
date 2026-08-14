@@ -321,7 +321,7 @@ def _archivos_de(report):
             continue
         archivos.setdefault(fichero, []).append(
             [n.get("line") or 0, n["qual"].rsplit(".", 1)[-1],
-             n.get("kind") or ""])
+             n.get("kind") or "", n["qual"]])
     for lista in archivos.values():
         lista.sort()
     return archivos
@@ -378,6 +378,9 @@ def render_graph_cloud(
     # Epoch de generacion, puesto por QUIEN LLAMA (como el pie): el render sigue
     # siendo determinista y el JS puede envejecer la actividad con la edad real.
     gen_ts=None,
+    # {fichero: texto} para el modal de codigo (14-ago): lo lee QUIEN LLAMA —
+    # el renderer sigue sin mirar disco. None = el modal avisa y ofrece editor.
+    codigo=None,
 ):
     """La nube: nodos repartidos por fuerzas, coloreados por módulo, navegable.
 
@@ -768,6 +771,7 @@ def render_graph_cloud(
                                            ensure_ascii=False)),
         "raiz": _en_script(_json.dumps(
             (report.get("root") or "").replace("\\", "/"))),
+        "codigo": _en_script(_json.dumps(codigo or {}, ensure_ascii=False)),
     }
 
 
@@ -790,6 +794,23 @@ _NUBE = """<!doctype html>
   #archivos .sim a{color:var(--suave);text-decoration:none}
   #archivos a:hover{color:#22d3ee}
   #archivos .lin{color:#3b4657}
+  #archivos .edt{font-size:.85em}
+  #codigo{position:fixed;inset:0;background:#000000aa;z-index:8;
+          display:flex;align-items:center;justify-content:center}
+  #codigo[hidden]{display:none}
+  #codigoMarco{width:72%%;max-width:920px;height:78%%;background:var(--panel);
+          border:1px solid var(--linea);border-radius:10px;
+          display:flex;flex-direction:column;box-shadow:0 12px 40px #000c}
+  #codigoCabecera{padding:.5em .9em;border-bottom:1px solid var(--linea);
+          color:var(--tinta)}
+  #codigoCabecera a{color:#22d3ee;text-decoration:none;margin-left:.8em;
+          font-size:.85em}
+  #codigo .cerrar{float:right;cursor:pointer;color:var(--suave)}
+  #codigo .cerrar:hover{color:var(--tinta)}
+  #codigoCuerpo{flex:1;overflow:auto;margin:0;padding:.6em .9em;font-size:12px;
+          line-height:1.45;color:var(--tinta);white-space:pre}
+  #codigoCuerpo .ln{display:block}
+  #codigoCuerpo .hit{background:#7c5cff33;border-left:2px solid #7c5cff}
   *{box-sizing:border-box}
   body{margin:0;background:var(--fondo);color:var(--tinta);overflow:hidden;
        font:13px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
@@ -909,12 +930,13 @@ _NUBE = """<!doctype html>
 <div id="consola"></div>
 <div id="errores"></div>
 <div id="archivos"></div>
+<div id="codigo" hidden><div id="codigoMarco"><div id="codigoCabecera"><span class="cerrar" id="cerrarCodigo">&#10005;</span><b id="codigoTitulo"></b><a id="codigoEditor" href="#">abrir en el editor &#8599;</a></div><pre id="codigoCuerpo"></pre></div></div>
 <div id="pie">%(pie)s</div>
 <div id="vieja" hidden style="position:fixed;right:.6em;bottom:.6em;padding:.3em .7em;border-radius:6px;font-size:.78em;z-index:99;max-width:44%%;%(estilo_vieja)s">%(aviso_vieja)s<span id="edadfoto"></span></div>
 <script>
 // ================= datos =================
 const NODOS = %(nodos)s, ARISTAS = %(aristas)s, LADO = 1000, GEN_TS = %(gen_ts)s;
-const ARCHIVOS = %(archivos)s, RAIZ = %(raiz)s;
+const ARCHIVOS = %(archivos)s, RAIZ = %(raiz)s, CODIGO = %(codigo)s;
 const IMPORT_COLOR = '%(color_import)s', CICLO_COLOR = '%(color_ciclo)s';
 const OBRA_COLOR = '%(color_obra)s';
 const AGENTES = %(agentes)s;
@@ -1893,28 +1915,62 @@ buscar.addEventListener('input', ()=>{
 
 medir(); recupera(); requestAnimationFrame(bucle);
 
-// ============ cajon de archivos (14-ago, peticion directa) ==================
-// Acceso directo a los ficheros sin cazar nodos por el lienzo. Los clics abren
-// EN EL EDITOR (vscode://file/ruta:linea): el mapa no compite con el editor
-// leyendo codigo — lanza a el. La lista viaja embebida y se renueva con cada
-// regeneracion del mapa: tiempo real al mismo ritmo que todo lo demas.
+// ============ cajon de archivos + modal de codigo (14-ago) ==================
+// Acceso directo estilo gitnexus: clic en un fichero o simbolo -> modal con el
+// codigo (embebido: CODIGO viaja con el mapa, cero lecturas de disco desde la
+// pagina), la linea resaltada, y EL NODO SE ENCIENDE con su tarjeta fijada
+// (fijado + muestraFicha, la misma mecanica del clic en el lienzo). El editor
+// queda como salto secundario (&#8599;). Todo se renueva con cada regeneracion.
 (function(){
   const panel = document.getElementById('archivos');
   const btn = document.getElementById('btnArchivos');
+  const modal = document.getElementById('codigo');
+  const IDX = {}; NODOS.forEach((n, i) => { IDX[n.id] = i; });
   function esc(t){ return String(t).replace(/[&<>"']/g, c => '&#' + c.charCodeAt(0) + ';'); }
-  function url(f, l){ return 'vscode://file/' + RAIZ + '/' + f + (l ? ':' + l : ''); }
+  function urlEditor(f, l){ return 'vscode://file/' + RAIZ + '/' + f + (l ? ':' + l : ''); }
+  function abrirCodigo(f, linea, qual){
+    const cuerpo = document.getElementById('codigoCuerpo');
+    document.getElementById('codigoTitulo').textContent = f + (linea ? ' : ' + linea : '');
+    document.getElementById('codigoEditor').href = urlEditor(f, linea);
+    const src = CODIGO[f];
+    if (src == null){
+      cuerpo.innerHTML = '<span>este fichero no viajo embebido — abrelo en el editor</span>';
+    } else {
+      cuerpo.innerHTML = src.split('\n').map((t, i) =>
+        '<span class="ln' + ((i + 1) === linea ? ' hit' : '') + '" id="L' + (i + 1) + '">'
+        + String(i + 1).padStart(4, ' ') + '  ' + esc(t) + '</span>').join('\n');
+    }
+    modal.hidden = false;
+    if (linea){ const el = document.getElementById('L' + linea); if (el) el.scrollIntoView({block: 'center'}); }
+    if (qual && IDX[qual] != null){
+      fijado = IDX[qual];           // el nodo se enciende (foco de pinta())...
+      muestraFicha(fijado);         // ...y su tarjeta aparece fijada
+    }
+  }
+  function cierraCodigo(){ modal.hidden = true; }
+  document.getElementById('cerrarCodigo').addEventListener('click', cierraCodigo);
+  modal.addEventListener('click', ev => { if (ev.target === modal) cierraCodigo(); });
+  document.addEventListener('keydown', ev => { if (ev.key === 'Escape') cierraCodigo(); });
   let html = '<input id="filtroArch" placeholder="filtrar fichero o simbolo...">';
   Object.keys(ARCHIVOS).sort().forEach(f => {
+    const mod = ARCHIVOS[f].find(s => s[2] === 'module');
     html += '<div class="fich" data-t="' + esc(f.toLowerCase()) + '">'
-          + '<a href="' + esc(url(f)) + '">' + esc(f) + '</a></div>';
+          + '<a href="#" data-f="' + esc(f) + '" data-q="' + esc(mod ? mod[3] : '') + '">' + esc(f) + '</a>'
+          + ' <a class="edt" title="abrir en el editor" href="' + esc(urlEditor(f)) + '">&#8599;</a></div>';
     ARCHIVOS[f].forEach(s => {
       if (s[2] === 'module') return;
       html += '<div class="sim" data-t="' + esc((f + ' ' + s[1]).toLowerCase()) + '">'
-            + '<a href="' + esc(url(f, s[0])) + '">' + esc(s[1]) + '</a>'
+            + '<a href="#" data-f="' + esc(f) + '" data-l="' + s[0] + '" data-q="' + esc(s[3] || '') + '">' + esc(s[1]) + '</a>'
             + ' <span class="lin">:' + s[0] + '</span></div>';
     });
   });
   panel.innerHTML = html;
+  panel.addEventListener('click', ev => {
+    const a = ev.target.closest('a[data-f]');
+    if (!a) return;
+    ev.preventDefault();
+    abrirCodigo(a.dataset.f, +(a.dataset.l || 0), a.dataset.q || '');
+  });
   document.getElementById('filtroArch').addEventListener('input', ev => {
     const t = ev.target.value.toLowerCase();
     panel.querySelectorAll('[data-t]').forEach(el => {
