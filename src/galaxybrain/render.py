@@ -909,6 +909,11 @@ def render_impacted(report, style, brief=False):
         "    cubiertos: sus ficheros entran enteros)",
         DIM))
     lines.append(style(
+        "  - la HERENCIA no propaga: tocar una clase base no arrastra a los\n"
+        "    tests que ejercitan sus subclases por metodos heredados (el grafo\n"
+        "    no lleva arista extends; entrara el dia que un rojo real la pida)",
+        DIM))
+    lines.append(style(
         "  - no ejecuta nada: pasa estos ficheros a pytest, o usa --run", DIM))
     return "\n".join(lines)
 
