@@ -713,11 +713,11 @@ def render_graph_cloud(
             if suelo else ""
         ),
         "maxit": maxit,
-        # Recargar la pagina no la actualiza sola: hace falta que ALGO regenere el
-        # fichero. Por eso esto es opt-in y no el defecto — un refresco sobre un
-        # fichero que nadie regenera solo consigue parpadear.
-        # Recarga por JS, no <meta http-equiv>: el meta no se puede aplazar, y
-        # una recarga que te borra lo tecleado en buscar enseña a no buscar.
+        # El tick de la recarga por JS (no <meta>: el meta no se puede aplazar,
+        # y una recarga que borra lo tecleado en buscar enseña a no buscar).
+        # Desde el refresco por estigmergia el fichero se regenera solo al paso
+        # de gb, asi que la pagina recarga SIEMPRE: cada REFRESCO con watch,
+        # cada 15 s en modo foto (RELOJ_RECARGA, abajo en la plantilla).
         "refresco": str(int(refresco or 0)),
         # El umbral y el texto del aviso de foto vieja, decididos al generar:
         # el JS solo compara y destapa (fosil del 14-ago).
@@ -1802,12 +1802,18 @@ const CMEM='gb-mapa-consola';
 // en buscar, se arrastra una tarjeta o hay texto seleccionado. Un refresco que
 // borra lo tecleado — o la seleccion justo antes del Ctrl+C — enseña a no usar
 // la busqueda ni a copiar del mapa; y eso es peor que un mapa 10 s mas viejo.
-if(REFRESCO>0){
+// Recarga SIEMPRE, no solo con watch: desde el refresco por estigmergia (el
+// propio gb regenera el fichero al pasar, cli._refresca_mapa_estigmergia) la
+// foto tambien cambia sola en disco. Sobre un fichero de verdad muerto,
+// recargar solo re-enseña la pildora de FOTO VIEJA — ya no hay parpadeo
+// que pueda leerse como actividad falsa.
+const RELOJ_RECARGA = REFRESCO>0 ? REFRESCO : 15;
+{
   // Aplazar no puede ser aplazar PARA SIEMPRE: una seleccion olvidada dejaba
   // el mapa congelado indefinidamente y se leia como "no pasa nada" — el
   // sintoma que costo tres sesiones sin ver la actividad (8-ago). Se aplaza
-  // hasta 10 ticks (~30 s con refresco 3) y luego manda el dato fresco: nadie
-  // tarda medio minuto en copiar, y un mapa viejo miente.
+  // hasta 10 ticks y luego manda el dato fresco: nadie tarda medio minuto en
+  // copiar, y un mapa viejo miente.
   let aplazados=0;
   setInterval(()=>{
     if(document.activeElement===buscar) return;   // escribir SI bloquea sin tope
@@ -1816,7 +1822,7 @@ if(REFRESCO>0){
     if(sel&&!sel.isCollapsed&&aplazados<10){ aplazados++; return; }
     aplazados=0;
     location.reload();
-  }, REFRESCO*1000);
+  }, RELOJ_RECARGA*1000);
 }
 // Lo buscado sobrevive a la recarga: valor restaurado y filtro re-aplicado.
 try{ const _b=sessionStorage.getItem('gb-mapa-buscar');

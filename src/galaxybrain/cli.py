@@ -2145,6 +2145,53 @@ def _uso_label(args):
     return etiqueta
 
 
+def _mapa_a_refrescar(root, ahora, rebote=60):
+    """El mapa de la raiz si existe y lleva mas de `rebote` sin reescribirse;
+    None si no toca. El rebote sustituye al candado del watch viejo: una
+    rafaga de comandos paga UN render, y dos escritores atomicos que
+    coincidan no pueden pisarse a medias."""
+    mapa = os.path.join(root, "mapa.html")
+    try:
+        if ahora - os.path.getmtime(mapa) < rebote:
+            return None
+    except OSError:
+        return None  # no existe: nada que mantener (regla 7, gb no ensucia)
+    return mapa
+
+
+def _refresca_mapa_estigmergia():
+    """El mapa lo refresca quien pasa (estigmergia): cada comando gb, al
+    terminar, suelta un hijo que regenera el mapa del proyecto y muere. Sin
+    watch, sin candado, sin relanzamientos; las tres tuberias a DEVNULL — un
+    hijo sin lector no puede quedarse colgado escribiendo (los 3 huerfanos
+    del 10-ago). Nunca tumba al comando: cualquier fallo aqui es silencio.
+    """
+    if os.environ.get("GB_MAPA_HIJO"):
+        return  # el hijo no engendra nietos
+    try:
+        import subprocess
+        import time as _t
+
+        from .capture import _project_root
+
+        root = _project_root(os.getcwd()) or os.getcwd()
+        mapa = _mapa_a_refrescar(root, _t.time())
+        if not mapa:
+            return
+        os.utime(mapa, None)  # marca "refresco en vuelo": amortigua la rafaga
+        if os.name == "nt":
+            suelto = {"creationflags": 0x00000208}  # DETACHED | NEW_GROUP
+        else:
+            suelto = {"start_new_session": True}
+        subprocess.Popen(
+            [sys.executable, "-m", "galaxybrain.cli", "who", "--html"],
+            cwd=root, env=dict(os.environ, GB_MAPA_HIJO="1"),
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL, **suelto)
+    except Exception:
+        pass
+
+
 def main(argv=None):
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -2152,7 +2199,9 @@ def main(argv=None):
         parser.print_help()
         return 0
     store.mark_uso(_uso_label(args))
-    return args.func(args)
+    rc = args.func(args)
+    _refresca_mapa_estigmergia()
+    return rc
 
 
 if __name__ == "__main__":
