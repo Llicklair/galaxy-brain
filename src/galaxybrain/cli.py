@@ -1159,13 +1159,21 @@ def cmd_who(args):
 
     # --html: el mapa vivo como UN fichero autocontenido (la version fina del
     # canvas recortado en 3229ddd — sin servidor ni proceso que pueda morir).
-    # Por defecto vive FUERA del proyecto observado (regla 7); una ruta
-    # explicita es eleccion del usuario.
+    # Si el proyecto YA tiene un mapa.html en la raiz, se refresca ESE: es la
+    # costumbre del usuario declarada en disco, y escribir en otro sitio la
+    # deja pudrirse (medido 14-ago: el mapa de GB_HOME no lo miro nadie
+    # mientras el de la raiz, fosil del canvas, se consultaba a diario). Si no
+    # existe, fuera del proyecto observado (regla 7): gb no ensucia por
+    # defecto un repo que nunca pidio un mapa. Una ruta explicita gana a todo.
     destino_html = None
     if args.html:
         if args.html == "AUTO":
-            destino_html = os.path.join(str(config.home()),
-                                        store._slug(root), "mapa.html")
+            en_raiz = os.path.join(root, "mapa.html")
+            if os.path.exists(en_raiz):
+                destino_html = en_raiz
+            else:
+                destino_html = os.path.join(str(config.home()),
+                                            store._slug(root), "mapa.html")
         else:
             destino_html = os.path.abspath(args.html)
 
@@ -1846,8 +1854,9 @@ def build_parser():
              "re-deriva si algun fichero cambio)")
     who_p.add_argument(
         "--html", nargs="?", const="AUTO", default=None, metavar="RUTA",
-        help="escribir el mapa como HTML autocontenido (por defecto en "
-             "GB_HOME, fuera del proyecto; con --watch se refresca solo)")
+        help="escribir el mapa como HTML autocontenido (si ya existe "
+             "mapa.html en la raiz se refresca ESE; si no, en GB_HOME, "
+             "fuera del proyecto; con --watch se refresca solo)")
     who_p.set_defaults(func=cmd_who)
 
     dead_p = subparsers.add_parser(
