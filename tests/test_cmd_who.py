@@ -94,7 +94,8 @@ def test_la_foto_vieja_se_confiesa_en_el_canvas(tmp_path):
     html = destino.read_text(encoding="utf-8")
     assert 'id="vieja"' in html
     assert "LIMITE_FOTO = 600" in html   # foto unica: la ventana de presencia
-    assert "FOTO VIEJA" in html
+    assert "en reposo" in html           # gris informativo, no alarma
+    assert "f85149" not in html.split('id="vieja"')[1][:300]  # sin rojo de averia
 
 
 def test_el_limite_de_foto_no_deriva_de_la_ventana_de_presencia():
@@ -105,7 +106,10 @@ def test_el_limite_de_foto_no_deriva_de_la_ventana_de_presencia():
     assert viz._limite_foto(3) == 10              # suelo para ticks cortos
     assert viz._limite_foto(30) == 90             # 3 ticks sin reescritura
     assert "YA NO ESCRIBE" in viz._aviso_vieja(3)
-    assert "FOTO VIEJA" in viz._aviso_vieja(0)
+    assert "reposo" in viz._aviso_vieja(0)
+    # el rojo de averia es SOLO del watch muerto; el reposo va en gris
+    assert "f85149" in viz._estilo_vieja(3)
+    assert "f85149" not in viz._estilo_vieja(0)
 
 
 def test_json_trae_las_claves_del_contrato(tmp_path):

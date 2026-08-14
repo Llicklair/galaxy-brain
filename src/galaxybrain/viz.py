@@ -317,12 +317,24 @@ def _limite_foto(refresco):
 
 
 def _aviso_vieja(refresco):
-    """El texto del aviso, decidido al generar: el modo se conoce aqui."""
+    """El texto del aviso, decidido al generar: el modo se conoce aqui.
+
+    Dos verdades distintas, dos tonos (feedback directo, 14-ago: 'eso no
+    puede fallar, es fatal'): un mapa en reposo NO esta roto — sigue siendo
+    verdad mientras nada se mueva — y pintarlo de rojo lo hace parecer
+    averiado. El rojo es solo para el watch que decia estar vivo y murio.
+    """
     if refresco:
         return ("EL WATCH YA NO ESCRIBE — mapa congelado, no vacio; "
                 "relanza gb who --watch --html")
-    return ("FOTO VIEJA — fue verdad al generarse; "
-            "regenera con gb who --html")
+    return ("en reposo — se pone al dia solo en cuanto gb trabaje")
+
+
+def _estilo_vieja(refresco):
+    """Rojo de averia para el watch muerto; gris informativo para el reposo."""
+    if refresco:
+        return "background:#2d1517cc;border:1px solid #f85149;color:#ffa198"
+    return "background:#161b22cc;border:1px solid #30363d;color:#8b949e"
 
 
 def render_graph_cloud(
@@ -723,6 +735,7 @@ def render_graph_cloud(
         # el JS solo compara y destapa (fosil del 14-ago).
         "limite_foto": str(_limite_foto(int(refresco or 0))),
         "aviso_vieja": _html.escape(_aviso_vieja(int(refresco or 0))),
+        "estilo_vieja": _estilo_vieja(int(refresco or 0)),
     }
 
 
@@ -851,7 +864,7 @@ _NUBE = """<!doctype html>
 <div id="consola"></div>
 <div id="errores"></div>
 <div id="pie">%(pie)s</div>
-<div id="vieja" hidden style="position:fixed;right:.6em;bottom:.6em;background:#2d1517cc;border:1px solid #f85149;color:#ffa198;padding:.3em .7em;border-radius:6px;font-size:.78em;z-index:99;max-width:44%%">%(aviso_vieja)s<span id="edadfoto"></span></div>
+<div id="vieja" hidden style="position:fixed;right:.6em;bottom:.6em;padding:.3em .7em;border-radius:6px;font-size:.78em;z-index:99;max-width:44%%;%(estilo_vieja)s">%(aviso_vieja)s<span id="edadfoto"></span></div>
 <script>
 // ================= datos =================
 const NODOS = %(nodos)s, ARISTAS = %(aristas)s, LADO = 1000, GEN_TS = %(gen_ts)s;
