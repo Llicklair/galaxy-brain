@@ -1415,7 +1415,13 @@ addEventListener('mouseup', e=>{
     if(!movido){ fijado = (fijado===agarrado) ? null : agarrado; muestraFicha(fijado); recuerda(); }
     else cola=90;
     agarrado=null;
-  } else if(panning && !movido){ fijado=null; muestraFicha(null); recuerda(); }
+  } else if(panning && !movido){
+    // El clic en vacio suelta TODO foco: el de nodo y el de agente. Sin lo
+    // segundo, clicar la tarjeta de un agente dejaba el mapa atenuado a su
+    // vecindario sin salida aparente (reportado 14-ago: "todo se oscurece y
+    // algunos nodos se desconectan" — eran las aristas fuera de su onda).
+    fijado=null; agenteFoco=null; calculaCercaAg(); muestraFicha(null); recuerda();
+  }
   panning=false; cv.classList.remove('arrastrando');
 });
 cv.addEventListener('wheel', e=>{
@@ -2033,10 +2039,11 @@ medir(); recupera(); requestAnimationFrame(bucle);
   document.addEventListener('keydown', ev => {
     if (ev.key !== 'Escape') return;
     if (!modal.hidden){ cierraCodigo(); return; }
-    // Escape tambien SUELTA el foco fijado: con los paneles abiertos media
-    // pantalla ya no es lienzo y el "clic en vacio" no siempre llega a el
-    // (reportado: mapa atenuado sin salida aparente).
-    fijado = null; muestraFicha(null); recuerda();
+    // Escape tambien SUELTA todo foco (nodo Y agente): con los paneles
+    // abiertos media pantalla ya no es lienzo y el "clic en vacio" no
+    // siempre llega a el (reportado: mapa atenuado sin salida aparente).
+    fijado = null; agenteFoco = null; calculaCercaAg();
+    muestraFicha(null); recuerda();
   });
   cuerpo.addEventListener('scroll', () => { if (modalF) guardaCodigo(); });
   // El panel SOBREVIVE al refresco del mapa: fichero, linea y scroll vuelven
