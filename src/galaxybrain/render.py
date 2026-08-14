@@ -10,6 +10,7 @@ import os
 import sys
 
 from . import graph
+from .idioma import t
 
 
 def _aviso_sin_codigo_leido(report):
@@ -83,12 +84,12 @@ def relative_time(ts):
     if seconds < 0:
         return "ahora"
     if seconds < 60:
-        return "hace %ds" % seconds
+        return t("hace %ds") % seconds
     if seconds < 3600:
-        return "hace %dmin" % (seconds // 60)
+        return t("hace %dmin") % (seconds // 60)
     if seconds < 86400:
-        return "hace %dh" % (seconds // 3600)
-    return "hace %dd" % (seconds // 86400)
+        return t("hace %dh") % (seconds // 3600)
+    return t("hace %dd") % (seconds // 86400)
 
 
 def short_path(path, project=None):
@@ -138,17 +139,17 @@ def render_record(record, style, full=False):
     # buscar en el proyecto algo que nunca estuvo ahi. Se marca, no se esconde:
     # a veces ES lo que acabas de ejecutar y lo quieres.
     if index >= 0 and str(frames[index].get("file") or "").startswith("<"):
-        meta += "%sefimero (%s: no es un fichero del proyecto)" % (
+        meta += t("%sefimero (%s: no es un fichero del proyecto)") % (
             dot,
             frames[index].get("file"),
         )
     if record.get("thread") and record.get("thread") != "MainThread":
-        meta += "%shilo %s" % (dot, record["thread"])
+        meta += t("%shilo %s") % (dot, record["thread"])
     lines.append(style(meta, DIM))
     lines.append("")
 
     for chain in exc.get("chain", []):
-        label = "causada por" if chain["kind"] == "cause" else "durante el manejo de"
+        label = t("causada por") if chain["kind"] == "cause" else t("durante el manejo de")
         lines.append(style("  %s %s: %s" % (label, chain["type"], chain["message"]), DIM))
     if exc.get("chain"):
         lines.append("")
@@ -162,11 +163,11 @@ def render_record(record, style, full=False):
 
     if skipped > 0:
         lines.append(
-            style("  (%d frames mas: gb show %s --full)" % (skipped, record.get("id")), DIM)
+            style(t("  (%d frames mas: gb show %s --full)") % (skipped, record.get("id")), DIM)
         )
     if record.get("frames_trimmed"):
         lines.append(
-            style("  (%d frames externos recortados por GB_MAX_FRAMES)" % record["frames_trimmed"], DIM)
+            style(t("  (%d frames externos recortados por GB_MAX_FRAMES)") % record["frames_trimmed"], DIM)
         )
     return "\n".join(lines)
 
@@ -176,7 +177,7 @@ def _render_frame(frame, style, project):
     location = "  %s:%s" % (short_path(frame.get("file"), project), frame.get("line"))
     suffix = "  in %s" % frame.get("function", "?")
     if frame.get("is_library"):
-        suffix += style("  [libreria]", DIM)
+        suffix += style(t("  [libreria]"), DIM)
     lines.append(style(location, BOLD) + suffix)
 
     for entry in frame.get("source") or []:
@@ -191,7 +192,7 @@ def _render_frame(frame, style, project):
         for name, value in local_values.items():
             lines.append("      %s = %s" % (style(name.ljust(width), BOLD), value))
     elif local_values is None and frame.get("is_library"):
-        lines.append(style("      (locales no capturadas: frame de libreria — GB_ALL_FRAMES=1)", DIM))
+        lines.append(style(t("      (locales no capturadas: frame de libreria — GB_ALL_FRAMES=1)"), DIM))
     return lines
 
 

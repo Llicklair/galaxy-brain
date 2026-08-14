@@ -18,7 +18,7 @@ import json
 import os
 import sys
 
-from . import __version__, bootstrap, config, render, store
+from . import __version__, bootstrap, config, idioma, render, store
 
 
 def emit(text):
@@ -655,7 +655,7 @@ def _emit_ancla(record):
     from . import symbols
 
     nodo, llamantes = ancla["nodo"], ancla["llamantes"]
-    emit("en el grafo: %s" % _linea_simbolo(nodo))
+    emit(idioma.t("en el grafo: %s") % _linea_simbolo(nodo))
     if llamantes:
         de_tests = sum(1 for q in llamantes if symbols.es_de_test(q))
         orden = sorted(llamantes, key=lambda q: (symbols.es_de_test(q), q))
@@ -669,7 +669,7 @@ def _emit_ancla(record):
         emit("  le llaman (%s): %s" % (cuenta, vista))
         emit("  (la onda entera: gb calls %s --depth 2)" % (nodo.get("name") or nodo["qual"]))
     else:
-        emit("  nadie le llama en el grafo (entrada directa o despacho dinamico)")
+        emit(idioma.t("  nadie le llama en el grafo (entrada directa o despacho dinamico)"))
     if ancla["cambiado"]:
         emit(
             "  ojo: el fichero cambio despues de la captura (%s) — el ancla apunta "

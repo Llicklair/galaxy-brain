@@ -31,7 +31,7 @@ which is why it can be instant and cannot fail in expensive ways.
 orchestration. The graph here is a graph <b>of your code</b> — modules, symbols, call edges, parsed
 from the AST.</sub>
 
-<sub>v0.7.0 · 797 tests · 15.0k LOC source / 11.2k LOC tests · clean gate · ruff · Python ≥ 3.9 · zero runtime dependencies (<code>ast-grep</code> optional, only for non-Python graphs) · CLI output is in Spanish today</sub>
+<sub>v0.7.0 · 797 tests · 15.0k LOC source / 11.2k LOC tests · clean gate · ruff · Python ≥ 3.9 · zero runtime dependencies (<code>ast-grep</code> optional, only for non-Python graphs) · CLI output is Spanish by default — <code>GB_LANG=en</code> switches the console (capture notice, <code>gb show</code>/<code>last</code>, graph anchor) to English; more surfaces coming</sub>
 
 ---
 

@@ -210,8 +210,9 @@ def _notice(record):
     antes. Quien lee esta linea (humano o agente) puede copiarla y ya.
     """
     try:
+        from .idioma import t
         sys.stderr.write(
-            "\n[galaxy-brain] estado capturado -> gb show %s\n" % record.get("id", "?")
+            t("\n[galaxy-brain] estado capturado -> gb show %s\n") % record.get("id", "?")
         )
         sys.stderr.flush()
     except BaseException:  # noqa: BLE001
