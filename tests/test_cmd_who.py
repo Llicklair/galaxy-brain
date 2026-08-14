@@ -103,8 +103,10 @@ def test_el_limite_de_foto_no_deriva_de_la_ventana_de_presencia():
     from galaxybrain.actividad import VENTANA_COMMIT
 
     assert viz._limite_foto(0) == VENTANA_COMMIT  # duplicado a proposito
-    assert viz._limite_foto(3) == 10              # suelo para ticks cortos
-    assert viz._limite_foto(30) == 90             # 3 ticks sin reescritura
+    # con watch mandan los LATIDOS, no los ticks: el watch solo re-renderiza
+    # al cambiar algo, y reescribe cada LATIDO_WATCH como minimo
+    assert viz._limite_foto(3) == 3 * viz.LATIDO_WATCH
+    assert viz._limite_foto(60) == 180            # ticks largos: 3 ticks
     assert "YA NO ESCRIBE" in viz._aviso_vieja(3)
     assert "reposo" in viz._aviso_vieja(0)
     # el rojo de averia es SOLO del watch muerto; el reposo va en gris

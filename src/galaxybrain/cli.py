@@ -1336,14 +1336,20 @@ def cmd_who(args):
         return json.dumps(sin_edad, sort_keys=True, ensure_ascii=False)
 
     clave_pintada = None
+    ultima_escritura = 0.0
     try:
         while True:
             foto = actividad.instantanea(root, informe)
             if destino_html:
                 clave = _foto_clave(foto)
-                if clave != clave_pintada:
+                # El latido: reescribir cada LATIDO_WATCH aunque nada cambie.
+                # Sin el, el aviso rojo del canvas daba por muerto a un watch
+                # VIVO sobre un proyecto quieto (reportado en uso real, 14-ago).
+                late = _time.time() - ultima_escritura >= viz.LATIDO_WATCH
+                if clave != clave_pintada or late:
                     _escribe_canvas(_canvas(informe, foto))
                     clave_pintada = clave
+                    ultima_escritura = _time.time()
             emit("\033[2J\033[H[gb who --watch] %s  refresco %ds — Ctrl+C para salir"
                  % (_time.strftime("%H:%M:%S"), args.watch))
             emit("")

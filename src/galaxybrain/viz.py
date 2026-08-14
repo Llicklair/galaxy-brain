@@ -303,17 +303,25 @@ _COLORES = [
 ]
 
 
+#: Cada cuanto reescribe el watch AUNQUE nada cambie. El watch solo re-renderiza
+#: cuando cambia la forma o la presencia (pagar graph+layout por tick seria un
+#: despilfarro), asi que sin latido el fichero envejece con el watch VIVO y el
+#: aviso rojo miente (reportado en uso real, 14-ago, a los minutos de estrenar
+#: el watch). El latido ademas refresca las edades de la actividad.
+LATIDO_WATCH = 30
+
+
 def _limite_foto(refresco):
     """Segundos hasta que la foto se declara VIEJA en pantalla (fosil del
     14-ago: un mapa parado se leyo en presente un dia entero). Con watch, 3
-    ticks sin reescritura = el escritor murio (suelo de 10 s para refrescos
-    cortos: un SO cargado no es un watch muerto); sin watch, la ventana de
-    presencia entera — una foto mas vieja que eso no puede estar enseñando
-    nada que siga siendo presencia. El 600 es actividad.VENTANA_COMMIT,
-    duplicado a proposito para que el renderer siga sin imports del paquete;
-    un test compara ambos para que no deriven.
+    latidos sin reescritura = el escritor murio (el watch reescribe cada
+    LATIDO_WATCH como minimo, ver arriba); sin watch, la ventana de presencia
+    entera — una foto mas vieja que eso no puede estar enseñando nada que siga
+    siendo presencia. El 600 es actividad.VENTANA_COMMIT, duplicado a proposito
+    para que el renderer siga sin imports del paquete; un test compara ambos
+    para que no deriven.
     """
-    return max(3 * refresco, 10) if refresco else 600
+    return max(3 * refresco, 3 * LATIDO_WATCH) if refresco else 600
 
 
 def _aviso_vieja(refresco):
