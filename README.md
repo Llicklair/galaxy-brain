@@ -31,7 +31,7 @@ which is why it can be instant and cannot fail in expensive ways.
 orchestration. The graph here is a graph <b>of your code</b> — modules, symbols, call edges, parsed
 from the AST.</sub>
 
-<sub>v0.7.0 · 873 tests · 14.0k LOC source / 12.5k LOC tests · clean gate · ruff · Python ≥ 3.9 · zero runtime dependencies (<code>ast-grep</code> optional, only for non-Python graphs) · CLI output is in Spanish today</sub>
+<sub>v0.7.0 · 797 tests · 15.0k LOC source / 11.2k LOC tests · clean gate · ruff · Python ≥ 3.9 · zero runtime dependencies (<code>ast-grep</code> optional, only for non-Python graphs) · CLI output is in Spanish today</sub>
 
 ---
 
@@ -219,6 +219,7 @@ often while you are not looking; reproduction is the expensive work this removes
 
 ```bash
 pip install -e .     # from this repo
+pip install git+https://github.com/Llicklair/galaxy-brain.git   # straight from GitHub
 gb on                # enables capture in this Python environment
 gb status            # verifies it stuck
 ```
@@ -508,7 +509,7 @@ mode this design avoids.
 
 Three layers, because tests alone only pin what you already knew how to check.
 
-**1. The suite — 750 tests, ~190 s.** Runs on every commit via the pre-commit hook, far under the
+**1. The suite — 797 tests, ~190 s.** Runs on every commit via the pre-commit hook, far under the
 600 s DORA threshold.
 
 **2. The gate is verified by breaking it.** A gate degrades in silence: it keeps returning zero and
@@ -644,7 +645,7 @@ fact; "other frameworks do it" is not a reason).
 ## Development
 
 ```bash
-python -m pytest tests/ -q          # the suite — 750 tests, ~190 s
+python -m pytest tests/ -q          # the suite — 797 tests, ~190 s
 python -m ruff check src tests      # lint (catches defects, holds no style opinions)
 gb graph src --gate                 # the gate, clean
 ```
