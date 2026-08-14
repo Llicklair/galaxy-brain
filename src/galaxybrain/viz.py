@@ -795,22 +795,34 @@ _NUBE = """<!doctype html>
   #archivos a:hover{color:#22d3ee}
   #archivos .lin{color:#3b4657}
   #archivos .edt{font-size:.85em}
-  #codigo{position:fixed;inset:0;background:#000000aa;z-index:8;
-          display:flex;align-items:center;justify-content:center}
+  #codigo{position:fixed;left:0;top:52px;bottom:0;width:min(44%%,640px);
+          z-index:7;background:#0d1119f7;border-right:1px solid var(--linea);
+          display:flex;flex-direction:column;box-shadow:8px 0 30px #0009}
   #codigo[hidden]{display:none}
-  #codigoMarco{width:72%%;max-width:920px;height:78%%;background:var(--panel);
-          border:1px solid var(--linea);border-radius:10px;
-          display:flex;flex-direction:column;box-shadow:0 12px 40px #000c}
-  #codigoCabecera{padding:.5em .9em;border-bottom:1px solid var(--linea);
-          color:var(--tinta)}
+  #codigoCabecera{padding:.55em .9em;border-bottom:1px solid var(--linea);
+          color:var(--tinta);flex:none}
+  #codigoCabecera .chip{display:inline-block;background:#7c5cff22;
+          border:1px solid #7c5cff55;color:#c4b5fd;border-radius:5px;
+          padding:.05em .5em;font-size:.78em;margin-right:.6em;
+          vertical-align:middle}
   #codigoCabecera a{color:#22d3ee;text-decoration:none;margin-left:.8em;
           font-size:.85em}
   #codigo .cerrar{float:right;cursor:pointer;color:var(--suave)}
   #codigo .cerrar:hover{color:var(--tinta)}
-  #codigoCuerpo{flex:1;overflow:auto;margin:0;padding:.6em .9em;font-size:12px;
-          line-height:1.45;color:var(--tinta);white-space:pre}
-  #codigoCuerpo .ln{display:block}
-  #codigoCuerpo .hit{background:#7c5cff33;border-left:2px solid #7c5cff}
+  #codigoCuerpo{flex:1;overflow:auto;margin:0;padding:.5em .3em .9em .5em;
+          font-size:12.5px;line-height:1.5;color:var(--tinta);white-space:pre;
+          font-family:Consolas,monospace}
+  #codigoCuerpo .ln{display:block;padding-left:.3em}
+  #codigoCuerpo .ln:hover{background:#ffffff08}
+  #codigoCuerpo .ln em{font-style:normal;color:#3b4657;margin-right:1.1em;
+          user-select:none}
+  #codigoCuerpo .hit{background:#7c5cff2e;border-left:2px solid #7c5cff}
+  #codigoCuerpo i{font-style:normal}
+  #codigoCuerpo i.c{color:#5c6773;font-style:italic}
+  #codigoCuerpo i.s{color:#7ee787}
+  #codigoCuerpo i.k{color:#c084fc}
+  #codigoCuerpo i.n{color:#fb923c}
+  #codigoCuerpo i.d{color:#22d3ee}
   *{box-sizing:border-box}
   body{margin:0;background:var(--fondo);color:var(--tinta);overflow:hidden;
        font:13px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
@@ -930,7 +942,7 @@ _NUBE = """<!doctype html>
 <div id="consola"></div>
 <div id="errores"></div>
 <div id="archivos"></div>
-<div id="codigo" hidden><div id="codigoMarco"><div id="codigoCabecera"><span class="cerrar" id="cerrarCodigo">&#10005;</span><b id="codigoTitulo"></b><a id="codigoEditor" href="#">abrir en el editor &#8599;</a></div><pre id="codigoCuerpo"></pre></div></div>
+<div id="codigo" hidden><div id="codigoCabecera"><span class="cerrar" id="cerrarCodigo">&#10005;</span><span class="chip">fichero</span><b id="codigoTitulo"></b><a id="codigoEditor" href="#">editor &#8599;</a></div><pre id="codigoCuerpo"></pre></div>
 <div id="pie">%(pie)s</div>
 <div id="vieja" hidden style="position:fixed;right:.6em;bottom:.6em;padding:.3em .7em;border-radius:6px;font-size:.78em;z-index:99;max-width:44%%;%(estilo_vieja)s">%(aviso_vieja)s<span id="edadfoto"></span></div>
 <script>
@@ -1928,29 +1940,69 @@ medir(); recupera(); requestAnimationFrame(bucle);
   const IDX = {}; NODOS.forEach((n, i) => { IDX[n.id] = i; });
   function esc(t){ return String(t).replace(/[&<>"']/g, c => '&#' + c.charCodeAt(0) + ';'); }
   function urlEditor(f, l){ return 'vscode://file/' + RAIZ + '/' + f + (l ? ':' + l : ''); }
+  // Resaltado de Python SIN barras invertidas en el regex: dentro de la
+  // plantilla (string de Python) un escape JS se corrompe en silencio — un
+  // salto-de-linea sin doblar ya dejo el mapa en blanco esta misma noche
+  // (y la primera version de ESTE comentario lo repitio: el test lo cazo).
+  const KW = new RegExp(
+    '(#.*)' +
+    '|("[^"]*"|' + String.fromCharCode(39) + '[^' + String.fromCharCode(39) + ']*' + String.fromCharCode(39) + ')' +
+    '|(^|[^A-Za-z0-9_])(def|class|return|if|elif|else|for|while|import|from|as|with|try|except|finally|raise|in|not|and|or|None|True|False|lambda|yield|pass|break|continue|assert|del|is|global|nonlocal|self)(?=[^A-Za-z0-9_]|$)' +
+    '|(@[A-Za-z_][A-Za-z0-9_.]*)' +
+    '|([0-9]+)', 'g');
+  function colorea(t){
+    let out = '', last = 0, m;
+    KW.lastIndex = 0;
+    while ((m = KW.exec(t))){
+      out += esc(t.slice(last, m.index));
+      if (m[1] != null) out += '<i class="c">' + esc(m[1]) + '</i>';
+      else if (m[2] != null) out += '<i class="s">' + esc(m[2]) + '</i>';
+      else if (m[4] != null) out += esc(m[3]) + '<i class="k">' + esc(m[4]) + '</i>';
+      else if (m[5] != null) out += '<i class="d">' + esc(m[5]) + '</i>';
+      else out += '<i class="n">' + esc(m[6]) + '</i>';
+      last = m.index + m[0].length;
+    }
+    return out + esc(t.slice(last));
+  }
+  const cuerpo = document.getElementById('codigoCuerpo');
+  let modalF = null, modalL = 0;
+  function guardaCodigo(){
+    try{
+      if (modalF) sessionStorage.setItem('gb-codigo',
+        JSON.stringify({f: modalF, l: modalL, s: cuerpo.scrollTop}));
+      else sessionStorage.removeItem('gb-codigo');
+    }catch(_){}
+  }
   function abrirCodigo(f, linea, qual){
-    const cuerpo = document.getElementById('codigoCuerpo');
+    modalF = f; modalL = linea || 0;
     document.getElementById('codigoTitulo').textContent = f + (linea ? ' : ' + linea : '');
     document.getElementById('codigoEditor').href = urlEditor(f, linea);
     const src = CODIGO[f];
     if (src == null){
       cuerpo.innerHTML = '<span>este fichero no viajo embebido — abrelo en el editor</span>';
     } else {
-      cuerpo.innerHTML = src.split('\\n').map((t, i) =>
+      cuerpo.innerHTML = src.split(String.fromCharCode(10)).map((t, i) =>
         '<span class="ln' + ((i + 1) === linea ? ' hit' : '') + '" id="L' + (i + 1) + '">'
-        + String(i + 1).padStart(4, ' ') + '  ' + esc(t) + '</span>').join('\\n');
+        + '<em>' + String(i + 1).padStart(4, ' ') + '</em>' + colorea(t) + '</span>').join('');
     }
     modal.hidden = false;
     if (linea){ const el = document.getElementById('L' + linea); if (el) el.scrollIntoView({block: 'center'}); }
+    guardaCodigo();
     if (qual && IDX[qual] != null){
       fijado = IDX[qual];           // el nodo se enciende (foco de pinta())...
       muestraFicha(fijado);         // ...y su tarjeta aparece fijada
     }
   }
-  function cierraCodigo(){ modal.hidden = true; }
+  function cierraCodigo(){ modal.hidden = true; modalF = null; guardaCodigo(); }
   document.getElementById('cerrarCodigo').addEventListener('click', cierraCodigo);
-  modal.addEventListener('click', ev => { if (ev.target === modal) cierraCodigo(); });
   document.addEventListener('keydown', ev => { if (ev.key === 'Escape') cierraCodigo(); });
+  cuerpo.addEventListener('scroll', () => { if (modalF) guardaCodigo(); });
+  // El panel SOBREVIVE al refresco del mapa: fichero, linea y scroll vuelven
+  // solos (reportado en uso real: cada recarga lo cerraba y no se podia leer).
+  try{
+    const g = JSON.parse(sessionStorage.getItem('gb-codigo') || 'null');
+    if (g && g.f){ abrirCodigo(g.f, g.l || 0, ''); cuerpo.scrollTop = g.s || 0; }
+  }catch(_){}
   let html = '<input id="filtroArch" placeholder="filtrar fichero o simbolo...">';
   Object.keys(ARCHIVOS).sort().forEach(f => {
     const mod = ARCHIVOS[f].find(s => s[2] === 'module');
