@@ -10,6 +10,31 @@ mismo detalle que los positivos, o más.
 
 ---
 
+## 2026-08-14 · El mapa muerto que se leía como vivo — el dato que el A/B del canvas no miraba
+
+**Lo observado, en uso real:** el recorte del 13-ago se llevó el canvas, pero `mapa.html` quedó en
+la raíz como fósil (generado 05:01 del 13-ago) y **siguió siendo la referencia diaria del owner un
+día entero** — enseñando "sin actividad" en presente mientras había trabajo en marcha. Tercera
+mordida del mismo modo de fallo (aro cocido 10-ago, arreglo 9f3520e dentro del generador… que el
+recorte se llevó con el generador). La mentira no está en el dato ni en la fecha del pie: está en
+el **tiempo verbal** con que se lee una foto.
+
+**Lo que el A/B midió y lo que no:** el empate (3/3 y 3/3) midió *decisiones de agente* con y sin
+canvas — y esa sentencia sigue siendo válida para la maquinaria. Lo que no midió es que el mapa
+**se consultaba a diario aunque estuviera congelado**: uso humano sostenido, la señal que la regla
+del abandono pide investigar, en la dirección contraria — no abandono, apego.
+
+**Consecuencia (5 commits):** vuelve SOLO el renderer (`viz.py` verbatim de `3229ddd^`, con el
+envejecido GEN_TS de 9f3520e dentro) como salida de `gb who --html`; el vivo es `gb who --watch
+--html` — un comando en primer plano, sondeo + escritura atómica + meta-refresh, cámara en
+sessionStorage; **cero candados, cero relanzamientos**. El destino por defecto es el `mapa.html`
+de la raíz si ya existe (la costumbre declarada en disco; escribir donde nadie mira fue la causa
+raíz de la foto podrida). La página fina de presencia (`mapa_html.py`) nació y se recortó la misma
+noche al confirmarse que el mapa principal es el canvas — sus lecciones quedan en el canvas y en
+el default. La sentencia de SCOPE se enmienda, no se borra.
+
+---
+
 ## 2026-08-13 · La letra pequeña del verde, medida ANTES de construirla: sobre este repo, humo — y el porqué es el mejor dato del día
 
 La candidata a "gran diferencia": que cada verde diga qué símbolos tocados NO ejecutó ningún test

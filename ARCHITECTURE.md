@@ -26,8 +26,10 @@ selección de tests salen de sus aristas; el cruce de firmas del rechazo tambié
 la unión y su choque semántico, la selección que decide qué correr, el estado del proceso que
 murió. (Refocalizado el 13-ago-2026 con respaldo medido: `converge` 10/10 con agentes reales y dos
 falsos verdes estructurales cazados por sus controles; el rechazo con llamadas exactas corrige 4/4
-y la señal que solo informa, 0/6; el canvas midió empate dos veces y se retiró. Sentencia por capa
-en SCOPE.md; los datos, en la libreta, 13-ago.)
+y la señal que solo informa, 0/6; el canvas midió empate dos veces y se retiró — y el 14-ago volvió
+SOLO su renderer como salida de `who --html`, porque el uso diario del mapa era el dato que el A/B
+no miraba; la maquinaria sigue retirada. Sentencia por capa en SCOPE.md; los datos, en la libreta,
+13/14-ago.)
 
 ---
 

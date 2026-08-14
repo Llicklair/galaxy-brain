@@ -27,9 +27,10 @@ El pre-commit corre suite + gate + `gb check --staged`. No se commitea en rojo.
 - ¿Quién llama a un símbolo?: `gb calls <símbolo> --depth 2` antes de grepear.
 - Cola de errores: `gb list --pendientes` (las firmas en-silencio son testigos
   de regresión: se quedan en la libreta, no se repasan).
-- El mapa se pide, no se mira: `gb graph` / `gb calls` por CLI. (El canvas HTML
-  con watch se retiró el 13-ago-2026: midió empate dos veces frente a no
-  tenerlo — sentencia en SCOPE.md.)
+- Los hechos puntuales se piden por CLI: `gb graph` / `gb calls`. El canvas
+  volvió el 14-ago-2026 como salida de `gb who --html` (renderer sin
+  maquinaria; el vivo es `gb who --watch --html`, y el fichero es el
+  `mapa.html` de la raíz — sentencia enmendada en SCOPE.md).
 
 ## Estructura
 

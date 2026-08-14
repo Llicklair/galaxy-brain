@@ -307,9 +307,11 @@ ship — there is no "small exception", because small exceptions are exactly how
 | `gb calls <symbol> --depth 2` | The wave: also who calls the callers |
 | `gb calls --hook` | PreToolUse mode: reads hook JSON from stdin, silent when there is nothing |
 
-Shared flags worth knowing: `--json` on every command for raw output. (The HTML canvas and its
-`--watch` were retired on 2026-08-13: measured twice against not having them, they changed no
-outcome — the sentence per layer lives in SCOPE.md.)
+Shared flags worth knowing: `--json` on every command for raw output. (The HTML canvas was retired
+on 2026-08-13 after two tied A/Bs — and came back on 2026-08-14 as `gb who --html`, renderer only,
+writing the project's `mapa.html`; `gb who --watch --html` keeps it live by foreground polling. The
+self-managed watcher machinery, which was the measured culprit, stays retired — the amended
+sentence lives in SCOPE.md.)
 
 ### What each change did
 

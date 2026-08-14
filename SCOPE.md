@@ -38,13 +38,16 @@ maquinaria invocándose a sí misma; `last` tecleado a mano: 5 — y la libreta 
 | `floor` / `memory` | 0 avisos falsos / uso diario real | quedan |
 | `check` / `delta` | check: 2 señales, 0 FP sobre 67 commits ajenos | quedan como comandos |
 | hooks informativos por acción (`calls --hook`, `delta` por edición) | informar no cambia nada: 0/6 (9-ago); el modelo paga por donde no hay medida | **se cortan del defecto** |
-| canvas/watch (`viz`, `symbols --html --watch --fondo`) | dos A/B en empate (3/3 y 3/3); `grep` daba los mismos llamantes; procesos colgados (10-ago) | **se corta** |
+| canvas/watch (`viz`, `symbols --html --watch --fondo`) | dos A/B en empate (3/3 y 3/3); `grep` daba los mismos llamantes; procesos colgados (10-ago) | **se corta** — enmendado 14-ago: vuelve SOLO el renderer como salida de `who --html` (el A/B no midió el uso diario del mapa; libreta 14-ago); la maquinaria del watch propio sigue cortada |
 | `graph --context` (mapa de sesión, una vez) | outcome plano en los mismos A/B; coste una-vez-por-sesión | en observación: si en 5 sesiones reales no cambia ninguna decisión (anotado en libreta), se corta |
 | `actividad` (presencia derivada) | consumidor real: el bucle | queda como motor del orquestador |
 
 El recorte se ejecuta por fases, cada una con la suite en verde: (1) los hooks informativos fuera
 del defecto — la norma va en el defecto, y un defecto que no cambia resultados es ruido pagado;
 (2) `viz.py` y su superficie fuera del árbol, con sus tests. Nada de esto toca el alcance duro.
+(Enmienda 14-ago: `viz.py` volvió verbatim como renderer de `gb who --html` — el fósil de
+`mapa.html` demostró que el mapa se consultaba a diario, el dato que el A/B no miraba; la
+maquinaria del watch propio, que era la culpable medida, sigue fuera. Libreta 14-ago.)
 
 ### Alcance duro
 
@@ -130,9 +133,13 @@ otro coste. Si la excepción propaga fuera de `asyncio.run()`, ya se captura por
 - **No cubre `asyncio` ni `multiprocessing`** en la consola: hilo principal e hilos de `threading`.
 - **No reproduce el pasado paso a paso.** El estado es el del momento en que muere el proceso, no un
   depurador con viaje en el tiempo.
-- **No enseña un canvas.** El mapa HTML con watch midió empate dos veces (3/3 y 3/3) frente a no
-  tenerlo, y se retiró el 13-ago-2026; los hechos se consumen por CLI y por los gates. Si una capa
-  visual vuelve algún día, vuelve por una medición, no por bonita.
+- **Sí enseña un canvas — desde el 14-ago-2026, y por un dato, no por bonito.** El A/B del 13-ago
+  midió empate en decisiones de agente y retiró canvas y maquinaria; al día siguiente el fósil de
+  `mapa.html` demostró lo que ese A/B no miraba: el mapa se consultaba a diario incluso congelado
+  (libreta 14-ago). Vuelve solo el renderer (`viz.py`, salida de `gb who --html`, persistente en el
+  `mapa.html` de la raíz); el vivo es `gb who --watch --html`, un comando en primer plano que muere
+  contigo. La maquinaria de watch propio (candado, relanzamientos, procesos colgados) sigue retirada
+  y su sentencia intacta.
 - **No es un servidor MCP** (decidido 2026-07-31, tras plantearlo para ganar persistencia y tener el
   grafo siempre delante). Ninguna de las dos cosas la da MCP: la persistencia ya está resuelta en
   ficheros (`~/.galaxy-brain`, el vault de `memory`) y MCP es transporte, no almacenamiento; y un
