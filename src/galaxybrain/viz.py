@@ -303,6 +303,30 @@ _COLORES = [
 ]
 
 
+def _limite_foto(refresco):
+    """Segundos hasta que la foto se declara VIEJA en pantalla (fosil del
+    14-ago: un mapa parado se leyo en presente un dia entero). Con watch, 3
+    ticks sin reescritura = el escritor murio (suelo de 10 s para refrescos
+    cortos: un SO cargado no es un watch muerto); sin watch, la ventana de
+    presencia entera — una foto mas vieja que eso no puede estar enseñando
+    nada que siga siendo presencia. El 600 es actividad.VENTANA_COMMIT,
+    duplicado a proposito para que el renderer siga sin imports del paquete;
+    un test compara ambos para que no deriven.
+    """
+    return max(3 * refresco, 10) if refresco else 600
+
+
+def _aviso_vieja(refresco):
+    """El texto del aviso, decidido al generar: el modo se conoce aqui."""
+    if refresco:
+        return ("EL WATCH YA NO ESCRIBE — esta foto deberia renovarse cada "
+                "%ds y lleva demasiado quieta. El mapa esta congelado, no "
+                "vacio: relanza gb who --watch --html" % refresco)
+    return ("FOTO VIEJA — mas antigua que cualquier presencia que pueda "
+            "enseñar. Lo que ves fue verdad al generarse, no ahora. El mapa "
+            "vivo: gb who --watch --html")
+
+
 def render_graph_cloud(
     report,
     title="galaxy-brain — grafo",
@@ -697,6 +721,10 @@ def render_graph_cloud(
         # Recarga por JS, no <meta http-equiv>: el meta no se puede aplazar, y
         # una recarga que te borra lo tecleado en buscar enseña a no buscar.
         "refresco": str(int(refresco or 0)),
+        # El umbral y el texto del aviso de foto vieja, decididos al generar:
+        # el JS solo compara y destapa (fosil del 14-ago).
+        "limite_foto": str(_limite_foto(int(refresco or 0))),
+        "aviso_vieja": _html.escape(_aviso_vieja(int(refresco or 0))),
     }
 
 
@@ -825,6 +853,7 @@ _NUBE = """<!doctype html>
 <div id="consola"></div>
 <div id="errores"></div>
 <div id="pie">%(pie)s</div>
+<div id="vieja" hidden style="position:fixed;left:50%%;bottom:2.6em;transform:translateX(-50%%);background:#2d1517;border:1px solid #f85149;color:#ffa198;padding:.6em 1.2em;border-radius:8px;font-weight:bold;z-index:99;max-width:80%%">%(aviso_vieja)s</div>
 <script>
 // ================= datos =================
 const NODOS = %(nodos)s, ARISTAS = %(aristas)s, LADO = 1000, GEN_TS = %(gen_ts)s;
@@ -1799,5 +1828,15 @@ buscar.addEventListener('input', ()=>{
 });
 
 medir(); recupera(); requestAnimationFrame(bucle);
+
+// ============ la foto no puede leerse en presente (fosil, 14-ago) ============
+// Pasado el limite, el propio fichero confiesa que esta parado. Sin watch: mas
+// viejo que la ventana de presencia. Con watch: 3 ticks sin reescribirse — el
+// reload por JS recarga este MISMO fichero congelado, y sin esto pareceria vivo.
+const LIMITE_FOTO = %(limite_foto)s;
+setInterval(()=>{
+  if(GEN_TS!=null && (Date.now()/1000 - GEN_TS) > LIMITE_FOTO)
+    document.getElementById('vieja').hidden = false;
+}, 1000);
 </script>
 """

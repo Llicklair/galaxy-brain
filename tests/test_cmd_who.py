@@ -79,6 +79,35 @@ def test_html_sin_mapa_en_la_raiz_escribe_fuera_del_proyecto(tmp_path):
     assert list(hogar.glob("*/mapa.html"))
 
 
+def test_la_foto_vieja_se_confiesa_en_el_canvas(tmp_path):
+    """El fosil del 14-ago: un mapa parado tiene que declararse viejo SOLO.
+    El aviso viaja oculto desde el primer segundo y el JS solo lo destapa."""
+    raiz = tmp_path / "proyecto"
+    raiz.mkdir()
+    (raiz / "calc.py").write_text("def suma(a, b):\n    return a + b\n",
+                                  encoding="utf-8")
+    subprocess.run(["git", "init", "-q"], cwd=str(raiz), timeout=60)
+    destino = raiz / "mapa.html"
+    p = _who(str(raiz), "--html", str(destino),
+             env={"GB_HOME": str(tmp_path / "hogar")})
+    assert p.returncode == 0
+    html = destino.read_text(encoding="utf-8")
+    assert 'id="vieja"' in html
+    assert "LIMITE_FOTO = 600" in html   # foto unica: la ventana de presencia
+    assert "FOTO VIEJA" in html
+
+
+def test_el_limite_de_foto_no_deriva_de_la_ventana_de_presencia():
+    from galaxybrain import viz
+    from galaxybrain.actividad import VENTANA_COMMIT
+
+    assert viz._limite_foto(0) == VENTANA_COMMIT  # duplicado a proposito
+    assert viz._limite_foto(3) == 10              # suelo para ticks cortos
+    assert viz._limite_foto(30) == 90             # 3 ticks sin reescritura
+    assert "YA NO ESCRIBE" in viz._aviso_vieja(3)
+    assert "FOTO VIEJA" in viz._aviso_vieja(0)
+
+
 def test_json_trae_las_claves_del_contrato(tmp_path):
     import json
 
