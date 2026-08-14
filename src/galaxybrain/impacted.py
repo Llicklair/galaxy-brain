@@ -88,10 +88,19 @@ def _es_test(qual, nodo):
 
 
 def _llamantes(edges):
-    """destino -> {origenes} sobre las aristas CALLS (las DEFINES no propagan)."""
+    """destino -> {origenes} sobre CALLS y EXTENDS (las DEFINES no propagan).
+
+    EXTENDS entra en la cadena desde el 14-ago-2026, con rojo real detras: en
+    un repo con `class PartesIguales(Regla)` y tests que solo nombran a las
+    subclases, tocar la base daba "ningun test alcanza lo que cambiaste" —
+    falso: los tests la ejercitan por herencia. La arista ya era un hecho del
+    grafo (symbols la emitia); lo que faltaba era caminarla. Direccion sana:
+    quien extiende alcanza a su base — tocar la subclase no arrastra a los
+    usuarios de la base.
+    """
     tabla = {}
     for origen, destino, tipo in edges:
-        if tipo == "CALLS":
+        if tipo in ("CALLS", "EXTENDS"):
             tabla.setdefault(destino, set()).add(origen)
     return tabla
 
@@ -120,6 +129,31 @@ def _enlaza_dunders(nodes, llamantes):
         duenio = nodo.get("owner") or qual.rsplit(".", 1)[0]
         if duenio in nodes:
             llamantes.setdefault(qual, set()).add(duenio)
+
+
+def _enlaza_herencia(nodes, llamantes, edges):
+    """Quien usa la SUBCLASE alcanza los metodos que hereda de la base.
+
+    `PartesIguales().partes(...)` ejecuta `Regla.partes` y no deja ninguna
+    llamada a `Regla.partes` en el AST: el despacho lo pone Python, igual que
+    con los dunders de arriba. Sin este eslabon, tocar un metodo de la base
+    daba "ningun test alcanza" con los tests de las subclases delante (rojo
+    real del 14-ago, repo cuentas-claras). Como los dunders: esto NO inventa
+    una arista en el grafo — enlaza la cadena de llamantes de la seleccion,
+    que es donde vive el "ante la duda, todo". Transitivo gratis: A->B->C se
+    recorre porque el cierre pasa por cada eslabon directo.
+    """
+    subclases = {}
+    for origen, destino, tipo in edges:
+        if tipo == "EXTENDS":
+            subclases.setdefault(destino, set()).add(origen)
+    for qual, nodo in nodes.items():
+        if nodo.get("kind") != "method":
+            continue
+        duenio = nodo.get("owner") or qual.rsplit(".", 1)[0]
+        for sub in subclases.get(duenio, ()):
+            if sub in nodes:
+                llamantes.setdefault(qual, set()).add(sub)
 
 
 def _enlaza_pasados_como_valor(nodes, llamantes, nombrado_en):
@@ -483,6 +517,7 @@ def analyze(root, rev_range=None, staged=False, worktree=False, skip=None,
 
     llamantes = _llamantes(grafo["edges"])
     _enlaza_dunders(nodes, llamantes)
+    _enlaza_herencia(nodes, llamantes, grafo["edges"])
     _enlaza_pasados_como_valor(nodes, llamantes, grafo.get("nombrado_como_valor_en"))
     tests, truncado = tests_que_alcanzan(nodes, llamantes, semillas)
     if truncado:
