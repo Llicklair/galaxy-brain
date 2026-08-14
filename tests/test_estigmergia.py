@@ -50,5 +50,9 @@ def test_un_comando_deja_el_refresco_en_vuelo(tmp_path, monkeypatch):
     # el hijo nace marcado y con las tres tuberias cerradas
     assert llamadas[0][1]["env"]["GB_MAPA_HIJO"] == "1"
     assert llamadas[0][1]["stdout"] is subprocess.DEVNULL
+    if os.name == "nt":
+        # consola invisible heredable: sin ella, cada git.exe del hijo
+        # abria una ventana visible (el parpadeo del 14-ago)
+        assert llamadas[0][1]["creationflags"] & 0x08000000
     # y la marca de en-vuelo quedo puesta: el siguiente comando rebota
     assert cli._mapa_a_refrescar(str(tmp_path), time.time()) is None

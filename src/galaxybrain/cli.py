@@ -2180,7 +2180,11 @@ def _refresca_mapa_estigmergia():
             return
         os.utime(mapa, None)  # marca "refresco en vuelo": amortigua la rafaga
         if os.name == "nt":
-            suelto = {"creationflags": 0x00000208}  # DETACHED | NEW_GROUP
+            # CREATE_NO_WINDOW, no DETACHED_PROCESS: el hijo recibe una consola
+            # INVISIBLE que sus git heredan. Con DETACHED el hijo no tenia
+            # ninguna, y Windows le creaba una ventana VISIBLE a cada git.exe
+            # — el parpadeo de cmd que delato el primer despliegue (14-ago).
+            suelto = {"creationflags": 0x08000200}  # NO_WINDOW | NEW_GROUP
         else:
             suelto = {"start_new_session": True}
         subprocess.Popen(
