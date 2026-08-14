@@ -782,22 +782,40 @@ _NUBE = """<!doctype html>
   /* Oscuro siempre, a proposito: la paleta neon esta diseniada para negro y en
      claro se lava (comprobado en captura real). Compromiso visual, no descuido. */
   :root{--fondo:#0a0d14;--tinta:#e8edf3;--suave:#7d8b9c;--linea:#1e2836;--panel:#111722}
-  #archivos{position:fixed;top:52px;right:0;bottom:0;width:300px;display:none;
-            background:#0f1420f2;border-left:1px solid var(--linea);
-            overflow:auto;padding:.6em .8em;z-index:6;font-size:12px}
+  #archivos{position:fixed;top:52px;left:0;bottom:0;width:300px;display:none;
+            background:#0f1420f7;border-right:1px solid var(--linea);
+            overflow:auto;padding:.7em .9em;z-index:6;font-size:12px}
+  #archivos .cabecera{color:var(--suave);letter-spacing:.14em;font-size:.72em;
+            margin:.1em 0 .7em;font-weight:bold}
+  #archivos .cabecera .cuenta{background:#7c5cff22;border:1px solid #7c5cff44;
+            color:#c4b5fd;border-radius:8px;padding:0 .5em;margin-left:.4em;
+            letter-spacing:0}
   #archivos input{width:100%%;box-sizing:border-box;background:var(--panel);
-            border:1px solid var(--linea);color:var(--tinta);border-radius:6px;
-            padding:.3em .5em;margin-bottom:.5em}
-  #archivos .fich{margin:.45em 0 .1em}
+            border:1px solid var(--linea);color:var(--tinta);border-radius:7px;
+            padding:.38em .6em;margin-bottom:.6em;outline:none}
+  #archivos input:focus{border-color:#7c5cff88}
+  #archivos .dir{color:#4a5568;font-size:.85em;margin:.7em 0 .2em;
+            letter-spacing:.05em}
+  #archivos .fich{margin:.12em 0;border-radius:6px;padding:.22em .4em}
+  #archivos .fich:hover{background:#ffffff0a}
   #archivos .fich a{color:var(--tinta);text-decoration:none;font-weight:bold}
-  #archivos .sim{margin-left:1.1em;line-height:1.5}
+  #archivos .sim{margin-left:1.15em;line-height:1.55;border-radius:6px;
+            padding:.02em .4em}
+  #archivos .sim:hover{background:#ffffff0a}
   #archivos .sim a{color:var(--suave);text-decoration:none}
   #archivos a:hover{color:#22d3ee}
-  #archivos .lin{color:#3b4657}
-  #archivos .edt{font-size:.85em}
+  #archivos .lin{color:#3b4657;font-size:.85em}
+  #archivos .edt{font-size:.85em;opacity:.65}
+  #archivos .pt{display:inline-block;width:7px;height:7px;border-radius:50%%;
+            margin-right:.5em;vertical-align:1px}
+  #archivos .pt.fich-pt{background:#7c5cff}
+  #archivos .pt.class{background:#fb923c}
+  #archivos .pt.function{background:#60a5fa}
+  #archivos .pt.method{background:#2dd4bf}
   #codigo{position:fixed;left:0;top:52px;bottom:0;width:min(44%%,640px);
           z-index:7;background:#0d1119f7;border-right:1px solid var(--linea);
           display:flex;flex-direction:column;box-shadow:8px 0 30px #0009}
+  .conCajon #codigo{left:300px}
   #codigo[hidden]{display:none}
   #codigoCabecera{padding:.55em .9em;border-bottom:1px solid var(--linea);
           color:var(--tinta);flex:none}
@@ -2003,15 +2021,27 @@ medir(); recupera(); requestAnimationFrame(bucle);
     const g = JSON.parse(sessionStorage.getItem('gb-codigo') || 'null');
     if (g && g.f){ abrirCodigo(g.f, g.l || 0, ''); cuerpo.scrollTop = g.s || 0; }
   }catch(_){}
-  let html = '<input id="filtroArch" placeholder="filtrar fichero o simbolo...">';
+  let html = '<div class="cabecera">ARCHIVOS DEL PROYECTO'
+           + '<span class="cuenta">' + Object.keys(ARCHIVOS).length + '</span></div>'
+           + '<input id="filtroArch" placeholder="filtrar fichero o simbolo...">';
+  let dirAnterior = null;
   Object.keys(ARCHIVOS).sort().forEach(f => {
+    const corte = f.lastIndexOf('/');
+    const dir = corte >= 0 ? f.slice(0, corte) : '';
+    const nombre = corte >= 0 ? f.slice(corte + 1) : f;
+    if (dir !== dirAnterior){
+      html += '<div class="dir">' + (dir ? esc(dir) + '/' : '&middot; raiz') + '</div>';
+      dirAnterior = dir;
+    }
     const mod = ARCHIVOS[f].find(s => s[2] === 'module');
     html += '<div class="fich" data-t="' + esc(f.toLowerCase()) + '">'
-          + '<a href="#" data-f="' + esc(f) + '" data-q="' + esc(mod ? mod[3] : '') + '">' + esc(f) + '</a>'
+          + '<span class="pt fich-pt"></span>'
+          + '<a href="#" data-f="' + esc(f) + '" data-q="' + esc(mod ? mod[3] : '') + '">' + esc(nombre) + '</a>'
           + ' <a class="edt" title="abrir en el editor" href="' + esc(urlEditor(f)) + '">&#8599;</a></div>';
     ARCHIVOS[f].forEach(s => {
       if (s[2] === 'module') return;
       html += '<div class="sim" data-t="' + esc((f + ' ' + s[1]).toLowerCase()) + '">'
+            + '<span class="pt ' + esc(s[2]) + '"></span>'
             + '<a href="#" data-f="' + esc(f) + '" data-l="' + s[0] + '" data-q="' + esc(s[3] || '') + '">' + esc(s[1]) + '</a>'
             + ' <span class="lin">:' + s[0] + '</span></div>';
     });
@@ -2031,6 +2061,8 @@ medir(); recupera(); requestAnimationFrame(bucle);
   });
   function estado(abierto){
     panel.style.display = abierto ? 'block' : 'none';
+    // el inspector se desplaza para no taparse con el cajon (gitnexus-style)
+    document.body.classList.toggle('conCajon', abierto);
     try{ sessionStorage.setItem('gb-archivos', abierto ? '1' : ''); }catch(_){}
   }
   btn.addEventListener('click', () => estado(panel.style.display !== 'block'));
