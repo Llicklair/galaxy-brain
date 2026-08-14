@@ -1,6 +1,8 @@
 """El mapa HTML: un fichero autocontenido que no puede mentir a medias."""
 
 import os
+import re
+import time
 
 from galaxybrain import mapa_html
 
@@ -36,8 +38,39 @@ def test_un_nombre_hostil_queda_escapado():
     foto = _foto()
     foto["agentes"][0]["simbolos"] = ["<script>alert(1)</script>"]
     html = mapa_html.render(foto)
-    assert "<script>" not in html
-    assert "&lt;script&gt;" in html
+    # El mapa lleva UN <script> propio (el reloj); lo hostil jamas llega a serlo.
+    assert "<script>alert" not in html
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in html
+
+
+def test_la_foto_lleva_su_epoca_y_su_reloj():
+    antes = int(time.time())
+    html = mapa_html.render(_foto())
+    despues = int(time.time())
+    epoca = re.search(r"data-gen='(\d+)'", html)
+    assert epoca and antes <= int(epoca.group(1)) <= despues
+    assert "id='edad'" in html and "setInterval" in html
+
+
+def test_sin_refresco_es_foto_unica_y_caduca_con_la_presencia():
+    html = mapa_html.render(_foto(), refresco=0)
+    assert "foto unica" in html
+    assert "gb who --watch --html" in html
+    assert "data-limite='600'" in html  # = actividad.VENTANA_COMMIT
+    assert "FOTO VIEJA" in html
+
+
+def test_con_refresco_el_limite_delata_al_watch_muerto():
+    assert "data-limite='10'" in mapa_html.render(_foto(), refresco=3)
+    assert "data-limite='90'" in mapa_html.render(_foto(), refresco=30)
+    assert "YA NO ESCRIBE" in mapa_html.render(_foto(), refresco=3)
+
+
+def test_nadie_va_anclado_a_su_hora_no_al_presente():
+    foto = dict(_foto(), agentes=[], cruces=[], por_nodo={})
+    html = mapa_html.render(foto)
+    assert "ahora mismo" not in html
+    assert "Nadie tocaba nada a las" in html
 
 
 def test_escritura_atomica_deja_el_fichero_y_ningun_tmp(tmp_path):
