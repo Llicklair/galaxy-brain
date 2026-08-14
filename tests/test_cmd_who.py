@@ -64,6 +64,10 @@ def test_html_es_el_canvas_con_su_consola(tmp_path):
     assert '<canvas id="lienzo">' in html
     assert "const CAPTURAS" in html   # la consola de errores viaja siempre
     assert "GEN_TS" in html           # y la actividad envejece en el navegador
+    # el cajon de archivos: acceso directo que abre en el editor
+    assert 'id="archivos"' in html and "btnArchivos" in html
+    assert "const ARCHIVOS" in html and "vscode://file/" in html
+    assert "calc.py" in html          # el fichero del proyecto esta en el cajon
 
 
 def test_html_sin_mapa_en_la_raiz_escribe_fuera_del_proyecto(tmp_path):

@@ -311,6 +311,22 @@ _COLORES = [
 LATIDO_WATCH = 30
 
 
+def _archivos_de(report):
+    """{fichero: [[linea, nombre_corto, kind], ...]} desde el informe: la
+    fuente que SI lleva rutas y lineas. Ordenado por linea, listo para pintar."""
+    archivos = {}
+    for n in report.get("nodes", []):
+        fichero = (n.get("file") or "").replace("\\", "/")
+        if not fichero:
+            continue
+        archivos.setdefault(fichero, []).append(
+            [n.get("line") or 0, n["qual"].rsplit(".", 1)[-1],
+             n.get("kind") or ""])
+    for lista in archivos.values():
+        lista.sort()
+    return archivos
+
+
 def _limite_foto(refresco):
     """Segundos hasta que la foto se declara VIEJA en pantalla (fosil del
     14-ago: un mapa parado se leyo en presente un dia entero). Con watch, 3
@@ -744,6 +760,14 @@ def render_graph_cloud(
         "limite_foto": str(_limite_foto(int(refresco or 0))),
         "aviso_vieja": _html.escape(_aviso_vieja(int(refresco or 0))),
         "estilo_vieja": _estilo_vieja(int(refresco or 0)),
+        # El cajon de archivos (14-ago, peticion directa): fichero -> sus
+        # simbolos con linea, para SALTAR AL EDITOR — el mapa no compite con
+        # el editor leyendo codigo, lanza a el. Viaja con cada regeneracion,
+        # asi que vive al mismo ritmo que el resto del mapa.
+        "archivos": _en_script(_json.dumps(_archivos_de(report),
+                                           ensure_ascii=False)),
+        "raiz": _en_script(_json.dumps(
+            (report.get("root") or "").replace("\\", "/"))),
     }
 
 
@@ -754,6 +778,18 @@ _NUBE = """<!doctype html>
   /* Oscuro siempre, a proposito: la paleta neon esta diseniada para negro y en
      claro se lava (comprobado en captura real). Compromiso visual, no descuido. */
   :root{--fondo:#0a0d14;--tinta:#e8edf3;--suave:#7d8b9c;--linea:#1e2836;--panel:#111722}
+  #archivos{position:fixed;top:52px;right:0;bottom:0;width:300px;display:none;
+            background:#0f1420f2;border-left:1px solid var(--linea);
+            overflow:auto;padding:.6em .8em;z-index:6;font-size:12px}
+  #archivos input{width:100%%;box-sizing:border-box;background:var(--panel);
+            border:1px solid var(--linea);color:var(--tinta);border-radius:6px;
+            padding:.3em .5em;margin-bottom:.5em}
+  #archivos .fich{margin:.45em 0 .1em}
+  #archivos .fich a{color:var(--tinta);text-decoration:none;font-weight:bold}
+  #archivos .sim{margin-left:1.1em;line-height:1.5}
+  #archivos .sim a{color:var(--suave);text-decoration:none}
+  #archivos a:hover{color:#22d3ee}
+  #archivos .lin{color:#3b4657}
   *{box-sizing:border-box}
   body{margin:0;background:var(--fondo);color:var(--tinta);overflow:hidden;
        font:13px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
@@ -864,6 +900,7 @@ _NUBE = """<!doctype html>
   <button id="btnEncaja" title="reencuadrar">&#8862;</button>
   <button id="btnConsola" title="consola de actividad de los agentes">&#8801;</button>
   <button id="btnErrores" title="consola de errores (capturas de gb)">&#9888;</button>
+  <button id="btnArchivos" title="archivos del proyecto (clic abre en el editor)">&#128193;</button>
   <span class="leyenda">%(leyenda)s</span>
 </header>
 <canvas id="lienzo"></canvas>
@@ -871,11 +908,13 @@ _NUBE = """<!doctype html>
 <div id="terminales"></div>
 <div id="consola"></div>
 <div id="errores"></div>
+<div id="archivos"></div>
 <div id="pie">%(pie)s</div>
 <div id="vieja" hidden style="position:fixed;right:.6em;bottom:.6em;padding:.3em .7em;border-radius:6px;font-size:.78em;z-index:99;max-width:44%%;%(estilo_vieja)s">%(aviso_vieja)s<span id="edadfoto"></span></div>
 <script>
 // ================= datos =================
 const NODOS = %(nodos)s, ARISTAS = %(aristas)s, LADO = 1000, GEN_TS = %(gen_ts)s;
+const ARCHIVOS = %(archivos)s, RAIZ = %(raiz)s;
 const IMPORT_COLOR = '%(color_import)s', CICLO_COLOR = '%(color_ciclo)s';
 const OBRA_COLOR = '%(color_obra)s';
 const AGENTES = %(agentes)s;
@@ -1853,6 +1892,42 @@ buscar.addEventListener('input', ()=>{
 });
 
 medir(); recupera(); requestAnimationFrame(bucle);
+
+// ============ cajon de archivos (14-ago, peticion directa) ==================
+// Acceso directo a los ficheros sin cazar nodos por el lienzo. Los clics abren
+// EN EL EDITOR (vscode://file/ruta:linea): el mapa no compite con el editor
+// leyendo codigo — lanza a el. La lista viaja embebida y se renueva con cada
+// regeneracion del mapa: tiempo real al mismo ritmo que todo lo demas.
+(function(){
+  const panel = document.getElementById('archivos');
+  const btn = document.getElementById('btnArchivos');
+  function esc(t){ return String(t).replace(/[&<>"']/g, c => '&#' + c.charCodeAt(0) + ';'); }
+  function url(f, l){ return 'vscode://file/' + RAIZ + '/' + f + (l ? ':' + l : ''); }
+  let html = '<input id="filtroArch" placeholder="filtrar fichero o simbolo...">';
+  Object.keys(ARCHIVOS).sort().forEach(f => {
+    html += '<div class="fich" data-t="' + esc(f.toLowerCase()) + '">'
+          + '<a href="' + esc(url(f)) + '">' + esc(f) + '</a></div>';
+    ARCHIVOS[f].forEach(s => {
+      if (s[2] === 'module') return;
+      html += '<div class="sim" data-t="' + esc((f + ' ' + s[1]).toLowerCase()) + '">'
+            + '<a href="' + esc(url(f, s[0])) + '">' + esc(s[1]) + '</a>'
+            + ' <span class="lin">:' + s[0] + '</span></div>';
+    });
+  });
+  panel.innerHTML = html;
+  document.getElementById('filtroArch').addEventListener('input', ev => {
+    const t = ev.target.value.toLowerCase();
+    panel.querySelectorAll('[data-t]').forEach(el => {
+      el.style.display = !t || el.dataset.t.includes(t) ? '' : 'none';
+    });
+  });
+  function estado(abierto){
+    panel.style.display = abierto ? 'block' : 'none';
+    try{ sessionStorage.setItem('gb-archivos', abierto ? '1' : ''); }catch(_){}
+  }
+  btn.addEventListener('click', () => estado(panel.style.display !== 'block'));
+  try{ if (sessionStorage.getItem('gb-archivos')) estado(true); }catch(_){}
+})();
 
 // ============ la foto no puede leerse en presente (fosil, 14-ago) ============
 // Pasado el limite, el propio fichero confiesa que esta parado. Sin watch: mas
