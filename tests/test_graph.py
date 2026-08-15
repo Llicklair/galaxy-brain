@@ -151,7 +151,11 @@ def test_fichero_patologico_va_a_errores_sin_crashear(tmp_path):
     root = str(tmp_path)
     _write(root, "pkg/__init__.py", "")
     _write(root, "pkg/ok.py", "X = 1\n")
-    _write(root, "pkg/bomba.py", "e" + ".a" * 20000 + "\n")  # cadena de atributos -> RecursionError
+    # Menos unario encadenado -> MemoryError del parser en TODAS las versiones
+    # medidas (3.9-linux y 3.11-windows). La cadena de atributos anterior no
+    # explotaba en 3.9-linux (el parser la come iterativa): el primer CI la
+    # cazo — una bomba que no detona en todas partes no prueba la garantia.
+    _write(root, "pkg/bomba.py", "-" * 20000 + "1\n")
 
     report = graph.analyze(root)  # la clave: no crashea
     assert any("bomba.py" in loc for loc in report["errors"])

@@ -1,27 +1,22 @@
-# TEMPORAL: reproduce el racimo del ciclo en el runner con `pytest -l`
-# (la regla de la casa) y delata versiones. Se borra al cerrar el diagnostico.
+# TEMPORAL: reproduce el racimo de intervencion SOLO-3.9-suite-completa con
+# el setup exacto del ci y para en el primer fallo con locales (pytest -x -l).
+# Se borra al cerrar el diagnostico.
 name: debug-ciclo
 on: workflow_dispatch
 jobs:
   ciclo:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
-      - name: versiones del runner
-        run: |
-          git --version
-          command -v ast-grep && ast-grep --version || echo "sin ast-grep en PATH"
-          command -v sg && sg --version || echo "sin sg en PATH"
-          git config --system --list || true
-          git config --global --list || true
+          python-version: "3.9"
       - name: instalar
         run: |
           python -m pip install -e .
           python -m pip install pytest
+          npm install -g "@ast-grep/cli@0.45"
       - run: gb on
-      - name: el ciclo con locales
-        run: python -m pytest tests/test_ciclo.py -x -q -l
+      - name: hasta el primer fallo, con locales
+        run: python -m pytest tests/test_a*.py tests/test_b*.py tests/test_c*.py -q -x -l --tb=long 2>&1 | tail -120
