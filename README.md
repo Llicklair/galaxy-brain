@@ -39,11 +39,11 @@ from the AST.</sub>
 
 <p align="center">
   <a href="docs/media/mapa-4-agentes.mp4">
-    <img src="docs/media/mapa-4-agentes.jpg" alt="Four agents at once on the live map — click to play" width="100%">
+    <img src="docs/media/mapa-4-agentes.gif" alt="Four agents at once on the live map" width="100%">
   </a>
 </p>
 
-<p align="center"><sub><b>▶ <a href="docs/media/mapa-4-agentes.mp4">Play the clip</a></b> · 1m46s, 5.7 MB, no audio</sub></p>
+<p align="center"><sub>10s excerpt · <b>▶ <a href="docs/media/mapa-4-agentes.mp4">full clip with controls</a></b> (1m46s, no audio)</sub></p>
 
 Four agents editing one repository at the same time — a small demo project, four git worktrees, and
 **no orchestrator telling the map anything**. `gb who --html --watch` re-derives the whole picture
