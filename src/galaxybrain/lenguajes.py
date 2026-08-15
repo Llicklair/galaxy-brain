@@ -44,6 +44,42 @@ _JS_GLOBALES = frozenset((
 _COMUNES = frozenset(("print", "println", "printf", "len", "append", "make", "new",
                       "panic", "assert", "require", "test", "it", "describe", "expect"))
 
+#: Los imports de la familia JS (js/ts/tsx), en UN solo sitio: son el mismo
+#: lenguaje de módulos y tenerlos por triplicado fue justo cómo `require()` se
+#: quedó solo en js y `import type` en ninguno.
+#:
+#: `$SRC` va SUELTA, sin comillas alrededor. Con `"$SRC"` el patrón solo casaba
+#: comillas dobles, así que `from './a.js'` —el estilo mayoritario del
+#: ecosistema— no dejaba NI UNA arista: el gate de un repo entero podía estar
+#: mudo por una comilla. Se midió el 15-ago-2026, y llevaba meses en verde
+#: porque la sonda de conformidad también estaba escrita con dobles (por eso
+#: ahora la matriz de [[test_variantes_import]] prueba las dos). Suelta, la
+#: metavariable casa el literal completo y `_sin_comillas` lo limpia después.
+#:
+#: Las formas no son un catálogo teórico: el barril (`export * from`) es el
+#: patrón de carpeta más común de frontend, `import()` es todo code-splitting,
+#: `require()` es backend CommonJS, y `import './x.css'` no importa símbolos
+#: pero SÍ es dependencia de módulo — que es lo que mira el gate.
+_JS_IMPORTS = (
+    "import { $$$ } from $SRC",
+    "import $NAME from $SRC",
+    "import * as $NAME from $SRC",
+    "import type { $$$ } from $SRC",
+    "import $SRC",
+    "require($SRC)",
+    "import($SRC)",
+    # El barril necesita las comillas EN el patrón y por duplicado, al revés
+    # que el import. Medido: en `export ... from`, la metavariable suelta no
+    # casa nada (ni con selector, ni con `;`, ni con `$$$`) — la gramática no
+    # deja que ocupe esa posición; dentro de las comillas sí, pero entonces
+    # cada tipo de comilla es un patrón. Es fealdad de la técnica, no del
+    # lenguaje, y sale más barato duplicar dos líneas que perder los barriles.
+    "export * from '$SRC'",
+    'export * from "$SRC"',
+    "export { $$$ } from '$SRC'",
+    'export { $$$ } from "$SRC"',
+)
+
 #: `$FN($$$)` casa cualquier invocación; decidir cuáles se pueden resolver es
 #: trabajo de después, con nombres. Casi todos los lenguajes lo comparten.
 LLAMADA = ("$FN($$$)",)
@@ -122,8 +158,7 @@ LENGUAJES = {
          ("function", "async function $NAME($$$) { $$$ }"),
          ("class", "export class $NAME { $$$ }"),
          ("class", "class $NAME { $$$ }")),
-        ('import { $$$ } from "$SRC"', 'import $NAME from "$SRC"',
-         'import * as $NAME from "$SRC"', 'import "$SRC"', 'require("$SRC")'),
+        _JS_IMPORTS,
         globales=_JS_GLOBALES, resolucion="ruta", tia=True,
         sufijos_test=(".test", ".spec"), dirs_test=("test", "tests", "__tests__", "spec"),
     ),
@@ -140,7 +175,7 @@ LENGUAJES = {
          ("function", "export async function $NAME($$$): $RET { $$$ }"),
          ("class", "export class $NAME { $$$ }"),
          ("class", "class $NAME { $$$ }")),
-        ('import { $$$ } from "$SRC"', 'import $NAME from "$SRC"', 'import "$SRC"'),
+        _JS_IMPORTS,
         globales=_JS_GLOBALES, resolucion="ruta", tia=True,
         sufijos_test=(".test", ".spec"), dirs_test=("test", "tests", "__tests__", "spec"),
     ),
@@ -151,7 +186,7 @@ LENGUAJES = {
          ("function", "function $NAME($$$) { $$$ }"),
          ("function", "export const $NAME = ($$$) => { $$$ }"),
          ("class", "export class $NAME { $$$ }")),
-        ('import { $$$ } from "$SRC"', 'import $NAME from "$SRC"'),
+        _JS_IMPORTS,
         globales=_JS_GLOBALES, resolucion="ruta",
         sufijos_test=(".test", ".spec"), dirs_test=("test", "tests", "__tests__"),
     ),
@@ -472,6 +507,20 @@ def _meta(match, nombre):
     return (match.get("metaVariables", {}).get("single", {}).get(nombre, {}) or {}).get("text")
 
 
+def _sin_comillas(texto):
+    """El literal de un import sin sus comillas, o el texto tal cual.
+
+    Cuando la metavariable va SUELTA en el patrón (`from $SRC` en vez de
+    `from "$SRC"`) casa las dos comillas del ecosistema, pero captura el
+    literal entero — comillas incluidas. Aquí se quitan una sola vez y solo
+    si abren y cierran igual: un import que de verdad se llame `'raro` (no
+    existe, pero adivinar es peor) se queda como está.
+    """
+    if texto and len(texto) >= 2 and texto[0] == texto[-1] and texto[0] in "\"'`":
+        return texto[1:-1]
+    return texto
+
+
 def _linea(match):
     return match.get("range", {}).get("start", {}).get("line", 0) + 1
 
@@ -741,7 +790,7 @@ def analyze(root):
             patron, selector = (entrada_imp if isinstance(entrada_imp, tuple)
                                 else (entrada_imp, None))
             for m in _corre(ruta_ag, patron, cfg["ag"], root, selector):
-                especificador = _meta(m, "SRC")
+                especificador = _sin_comillas(_meta(m, "SRC"))
                 fichero = os.path.abspath(os.path.join(root, m.get("file", "")))
                 entrada = por_fichero.get(fichero)
                 if not especificador or entrada is None or entrada[1] != lang:
