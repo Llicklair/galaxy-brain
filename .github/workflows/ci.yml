@@ -31,6 +31,11 @@ jobs:
         run: |
           python -m pip install -e .
           python -m pip install pytest ruff
+      - name: activar la captura (gb on, como un usuario real)
+        # La suite ejercita la consola de verdad: sin el .pth plantado, todo
+        # lo que espera capturas falla. Primer hallazgo del CI (15-ago): la
+        # suite depende del estado de la maquina, y el runner lo dice.
+        run: gb on
       - name: lint
         run: ruff check src tests
       - name: suite
