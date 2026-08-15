@@ -20,12 +20,17 @@ jobs:
           python -m pip install pytest
           npm install -g "@ast-grep/cli@0.45"
       - run: gb on
-      - name: grupo d-g + victima
-        continue-on-error: true
-        run: python -m pytest tests/test_[d-g]*.py tests/test_calls.py -q 2>&1 | tail -4
-      - name: grupo h-m + victima
-        continue-on-error: true
-        run: python -m pytest tests/test_[h-m]*.py tests/test_calls.py -q 2>&1 | tail -4
-      - name: grupo n-z + victima
-        continue-on-error: true
-        run: python -m pytest tests/test_[n-z]*.py tests/test_calls.py -q 2>&1 | tail -4
+      - name: biseccion fina n-z y pareja minima con locales
+        run: |
+          malo=""
+          for f in tests/test_[n-z]*.py; do
+            r=$(python -m pytest "$f" tests/test_calls.py -q 2>&1 | tail -1)
+            echo "$f -> $r"
+            case "$r" in *failed*) malo=$f;; esac
+          done
+          if [ -n "$malo" ]; then
+            echo "=== PAREJA MINIMA: $malo + test_calls, con locales ==="
+            python -m pytest "$malo" tests/test_calls.py -q -x -l --tb=long 2>&1 | tail -80
+          else
+            echo "ningun fichero n-z envenena en pareja: el veneno exige mas de un modulo"
+          fi
