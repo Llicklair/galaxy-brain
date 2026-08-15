@@ -18,5 +18,8 @@ jobs:
           python -m pip install pytest
           npm install -g "@ast-grep/cli@0.45"
       - run: gb on
-      - name: hasta el primer fallo, con locales
-        run: python -m pytest tests/test_a*.py tests/test_b*.py tests/test_c*.py -q -x -l --tb=long 2>&1 | tail -120
+      - name: la suite entera hasta el primer fallo, con locales
+        # El subconjunto a-c paso limpio: los mismos ficheros que preceden al
+        # racimo en la suite completa. Lo que queda es la COLECCION completa
+        # (pytest importa todos los modulos antes de correr ninguno).
+        run: python -m pytest tests/ -q -x -l --tb=long 2>&1 | tail -150
