@@ -43,7 +43,7 @@ from the AST.</sub>
   </a>
 </p>
 
-<p align="center"><sub>10s excerpt · <b>▶ <a href="docs/media/mapa-4-agentes.mp4">full clip with controls</a></b> (1m46s, no audio)</sub></p>
+<p align="center"><sub>20s excerpt · <b>▶ <a href="docs/media/mapa-4-agentes.mp4">full clip with controls</a></b> (1m46s, no audio)</sub></p>
 
 Four agents editing one repository at the same time — a small demo project, four git worktrees, and
 **no orchestrator telling the map anything**. `gb who --html --watch` re-derives the whole picture
