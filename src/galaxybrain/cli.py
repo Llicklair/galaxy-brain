@@ -1504,7 +1504,7 @@ def cmd_tests(args):
 
     if getattr(args, "union", False):
         if not args.run:
-            sys.stderr.write("[gb tests] --union ejecuta suites: pide --run explicitamente\n")
+            sys.stderr.write(idioma.t("[gb tests] --union ejecuta suites: pide --run explicitamente\n"))
             return 2
         if args.staged or args.range:
             sys.stderr.write("[gb tests] --union mira los worktrees registrados, "
@@ -1662,7 +1662,7 @@ def _corre_aislado(root, ficheros, staged=False):
 
     if informe["ausentes"]:
         emit("")
-        emit("%d fichero(s) de test no existen en el arbol limpio (git add?):"
+        emit(idioma.t("%d fichero(s) de test no existen en el arbol limpio (git add?):")
              % len(informe["ausentes"]))
         for rel in informe["ausentes"]:
             emit("  %s" % rel)

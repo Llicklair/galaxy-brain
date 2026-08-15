@@ -18,6 +18,7 @@ resuelve) devuelve TODO con su motivo escrito, en vez de una lista optimista.
 import os
 
 from . import changes, symbols
+from .idioma import t
 
 #: Ficheros que cambian el comportamiento de la suite entera sin aparecer como
 #: llamantes de nada: pytest los carga por convención, no por una llamada que el
@@ -403,7 +404,7 @@ def analyze(root, rev_range=None, staged=False, worktree=False, skip=None,
         "avisos": [],
     }
     if not os.path.isdir(root):
-        report["range_error"] = "la raiz no existe o no es un directorio: %s" % root
+        report["range_error"] = t("la raiz no existe o no es un directorio: %s") % root
         return report
 
     # `grafo` inyectable por la misma razon que `graph.analyze(constructor=...)`:
@@ -436,8 +437,8 @@ def analyze(root, rev_range=None, staged=False, worktree=False, skip=None,
     sin_licencia = _sin_licencia_para_estrechar(grafo)
     if sin_licencia:
         return correr_todo(
-            "%s: su grafo de llamadas no esta medido lo bastante completo como para "
-            "estrechar sin arriesgar un verde falso, asi que se corre todo" % sin_licencia)
+            t("%s: su grafo de llamadas no esta medido lo bastante completo como para "
+              "estrechar sin arriesgar un verde falso, asi que se corre todo") % sin_licencia)
 
     if worktree:
         # Lo que hay escrito en disco y todavia no esta en el indice: el estado
@@ -455,9 +456,9 @@ def analyze(root, rev_range=None, staged=False, worktree=False, skip=None,
         diff = changes._git_output(root, "diff", "--unified=0", rev_range)
 
     if diff is None:
-        return correr_todo("no se pudo leer el diff (¿sin git, o rango invalido?): todo")
+        return correr_todo(t("no se pudo leer el diff (¿sin git, o rango invalido?): todo"))
     if not diff.strip():
-        report["motivo"] = "el diff esta vacio: nada que correr"
+        report["motivo"] = t("el diff esta vacio: nada que correr")
         return report
 
     rangos = changes._hunks_py(diff)
@@ -466,10 +467,10 @@ def analyze(root, rev_range=None, staged=False, worktree=False, skip=None,
     for ruta in rangos:
         base = os.path.basename(ruta)
         if base in FICHEROS_GLOBALES:
-            return correr_todo("%s tocado: cambia la suite entera, se corre todo" % base)
+            return correr_todo(t("%s tocado: cambia la suite entera, se corre todo") % base)
 
     if not rangos:
-        return correr_todo("el diff no toca ningun .py que el grafo vea: todo")
+        return correr_todo(t("el diff no toca ningun .py que el grafo vea: todo"))
 
     # Una referencia colgante interna (`from M import y` con `y` desaparecido)
     # no deja arista: la cadena de llamantes no puede subir por ahi y los tests
@@ -485,8 +486,8 @@ def analyze(root, rev_range=None, staged=False, worktree=False, skip=None,
         primero = rotos[0]
         mas = "" if len(rotos) == 1 else " (y %d mas)" % (len(rotos) - 1)
         return correr_todo(
-            "import interno roto: `%s` (%s:%s) apunta a algo que ya no existe%s — "
-            "una referencia colgante no deja arista por la que subir, se corre todo"
+            t("import interno roto: `%s` (%s:%s) apunta a algo que ya no existe%s — "
+              "una referencia colgante no deja arista por la que subir, se corre todo")
             % (primero["import"], primero["file"], primero["line"], mas))
 
     # Los símbolos que el diff toca: la misma intersección que hace la onda del
@@ -498,8 +499,8 @@ def analyze(root, rev_range=None, staged=False, worktree=False, skip=None,
 
     if not semillas:
         return correr_todo(
-            "el diff toca .py pero no cae dentro de ningun simbolo del grafo "
-            "(codigo a nivel de modulo, imports, constantes): todo")
+            t("el diff toca .py pero no cae dentro de ningun simbolo del grafo "
+              "(codigo a nivel de modulo, imports, constantes): todo"))
 
     # Un simbolo que alguien NOMBRA sin llamarlo se pasa como valor, y desde ahi
     # lo invoca alguien a quien el AST no puede seguir: la llamada acaba siendo
@@ -521,7 +522,7 @@ def analyze(root, rev_range=None, staged=False, worktree=False, skip=None,
     _enlaza_pasados_como_valor(nodes, llamantes, grafo.get("nombrado_como_valor_en"))
     tests, truncado = tests_que_alcanzan(nodes, llamantes, semillas)
     if truncado:
-        return correr_todo("el cierre de llamantes no termino (¿ciclo de llamadas?): todo")
+        return correr_todo(t("el cierre de llamantes no termino (¿ciclo de llamadas?): todo"))
 
     # Un símbolo de test tocado directamente entra él mismo en la selección.
     for qual in semillas:
@@ -530,7 +531,7 @@ def analyze(root, rev_range=None, staged=False, worktree=False, skip=None,
 
     if not tests:
         return correr_todo(
-            "ningun test alcanza lo que cambiaste — eso es el dato, no un ahorro: todo")
+            t("ningun test alcanza lo que cambiaste — eso es el dato, no un ahorro: todo"))
 
     alcanzados = _ficheros_de(nodes, tests)
     # Los opacos van siempre: ejercitan el codigo sin dejar arista que seguir.
@@ -538,7 +539,7 @@ def analyze(root, rev_range=None, staged=False, worktree=False, skip=None,
     report["opacos"] = opacos
     report["tests"] = sorted(set(alcanzados) | set(opacos))
     report["n_tests"] = len(tests)
-    report["motivo"] = "%d test(s) alcanzan los %d simbolo(s) que toca el diff" % (
+    report["motivo"] = t("%d test(s) alcanzan los %d simbolo(s) que toca el diff") % (
         len(tests), len(semillas))
     if opacos:
         report["avisos"].append(

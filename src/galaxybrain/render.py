@@ -309,16 +309,16 @@ def render_changes(report, style, brief=False):
         # un fichero. Si no se leyo nada, se dice aqui tambien.
         aviso = _aviso_sin_codigo_leido(report)
         if aviso:
-            return style("[gb check] SIN COMPROBAR: %s" % aviso, YELLOW)
+            return style(t("[gb check] SIN COMPROBAR: %s") % aviso, YELLOW)
         # La onda entra en la unica linea del brief como recuento, no como lista:
         # el hook no puede volverse el informe largo que el brief existe para evitar.
         onda_txt = (
-            " · onda: %d simbolo(s), max %d llamante(s)" % (len(onda), onda[0]["callers"])
+            t(" · onda: %d simbolo(s), max %d llamante(s)") % (len(onda), onda[0]["callers"])
             if onda else ""
         )
         return style(
-            "[gb check] %s: %d fichero(s) de test tocado(s), sin senales%s "
-            "(detalle: gb check%s)"
+            t("[gb check] %s: %d fichero(s) de test tocado(s), sin senales%s "
+              "(detalle: gb check%s)")
             % (
                 report["range"],
                 report["test_files_changed"],
@@ -329,7 +329,7 @@ def render_changes(report, style, brief=False):
         )
     lines.append(
         style(
-            "%s — %d fichero(s) de test tocado(s), %d senal(es)"
+            t("%s — %d fichero(s) de test tocado(s), %d senal(es)")
             % (report["range"], report["test_files_changed"], len(flags)),
             BOLD,
         )
@@ -337,7 +337,7 @@ def render_changes(report, style, brief=False):
     lines.append("")
 
     if flags:
-        lines.append(style("SENALES del cambio (justifica cada una, no bloquean):", BOLD))
+        lines.append(style(t("SENALES del cambio (justifica cada una, no bloquean):"), BOLD))
         for flag in flags:
             lines.append(
                 "  %s [%s] %s" % (style("!", YELLOW), flag["signal"], flag["file"])
@@ -356,15 +356,15 @@ def render_changes(report, style, brief=False):
         # que salio "Sin senales".
         aviso = _aviso_sin_codigo_leido(report)
         if aviso:
-            lines.append(style("SIN COMPROBAR: %s" % aviso, YELLOW))
+            lines.append(style(t("SIN COMPROBAR: %s") % aviso, YELLOW))
         else:
-            lines.append(style("Sin senales.", DIM))
+            lines.append(style(t("Sin senales."), DIM))
     lines.append("")
 
     coupling = report.get("coupling")
     if coupling:
         if coupling["new_pairs"] or coupling["new_violations"]:
-            lines.append(style("ACOPLAMIENTO nuevo vs %s:" % coupling["base"], BOLD))
+            lines.append(style(t("ACOPLAMIENTO nuevo vs %s:") % coupling["base"], BOLD))
             for pair in coupling["new_pairs"]:
                 lines.append("  %s %s" % (style("+", YELLOW), "  <->  ".join(pair)))
             for violation in coupling["new_violations"]:
@@ -380,32 +380,32 @@ def render_changes(report, style, brief=False):
         sin_regla = coupling.get("new_edges_sin_regla") or []
         if sin_regla:
             lines.append(style(
-                "Dependencia(s) nueva(s) sin regla de frontera (punto ciego — informa, no bloquea):", BOLD))
+                t("Dependencia(s) nueva(s) sin regla de frontera (punto ciego — informa, no bloquea):"), BOLD))
             for edge in sin_regla[:5]:
                 lines.append("  %s %s  ->  %s   [sin regla]" % (style("?", YELLOW), edge["src"], edge["dst"]))
             if len(sin_regla) > 5:
-                lines.append(style("  ... y %d mas" % (len(sin_regla) - 5), DIM))
+                lines.append(style(t("  ... y %d mas") % (len(sin_regla) - 5), DIM))
         if not (coupling["new_pairs"] or coupling["new_violations"]) and not sin_regla:
             lines.append(
-                style("Sin acoplamiento nuevo vs %s (%d modulos)." % (coupling["base"], coupling["modules"]), DIM)
+                style(t("Sin acoplamiento nuevo vs %s (%d modulos).") % (coupling["base"], coupling["modules"]), DIM)
             )
         lines.append("")
 
     if onda:
-        lines.append(style("ONDA del diff (simbolos tocados y quien les llama — informa, no bloquea):", BOLD))
+        lines.append(style(t("ONDA del diff (simbolos tocados y quien les llama — informa, no bloquea):"), BOLD))
         for tocado in onda[:8]:
             lines.append(
-                "  %s %s · %s:%s · %d le llaman"
+                t("  %s %s · %s:%s · %d le llaman")
                 % (style("~", YELLOW), tocado["qual"], tocado["file"], tocado["line"],
                    tocado["callers"])
             )
         if len(onda) > 8:
-            lines.append(style("  ... y %d mas (la lista entera: gb check --json)" % (len(onda) - 8), DIM))
-        lines.append(style("  (quien exactamente: gb calls <simbolo> --depth 2)", DIM))
+            lines.append(style(t("  ... y %d mas (la lista entera: gb check --json)") % (len(onda) - 8), DIM))
+        lines.append(style(t("  (quien exactamente: gb calls <simbolo> --depth 2)"), DIM))
         lines.append("")
 
     if report.get("not_covered"):
-        lines.append(style("Lo que esto NO ha mirado:", BOLD))
+        lines.append(style(t("Lo que esto NO ha mirado:"), BOLD))
         for item in report["not_covered"]:
             lines.append("  %s %s" % (style("-", DIM), style(item, DIM)))
 
@@ -867,13 +867,13 @@ def render_impacted(report, style, brief=False):
     motivo = report.get("motivo") or ""
 
     if not ficheros:
-        return style("Nada que correr: %s" % motivo, DIM)
+        return style(t("Nada que correr: %s") % motivo, DIM)
 
     pct = (100.0 * n / total) if total else 0.0
     if report.get("todo"):
-        cabecera = "La suite ENTERA: %d test(s) en %d fichero(s)" % (n, len(ficheros))
+        cabecera = t("La suite ENTERA: %d test(s) en %d fichero(s)") % (n, len(ficheros))
     else:
-        cabecera = "%d de %d test(s) (%.0f%%) en %d fichero(s)" % (
+        cabecera = t("%d de %d test(s) (%.0f%%) en %d fichero(s)") % (
             n, total, pct, len(ficheros))
 
     if brief:
@@ -885,17 +885,17 @@ def render_impacted(report, style, brief=False):
 
     simbolos = report.get("symbols") or []
     if simbolos and not report.get("todo"):
-        lines.append("Disparado por %d simbolo(s) del diff:" % len(simbolos))
+        lines.append(t("Disparado por %d simbolo(s) del diff:") % len(simbolos))
         for qual in simbolos[:8]:
             lines.append("  %s" % qual)
         if len(simbolos) > 8:
-            lines.append(style("  ... y %d mas" % (len(simbolos) - 8), DIM))
+            lines.append(style(t("  ... y %d mas") % (len(simbolos) - 8), DIM))
         lines.append("")
 
     opacos = set(report.get("opacos") or [])
-    lines.append("Ficheros:")
+    lines.append(t("Ficheros:"))
     for ruta in ficheros:
-        marca = style("  (subproceso: va siempre)", DIM) if ruta in opacos else ""
+        marca = style(t("  (subproceso: va siempre)"), DIM) if ruta in opacos else ""
         lines.append("  %s%s" % (ruta, marca))
 
     for aviso in report.get("avisos") or []:
@@ -903,19 +903,19 @@ def render_impacted(report, style, brief=False):
         lines.append(style(aviso, DIM))
 
     lines.append("")
-    lines.append(style("Lo que esto NO garantiza:", BOLD))
+    lines.append(style(t("Lo que esto NO garantiza:"), BOLD))
     lines.append(style(
-        "  - la seleccion sale del grafo de LLAMADAS: lo que se invoca por tabla\n"
-        "    o por getattr no deja arista que seguir (los subprocesos si estan\n"
-        "    cubiertos: sus ficheros entran enteros)",
+        t("  - la seleccion sale del grafo de LLAMADAS: lo que se invoca por tabla\n"
+          "    o por getattr no deja arista que seguir (los subprocesos si estan\n"
+          "    cubiertos: sus ficheros entran enteros)"),
         DIM))
     lines.append(style(
-        "  - la herencia propaga por la arista extends (bases resueltas por\n"
-        "    nombre): una base dinamica o de otro paquete sigue sin arista que\n"
-        "    seguir, y ahi la seleccion no ve a las subclases",
+        t("  - la herencia propaga por la arista extends (bases resueltas por\n"
+          "    nombre): una base dinamica o de otro paquete sigue sin arista que\n"
+          "    seguir, y ahi la seleccion no ve a las subclases"),
         DIM))
     lines.append(style(
-        "  - no ejecuta nada: pasa estos ficheros a pytest, o usa --run", DIM))
+        t("  - no ejecuta nada: pasa estos ficheros a pytest, o usa --run"), DIM))
     return "\n".join(lines)
 
 

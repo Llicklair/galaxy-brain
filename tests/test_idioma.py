@@ -46,3 +46,64 @@ def test_el_camino_del_desconocido_en_ingles(tmp_path):
     assert ficha.returncode == 0, ficha.stderr[:300]
     assert " ago" in ficha.stdout        # el tiempo relativo, en inglés
     assert "hace " not in ficha.stdout   # y ni rastro del español
+
+
+def test_el_verificador_selecciona_en_ingles(tmp_path):
+    """Fase 2, el camino rutinario entero: gb tests con GB_LANG=en sobre un
+    diff real — cabecera, motivo, disparadores y el pie honesto, en inglés."""
+    raiz = tmp_path / "obra"
+    (raiz / "tests").mkdir(parents=True)
+    (raiz / "caja.py").write_text("def parte(t, g):\n    return t // g\n",
+                                  encoding="utf-8")
+    (raiz / "tests" / "test_caja.py").write_text(
+        "from caja import parte\n\n\ndef test_parte():\n"
+        "    assert parte(4, 2) == 2\n", encoding="utf-8")
+    for orden in (["git", "init", "-q"], ["git", "add", "-A"],
+                  ["git", "-c", "user.name=t", "-c", "user.email=t@t.t",
+                   "commit", "-q", "-m", "base"]):
+        subprocess.run(orden, cwd=str(raiz), timeout=60)
+    # el rango por defecto es HEAD~1..HEAD: el cambio viaja en su commit
+    (raiz / "caja.py").write_text(
+        "def parte(t, g):\n    return int(t) // g\n", encoding="utf-8")
+    for orden in (["git", "add", "-A"],
+                  ["git", "-c", "user.name=t", "-c", "user.email=t@t.t",
+                   "commit", "-q", "-m", "cambio"]):
+        subprocess.run(orden, cwd=str(raiz), timeout=60)
+    salida = subprocess.run(
+        [sys.executable, "-m", "galaxybrain.cli", "tests"],
+        cwd=str(raiz), capture_output=True, text=True, timeout=120,
+        env=dict(os.environ, GB_LANG="en"))
+    assert salida.returncode == 0, salida.stderr[:300]
+    assert "reach the" in salida.stdout              # el motivo estrella
+    assert "Triggered by" in salida.stdout
+    assert "What this does NOT guarantee:" in salida.stdout
+    assert "alcanzan" not in salida.stdout and "ENTERA" not in salida.stdout
+
+
+def test_el_verificador_sin_git_corre_todo_en_ingles(tmp_path):
+    """El fallback a suite entera también habla inglés: sin git no hay diff,
+    y eso se dice en voz alta en el idioma pedido."""
+    raiz = tmp_path / "sin_git"
+    (raiz / "tests").mkdir(parents=True)
+    (raiz / "tests" / "test_nada.py").write_text(
+        "def test_pasa():\n    assert True\n", encoding="utf-8")
+    salida = subprocess.run(
+        [sys.executable, "-m", "galaxybrain.cli", "tests"],
+        cwd=str(raiz), capture_output=True, text=True, timeout=120,
+        env=dict(os.environ, GB_LANG="en"))
+    assert salida.returncode == 0, salida.stderr[:300]
+    assert "The WHOLE suite" in salida.stdout
+    assert "could not read the diff" in salida.stdout
+    assert "suite ENTERA" not in salida.stdout
+
+
+def test_el_brief_de_check_habla_ingles(monkeypatch):
+    """La línea que ve cada commit desde el hook, traducida entera."""
+    monkeypatch.setenv("GB_LANG", "en")
+    from galaxybrain import render
+    linea = render.render_changes(
+        {"range": "staged", "flags": [], "onda": [],
+         "test_files_changed": 0, "staged": True},
+        lambda texto, *_: texto, brief=True)
+    assert "no signals" in linea and "detail: gb check --staged" in linea
+    assert "sin senales" not in linea

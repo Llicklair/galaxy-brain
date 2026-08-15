@@ -26,6 +26,8 @@ import subprocess
 import sys
 import tempfile
 
+from .idioma import t
+
 
 def _entorno_sin_git():
     """El entorno del proceso, sin las variables que git inyecta en sus hooks.
@@ -147,12 +149,12 @@ def verifica(root, ficheros, staged=False, traza=None):
 
     raiz = _raiz_git(root)
     if not raiz:
-        informe["motivo"] = "no es un repositorio git: no hay base limpia contra la que medir"
+        informe["motivo"] = t("no es un repositorio git: no hay base limpia contra la que medir")
         return informe
 
     rc, salida, _ = _git(raiz, "rev-parse", "HEAD")
     if rc != 0:
-        informe["motivo"] = "el repositorio no tiene ningun commit todavia"
+        informe["motivo"] = t("el repositorio no tiene ningun commit todavia")
         return informe
     base = _texto(salida)
     informe["base"] = base[:7]
@@ -160,7 +162,7 @@ def verifica(root, ficheros, staged=False, traza=None):
     # El diff que se mide: lo mismo que ya eligio quien llamo (--staged o no).
     rc, parche, err = _git(raiz, "diff", "--cached", base) if staged else _git(raiz, "diff", base)
     if rc != 0:
-        informe["motivo"] = "no se pudo obtener el diff: %s" % _texto(err)
+        informe["motivo"] = t("no se pudo obtener el diff: %s") % _texto(err)
         return informe
 
     informe["sin_trackear"] = _sin_trackear(raiz)
@@ -170,16 +172,16 @@ def verifica(root, ficheros, staged=False, traza=None):
     try:
         rc, _, err = _git(raiz, "worktree", "add", "--detach", arbol, base)
         if rc != 0:
-            informe["motivo"] = "no se pudo montar el arbol limpio: %s" % _texto(err)
+            informe["motivo"] = t("no se pudo montar el arbol limpio: %s") % _texto(err)
             return informe
         informe["monto"] = True
-        decir("arbol limpio en %s + tu diff" % informe["base"])
+        decir(t("arbol limpio en %s + tu diff") % informe["base"])
 
         if parche.strip():
             rc, _, err = _git(arbol, "apply", "--3way", "-", entrada=parche)
             if rc != 0:
                 informe["monto"] = False
-                informe["motivo"] = "el diff no aplica sobre %s: %s" % (informe["base"], _texto(err))
+                informe["motivo"] = t("el diff no aplica sobre %s: %s") % (informe["base"], _texto(err))
                 return informe
 
         # Los tests salen relativos a `root`, que puede ser un subdirectorio.
@@ -203,7 +205,7 @@ def verifica(root, ficheros, staged=False, traza=None):
         try:
             informe["exit_code"] = subprocess.call(cmd, cwd=cwd)
         except OSError as error:
-            informe["motivo"] = "no se pudo lanzar pytest: %s" % error
+            informe["motivo"] = t("no se pudo lanzar pytest: %s") % error
             informe["exit_code"] = 1
 
         # Un fichero de test que no viaja deja la verificacion incompleta, y una
@@ -246,12 +248,12 @@ def converge(root, traza=None):
 
     raiz = _raiz_git(root)
     if not raiz:
-        informe["motivo"] = "no es un repositorio git"
+        informe["motivo"] = t("no es un repositorio git")
         return informe
 
     activos = [(ruta, head) for ruta, head in _worktrees(raiz) if _tiene_cambios(ruta)]
     if not activos:
-        informe["motivo"] = "ningun worktree con cambios que verificar"
+        informe["motivo"] = t("ningun worktree con cambios que verificar")
         informe["veredicto"] = 0
         return informe
 
@@ -262,7 +264,7 @@ def converge(root, traza=None):
     # 1) Cada uno solo, sobre su propia base limpia.
     for ruta, head in activos:
         nombre = os.path.basename(ruta)
-        decir("--- %s (solo) ---" % nombre)
+        decir(t("--- %s (solo) ---") % nombre)
         ficheros = (impacted.analyze(ruta, None, worktree=True).get("tests") or [])
         sub = verifica(ruta, ficheros, traza=traza)
         informe["ramas"].append({
@@ -280,8 +282,9 @@ def converge(root, traza=None):
     #    diffs de bases distintas produce un arbol que no existio nunca, y un
     #    veredicto sobre algo inventado es peor que no dar veredicto (regla 9).
     if len(bases) != 1:
-        informe["motivo"] = ("los worktrees parten de bases distintas (%s): "
-                             "no se calcula la union" % ", ".join(sorted(b[:7] for b in bases)))
+        informe["motivo"] = (t("los worktrees parten de bases distintas (%s): "
+                               "no se calcula la union")
+                             % ", ".join(sorted(b[:7] for b in bases)))
         informe["veredicto"] = max(r["veredicto"] for r in informe["ramas"])
         return informe
 
@@ -368,18 +371,19 @@ def _union(raiz, base, activos, decir, impacted, incompletas=()):
     """Los N diffs superpuestos sobre un arbol limpio, y la suite que toca encima."""
     salida = {"veredicto": 1, "exit_code": None, "conflictos": [], "motivo": ""}
     if incompletas:
-        salida["motivo"] = ("hay tests que no viajan (%s): la union esta tan "
-                            "incompleta como esas ramas" % ", ".join(sorted(incompletas)))
+        salida["motivo"] = (t("hay tests que no viajan (%s): la union esta tan "
+                              "incompleta como esas ramas")
+                            % ", ".join(sorted(incompletas)))
         return salida
     tmp = tempfile.mkdtemp(prefix="gb-union-")
     arbol = os.path.join(tmp, "arbol")
     try:
         rc, _, err = _git(raiz, "worktree", "add", "--detach", arbol, base)
         if rc != 0:
-            salida["motivo"] = "no se pudo montar la union: %s" % _texto(err)
+            salida["motivo"] = t("no se pudo montar la union: %s") % _texto(err)
             return salida
 
-        decir("--- union de %d rama(s) sobre %s ---" % (len(activos), base[:7]))
+        decir(t("--- union de %d rama(s) sobre %s ---") % (len(activos), base[:7]))
         for ruta, _head in activos:
             rc, parche, _ = _git(ruta, "diff", "HEAD")
             if rc != 0 or not parche.strip():
@@ -406,7 +410,7 @@ def _union(raiz, base, activos, decir, impacted, incompletas=()):
         salida["conflictos"].extend(_lleva_los_nuevos(activos, arbol))
 
         if salida["conflictos"]:
-            salida["motivo"] = "no se pudo componer la union: %s" % ", ".join(salida["conflictos"])
+            salida["motivo"] = t("no se pudo componer la union: %s") % ", ".join(salida["conflictos"])
             return salida
 
         # Viajar no basta: tambien tienen que CORRER. Los nuevos llegaban al
