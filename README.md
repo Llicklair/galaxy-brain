@@ -35,6 +35,26 @@ from the AST.</sub>
 
 ---
 
+**The map, live: four agents at once.**
+
+<p align="center">
+  <video src="https://github.com/Llicklair/galaxy-brain/raw/main/docs/media/mapa-4-agentes.mp4" controls muted playsinline width="100%"></video>
+</p>
+
+<sub>If the player doesn't load, <a href="docs/media/mapa-4-agentes.mp4">download the clip</a> (5.7 MB, 1m46s, no audio).</sub>
+
+Four agents editing one repository at the same time — a small demo project, four git worktrees, and
+**no orchestrator telling the map anything**. `gb who --html --watch` re-derives the whole picture
+from disk every few seconds: which symbols each agent touched, where two of them **cross** on the
+same node, each agent's own console, and the verdict ladder it leaves behind when it finishes. When
+they were done, `gb tests --union --run` verified each branch alone and then all four together —
+**54 tests, every row green**.
+
+Every card on that screen is a fact read off the disk. Nothing is declared, nothing is inferred, and
+no model was asked.
+
+---
+
 ## Table of contents
 
 - [The thesis](#the-thesis)
