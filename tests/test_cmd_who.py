@@ -211,6 +211,52 @@ def test_el_codigo_naciente_enlaza_con_los_nodos_que_importa(tmp_path):
     assert "calc" not in foto["cruces"]  # leer juntos NO es chocar
 
 
+def test_la_arista_extends_llega_al_canvas_con_su_capa(tmp_path):
+    """La herencia es capa 4 con su color, su fila en la ficha y su linea en
+    la leyenda: el mapa enseña la arista por la que la seleccion sube."""
+    raiz = tmp_path / "proyecto"
+    raiz.mkdir()
+    (raiz / "reglas.py").write_text(
+        "class Base:\n    def valida(self):\n        return True\n\n\n"
+        "class Fija(Base):\n    pass\n", encoding="utf-8")
+    subprocess.run(["git", "init", "-q"], cwd=str(raiz), timeout=60)
+    destino = raiz / "mapa.html"
+    p = _who(str(raiz), "--html", str(destino),
+             env={"GB_HOME": str(tmp_path / "hogar")})
+    assert p.returncode == 0, p.stderr[:300]
+    html = destino.read_text(encoding="utf-8")
+    assert "extendido por" in html                  # la fila de la ficha
+    assert "EXTENDS_COLOR" in html and "#a78bfa" in html
+    assert "</i>extiende</span>" in html            # leyenda: solo con herencia
+
+
+def test_el_naciente_con_enlaces_tiene_ancla_para_el_fantasma(tmp_path):
+    """El payload del agente lleva `en` (a que nodos enlaza su codigo nuevo):
+    el ancla REAL con la que el lienzo dibuja su fantasma con hilo — sin
+    enlaces no hay ancla y el naciente se queda en su cuna del nacedero."""
+    raiz = tmp_path / "proyecto"
+    raiz.mkdir()
+    (raiz / "calc.py").write_text("def suma(a, b):\n    return a + b\n",
+                                  encoding="utf-8")
+    for orden in (["git", "init", "-q"], ["git", "add", "-A"],
+                  ["git", "-c", "user.name=t", "-c", "user.email=t@t.t",
+                   "commit", "-q", "-m", "base"]):
+        subprocess.run(orden, cwd=str(raiz), timeout=60)
+    wt = tmp_path / "wt-cria"
+    subprocess.run(["git", "worktree", "add", str(wt), "-b", "rama-cria"],
+                   cwd=str(raiz), capture_output=True, timeout=60)
+    (wt / "nuevo.py").write_text(
+        "from calc import suma\n\n\ndef doble(x):\n    return suma(x, x)\n",
+        encoding="utf-8")
+    destino = raiz / "mapa.html"
+    p = _who(str(raiz), "--html", str(destino),
+             env={"GB_HOME": str(tmp_path / "hogar")})
+    assert p.returncode == 0, p.stderr[:300]
+    html = destino.read_text(encoding="utf-8")
+    assert '"en": ["calc"]' in html                 # el ancla del fantasma
+    assert "muestraFichaFantasma" in html           # y su ficha interactiva
+
+
 def test_json_trae_las_claves_del_contrato(tmp_path):
     import json
 

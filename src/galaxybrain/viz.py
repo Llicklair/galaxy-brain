@@ -257,6 +257,9 @@ def _rgba(hexa, alfa):
 #: repetido es una mentira visual, y esta capa existe justo para separar el
 #: hecho exacto de la inferencia.
 _COLOR_IMPORT = "#fb7185"
+#: La arista extends: lavanda, lejos del rosa del import y del rojo del ciclo.
+#: El violeta de module es un PUNTO relleno; esto es una LINEA — no compiten.
+_COLOR_EXTENDS = "#a78bfa"
 
 #: El ciclo. Rojo, y por encima de la capa a la que pertenezca la arista: es el
 #: unico hecho de este grafo que detiene un commit, asi que no puede competir de
@@ -427,11 +430,16 @@ def render_graph_cloud(
         # precisamente algo que se quiere VER.
         implicados = sorted(kinds)
         llamadas = [(a, b) for a, b, t in report.get("edges", []) if t == "CALLS"]
+        # La herencia es un hecho con dirección propia (la selección de tests
+        # sube por ella desde el 14-ago): capa 4, con su color y su fila en la
+        # ficha. En el sim pesa igual que siempre — los muelles no miran capa.
+        herencia = [(a, b) for a, b, t in report.get("edges", []) if t == "EXTENDS"]
         # La jerarquia entra al layout como MUELLE y al dibujo como linea tenue:
         # es lo que mantiene cada funcion pegada a su modulo. Sin esto, la mitad
         # de los nodos no tenia nada que los sujetara y la repulsion los lanzaba
         # al borde (el rectangulo de la captura del owner).
-        jerarquia = [(a, b) for a, b, t in report.get("edges", []) if t != "CALLS"]
+        jerarquia = [(a, b) for a, b, t in report.get("edges", [])
+                     if t not in ("CALLS", "EXTENDS")]
         # Los imports unen modulo con modulo, y los modulos ya son nodos de esta
         # nube. Por eso unificar no exige inventar nada: es una clase de arista
         # mas sobre el mismo lienzo. Que los nombres casen entre los dos
@@ -527,9 +535,16 @@ def render_graph_cloud(
                 '<span><i class="linea" style="color:%s"></i>import (exacto)</span>'
                 '<span><i class="linea" style="color:#94a3b8"></i>llamada (inferida)</span>'
             ) % _COLOR_IMPORT
+        if herencia:
+            # Extends es hecho exacto del ast, como el import: su linea se nombra.
+            leyenda += (
+                '<span><i class="linea" style="color:%s"></i>extiende</span>'
+                % _COLOR_EXTENDS
+            )
     else:
         llamadas = [(a, b) for a, b in (report.get("edge_list") or [])]
         jerarquia = []
+        herencia = []
         implicados = sorted(report.get("fan_in", {}))
         kinds = {m: "module" for m in implicados}
         grupo_de = {m: m.split(".")[0] for m in implicados}
@@ -599,6 +614,9 @@ def render_graph_cloud(
             # Los modulos que esta CREANDO, con nombre: el nacedero los pinta
             # pulsando hasta que la union los haga estrellas (14-ago).
             "nace": a.get("nacientes") or [],
+            # A que nodos del mapa ENLAZA su codigo naciente (los imports del
+            # fichero nuevo): es el ancla real de sus fantasmas en el lienzo.
+            "en": sorted(q for q, ags in _enlazan.items() if a["nombre"] in ags),
             "base": a.get("base", ""),
             "misma": 1 if a.get("misma_base") else 0,
             # Qué escribió, exactamente: firmas contra el mapa canónico. La
@@ -700,6 +718,11 @@ def render_graph_cloud(
         # Clase 3: import entre modulos. Hecho exacto, no inferencia.
         [indice[a], indice[b], 3, 1 if (a, b) in pasos_ciclicos else 0]
         for a, b in importaciones if a in indice and b in indice
+    ] + [
+        # Clase 4: extends (sub -> base). Hecho del ast, con dirección: la
+        # selección de tests sube por esta arista, así que el mapa la enseña.
+        [indice[a], indice[b], 4, 1 if (a, b) in pasos_ciclicos else 0]
+        for a, b in herencia if a in indice and b in indice
     ]
 
     # La procedencia la inyecta quien llama, NO se lee del reloj aqui: si este
@@ -746,6 +769,7 @@ def render_graph_cloud(
             else ""
         ),
         "color_import": _COLOR_IMPORT,
+        "color_extends": _COLOR_EXTENDS,
         "color_ciclo": _COLOR_CICLO,
         "color_obra": _COLOR_OBRA,
         "agentes": _en_script(_json.dumps(_agentes_js, ensure_ascii=False)),
@@ -1008,6 +1032,7 @@ window.onerror = function(mensaje, origen, linea){
   return false;
 };
 const IMPORT_COLOR = '%(color_import)s', CICLO_COLOR = '%(color_ciclo)s';
+const EXTENDS_COLOR = '%(color_extends)s';
 const OBRA_COLOR = '%(color_obra)s';
 const AGENTES = %(agentes)s;
 const CAPTURAS = %(capturas)s;
@@ -1150,6 +1175,9 @@ function muestraFicha(i){
   const bloques = [
     ['llamado por', _lista(entran[i], 1, 4) || _lista(entran[i], 2, 4)],
     ['llama a',     _lista(salen[i], 1, 4)  || _lista(salen[i], 2, 4)],
+    // La herencia con su direccion: extends va de la subclase a la base.
+    ['extiende',      _lista(salen[i], 4, 4)],
+    ['extendido por', _lista(entran[i], 4, 4)],
     ['importado por', _lista(entran[i], 3, 4)],
     ['importa',       _lista(salen[i], 3, 4)],
   ];
@@ -1189,6 +1217,54 @@ function muestraFicha(i){
   if(x) x.addEventListener('click', ()=>{ fijado=null; muestraFicha(activo); recuerda(); });
 }
 
+// ============ fantasmas: nacientes CON ancla en el grafo (15-ago) ===========
+// El nacedero (DOM) sigue siendo el inventario de lo que nace. Esto es el
+// lienzo: un naciente solo entra al canvas si sus enlaces le dan un ancla
+// REAL — el centroide de los nodos que su codigo ya importa. Sin enlaces no
+// se le inventa posicion (la decision del nacedero sigue en pie): se queda
+// en su cuna. Interactivo: hover = ficha, clic = foco de su agente.
+const FANTASMAS = [];
+let fantasmaActivo = null;
+(function(){
+  try{
+    const IDXF = {}; NODOS.forEach((n,i)=>{ IDXF[n.id]=i; });
+    Object.keys(AGENTES).sort().forEach(nom => {
+      const a = AGENTES[nom];
+      const anclas = (a.en||[]).map(q=>IDXF[q]).filter(i=>i!==undefined);
+      if(!anclas.length) return;
+      (a.nace||[]).forEach((m, k) => {
+        let h=0; for(const ch of m) h=(h*31+ch.charCodeAt(0))>>>0;  // determinista
+        FANTASMAS.push({m:m, nom:nom, c:a.c||OBRA_COLOR, anclas:anclas,
+                        ang:(h%%628)/100, k:k});
+      });
+    });
+  }catch(_){ /* los fantasmas nunca tumban el lienzo */ }
+})();
+function posFantasma(f){
+  let sx=0, sy=0;
+  for(const i of f.anclas){ sx+=WX[i]; sy+=WY[i]; }
+  const n=f.anclas.length, r=46+f.k*18;
+  return [sx/n + r*Math.cos(f.ang), sy/n + r*Math.sin(f.ang)];
+}
+function fantasmaEn(mx,my){
+  for(let g=0; g<FANTASMAS.length; g++){
+    const p=posFantasma(FANTASMAS[g]);
+    if(Math.hypot(p[0]-mx,p[1]-my)<14) return g;
+  }
+  return null;
+}
+function muestraFichaFantasma(g){
+  const f=FANTASMAS[g];
+  const enlaces=[...new Set(f.anclas.map(i=>NODOS[i].l))].sort().slice(0,4).map(escapa).join(', ');
+  ficha.className='';
+  ficha.innerHTML='<b>'+escapa(f.m)+'</b><br>'
+    +'<i>naciendo &mdash; aun sin nodo en el grafo</i><br>'
+    +'<span>agente:</span> '+escapa(f.nom)+'<br>'
+    +'<span>enlaza:</span> '+enlaces
+    +'<span class="pista">clic para enfocar a su agente</span>';
+  ficha.style.display='block';
+}
+
 // ================= dibujo =================
 function pinta(t){
   cx.clearRect(0,0,cv.width,cv.height);
@@ -1208,18 +1284,19 @@ function pinta(t){
   }
   cx.lineWidth=1;
   // Orden de pintado = orden de lectura. Jerarquia (0) casi invisible debajo,
-  // solo sujeta; imports entre modulos (3) como esqueleto ambar, que es el hecho
-  // exacto; llamadas (1) encima; lo nuevo (2) en cian, que es lo que se mira.
-  for(const capa of [0,3,1,2]) for(const par of ARISTAS){
+  // solo sujeta; herencia (4) en lavanda sobre ella — hecho exacto con
+  // direccion, la seleccion de tests sube por ahi; imports entre modulos (3)
+  // como esqueleto ambar; llamadas (1) encima; lo nuevo (2) en cian.
+  for(const capa of [0,4,3,1,2]) for(const par of ARISTAS){
     const a=par[0], b=par[1], tp=par[2]|0;
     if(tp!==capa) continue;
     const tocada = foco!==null && (a===foco || b===foco);
     if(agenteFoco!==null && !cercaAg.has(a) && !cercaAg.has(b)){ cx.globalAlpha=0.015; }
     else if(foco!==null && !tocada){ cx.globalAlpha=0.02; }
-    else { cx.globalAlpha = tocada ? 0.9 : (par[3] ? 0.95 : (capa===0 ? 0.09 : capa===3 ? 0.5 : (capa===2 ? 0.7 : 0.3))); }
+    else { cx.globalAlpha = tocada ? 0.9 : (par[3] ? 0.95 : (capa===0 ? 0.09 : capa===3 ? 0.5 : (capa===4 ? 0.45 : (capa===2 ? 0.7 : 0.3)))); }
     // El tramo ciclico manda sobre su capa: es el unico hecho que detiene un commit.
-    cx.strokeStyle = par[3] ? CICLO_COLOR : (capa===2 ? '#22d3ee' : capa===3 ? IMPORT_COLOR : NODOS[a].c);
-    cx.lineWidth = par[3] ? 2.4 : (capa===3 ? 1.8 : 1);
+    cx.strokeStyle = par[3] ? CICLO_COLOR : (capa===2 ? '#22d3ee' : capa===3 ? IMPORT_COLOR : capa===4 ? EXTENDS_COLOR : NODOS[a].c);
+    cx.lineWidth = par[3] ? 2.4 : (capa===3 ? 1.8 : capa===4 ? 1.4 : 1);
     cx.beginPath(); cx.moveTo(WX[a],WY[a]); cx.lineTo(WX[b],WY[b]); cx.stroke();
   }
   // ---- sinapsis: la señal del agente fluyendo por su onda --------------------
@@ -1325,6 +1402,26 @@ function pinta(t){
       cx.beginPath(); cx.arc(WX[i],WY[i],rr+3,0,6.284); cx.stroke();
       cx.setLineDash([]); cx.lineWidth=1;
     }
+  }
+  // Los fantasmas: pulso discontinuo en su ancla y el hilo hacia lo que ya
+  // importan. Discontinuo a proposito — un nodo de verdad es un circulo
+  // relleno; lo que aun no existe no puede dibujarse igual que lo que existe.
+  for(const f of FANTASMAS){
+    const p=posFantasma(f), pu=0.5+0.5*Math.sin(reloj/420+f.ang);
+    if(agenteFoco!==null && f.nom!==agenteFoco){ continue; }
+    cx.setLineDash([3,3]);
+    for(const i of f.anclas){
+      cx.globalAlpha=0.10+0.25*pu; cx.strokeStyle=f.c; cx.lineWidth=1;
+      cx.beginPath(); cx.moveTo(p[0],p[1]); cx.lineTo(WX[i],WY[i]); cx.stroke();
+    }
+    const rf=5+1.5*pu;
+    cx.globalAlpha=0.25+0.55*pu; cx.strokeStyle=f.c; cx.lineWidth=1.4;
+    cx.beginPath(); cx.arc(p[0],p[1],rf,0,6.284); cx.stroke();
+    cx.setLineDash([]);
+    cx.globalAlpha=0.8; cx.fillStyle=f.c;
+    cx.font='10px ui-monospace,Consolas,monospace';
+    cx.fillText(f.m, p[0]+rf+3, p[1]+3);
+    cx.globalAlpha=1; cx.lineWidth=1;
   }
   // La consola del agente, ENCIMA del nodo que esta tocando. Va en su propia
   // pasada, despues de todos los nodos, para que ninguna quede tapada.
@@ -1445,7 +1542,13 @@ addEventListener('mousemove', e=>{
   }
   if(panning){ ox+=e.clientX-lx; oy+=e.clientY-ly; lx=e.clientX; ly=e.clientY; camaraLibre=true; return; }
   const i=nodoEn(e.clientX,e.clientY);
-  if(i!==activo){ activo=i; if(fijado===null) muestraFicha(i); }
+  // El fantasma solo responde donde no hay nodo: lo real tiene prioridad.
+  const g=(i===null)?fantasmaEn(e.clientX,e.clientY):null;
+  if(fijado===null){
+    if(g!==null){ if(g!==fantasmaActivo){ fantasmaActivo=g; muestraFichaFantasma(g); } }
+    else if(fantasmaActivo!==null){ fantasmaActivo=null; muestraFicha(activo); }
+  }
+  if(i!==activo){ activo=i; if(fijado===null && g===null) muestraFicha(i); }
 });
 addEventListener('mouseup', e=>{
   if(agarrado!==null){
@@ -1453,11 +1556,17 @@ addEventListener('mouseup', e=>{
     else cola=90;
     agarrado=null;
   } else if(panning && !movido){
-    // El clic en vacio suelta TODO foco: el de nodo y el de agente. Sin lo
-    // segundo, clicar la tarjeta de un agente dejaba el mapa atenuado a su
-    // vecindario sin salida aparente (reportado 14-ago: "todo se oscurece y
-    // algunos nodos se desconectan" — eran las aristas fuera de su onda).
-    fijado=null; agenteFoco=null; calculaCercaAg(); muestraFicha(null); recuerda();
+    const g=fantasmaEn(e.clientX,e.clientY);
+    if(g!==null){
+      // Clic en un fantasma: foco de SU agente — la onda entera de quien lo cria.
+      agenteFoco=FANTASMAS[g].nom; calculaCercaAg();
+    } else {
+      // El clic en vacio suelta TODO foco: el de nodo y el de agente. Sin lo
+      // segundo, clicar la tarjeta de un agente dejaba el mapa atenuado a su
+      // vecindario sin salida aparente (reportado 14-ago: "todo se oscurece y
+      // algunos nodos se desconectan" — eran las aristas fuera de su onda).
+      fijado=null; agenteFoco=null; calculaCercaAg(); muestraFicha(null); recuerda();
+    }
   }
   panning=false; cv.classList.remove('arrastrando');
 });
