@@ -109,10 +109,12 @@ declared yourself.
   down in [docs/pruebas-de-uso.md](docs/pruebas-de-uso.md) rather than hidden.
 - **Not a server, not an MCP server.** [SCOPE.md](SCOPE.md) has the reasoning, including the one
   condition that would reopen the MCP question.
-- **Not multi-language everywhere.** The *graph* reads 17 languages; the *error console* is
-  Python-only, and narrowing test selection is licensed per language — Python, `js`, `ts`, `go`, `c#`,
-  `java`, `php` and `lua` today, each earned with a bench of real failures. Everywhere else `gb tests` runs the whole suite and
-  says why. A call graph with holes doesn't cost you savings; it costs you a false green.
+- **Not multi-language everywhere.** The *graph* reads 17 languages and so does the **gate** — import
+  cycles and declared boundaries hold in any of them. The *error console* is Python-only. Narrowing
+  test selection is licensed per language — Python, `js`, `ts`, `go`, `c#`, `java`, `php`, `lua`,
+  `rust` and `ruby` today, each earned with a bench of real failures. The rest have not failed a
+  measurement: they have no bench yet, so `gb tests` runs the whole suite and says why. A call graph
+  with holes doesn't cost you savings; it costs you a false green.
 
 ### The two halves
 
