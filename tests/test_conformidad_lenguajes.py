@@ -28,6 +28,66 @@ necesita_astgrep = pytest.mark.skipif(
     reason="ast-grep no instalado; la capa multilenguaje es opcional (ADR 0009)",
 )
 
+
+def test_el_sg_de_debian_no_cuela_como_astgrep(monkeypatch):
+    """/usr/bin/sg (setgroups, shadow-utils) existe en cualquier Debian y no
+    es ast-grep: binario() no puede devolverlo. Cazado por el primer CI en
+    ubuntu (15-ago): el guard veia `sg`, la extraccion devolvia vacio y estas
+    sondas se pusieron rojas — su trabajo exacto."""
+    lenguajes._ES_ASTGREP.clear()
+    monkeypatch.setattr(lenguajes.shutil, "which",
+                        lambda n: "/fake/sg-impostor" if n == "sg" else None)
+
+    class _Usage:
+        returncode = 1
+        stdout = b"Usage: sg group [[-c] command]"
+        stderr = b""
+
+    monkeypatch.setattr(lenguajes.subprocess, "run", lambda *a, **k: _Usage())
+    try:
+        assert lenguajes.binario() is None
+    finally:
+        lenguajes._ES_ASTGREP.clear()
+
+
+def test_el_shim_roto_llamado_astgrep_tampoco_cuela(monkeypatch):
+    """El OTRO impostor del mismo dia: en WSL el PATH heredado de Windows trae
+    un shim npm LLAMADO ast-grep que muere en `exec: node: not found`. El
+    nombre correcto no exime de la verificacion: se ejecuta o no vale."""
+    lenguajes._ES_ASTGREP.clear()
+    monkeypatch.setattr(lenguajes.shutil, "which",
+                        lambda n: "/fake/ast-grep" if n == "ast-grep" else None)
+
+    class _Muerto:
+        returncode = 127
+        stdout = b""
+        stderr = b"exec: node: not found"
+
+    monkeypatch.setattr(lenguajes.subprocess, "run", lambda *a, **k: _Muerto())
+    try:
+        assert lenguajes.binario() is None
+    finally:
+        lenguajes._ES_ASTGREP.clear()
+
+
+def test_un_sg_que_si_es_astgrep_vale(monkeypatch):
+    """El alias `sg` legitimo (la instalacion oficial lo crea) sigue valiendo:
+    responde a --version como ast-grep y binario() lo devuelve."""
+    lenguajes._ES_ASTGREP.clear()
+    monkeypatch.setattr(lenguajes.shutil, "which",
+                        lambda n: "/fake/sg-real" if n == "sg" else None)
+
+    class _Version:
+        returncode = 0
+        stdout = b"ast-grep 0.45.0"
+        stderr = b""
+
+    monkeypatch.setattr(lenguajes.subprocess, "run", lambda *a, **k: _Version())
+    try:
+        assert lenguajes.binario() == "/fake/sg-real"
+    finally:
+        lenguajes._ES_ASTGREP.clear()
+
 #: lenguaje -> (nombre de fichero, fuente con `suma` y `total`, donde total llama a suma)
 FUENTES = {
     "js": ("a.js", "export function suma(a, b) { return a + b; }\n"

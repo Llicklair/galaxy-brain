@@ -31,6 +31,12 @@ jobs:
         run: |
           python -m pip install -e .
           python -m pip install pytest ruff
+      - name: ast-grep por referencia (ADR 0009)
+        # Sin esto las sondas de conformidad se saltan; con el, corren de
+        # verdad en cada plataforma. Pin a la serie 0.45: la conformidad de
+        # los 17 lenguajes esta MEDIDA contra ella (dart y csharp citan su
+        # gramatica); subir de serie es remedir, no un bump.
+        run: npm install -g "@ast-grep/cli@0.45"
       - name: activar la captura (gb on, como un usuario real)
         # La suite ejercita la consola de verdad: sin el .pth plantado, todo
         # lo que espera capturas falla. Primer hallazgo del CI (15-ago): la

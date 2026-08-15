@@ -387,12 +387,36 @@ def binario():
     shim `.CMD` de npm y `subprocess(["ast-grep", ...])` da WinError 2 aunque en
     la terminal funcione. Es el 'instalado != funcional' de la regla 7, y se
     reprodujo el 8-ago montando el primer proyecto JS.
+
+    Y lo encontrado se VERIFICA ejecutandolo, se llame como se llame. El
+    primer CI en ubuntu (15-ago) cazo DOS impostores el mismo dia: el `sg`
+    de Debian que es setgroups (shadow-utils), y en WSL el shim npm de
+    Windows llamado `ast-grep` que hereda el PATH y muere en `exec: node:
+    not found`. En ambos la deteccion por nombre decia si, la extraccion
+    devolvia vacio y las sondas de conformidad se ponian rojas — su trabajo
+    exacto. Un nombre en el PATH no es una herramienta.
     """
     for nombre in ("ast-grep", "sg"):
         ruta = shutil.which(nombre)
-        if ruta:
+        if ruta and _es_astgrep(ruta):
             return ruta
     return None
+
+
+#: memo por ruta: la verificacion es un subprocess y binario() esta en guards.
+_ES_ASTGREP = {}
+
+
+def _es_astgrep(ruta):
+    """True si `ruta` responde a --version como un ast-grep de verdad."""
+    if ruta not in _ES_ASTGREP:
+        try:
+            p = subprocess.run([ruta, "--version"], capture_output=True, timeout=20)
+            _ES_ASTGREP[ruta] = (p.returncode == 0
+                                 and b"ast-grep" in p.stdout.lower())
+        except (OSError, subprocess.SubprocessError):
+            _ES_ASTGREP[ruta] = False
+    return _ES_ASTGREP[ruta]
 
 
 def disponible():
