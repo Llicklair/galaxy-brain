@@ -296,11 +296,14 @@ def test_la_licencia_para_estrechar_es_opt_in():
     from galaxybrain import lenguajes as tabla
 
     concedidas = {i for i, cfg in tabla.LENGUAJES.items() if cfg["tia"]}
-    assert concedidas == {"js", "ts", "go", "csharp", "java", "php", "lua", "rust"}, (
+    assert concedidas == {"js", "ts", "go", "csharp", "java", "php", "lua", "rust",
+                          "ruby"}, (
         "cada una salio de un banco con rojos REALES y cascada exacta: js/ts con "
         "node --test, go con go test, csharp con dotnet test, rust con cargo test, "
-        "y java/php/lua con sus interpretes. Ruby NO la tiene, y su motivo esta en "
-        "carencias. Concedidas ahora: %s" % sorted(concedidas)
+        "java/php/lua con sus interpretes, y ruby con minitest el 15-ago-2026 "
+        "(4 roturas, 0 fugas, cascada exacta en las 3 medibles, 50%% de ahorro). "
+        "Los que siguen sin ella no es por sospecha: es que no tienen banco. "
+        "Concedidas ahora: %s" % sorted(concedidas)
     )
 
 
@@ -310,18 +313,20 @@ def test_sin_licencia_la_seleccion_corre_todo_y_lo_dice():
     Lo motivo Rust: la llamada dentro de `format!("...", emitir(xs))` era
     invisible y con ella se caia un test de los impactados. El 10-ago-2026 se
     arreglo la extraccion (`$M!($ARG, $FN($$$))`) y Rust gano su licencia con
-    cascada exacta, asi que el ejemplo de "sin licencia" es ahora Ruby — pero el
-    contrato es el mismo y por eso el test se queda.
+    cascada exacta; Ruby la gano el 15-ago con el mismo procedimiento, asi que
+    el ejemplo de "sin licencia" es ahora Kotlin — pero el contrato es el mismo
+    y por eso el test se queda. El ejemplo rota, la ley no.
     """
     from galaxybrain import impacted
 
-    assert impacted._sin_licencia_para_estrechar({"lenguajes": ["ruby"]}) == "ruby"
+    assert impacted._sin_licencia_para_estrechar({"lenguajes": ["kotlin"]}) == "kotlin"
     assert impacted._sin_licencia_para_estrechar({"lenguajes": ["rust"]}) == ""
+    assert impacted._sin_licencia_para_estrechar({"lenguajes": ["ruby"]}) == ""
     assert impacted._sin_licencia_para_estrechar({"lenguajes": ["js"]}) == ""
     assert impacted._sin_licencia_para_estrechar({"lenguajes": ["js", "go"]}) == ""
     assert impacted._sin_licencia_para_estrechar({"lenguajes": ["csharp"]}) == ""
     assert impacted._sin_licencia_para_estrechar({"lenguajes": ["go", "java"]}) == ""
-    assert impacted._sin_licencia_para_estrechar({"lenguajes": ["java", "ruby"]}) == "ruby"
+    assert impacted._sin_licencia_para_estrechar({"lenguajes": ["java", "kotlin"]}) == "kotlin"
 
 
 def test_la_via_python_no_pasa_por_la_licencia():

@@ -131,6 +131,17 @@ def _lang(ag, extensiones, simbolos, imports=(), llamada=LLAMADA, globales=_COMU
     justo la que falló en Rust— y las tres dan 4/4 exacta
     (`python bancos/bench_multi.py java php lua`). No es una licencia; es la
     deuda acotada y con el comando para saldarla.
+
+    **Ruby la ganó el 15-ago-2026** con el procedimiento entero, no con una
+    excepción: licencia provisional, `bench_multi.py ruby` con minitest, y el
+    criterio estricto de `bancos/estricto.py` — 4 roturas, **0 fugas**, cascada
+    exacta en las 3 medibles (la cuarta cae a la suite entera, que es la caída
+    segura) y 50 % de ahorro medio. Los que siguen sin licencia —c, dart,
+    elixir, kotlin, scala, swift, tsx— no es que hayan fallado: **no tienen
+    banco**, y sin banco no hay nada que medir. Esa distinción importa: un
+    lenguaje sin licencia corre la suite entera y es seguro, pero decir que
+    "falló" cuando nadie lo probó sería la misma cobertura fingida que la
+    matriz de variantes vino a matar.
     """
     return {
         "ag": ag, "extensiones": extensiones, "simbolos": simbolos, "imports": imports,
@@ -279,7 +290,7 @@ LENGUAJES = {
          ("class", "class $NAME"),
          ("class", "module $NAME")),
         ("require_relative '$SRC'", 'require_relative "$SRC"'),
-        resolucion="ruta-local",
+        resolucion="ruta-local", tia=True,
         carencias=("una llamada SIN parentesis (`total x` o `iva`) no es un nodo de "
                    "llamada en el AST: es indistinguible de una variable, asi que no "
                    "deja arista. Es idioma corriente en Ruby",),

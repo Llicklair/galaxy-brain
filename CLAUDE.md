@@ -52,7 +52,11 @@ a publicarse. Hoy no se publica nada.
    [ADR 0009](docs/adr/0009-multilenguaje-por-referencia.md)). Añadir un lenguaje es una entrada en
    la tabla `LENGUAJES` **más su sonda de conformidad**; estrechar tests con él exige **licencia
    medida con rojos reales **y cascada exacta** (`tia`, criterio en [bancos/estricto.py](bancos/estricto.py)),
-   que hoy tienen js, ts, go, csharp, java, php, lua y rust (nueve con Python). Cualquier otro eje se discute en
+   que hoy tienen js, ts, go, csharp, java, php, lua, rust y ruby (diez con Python).
+   Y la conformidad se mide **por matriz de variantes, no por ejemplar**: una forma
+   sintáctica equivalente (comillas simples, barril, `require` sin paréntesis) se
+   prueba como equivalente — probar una sola certificó durante meses una cobertura
+   que el ecosistema real no tenía ([tests/test_variantes_import.py](tests/test_variantes_import.py)). Cualquier otro eje se discute en
    [SCOPE.md](SCOPE.md) antes de tocar código.
 4. **Si un comando no cae en una de las familias de [ARCHITECTURE.md](ARCHITECTURE.md), no entra.** No
    hay excepción "pequeña": las excepciones pequeñas son exactamente cómo se fabrica un monstruo.
