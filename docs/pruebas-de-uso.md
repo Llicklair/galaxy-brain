@@ -1759,3 +1759,46 @@ ningun test local podia dar:
 Moraleja repetida tres veces en un dia: lo que el entorno del desarrollador
 no puede reproducir, solo una pata DISTINTA lo enseña. El badge "Python >=
 3.9" paso de promesa a hecho medido.
+
+## 15-ago-2026 — "¿y si eligieron ruby o c?": cuatro mejoras y un punto ciego de método
+
+La pregunta era si gb rinde igual fuera de Python. Buscando la respuesta
+salio algo que cambia la pregunta.
+
+**El hallazgo (mejora 1).** En JS/TS/TSX, `from "./a.js"` dejaba arista y
+`from './a.js'` NO dejaba ninguna. Solo cambian las comillas. Y llevaba
+meses en verde porque **la sonda de conformidad tambien estaba escrita con
+dobles**: el punto ciego era del METODO, no del patron. Cada lenguaje se
+validaba con UNA forma sintactica elegida a ojo, asi que una variante
+trivial desactivaba una capa entera en silencio y con el banco aprobando.
+
+La cura es la matriz: una forma que el lenguaje considera equivalente se
+prueba como equivalente. Al escribirla salieron **13 rojos de 15** solo en
+la familia JS (default, namespace, side-effect, `require` de ts,
+`import type`, `import()` perezoso, los dos barriles), y al extenderla,
+**6 mas** en PHP —que declaraba solo comillas simples, el espejo exacto— y
+Lua. Ruby y C pasaron enteros a la primera: su cobertura ya era real.
+
+**La consecuencia (mejora 2).** El gate multilenguaje no habia que
+construirlo: el constructor llevaba cableado desde el ADR 0009. Estaba MUDO
+— sin aristas de import no hay ciclos ni fronteras, asi que `gb graph
+--gate` pasaba en VERDE sobre cualquier repo JS sin comprobar nada. Curados
+los patrones: ciclo detectado, cruce de frontera por import y por llamada,
+exit 1. Y `gb floor` dejo de afirmar que gb solo lee Python, que era verdad
+ayer y hoy es mentira.
+
+**Mejora 3.** El checkpoint corria `python -m pytest` siempre, asi que sobre
+un repo JS verificaba la union con la herramienta equivocada. Ahora usa el
+comando del proyecto y estrena SIN_VEREDICTO (3): no comprobado no es
+fallado. El fallback importa tanto como la deteccion — si los ficheros son
+`.py` es pytest y punto, exigir configuracion a repos que hoy funcionan
+habria sido una regresion gratis (lo dijeron 9 tests al intentarlo).
+
+**Mejora 4.** Ruby gano su licencia con el procedimiento entero: 4 roturas,
+0 fugas, cascada exacta, 50% de ahorro. Y quedo escrito que los ocho
+restantes no han fallado nada: **no tienen banco**. Sin banco no hay
+medicion, y llamarlo fallo seria la misma cobertura fingida de siempre.
+
+**La leccion transferible:** una sonda que prueba un ejemplar mide el
+ejemplar, no la clase. Da igual cuantos lenguajes diga la tabla; lo que
+cubres es lo que probaste, con las comillas que escribiste ese dia.
