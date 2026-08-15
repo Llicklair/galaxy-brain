@@ -200,10 +200,14 @@ def verifica(root, ficheros, staged=False, traza=None):
             informe["veredicto"] = 1 if ausentes else 0
             return informe
 
-        cmd = [sys.executable, "-m", "pytest"] + presentes
-        decir("$ %s" % " ".join(cmd[1:]))
+        cmd, shell, sin_runner = _comando_de_tests(root, presentes, decir)
+        if cmd is None:
+            informe["motivo"] = sin_runner
+            informe["veredicto"] = SIN_VEREDICTO
+            return informe
+        decir("$ %s" % (cmd if shell else " ".join(cmd[1:])))
         try:
-            informe["exit_code"] = subprocess.call(cmd, cwd=cwd)
+            informe["exit_code"] = subprocess.call(cmd, cwd=cwd, shell=shell)
         except OSError as error:
             informe["motivo"] = t("no se pudo lanzar pytest: %s") % error
             informe["exit_code"] = 1
@@ -219,6 +223,52 @@ def verifica(root, ficheros, staged=False, traza=None):
         _git(raiz, "worktree", "remove", "--force", arbol)
         shutil.rmtree(tmp, ignore_errors=True)
         _git(raiz, "worktree", "prune")
+
+
+#: Veredicto de NO SE PUDO COMPROBAR. Ni 0 (verde) ni 1 (rojo): un proyecto
+#: cuyo runner no está declarado o no está instalado no tiene veredicto, y
+#: darlo por rojo es el falso rojo que ya mordió en `gb tests --run` (9-ago).
+#: Se agrega con `max()` como los demás, así que una rama sin comprobar
+#: impide que el conjunto salga verde — que es justo lo que debe pasar.
+SIN_VEREDICTO = 3
+
+
+def _comando_de_tests(root, ficheros, decir):
+    """(cmd, shell, motivo). El runner que declara el PROYECTO, no pytest.
+
+    El checkpoint nació cableado a `python -m pytest`, así que sobre un repo
+    JS, Go o PHP verificaba con la herramienta equivocada. Es la misma
+    suposición de Python que ya se corrigió en `gb tests --run` el 9-ago; esto
+    solo trae la lección aquí, incluida su parte incómoda: si el runner no
+    acepta ficheros sueltos se corre la suite ENTERA y se dice, porque
+    inventarse el ahorro es peor que gastar el tiempo.
+
+    `cmd` es None cuando no hay veredicto posible, y entonces `motivo` lo dice.
+    """
+    import shutil as _shutil
+
+    from . import floor
+
+    ficheros = list(ficheros)
+    comando, fuente = floor.detect_test_command(root)
+    if not comando:
+        # Sin comando declarado, la extensión de lo que hay que correr decide.
+        # Si son `.py`, pytest con casi total seguridad: exigir configuración a
+        # un repo Python que hoy funciona sin ella sería una regresión gratis
+        # (lo dijeron 9 tests de esta misma suite al intentarlo). Si NO son
+        # `.py`, no hay nada que suponer y se dice.
+        if ficheros and all(f.endswith(".py") for f in ficheros):
+            return [sys.executable, "-m", "pytest"] + ficheros, False, ""
+        return None, False, ("no se que comando corre los tests de este proyecto (%s)"
+                             % (fuente or "sin configuracion que lo declare"))
+    if comando.split()[0] in ("pytest", "python", sys.executable):
+        return [sys.executable, "-m", "pytest"] + ficheros, False, ""
+    binario = comando.split()[0]
+    if not _shutil.which(binario):
+        return None, False, ("`%s` es el runner de este proyecto (%s) y no esta instalado"
+                             % (binario, fuente))
+    decir("(la seleccion no se puede pasar a `%s`: se corre la suite entera)" % binario)
+    return comando, True, ""
 
 
 def converge(root, traza=None):
@@ -428,12 +478,16 @@ def _union(raiz, base, activos, decir, impacted, incompletas=()):
         if not ficheros:
             salida["veredicto"] = 0
             return salida
-        cmd = [sys.executable, "-m", "pytest"] + ficheros
-        decir("$ %s" % " ".join(cmd[1:]))
+        cmd, shell, sin_runner = _comando_de_tests(arbol, ficheros, decir)
+        if cmd is None:
+            salida["motivo"] = sin_runner
+            salida["veredicto"] = SIN_VEREDICTO
+            return salida
+        decir("$ %s" % (cmd if shell else " ".join(cmd[1:])))
         try:
-            salida["exit_code"] = subprocess.call(cmd, cwd=arbol)
+            salida["exit_code"] = subprocess.call(cmd, cwd=arbol, shell=shell)
         except OSError as error:
-            salida["motivo"] = "no se pudo lanzar pytest: %s" % error
+            salida["motivo"] = t("no se pudo lanzar pytest: %s") % error
             salida["exit_code"] = 1
         salida["veredicto"] = salida["exit_code"]
         return salida

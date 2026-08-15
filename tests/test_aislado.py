@@ -461,3 +461,45 @@ def test_el_mismo_fichero_IDENTICO_en_dos_ramas_no_es_colision(repo):
 
     informe = aislado.converge(str(repo))
     assert informe["union"]["conflictos"] == [], informe["union"]
+
+
+def test_un_repo_js_no_se_verifica_con_pytest(tmp_path, monkeypatch):
+    """El checkpoint nacio cableado a `python -m pytest`, asi que sobre un repo
+    que no es Python verificaba con la herramienta equivocada. Ahora el runner
+    sale de lo que el PROYECTO declara — y si no hay forma de saberlo, el
+    veredicto es SIN_VEREDICTO, nunca rojo: no comprobado no es fallado."""
+    root = tmp_path / "front"
+    root.mkdir()
+    (root / "calc.js").write_text("export function suma(a, b) { return a + b; }\n",
+                                  encoding="utf-8")
+    _git(root, "init", "-q")
+    _git(root, "config", "user.email", "t@t")
+    _git(root, "config", "user.name", "t")
+    _git(root, "add", "-A")
+    _git(root, "commit", "-q", "-m", "base")
+    (root / "calc.js").write_text(
+        "export function suma(a, b) { return Number(a) + Number(b); }\n",
+        encoding="utf-8")
+
+    # sin package.json no hay comando declarado: no se puede comprobar
+    informe = aislado.verifica(str(root), ["calc.js"])
+    assert informe["veredicto"] == aislado.SIN_VEREDICTO
+    assert "comando" in informe["motivo"] or "runner" in informe["motivo"]
+
+    # con package.json el runner ya se sabe, y es el del proyecto — no pytest
+    (root / "package.json").write_text(
+        '{\n  "name": "front",\n  "scripts": { "test": "jest" }\n}\n', encoding="utf-8")
+    _git(root, "add", "-A")
+    _git(root, "commit", "-q", "-m", "npm")
+    lanzados = []
+
+    def _falso_call(cmd, **kw):
+        lanzados.append(cmd)
+        return 0
+
+    monkeypatch.setattr(aislado.subprocess, "call", _falso_call)
+    aislado.verifica(str(root), ["calc.js"])
+    assert lanzados, "no lanzo nada"
+    orden = lanzados[0] if isinstance(lanzados[0], str) else " ".join(lanzados[0])
+    assert "pytest" not in orden, "sigue cableado a pytest: %r" % orden
+    assert "npm" in orden or "jest" in orden, orden
