@@ -1,0 +1,39 @@
+# El CI del repo publico: la misma puerta que el pre-commit local, en las
+# plataformas que un desconocido puede traer. Tres patas y no diez: ubuntu
+# moderno (el runner tipico), ubuntu con el 3.9 que el README promete (la
+# promesa se mide, no se estima) y windows (donde vive el desarrollo y
+# muerden CRLF/cp1252). El gate corre aqui igual que en local: informar
+# distinto en CI seria tener dos verdades.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  suite:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, python: "3.12" }
+          - { os: ubuntu-latest, python: "3.9" }
+          - { os: windows-latest, python: "3.12" }
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: instalar (editable, cero dependencias de runtime)
+        run: |
+          python -m pip install -e .
+          python -m pip install pytest ruff
+      - name: lint
+        run: ruff check src tests
+      - name: suite
+        run: python -m pytest tests/ -q
+      - name: gate de acoplamiento
+        run: gb graph src --gate
