@@ -22,15 +22,20 @@ re-verify, not a list of intentions — and what a language *can't* do is printe
 rather than hidden. The **error console** is Python-only and says so: `sys.excepthook` has no
 portable equivalent.
 
-**One engine per repo, and Python wins — read this before you install.** The two engines never
-merge. If there is *any* Python to analyze, the graph is the Python one and the other languages are
-not read at all; the `ast-grep` path takes over only in a repo with no Python whatsoever. So in a
-mixed Python + TypeScript repo, **the TypeScript is not in the graph**. This is deliberate
-([ADR 0009](docs/adr/0009-multilenguaje-por-referencia.md): two engines that coexist beat one
-generic engine worse than both), it lives in one place you can read
-([`_analiza_simbolos`](src/galaxybrain/cli.py)), and it is the single most important limit to know
-before adopting this. "17 languages" means one language family per repository, not all of them at
-once.
+**In a mixed repo, both engines run.** Python is parsed with the stdlib `ast`, the other 16 through
+`ast-grep`, and in a repo that has both, the two graphs are **merged into one** — a Python backend
+and a TypeScript frontend are in the same picture, and a cycle among TypeScript files blocks the
+gate exactly like a Python one. What is *not* done is invent edges **between** language families: a
+`fetch("/users")` cannot be tied to a Flask view without resolving the runtime, so the report says
+so in `not_covered` instead of faking a link. Name collisions keep Python's name and suffix the
+other (`web/app.py` stays `web.app`, `web/app.ts` becomes `web.app:ts`). `ast-grep` remains
+optional: without it you get the complete Python report plus a line naming what was skipped.
+
+<sub>Until 15 Aug 2026 this was not true — Python <i>excluded</i> the rest, so a mixed repo was
+analyzed half-way and said nothing about it. Measured on a 2 <code>.py</code> + 2 <code>.ts</code>
+bench: 2 modules of 4, gate green, zero warnings. That was a false green, and
+<a href="docs/adr/0010-repos-mixtos-los-dos-motores-conviven.md">ADR 0010</a> is the fix and the
+autopsy.</sub>
 
 **One tool, `gb`.** A single Python package, **zero model calls** on the hot path, **zero
 dependencies** beyond the standard library. An exception is a fact; the state at the moment of
