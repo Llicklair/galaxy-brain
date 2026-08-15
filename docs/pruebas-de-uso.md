@@ -1729,3 +1729,33 @@ colapso de rafagas en captura — misma firma en <60 s se apunta como UNA
 captura con contador. Restaria las ~24 fichas de ruido sin perder un solo
 hecho; la libreta agrupada ya ensena "13x", el colapso solo evitaria
 escribir 13 veces el mismo estado. Se decide en SCOPE.md con esta evidencia.
+
+## 15-ago-2026 — El primer CI multiplataforma (mejora 4 del plan): cuatro verdades por el precio de una
+
+El workflow (suite+ruff+gate en windows, ubuntu 3.12 y el 3.9 que el README
+promete) tardo CINCO rondas en ponerse verde, y cada roja fue un hecho que
+ningun test local podia dar:
+
+1. **La suite dependia del estado de la maquina**: sin `gb on` no hay .pth y
+   todo lo que espera capturas falla. El CI ahora instala y ACTIVA, como un
+   usuario real.
+2. **`/usr/bin/sg` de Debian es setgroups, no ast-grep**: la deteccion por
+   nombre lo daba por bueno y la extraccion devolvia vacio en cualquier
+   Linux. Y su gemelo: en WSL el PATH heredado de Windows trae un shim npm
+   LLAMADO ast-grep que muere sin node. `binario()` ahora ejecuta y verifica
+   — un nombre en el PATH no es una herramienta (regla 7, medida dos veces).
+3. **git 2.54 emite `%cI` con sufijo `Z` en UTC y el fromisoformat de
+   Python <=3.10 no la traga**: intervencion/cambiado/en-silencio se perdian
+   ENTEROS y en silencio en Linux+py viejo con git nuevo. `parse_ts`
+   normaliza la Z. El diagnostico exigio sondas en el propio runner (la
+   biseccion local no reproducia: WSL y Windows llevan git 2.53) y un
+   espejismo — "cualquier companero envenena" era en realidad "algun fixture
+   a-c pone TZ no-UTC y hace de antidoto".
+4. **La bomba del test patologico no detonaba en 3.9-linux** (el parser come
+   20k atributos encadenados sin inmutarse): el menos unario da MemoryError
+   en todas las versiones medidas. Una bomba que no detona en todas partes
+   no prueba la garantia.
+
+Moraleja repetida tres veces en un dia: lo que el entorno del desarrollador
+no puede reproducir, solo una pata DISTINTA lo enseña. El badge "Python >=
+3.9" paso de promesa a hecho medido.
