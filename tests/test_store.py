@@ -259,3 +259,18 @@ def test_es_del_proyecto_decide_por_el_arbol_no_por_el_temporal(tmp_path):
     assert store.es_del_proyecto({"where": os.path.join(raiz, "a.py") + ":2"}, raiz)
     assert not store.es_del_proyecto({"where": str(tmp_path / "otro" / "a.py") + ":2"}, raiz)
     assert not store.es_del_proyecto({"where": "?"}, raiz)
+
+
+def test_parse_ts_traga_la_z_de_git_254():
+    """git 2.54 emite `%cI` con sufijo Z en UTC y el fromisoformat de
+    Python <=3.10 no la acepta: sin normalizarla, `intervencion` y `cambiado`
+    quedaban en None en todo el ciclo del error (cazado por el primer CI,
+    solo reproducible en ubuntu+3.9 — la unica pata con git 2.54 y sin Z)."""
+    import datetime
+
+    momento = store.parse_ts("2026-08-15T02:54:28Z")
+    assert momento is not None
+    assert momento.utcoffset() == datetime.timedelta(0)
+    # y el formato de siempre sigue intacto
+    assert store.parse_ts("2026-08-15T02:54:28+02:00") is not None
+    assert store.parse_ts("no es una fecha") is None

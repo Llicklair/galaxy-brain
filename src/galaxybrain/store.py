@@ -276,9 +276,18 @@ def parse_ts(value):
 
     Se guarda con `isoformat()` y offset local, asi que `fromisoformat` lo lee
     tal cual. None si falta o no parsea: no se adivina una fecha.
+
+    La `Z` se normaliza a `+00:00` antes de parsear: git 2.54 emite `%cI` con
+    sufijo `Z` cuando el offset es UTC, y el `fromisoformat` de Python <=3.10
+    no la acepta. En el primer CI (15-ago) eso dejaba `intervencion` y
+    `cambiado` en None en TODO el ciclo del error — solo en ubuntu+3.9, que es
+    la unica combinacion con git 2.54 y sin el parseo de la Z: un usuario
+    Linux con git nuevo y Python viejo perdia el eslabon entero sin aviso.
     """
     if not value:
         return None
+    if isinstance(value, str) and value.endswith("Z"):
+        value = value[:-1] + "+00:00"
     try:
         return datetime.datetime.fromisoformat(value)
     except (ValueError, TypeError):
