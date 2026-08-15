@@ -955,7 +955,130 @@ def _constructor_de_grafo(root):
     if not lenguajes.hay_codigo(root):
         return None
     nodes, _edges, _errores = graph.build_graph(root)
-    return None if nodes else lenguajes.build_graph
+    if not nodes:
+        return lenguajes.build_graph
+    # Hay de los dos: van los dos. Antes ganaba Python y el otro lenguaje se
+    # caia del gate en silencio — un ciclo de imports entre ficheros TS pasaba
+    # el pre-commit de un repo mixto sin que nadie lo mirara.
+    return _constructor_fusionado
+
+
+def _constructor_fusionado(raiz, *args, **kwargs):
+    """(nodes, edges, errors) de los DOS motores, con la misma forma que uno solo.
+
+    Los nombres de modulo se calculan igual en ambos (`module_name`), asi que
+    `web/app.py` y `web/app.ts` chocarian: el de Python conserva el nombre y el
+    otro lleva su extension pegada. Sin esto, uno se comeria al otro y el grafo
+    mentiria en silencio, que es peor que no mirar.
+    """
+    from . import graph, lenguajes
+
+    nodes, edges, errors = graph.build_graph(raiz, *args, **kwargs)
+    otros_nodes, otros_edges, otros_errors = lenguajes.build_graph(raiz)
+    de_python = set(nodes)
+    extension = {}
+    for ruta, _lang in lenguajes._ficheros(raiz):
+        nombre = lenguajes.module_name(ruta, raiz)
+        if nombre:
+            extension.setdefault(nombre, os.path.splitext(ruta)[1].lstrip(".") or "?")
+
+    def _q(nombre):
+        if nombre in de_python:
+            return "%s:%s" % (nombre, extension.get(nombre, "?"))
+        return nombre
+
+    fusion_nodes = set(de_python) | {_q(n) for n in (otros_nodes or ())}
+    fusion_edges = dict((k, set(v)) for k, v in (edges or {}).items())
+    for origen, destinos in (otros_edges or {}).items():
+        fusion_edges.setdefault(_q(origen), set()).update(_q(d) for d in destinos)
+    fusion_errors = dict(errors or {})
+    fusion_errors.update(otros_errors or {})
+    return fusion_nodes, fusion_edges, fusion_errors
+
+
+def _fusiona_grafos(base, otro, since=None):
+    """Los dos motores en UN informe. `base` es el de Python y manda en los choques.
+
+    Hasta el 15-ago-2026 esto no existia: el motor no-Python entraba solo en
+    repos SIN nada de Python, asi que en un repo mixto el TypeScript no se leia
+    — y, lo grave, no se decia. Medido con un banco de 2 `.py` + 2 `.ts`:
+    `gb graph` cantaba "2 modulos, 0 ciclos, sin ciclos de imports" con medio
+    repo fuera y ni una linea de aviso. Un falso verde de manual, justo lo que
+    la regla 9 persigue, y encima con `not_covered` ahi al lado sin usar.
+
+    NO se inventa ninguna arista entre familias: nadie deriva que un
+    `fetch("/users")` de TS acaba en una vista de Flask sin resolver el runtime,
+    y fabricarla seria el grafo DECLARADO que ADR 0009 rechaza. Se dice.
+    """
+    if otro.get("root_error"):
+        # El otro motor no pudo mirar (tipico: `ast-grep` sin instalar). Eso no
+        # tumba un informe de Python bueno, pero callarlo repetiria el fallo que
+        # esta funcion existe para matar.
+        base["not_covered"].append(
+            "el resto de lenguajes no esta en este grafo: %s" % otro["root_error"])
+        return base
+
+    usados = {n["qual"] for n in base["nodes"]}
+    # `module_name` usa el mismo criterio en los dos motores, asi que
+    # `web/app.py` y `web/app.ts` aterrizan los dos en `web.app`. El de Python
+    # se queda con el nombre y el otro lleva su extension pegada: dos nodos
+    # distinguibles y ninguno pisado.
+    choques = sorted({n["qual"] for n in otro["nodes"]} & usados)
+    mapa = {}
+    for n in otro["nodes"]:
+        q = n["qual"]
+        for c in choques:
+            if q == c or q.startswith(c + "."):
+                ext = (os.path.splitext(n["file"])[1] or ".?").lstrip(".")
+                mapa[q] = q.replace(c, "%s:%s" % (c, ext), 1)
+                break
+
+    def _q(nombre):
+        return mapa.get(nombre, nombre)
+
+    for n in otro["nodes"]:
+        nodo = dict(n)
+        nodo["qual"] = _q(nodo["qual"])
+        if nodo.get("module"):
+            nodo["module"] = _q(nodo["module"])
+        base["nodes"].append(nodo)
+    for arista in otro["edges"]:
+        origen, destino, tipo = arista
+        base["edges"].append([_q(origen), _q(destino), tipo])
+    # `errors` no tiene la misma forma en los dos motores (dict por fichero en
+    # Python, lista de texto en el otro) y forzar una sobre la otra rompe a sus
+    # consumidores. Los del otro motor se DICEN, que es lo que importa.
+    for fallo in (otro.get("errors") or []):
+        base["not_covered"].append("otro motor: %s" % fallo)
+    for clave, valor in (otro.get("unresolved") or {}).items():
+        previo = base["unresolved"].get(clave)
+        if isinstance(previo, int) and isinstance(valor, int):
+            base["unresolved"][clave] = previo + valor
+        elif previo is None:
+            base["unresolved"][clave] = valor
+    # Sin sumar esto, el "N llamadas resueltas de M" de la cabecera del mapa
+    # describiria solo la mitad Python del grafo que esta dibujando.
+    for contador in ("calls_total", "calls_resolved"):
+        base[contador] = base.get(contador, 0) + (otro.get(contador) or 0)
+    if otro.get("lenguajes"):
+        base["lenguajes"] = otro["lenguajes"]
+    base["not_covered"].extend(otro.get("not_covered") or [])
+    base["not_covered"].append(
+        "sin aristas ENTRE familias de lenguaje: una llamada de JS/TS a un "
+        "endpoint de Python no deja rastro sintactico, y fabricarla seria "
+        "declarar en vez de derivar (ADR 0009)")
+    if choques:
+        ejemplo = sorted(mapa.values())[0]
+        base["not_covered"].append(
+            "%d nombre(s) de modulo coincidian en los dos motores: el no-Python "
+            "lleva su extension pegada (p. ej. %s)" % (len(choques), ejemplo))
+    if since:
+        base["not_covered"].append(
+            "el delta (`--since`) solo cubre la parte Python: del resto de "
+            "lenguajes esto es el estado ACTUAL, no lo que cambio desde %s" % since)
+    base["nodes"].sort(key=lambda n: n["qual"])
+    base["edges"].sort()
+    return base
 
 
 def _analiza_simbolos(root, since=None):
@@ -967,13 +1090,18 @@ def _analiza_simbolos(root, since=None):
     (ADR 0009).
 
     Python manda cuando hay Python: es el motor maduro y el unico sin
-    dependencia externa. La via JS entra solo cuando no habia nada que analizar
-    — nunca pisa un resultado bueno.
+    dependencia externa. Pero desde el 15-ago-2026 no EXCLUYE al otro: si hay
+    Python Y hay otros lenguajes, salen los dos en un solo informe
+    (`_fusiona_grafos`, donde esta escrito el porque).
     """
     from . import lenguajes, symbols
 
     informe = symbols.analyze(root, since=since)
-    if informe.get("nodes") or not lenguajes.hay_codigo(root):
+    hay_otros = lenguajes.hay_codigo(root)
+    if informe.get("nodes"):
+        return informe if not hay_otros else _fusiona_grafos(
+            informe, lenguajes.analyze(root), since=since)
+    if not hay_otros:
         return informe
     informe = lenguajes.analyze(root)
     if since and not informe["root_error"]:
