@@ -1,5 +1,7 @@
-# TEMPORAL: reproduce el racimo de intervencion SOLO-3.9-suite-completa con
-# el setup exacto del ci y para en el primer fallo con locales (pytest -x -l).
+# TEMPORAL: biseccion del veneno de coleccion — el racimo 3.9 solo aparece
+# con la suite completa, y el subconjunto a-c (que precede al racimo en
+# ejecucion) salio limpio: lo que queda es el IMPORT de los modulos d-z
+# durante la coleccion. Tres grupos, cada uno importado junto a la victima.
 # Se borra al cerrar el diagnostico.
 name: debug-ciclo
 on: workflow_dispatch
@@ -18,8 +20,12 @@ jobs:
           python -m pip install pytest
           npm install -g "@ast-grep/cli@0.45"
       - run: gb on
-      - name: la suite entera hasta el primer fallo, con locales
-        # El subconjunto a-c paso limpio: los mismos ficheros que preceden al
-        # racimo en la suite completa. Lo que queda es la COLECCION completa
-        # (pytest importa todos los modulos antes de correr ninguno).
-        run: python -m pytest tests/ -q -x -l --tb=long 2>&1 | tail -150
+      - name: grupo d-g + victima
+        continue-on-error: true
+        run: python -m pytest tests/test_[d-g]*.py tests/test_calls.py -q 2>&1 | tail -4
+      - name: grupo h-m + victima
+        continue-on-error: true
+        run: python -m pytest tests/test_[h-m]*.py tests/test_calls.py -q 2>&1 | tail -4
+      - name: grupo n-z + victima
+        continue-on-error: true
+        run: python -m pytest tests/test_[n-z]*.py tests/test_calls.py -q 2>&1 | tail -4
