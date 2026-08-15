@@ -38,10 +38,12 @@ from the AST.</sub>
 **The map, live: four agents at once.**
 
 <p align="center">
-  <video src="https://github.com/Llicklair/galaxy-brain/raw/main/docs/media/mapa-4-agentes.mp4" controls muted playsinline width="100%"></video>
+  <a href="docs/media/mapa-4-agentes.mp4">
+    <img src="docs/media/mapa-4-agentes.jpg" alt="Four agents at once on the live map — click to play" width="100%">
+  </a>
 </p>
 
-<sub>If the player doesn't load, <a href="docs/media/mapa-4-agentes.mp4">download the clip</a> (5.7 MB, 1m46s, no audio).</sub>
+<p align="center"><sub><b>▶ <a href="docs/media/mapa-4-agentes.mp4">Play the clip</a></b> · 1m46s, 5.7 MB, no audio</sub></p>
 
 Four agents editing one repository at the same time — a small demo project, four git worktrees, and
 **no orchestrator telling the map anything**. `gb who --html --watch` re-derives the whole picture
