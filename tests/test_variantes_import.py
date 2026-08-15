@@ -117,3 +117,33 @@ def test_las_pendientes_llevan_motivo():
     fingida — el mismo criterio que `carencias` en la tabla."""
     for clave, motivo in PENDIENTES.items():
         assert motivo and len(motivo) > 20, "%s sin motivo escrito" % (clave,)
+
+
+@necesita_astgrep
+def test_el_gate_bloquea_en_un_repo_que_no_es_python(tmp_path):
+    """El gate no estaba sin construir: estaba MUDO. El constructor
+    multilenguaje llevaba cableado desde el ADR 0009, pero sin aristas de
+    import no habia ciclos que encontrar ni fronteras que cruzar, asi que
+    `gb graph --gate` pasaba en verde sobre cualquier repo JS sin comprobar
+    nada — el falso verde que la regla 9 persigue. Con los patrones curados
+    el ciclo sale y el cruce declarado tambien; esto lo fija como contrato."""
+    from galaxybrain import graph
+
+    raiz = os.path.join(str(tmp_path), "app")
+    os.makedirs(os.path.join(raiz, "nucleo"))
+    os.makedirs(os.path.join(raiz, "ui"))
+    with open(os.path.join(raiz, "nucleo", "motor.js"), "w", encoding="utf-8") as fh:
+        fh.write("import { pinta } from '../ui/vista.js';\n"
+                 "export function calcula(x) { return pinta(x); }\n")
+    with open(os.path.join(raiz, "ui", "vista.js"), "w", encoding="utf-8") as fh:
+        fh.write("import { calcula } from '../nucleo/motor.js';\n"
+                 "export function pinta(x) { return calcula(x) + 1; }\n")
+    with open(os.path.join(raiz, ".gb-boundaries"), "w", encoding="utf-8") as fh:
+        fh.write("NUCLEO = nucleo.motor\nUI = ui.vista\n\nNUCLEO -/-> UI\n")
+
+    # El mismo motor que elige la CLI para un repo sin Python.
+    informe = graph.analyze(raiz, constructor=lenguajes.build_graph)
+
+    assert informe["modules"] == 2, informe["modules"]
+    assert informe["cycles"], "el ciclo de imports de JS no se ve"
+    assert informe["violations"], "el cruce de frontera declarado no se ve"

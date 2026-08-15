@@ -295,7 +295,7 @@ def _suelo_para_mapa(root):
     from . import floor
 
     try:
-        report = floor.analyze(root)
+        report = floor.analyze(root, constructor=_constructor_de_grafo(root))
     except Exception:
         return None
     niveles = report.get("levels") or []
@@ -1464,7 +1464,8 @@ def cmd_floor(args):
                 emit("            el pre-commit de gb queda SIN enganchar; a mano: "
                      "git config core.hooksPath .githooks")
         emit("")
-    report = floor.analyze(root, run_tests=args.time)
+    report = floor.analyze(root, run_tests=args.time,
+                           constructor=_constructor_de_grafo(root))
     if args.json:
         emit(json.dumps(report, ensure_ascii=False, indent=2))
     else:

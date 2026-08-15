@@ -757,7 +757,7 @@ def pending_sections(root):
     return pendientes
 
 
-def analyze(root, run_tests=False):
+def analyze(root, run_tests=False, constructor=None):
     """El informe del suelo. Siete niveles de §10 mas el contexto para agentes.
 
     `run_tests=True` cronometra la suite contra el umbral de DORA. Sin eso, el
@@ -852,7 +852,11 @@ def analyze(root, run_tests=False):
     # tarea que no existe: es dictaminar en vez de devolver (regla 2).
     from . import companions, graph
 
-    coupling = graph.analyze(root)
+    # El mismo motor que elige la CLI: sin el constructor, aqui se analizaba
+    # SOLO Python y un repo JS salia con "0 modulos" — y el detalle llegaba a
+    # decir que `gb graph` no lee otra cosa, que desde el 15-ago es falso. Un
+    # informe que declara de menos empuja a la conclusion contraria a la real.
+    coupling = graph.analyze(root, constructor=constructor)
     if coupling["modules"]:
         report["levels"].append(
             _level("mapa", "Un mapa, no una lectura", "ok",
@@ -862,10 +866,11 @@ def analyze(root, run_tests=False):
     else:
         report["levels"].append(
             _level("mapa", "Un mapa, no una lectura", "falta",
-                   "0 modulos Python analizables desde aqui; hoy `gb graph` solo lee Python")
+                   "0 modulos analizables desde aqui (ni Python ni los 16 lenguajes "
+                   "de ast-grep); si el codigo esta en otra carpeta, apunta ahi")
         )
         report["not_covered"].append(
-            "el mapa de un proyecto que no sea Python: `gb graph` no lo cubre todavia"
+            "el mapa de un lenguaje fuera de la tabla: `gb graph` no lo cubre"
         )
 
     # 4 — invariantes escritos.
