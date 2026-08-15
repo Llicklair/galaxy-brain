@@ -1704,3 +1704,28 @@ trivial pasó **limpio**: neto 1↔1 y WEAKENER solo cazaba `assert True` litera
 Nueva señal `ASSERT_WEAKENED` (pérdida neta de aserciones *que comparan* con total
 estable), con contrapeso. Sexta vez en dos días: la suite estaba verde y el hueco lo
 encontró el uso, no un test.
+
+## 15-ago-2026 — La sonda del embudo: capturadas vs leidas (mejora 3 del plan)
+
+La instrumentacion ya existia (`store.mark_read()` en cada `show`/`last`,
+regla 10: medir el abandono, no impedirlo). La sonda es la LECTURA de esos
+datos, segmentada. Numeros del store real, hoy:
+
+- **148 capturadas, 52 leidas.** Reales 45/100 (45%), efimeras 7/48 (14%) —
+  el filtro de efimeros hace su trabajo: lo que se oculta por defecto es
+  justo lo que nadie necesita leer.
+- **Donde importa, el embudo es sano: live code 19/20 leidas (95%).**
+  Cuando muere un proceso de verdad, la ficha se lee casi siempre. Es la
+  cifra que valida la consola como producto.
+- **El 70% sin leer de galaxy-brain es auto-ruido en rafaga.** Las cuatro
+  firmas mas repetidas jamas leidas (24 capturas entre ellas) viven en
+  ventanas de 1 a 11 SEGUNDOS: `NameError graph.py:634` son 13 capturas en
+  2 segundos (9-ago 20:22:01-03) — los hijos de la estigmergia y el watch
+  estrellandose contra fuente de gb a medio editar, que sana al teclazo
+  siguiente. No son fallos desatendidos: son duplicados que nadie necesito.
+
+**Candidata que sale de la medicion (para SCOPE, no se implementa aqui):**
+colapso de rafagas en captura — misma firma en <60 s se apunta como UNA
+captura con contador. Restaria las ~24 fichas de ruido sin perder un solo
+hecho; la libreta agrupada ya ensena "13x", el colapso solo evitaria
+escribir 13 veces el mismo estado. Se decide en SCOPE.md con esta evidencia.
