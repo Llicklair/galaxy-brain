@@ -121,16 +121,16 @@ def _lang(ag, extensiones, simbolos, imports=(), llamada=LLAMADA, globales=_COMU
     azar (todos los tests recorrían la cadena), y esa clase de suerte no se deja
     suelta (ADR 0009, criterio de aborto 1).
 
-    **Deuda declarada (10-ago-2026): tres licencias son ANTERIORES al criterio
-    estricto.** js, ts, go, csharp y rust se remidieron exigiendo que la
-    selección CONTENGA todos los tests que se ponen rojos, no que alguno lo esté
-    (`bancos/estricto.py`), y las cinco dan cascada exacta. **java, php y lua no
-    se han remedido con rojos reales**: sus intérpretes no están en la máquina
-    donde se hizo la revisión, y cuatro instalaciones no se deciden de paso. Lo
-    que SÍ se comprobó es la mitad que no necesita intérprete —la cascada, que es
-    justo la que falló en Rust— y las tres dan 4/4 exacta
-    (`python bancos/bench_multi.py java php lua`). No es una licencia; es la
-    deuda acotada y con el comando para saldarla.
+    **Deuda del 10-ago-2026, SALDADA el 15-ago.** js, ts, go, csharp y rust se
+    remidieron con el criterio estricto —que la selección CONTENGA todos los
+    tests que se ponen rojos, no que alguno lo esté (`bancos/estricto.py`)— y
+    las cinco daban cascada exacta. java, php y lua quedaron a medias: se les
+    había comprobado la cascada (la mitad que no necesita intérprete, justo la
+    que falló en Rust) pero no los rojos reales, porque sus intérpretes no
+    estaban en la máquina de la revisión. Ya lo están, así que se remidieron:
+    **4 roturas, 0 falsos verdes, cascada exacta y 56 % de ahorro en los tres**
+    (`python bancos/bench_multi.py java php lua`). Las nueve licencias no-Python
+    descansan hoy sobre el mismo criterio, sin asteriscos.
 
     **Ruby la ganó el 15-ago-2026** con el procedimiento entero, no con una
     excepción: licencia provisional, `bench_multi.py ruby` con minitest, y el

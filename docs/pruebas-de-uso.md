@@ -1802,3 +1802,28 @@ medicion, y llamarlo fallo seria la misma cobertura fingida de siempre.
 **La leccion transferible:** una sonda que prueba un ejemplar mide el
 ejemplar, no la clase. Da igual cuantos lenguajes diga la tabla; lo que
 cubres es lo que probaste, con las comillas que escribiste ese dia.
+
+## 15-ago-2026 (cont.) — La deuda de java/php/lua, saldada; y por que no hay decimo lenguaje hoy
+
+Al ir a por "el siguiente lenguaje" salio que **ninguno de los siete sin
+licencia se puede medir en esta maquina sin instalar algo**:
+
+- `tsx` parecia el barato por compartir familia con `ts` — que Node 24
+  ejecuta nativo. Pero Node **rechaza la extension `.tsx`** en toda variante
+  probada (`ERR_UNKNOWN_FILE_EXTENSION`, tambien con `--experimental-strip-types`
+  y `--experimental-transform-types`): JSX exige transformar, no solo borrar
+  tipos. Haria falta un transformador (esbuild/swc), o sea una instalacion.
+- `gcc/cc/clang`, `dart`, `elixir`, `kotlinc`, `scala`, `swiftc`: **ninguno
+  instalado**. Sin runtime no hay rojos reales, y sin rojos reales no hay
+  licencia — no se concede a ojo.
+
+Lo que SI se pudo medir, y valia mas: la **deuda declarada en el docstring de
+`_lang`**. java, php y lua tenian licencia con solo media medicion (la
+cascada, sin rojos reales) porque sus interpretes no estaban en la maquina de
+la revision del 10-ago. Hoy si estan (openjdk 21, PHP 8.4, Lua). Remedidos con
+el criterio estricto: **4 roturas, 0 falsos verdes, cascada exacta y 56 % de
+ahorro en los tres**. Las nueve licencias no-Python descansan ya sobre el
+mismo criterio, sin asteriscos.
+
+Moraleja de inventario: la deuda escrita EN el codigo, con su comando al lado,
+se salda sola en cuanto cambia el entorno. La que no se escribe, no.
