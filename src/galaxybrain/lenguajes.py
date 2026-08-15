@@ -294,7 +294,13 @@ LENGUAJES = {
          ("method", "class A { public function $NAME($$$) { $$$ } }", "method_declaration"),
          ("method", "class A { private function $NAME($$$) { $$$ } }", "method_declaration"),
          ("method", "class A { protected function $NAME($$$) { $$$ } }", "method_declaration")),
-        ("require_once '$SRC'", "require '$SRC'", "include '$SRC'"),
+        # Las cuatro palabras que incluyen fichero en PHP, cada una con y sin
+        # paréntesis (`require 'a.php'` y `require('a.php')` son la misma
+        # sentencia). La metavariable va suelta y cubre ambas comillas: aquí
+        # solo estaban las simples, el espejo exacto del bug de la familia JS
+        # — un repo PHP con comillas dobles no dejaba ni una arista.
+        ("require_once $SRC", "require $SRC", "include $SRC", "include_once $SRC",
+         "require_once($SRC)", "require($SRC)", "include($SRC)", "include_once($SRC)"),
         tia=True, resolucion="ruta-local",
         sufijos_test=("Test",), dirs_test=("test", "tests"),
     ),
@@ -306,7 +312,11 @@ LENGUAJES = {
          ("function", "local function $NAME($$$) $$$ end"),
          ("method", "function $T.$NAME($$$) $$$ end"),
          ("method", "function $T:$NAME($$$) $$$ end")),
-        ('require("$SRC")', "require '$SRC'"),
+        # En Lua las tres formas son la misma llamada. Aquí la metavariable NO
+        # va suelta a propósito: `require $SRC` casa también las versiones con
+        # paréntesis y captura `("a")` con ellos dentro, que luego no resuelve
+        # — arista perdida en silencio. Explícito es más largo y no miente.
+        ('require($SRC)', "require '$SRC'", 'require "$SRC"'),
         tia=True, resolucion="paquete",
         sufijos_test=("_test", "_spec"), dirs_test=("test", "tests", "spec"),
     ),

@@ -30,7 +30,15 @@ DESTINO = {
     "js": ("a.js", "export function suma(a, b) { return a + b; }\n"),
     "ts": ("a.ts", "export function suma(a: number, b: number) { return a + b; }\n"),
     "tsx": ("a.tsx", "export function suma(a: number, b: number) { return a + b; }\n"),
+    "ruby": ("a.rb", "def suma(a, b)\n  a + b\nend\n"),
+    "php": ("a.php", "<?php\nfunction suma($a, $b) { return $a + $b; }\n"),
+    "lua": ("a.lua", "function suma(a, b) return a + b end\n"),
+    "c": ("a.h", "int suma(int a, int b) { return a + b; }\n"),
 }
+
+#: La extension del fichero importador cuando NO es la del destino (en C se
+#: incluye una cabecera desde una unidad de compilacion).
+EXT_IMPORTADOR = {"c": "c"}
 
 #: (lenguaje, etiqueta) -> fuente del importador. TODAS deben dejar arista
 #: b -> a: son la misma dependencia escrita de formas que el lenguaje
@@ -54,6 +62,23 @@ VARIANTES = {
     ("ts", "solo-tipo"): "import type { suma } from './a';\n",
     ("ts", "commonjs"): "const { suma } = require('./a');\n",
     ("tsx", "default"): "import todo from './a';\n",
+    # --- Ruby: las dos comillas ya estaban; falta el require de ruta --------
+    ("ruby", "relativo-simples"): "require_relative 'a'\ndef total(x)\n  suma(x, 1)\nend\n",
+    ("ruby", "relativo-dobles"): 'require_relative "a"\ndef total(x)\n  suma(x, 1)\nend\n',
+    ("ruby", "relativo-con-extension"): "require_relative 'a.rb'\ndef total(x)\n  suma(x, 1)\nend\n",
+    # --- PHP: el espejo del bug de JS, aqui solo estaban las simples -------
+    ("php", "require-once-simples"): "<?php\nrequire_once 'a.php';\nfunction total($x) { return suma($x, 1); }\n",
+    ("php", "require-once-dobles"): '<?php\nrequire_once "a.php";\nfunction total($x) { return suma($x, 1); }\n',
+    ("php", "include-dobles"): '<?php\ninclude "a.php";\nfunction total($x) { return suma($x, 1); }\n',
+    ("php", "include-once"): "<?php\ninclude_once 'a.php';\nfunction total($x) { return suma($x, 1); }\n",
+    ("php", "require-parentesis"): "<?php\nrequire('a.php');\nfunction total($x) { return suma($x, 1); }\n",
+    # --- Lua: con y sin parentesis, ambas comillas ------------------------
+    ("lua", "parentesis-dobles"): 'local a = require("a")\nfunction total(x) return suma(x, 1) end\n',
+    ("lua", "parentesis-simples"): "local a = require('a')\nfunction total(x) return suma(x, 1) end\n",
+    ("lua", "sin-parentesis-simples"): "local a = require 'a'\nfunction total(x) return suma(x, 1) end\n",
+    ("lua", "sin-parentesis-dobles"): 'local a = require "a"\nfunction total(x) return suma(x, 1) end\n',
+    # --- C: la cabecera del proyecto (los <> son del sistema, no del repo) --
+    ("c", "include-comillas"): '#include "a.h"\nint total(int x) { return suma(x, 1); }\n',
 }
 
 #: Variantes que NO se exigen todavia, con su motivo. Vacio hoy: lo que
@@ -68,7 +93,7 @@ def _proyecto(tmp_path, lang, etiqueta):
     destino_nombre, destino_fuente = DESTINO[lang]
     with open(os.path.join(raiz, destino_nombre), "w", encoding="utf-8") as fh:
         fh.write(destino_fuente)
-    ext = destino_nombre.rsplit(".", 1)[1]
+    ext = EXT_IMPORTADOR.get(lang, destino_nombre.rsplit(".", 1)[1])
     with open(os.path.join(raiz, "b." + ext), "w", encoding="utf-8") as fh:
         fh.write(VARIANTES[(lang, etiqueta)])
     return raiz
