@@ -19,7 +19,14 @@ hecho. La forma del grafo de imports es un hecho. Lo que un diff le hizo a los t
 Reportar hechos no necesita juicio, y por eso puede ser instantáneo y no equivocarse de forma cara.
 
 Y los hechos necesitan un sitio donde aterrizar: **el grafo**, símbolos y módulos derivados del
-código en cada mirada, nunca declarados ni mantenidos a mano. Una captura se ancla a su nodo y
+código en cada mirada, nunca declarados ni mantenidos a mano. Con una excepción escrita, que lo es
+por el mismo motivo que la regla: derivar solo alcanza a lo que un import deja escrito, y una
+llamada por HTTP, `subprocess`, CLI o IPC es una dependencia igual de real e invisible para
+cualquier analizador. Esa —y solo esa— se declara a mano en `.gb-boundaries` con `A => B`, y entra
+en el grafo como arista de primera clase: cuenta en ciclos, en fan-in/out, en la selección de tests
+y en el mapa, y las fronteras la gobiernan como a cualquier otra. Sigue siendo un hecho, solo que
+uno que el código no confiesa; lo que no se admite es declarar lo que el análisis ya deriva.
+Una captura se ancla a su nodo y
 enseña a sus llamantes; un diff es una onda sobre las aristas; el gate del pre-commit y la
 selección de tests salen de sus aristas; el cruce de firmas del rechazo también. El grafo es el
 **motor**; la columna del producto es la **verificación del trabajo de agentes** — cada rama sola,

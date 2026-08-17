@@ -60,6 +60,19 @@ maquinaria del watch propio, que era la culpable medida, sigue fuera. Libreta 14
 
 Cualquier elemento nuevo en esa tabla es scope creep, no una mejora.
 
+#### Lo único que se declara a mano: las aristas que el código no confiesa
+
+El grafo se deriva. La excepción, acotada y escrita: una dependencia que **ningún** analizador
+estático puede ver —HTTP, `subprocess`, CLI, IPC, el otro lado en un lenguaje que este repo no
+analiza— se declara en `.gb-boundaries` como `A => B` y entra como arista de primera clase (ciclos,
+fan-in/out, selección de tests, mapa), gobernada por las fronteras como cualquier otra.
+
+**Qué NO es esto:** no es declarar lo que el análisis ya deriva (eso es un grafo mantenido a mano,
+que es justo lo que la ADR 0001 mató: se desincroniza y miente); no es un peso, una etiqueta ni un
+tipo de arista; no es una vía para exceptuarse de un `-/->`; y no es un lenguaje de descripción de
+arquitectura. Una línea, dos módulos, una dirección. Si alguna vez hace falta un tercer campo, la
+respuesta por defecto es no.
+
 #### Por qué el grafo lleva dos lenguajes y la consola uno
 
 No es una inconsistencia, son dos costes distintos. El grafo necesita **un parser**, y eso se integra

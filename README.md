@@ -483,6 +483,28 @@ it. `A -/-> B` promises "A does not depend on B", and there are languages where 
 module without importing it: `crate::b::f()` in Rust, or the same package in Java, C# and Kotlin.
 Checking only imports left that door open, and a real agent walked through it.
 
+#### Dependencies the code never confesses
+
+The graph is derived, never declared — but it can only derive what an import statement writes down. A
+repo that talks to its Go service over HTTP, to a worker over `subprocess`, or to another module
+through a CLI has real dependencies that no static analyser can see, and they are missing from the
+cycles, the fan-in, the test selection and the map. `A => B` writes one down by hand:
+
+```
+app.web  =>  svc.payments     # declared: HTTP, subprocess, CLI, IPC — anything static analysis misses
+app.web -/-> app.db           # forbidden: A must not depend on B
+ENTRY = app.web, app.api      # a group, expandable in both forms above
+```
+
+A declared edge is an edge like any other: it is injected **before** anything is computed, so it
+closes cycles, counts in fan-in/out, reaches the test selection and gets drawn on the map — and the
+boundaries govern it, so `=>` is no back door around a `-/->` you declared.
+
+The token is `=>` and deliberately not `-->`: you get `-->` by dropping the slash from `-/->`, and
+that one-character typo would have turned "A must not depend on B" into "A depends on B" — the exact
+opposite of the rule you meant to write, passing green. `-->` stays a malformed line that gets
+reported.
+
 ### Which tests to run for what changed
 
 ```bash
