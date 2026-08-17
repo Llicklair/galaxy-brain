@@ -792,8 +792,36 @@ def _boundaries_elsewhere(root, consultado, max_arriba=3):
 
     for candidato in candidatos:
         if os.path.normcase(candidato) != consultado and os.path.isfile(candidato):
+            if not _promete_proteccion(candidato):
+                continue
             return candidato
     return None
+
+
+def _promete_proteccion(path):
+    """¿Ese fichero declara algo que PROTEGE — una frontera o una superficie?
+
+    Lo que hace peligroso un `.gb-boundaries` sin aplicar no es que exista: es que
+    promete una comprobacion que no se esta haciendo, y el verde se lee como
+    "limpio" cuando significa "no he mirado". Esa promesa la hacen `-/->` y `::`.
+
+    Un fichero que solo trae ARISTAS DECLARADAS (`=>`) o grupos no promete nada:
+    describe el grafo, no lo vigila. Denunciarlo bloquea un layout legitimo — el
+    de este mismo repo, donde `src/.gb-boundaries` gatea el paquete y el de la
+    raiz declara las dependencias invisibles del arbol entero (tests que cargan
+    `bucle/` por ruta). Bloquear ahi es fabricar el falso positivo que acaba en
+    `--no-verify`, que es exactamente lo que esta salvaguarda vino a evitar.
+
+    Ante la duda —no se puede leer, no se puede parsear— se responde que SI: no
+    poder comprobarlo no es motivo para callarse.
+    """
+    try:
+        info = load_boundaries(os.path.dirname(path), path)
+    except OSError:
+        return True
+    if info.get("error"):
+        return True
+    return bool(info.get("rules") or info.get("surfaces") or info.get("malformed"))
 
 
 def _under(module, pattern):
