@@ -1223,6 +1223,15 @@ function muestraFicha(i){
 // REAL — el centroide de los nodos que su codigo ya importa. Sin enlaces no
 // se le inventa posicion (la decision del nacedero sigue en pie): se queda
 // en su cuna. Interactivo: hover = ficha, clic = foco de su agente.
+// Las coordenadas de PANTALLA de cada nodo. Viven aqui y no dentro de
+// `pinta()` porque el hit-test del raton las necesita fuera del frame: con
+// ellas locales, `posFantasma` daba `ReferenceError: WX is not defined` y el
+// lienzo entero se caia — pero SOLO con fantasmas en pantalla, o sea solo con
+// agentes creando modulos, que es justo cuando nadie esta mirando la consola.
+// Lo canto la franja de confesion en una grabacion en vivo (15-ago). `node
+// --check` no lo veia: es sintaxis valida, error de AMBITO.
+let WX = new Float64Array(0), WY = new Float64Array(0);
+
 const FANTASMAS = [];
 let fantasmaActivo = null;
 (function(){
@@ -1276,7 +1285,7 @@ function pinta(t){
   // con --refresco la fase saltaba de golpe cada N segundos — todos los nodos
   // brincaban un poco en cada recarga (uso real, 4-ago).
   const reloj = performance.timeOrigin + t;
-  const WX=new Float64Array(N), WY=new Float64Array(N);
+  if(WX.length!==N){ WX=new Float64Array(N); WY=new Float64Array(N); }
   const vivo = iter>=MAXIT ? 1 : 0;
   for(let i=0;i<N;i++){
     WX[i]=X[i]*esc+ox + vivo*2.2*Math.sin(reloj/1100+i*2.1);
