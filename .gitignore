@@ -44,3 +44,7 @@ bancos/cc/
 bancos/bench-correccion/
 bancos/bench-correccion-tiradas/
 bancos/bench-convergencia/
+
+# Experimentos que no son parte del programa (consola multilenguaje, 16-ago-2026):
+# viven fuera del paquete para no ganar la resolucion de imports, y fuera del grafo.
+experimentos/
