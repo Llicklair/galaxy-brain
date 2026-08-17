@@ -136,6 +136,25 @@ def _procedencia(root):
     return "generado el %s (sin repo git)" % momento
 
 
+def _alcance_de_mapa(path):
+    """De que raiz es el mapa que YA esta escrito ahi, o None.
+
+    Solo la primera linea: el HTML pesa megas y esto corre antes de cada
+    escritura, incluido el refresco de `--watch`. Un mapa anterior a esta marca
+    devuelve None y no se avisa de nada — callar sobre lo que no se sabe es
+    preferible a inventarse un alcance viejo.
+    """
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as fh:
+            primera = fh.readline(400)
+    except OSError:
+        return None
+    marca = "<!-- gb:alcance "
+    if not primera.startswith(marca):
+        return None
+    return primera[len(marca):].split("-->")[0].strip() or None
+
+
 def _embudo_ciclo(embudo):
     """El embudo del ciclo del error en una linea. Hechos con su recuento, sin
     veredicto: "sin reaparecer" es lo maximo que se puede afirmar sin re-ejecutar."""
@@ -1465,9 +1484,28 @@ def cmd_who(args):
 
         def _escribe_canvas(html):
             tmp = destino_html + ".tmp"
+            # El mapa es UNO por repo, asi que `gb who <otra-ruta>` lo reescribe
+            # entero — y un mapa con otro alcance no se lee como "otro alcance",
+            # se lee como "el codigo ha cambiado". Analizar el repo entero en vez
+            # de `src` mete tests, bancos y experimentos en el mismo lienzo: mas
+            # del triple de nodos y clusters sueltos que no estaban. Pasa sin
+            # querer, corriendo un diagnostico, y nada lo decia: el sello de
+            # procedencia solo llevaba fecha y commit. Aqui se estampa el alcance
+            # y se avisa cuando cambia. Avisa, no bloquea: cambiarlo a proposito
+            # es legitimo, y gatear una escritura legitima fabrica el falso
+            # positivo de la regla 9.
+            previo = _alcance_de_mapa(destino_html)
+            ahora = os.path.normcase(os.path.abspath(root))
+            if previo and previo != ahora:
+                sys.stderr.write(
+                    "[gb who] OJO: este mapa era de %s y pasa a ser de %s. Es el mismo\n"
+                    "         fichero para todo el repo, asi que lo que veas cambia de\n"
+                    "         sitio sin que el codigo se haya movido.\n" % (previo, ahora)
+                )
             try:
                 os.makedirs(os.path.dirname(destino_html) or ".", exist_ok=True)
                 with open(tmp, "w", encoding="utf-8") as fh:
+                    fh.write("<!-- gb:alcance %s -->\n" % ahora)
                     fh.write(html)
                 os.replace(tmp, destino_html)
             except OSError:
