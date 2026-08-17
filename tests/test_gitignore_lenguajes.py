@@ -62,9 +62,46 @@ def test_sin_git_se_ve_todo_en_vez_de_esconder(tmp_path):
     assert _vistos(raiz) == ["generado/generado.ts", "src/bueno.ts"]
 
 
+@necesita_git
+def test_un_proyecto_dentro_de_un_directorio_ignorado_sigue_teniendo_grafo(tmp_path):
+    """El repo padre ignora la raiz -> sus reglas NO gobiernan dentro de ella.
+
+    `git -C` escala hasta el repo que contenga la ruta. Analizar un proyecto que
+    vive bajo un directorio ignorado por el padre (`tmp*/`, `vendor/`, el
+    `pytest-of-*/` de esta misma suite) hacia que TODOS sus ficheros salieran
+    ignorados: grafo vacio, sin un solo aviso. Costo 124 tests el 17-ago-2026, y
+    en uso real es `gb graph <ruta>` devolviendo cero modulos en verde.
+    """
+    padre = str(tmp_path)
+    subprocess.run(["git", "-C", padre, "init", "-q"], check=True)
+    with open(os.path.join(padre, ".gitignore"), "w", encoding="utf-8") as fh:
+        fh.write("aparte/\n")
+
+    raiz = _repo(os.path.join(padre, "aparte"))          # sin `.gitignore` propio
+    assert _vistos(raiz) == ["generado/generado.ts", "src/bueno.ts"]
+
+
+@necesita_git
+def test_la_raiz_ignorada_no_desactiva_su_propio_gitignore(tmp_path):
+    """Desactivar el filtro del PADRE no es desactivar el del proyecto: si la
+    raiz trae reglas propias, esas mandan."""
+    padre = str(tmp_path)
+    subprocess.run(["git", "-C", padre, "init", "-q"], check=True)
+    with open(os.path.join(padre, ".gitignore"), "w", encoding="utf-8") as fh:
+        fh.write("aparte/\n")
+
+    raiz = _repo(os.path.join(padre, "aparte"), gitignore="generado/\n")
+    subprocess.run(["git", "-C", raiz, "init", "-q"], check=True)   # repo propio
+    assert _vistos(raiz) == ["src/bueno.ts"]
+
+
 def test_preguntar_a_git_no_cuesta_un_proceso_por_fichero(tmp_path, monkeypatch):
-    """El presupuesto de latencia (regla 2) no aguanta cientos de procesos: la
-    consulta es UNA, con `--stdin`."""
+    """El presupuesto de latencia (regla 2) no aguanta cientos de procesos.
+
+    Lo que se fija no es un numero magico, es la FORMA del coste: constante en el
+    numero de ficheros. Con `--stdin` la consulta es una, mas la que pregunta si
+    la propia raiz esta ignorada; ninguna de las dos depende del barrido.
+    """
     raiz = _repo(str(tmp_path), gitignore="generado/\n")
     llamadas = []
     real = subprocess.run
@@ -76,4 +113,12 @@ def test_preguntar_a_git_no_cuesta_un_proceso_por_fichero(tmp_path, monkeypatch)
 
     monkeypatch.setattr(lenguajes.subprocess, "run", contando)
     lenguajes._ficheros(raiz)
-    assert len(llamadas) <= 1
+    pocos = len(llamadas)
+
+    destino = os.path.join(raiz, "src")
+    for i in range(40):
+        with open(os.path.join(destino, "m%d.ts" % i), "w", encoding="utf-8") as fh:
+            fh.write("export const x = %d;\n" % i)
+    llamadas.clear()
+    lenguajes._ficheros(raiz)
+    assert len(llamadas) == pocos <= 2

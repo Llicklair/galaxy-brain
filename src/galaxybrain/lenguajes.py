@@ -588,6 +588,51 @@ def module_name(ruta, raiz):
     return ".".join(partes)
 
 
+def _via(ruta):
+    return os.path.normcase(os.path.normpath(os.path.realpath(ruta)))
+
+
+def _raiz_ignorada(raiz):
+    """¿La raíz es código AJENO para el único repo que la gobierna?
+
+    Dos preguntas, en este orden, porque la segunda sin la primera se equivoca:
+
+    1. ¿De quién es la raíz? Si tiene repo propio (el toplevel es ella misma o
+       algo dentro), sus reglas mandan y aquí no se toca nada — que un repo de
+       más arriba la ignore no es asunto suyo.
+    2. Solo si manda un repo de MÁS ARRIBA: ¿ese repo la ignora? Entonces sus
+       reglas no describen este proyecto, y aplicarlas hacia dentro borra el
+       grafo entero.
+
+    Se pregunta desde el padre: dentro de la raíz, git resolvería la ruta contra
+    el mismo directorio y la respuesta no querría decir lo mismo. Sin git, o si
+    algo falla, se responde que no: el filtro sigue como estaba y a lo sumo se
+    informa de más.
+    """
+    raiz_abs = os.path.abspath(raiz)
+    padre = os.path.dirname(raiz_abs)
+    if not padre or padre == raiz_abs:
+        return False
+    try:
+        p = subprocess.run(
+            ["git", "-C", raiz_abs, "rev-parse", "--show-toplevel"],
+            capture_output=True, text=True, timeout=20,
+        )
+        if p.returncode != 0:
+            return False
+        toplevel = _via(p.stdout.strip())
+        # Repo propio (o anidado dentro): las reglas de la raíz son las suyas.
+        if toplevel == _via(raiz_abs) or toplevel.startswith(_via(raiz_abs) + os.sep):
+            return False
+        q = subprocess.run(
+            ["git", "-C", padre, "check-ignore", "-q", raiz_abs],
+            capture_output=True, text=True, timeout=20,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return q.returncode == 0
+
+
 def _ignorados_por_git(raiz, rutas):
     """Los de `rutas` que el repo ya ignora, preguntándoselo a git UNA vez.
 
@@ -601,8 +646,17 @@ def _ignorados_por_git(raiz, rutas):
     barrido barato en cientos de procesos, contra el presupuesto de la regla 2.
     Si no hay git, o falla, no se filtra nada: quedarse corto es informar de más,
     que es recuperable; pasarse sería esconder código sin decirlo.
+
+    Y si la RAÍZ está ella misma ignorada, no se filtra nada: `git -C` escala
+    hasta el repo que la contenga, así que analizar un proyecto dentro de un
+    directorio que el repo padre ignora (`tmp*/`, `vendor/`, el `pytest-of-*/`
+    de la suite) borraba el grafo entero y lo devolvía VACÍO Y EN VERDE — el
+    falso verde de la ADR 0010 otra vez, y con él 124 tests mudos. Si el repo
+    padre dice "esto no es mi código", sus reglas tampoco son la ley dentro.
     """
     if not rutas:
+        return set()
+    if _raiz_ignorada(raiz):
         return set()
     # `-z` en las DOS direcciones. Sin el, git aplica `core.quotepath` y en
     # Windows devuelve `"generado\generado.ts"` —con comillas literales y \r—
