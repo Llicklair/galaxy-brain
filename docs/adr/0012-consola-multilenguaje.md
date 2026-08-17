@@ -9,8 +9,16 @@
 > **0 registros** en Go — el único lenguaje donde es la única vía. Eso activa el criterio de aborto 1
 > escrito más abajo. Y el almacén tiene tres convenciones de fichero incompatibles entre sí.
 >
-> El siguiente paso NO es añadir lenguajes: es el exit code de js y el almacén. Si el exit code no
-> tiene arreglo, lo correcto es cerrar este ADR.
+> **El exit code tiene arreglo, y es una palabra:** `uncaughtException` →
+> `uncaughtExceptionMonitor`, el evento que Node tiene para observar sin manejar. Medido 3/3:
+> captura el error entero **y** el proceso muere exactamente igual. Así que ya no procede cerrar el
+> ADR por ahí — pero tampoco aceptarlo: sigue sin haber un lenguaje que pase los cinco criterios de
+> punta a punta.
+>
+> Y la tabla de tiers de más abajo está ordenada por el eje equivocado. Lo que decide no es «¿hay
+> hook instalable por env-var?» sino **«¿hay un gancho de OBSERVACIÓN o solo uno de MANEJO?»** — el
+> primero respeta el criterio 5, el segundo lo suspende por construcción. Reordenarla por ese eje es
+> trabajo pendiente de este ADR.
 
 > **Numeración:** este ADR es el 12 y no el 11 porque el 0010 está usado dos veces
 > ([el tercer rechazo](0010-el-tercer-rechazo-tiene-que-ganarselo.md) y [repos
