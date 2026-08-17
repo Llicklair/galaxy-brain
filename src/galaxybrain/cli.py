@@ -1406,12 +1406,33 @@ def cmd_who(args):
     destino_html = None
     if args.html:
         if args.html == "AUTO":
-            en_raiz = os.path.join(root, "mapa.html")
-            if os.path.exists(en_raiz):
-                destino_html = en_raiz
+            # UN mapa por REPO, no uno por raiz de analisis. Sin esto,
+            # `gb who src --html` no encontraba `mapa.html` (esta en el
+            # toplevel, no en `src`) y se fabricaba el suyo en GB_HOME con slug
+            # de `src`: tres mapas para un proyecto y ninguno la fuente de
+            # verdad. Y el mapa que el usuario tenia abierto se quedaba viejo
+            # sin que nada lo dijera — el mismo fallo del 14-ago que motivo
+            # refrescar EL de la raiz, ahora por el otro lado.
+            from . import floor as _floor
+
+            bases = [root]
+            try:
+                arriba = _floor._raiz_del_repo_por_encima(root)
+            except Exception:      # noqa: BLE001 — sin git se sigue igual
+                arriba = None
+            if arriba:
+                bases.append(arriba)
+            for base in bases:
+                en_raiz = os.path.join(base, "mapa.html")
+                if os.path.exists(en_raiz):
+                    destino_html = en_raiz
+                    break
             else:
+                # Ni el repo ni la raiz lo pidieron: fuera del proyecto (regla
+                # 7), pero con el slug del REPO para que analizar `src` y
+                # analizar `.` no dejen dos ficheros distintos.
                 destino_html = os.path.join(str(config.home()),
-                                            store._slug(root), "mapa.html")
+                                            store._slug(bases[-1]), "mapa.html")
         else:
             destino_html = os.path.abspath(args.html)
 
