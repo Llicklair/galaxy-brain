@@ -1,6 +1,16 @@
 # 12. Consola multilenguaje por mecanismo nativo + fallback stderr
 
-**Estado:** propuesta (borrador, sin medir) · **Fecha:** 2026-08-16 · **Supercede (solo el eje lenguaje):** [0004](0004-un-lenguaje-un-runtime-un-tipo-de-fallo.md) · **Extiende:** [0009](0009-multilenguaje-por-referencia.md)
+**Estado:** propuesta — **medida el 18-ago-2026 y NO pasa sus propios criterios** · **Fecha:** 2026-08-16 · **Supercede (solo el eje lenguaje):** [0004](0004-un-lenguaje-un-runtime-un-tipo-de-fallo.md) · **Extiende:** [0009](0009-multilenguaje-por-referencia.md)
+
+> **La medición está hecha: [CONSOLA-MULTILENGUAJE.md](../CONSOLA-MULTILENGUAJE.md).** De 6 lenguajes
+> probados, capturan 2 por el camino que este ADR describe (js y ruby, 3/3 cada uno, registros
+> válidos contra el schema). Los dos **suspenden el criterio 5**: js cambia el exit code de 1 a 7 y
+> mete sus frames en la traza. El fallback stderr, que aquí se presenta como la capa universal, dio
+> **0 registros** en Go — el único lenguaje donde es la única vía. Eso activa el criterio de aborto 1
+> escrito más abajo. Y el almacén tiene tres convenciones de fichero incompatibles entre sí.
+>
+> El siguiente paso NO es añadir lenguajes: es el exit code de js y el almacén. Si el exit code no
+> tiene arreglo, lo correcto es cerrar este ADR.
 
 > **Numeración:** este ADR es el 12 y no el 11 porque el 0010 está usado dos veces
 > ([el tercer rechazo](0010-el-tercer-rechazo-tiene-que-ganarselo.md) y [repos
