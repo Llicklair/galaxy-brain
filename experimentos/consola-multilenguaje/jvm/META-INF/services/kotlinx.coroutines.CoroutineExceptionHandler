@@ -1,0 +1,13 @@
+# Galaxy Brain coroutine crash handler.
+# Discovered by kotlinx.coroutines via ServiceLoader when the agent jar
+# is on the classpath and kotlinx-coroutines-core is present at runtime.
+#
+# This points to a class that must implement
+# kotlinx.coroutines.CoroutineExceptionHandler.  Since we cannot compile
+# against kotlinx without adding a dependency, the actual handler is a
+# thin wrapper that delegates to GbAgent.captureAndWrite().
+#
+# To use: compile GbCoroutineHandler.kt (a tiny Kotlin file) alongside
+# the agent, or leave this file -- if the class is absent the ServiceLoader
+# entry is silently ignored.
+GbAgent$GbCoroutineHandler

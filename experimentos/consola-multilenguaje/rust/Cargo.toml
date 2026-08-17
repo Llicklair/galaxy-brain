@@ -1,0 +1,13 @@
+[package]
+name = "gb-hook-rust"
+version = "0.1.0"
+edition = "2021"
+description = "Galaxy Brain crash capture hook for Rust"
+
+[lib]
+name = "gb_hook"
+path = "src/lib.rs"
+
+[[bin]]
+name = "gb-hook-example"
+path = "src/main.rs"
