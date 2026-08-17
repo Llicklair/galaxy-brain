@@ -2378,6 +2378,26 @@ def _mapa_a_refrescar(root, ahora, rebote=60):
     return mapa
 
 
+def _args_del_refresco(root, mapa):
+    """Con que alcance regenera el hijo: el que el mapa YA tenia, si consta.
+
+    El refresco analizaba siempre la raiz del proyecto, asi que un mapa hecho a
+    proposito de `src/` volvia al repo entero al primer comando gb — 60 s de
+    rebote y otra vez tests, bancos y experimentos en el lienzo. No hay forma de
+    conservarlo: regenerarlo a mano dura hasta el siguiente comando, y el aviso
+    de cambio de alcance no se ve porque el hijo manda stderr a DEVNULL.
+
+    Un artefacto que el usuario acota y una automatica que se lo desacota es la
+    herramienta discutiendo con quien la usa. El alcance elegido manda; si no
+    consta (mapa anterior a la marca) o ya no existe, se cae a la raiz, que es
+    el comportamiento de siempre.
+    """
+    alcance = _alcance_de_mapa(mapa)
+    if alcance and os.path.isdir(alcance):
+        return ["who", alcance, "--html"]
+    return ["who", "--html"]
+
+
 def _refresca_mapa_estigmergia():
     """El mapa lo refresca quien pasa (estigmergia): cada comando gb, al
     terminar, suelta un hijo que regenera el mapa del proyecto y muere. Sin
@@ -2407,7 +2427,7 @@ def _refresca_mapa_estigmergia():
         else:
             suelto = {"start_new_session": True}
         subprocess.Popen(
-            [sys.executable, "-m", "galaxybrain.cli", "who", "--html"],
+            [sys.executable, "-m", "galaxybrain.cli"] + _args_del_refresco(root, mapa),
             cwd=root, env=dict(os.environ, GB_MAPA_HIJO="1"),
             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL, **suelto)

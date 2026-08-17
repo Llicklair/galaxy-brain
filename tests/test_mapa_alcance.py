@@ -82,6 +82,46 @@ def test_un_mapa_sin_marca_no_inventa_un_alcance(tmp_path, capsys):
     assert "OJO" not in capsys.readouterr().err
 
 
+def test_el_refresco_automatico_respeta_el_alcance_grabado(tmp_path):
+    """El caso que hacia inutil todo lo demas.
+
+    Cada comando gb suelta un hijo que regenera el mapa (estigmergia). Analizaba
+    siempre la raiz, asi que un mapa hecho a proposito de `src/` volvia al repo
+    entero al primer comando gb pasados los 60 s de rebote — y el aviso no se ve,
+    porque el hijo manda stderr a DEVNULL. Regenerarlo a mano no servia de nada.
+    """
+    root = _proyecto(str(tmp_path))
+    destino = _mapa(tmp_path)
+    cli.main(["who", os.path.join(root, "src"), "--html", destino])
+
+    args = cli._args_del_refresco(root, destino)
+    assert args[0] == "who" and "--html" in args
+    assert os.path.normcase(args[1]) == os.path.normcase(
+        os.path.abspath(os.path.join(root, "src")))
+
+
+def test_sin_marca_el_refresco_sigue_analizando_la_raiz(tmp_path):
+    """Sin alcance grabado no se inventa uno: el comportamiento de siempre."""
+    root = _proyecto(str(tmp_path))
+    destino = _mapa(tmp_path)
+    with open(destino, "w", encoding="utf-8") as fh:
+        fh.write("<html>mapa viejo</html>")
+
+    assert cli._args_del_refresco(root, destino) == ["who", "--html"]
+
+
+def test_un_alcance_que_ya_no_existe_no_deja_el_mapa_sin_refrescar(tmp_path):
+    """Si la carpeta grabada desaparecio, el hijo no puede analizarla. Cae a la
+    raiz en vez de quedarse sin mapa."""
+    root = _proyecto(str(tmp_path))
+    destino = _mapa(tmp_path)
+    with open(destino, "w", encoding="utf-8") as fh:
+        fh.write("<!-- gb:alcance %s -->\n<html></html>"
+                 % os.path.join(root, "carpeta-borrada"))
+
+    assert cli._args_del_refresco(root, destino) == ["who", "--html"]
+
+
 def test_la_marca_no_rompe_el_html(tmp_path):
     """La marca va delante del documento; el mapa tiene que seguir siendo el
     mismo HTML utilizable."""
