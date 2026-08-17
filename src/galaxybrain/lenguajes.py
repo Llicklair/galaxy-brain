@@ -588,6 +588,41 @@ def module_name(ruta, raiz):
     return ".".join(partes)
 
 
+def _ignorados_por_git(raiz, rutas):
+    """Los de `rutas` que el repo ya ignora, preguntándoselo a git UNA vez.
+
+    `SKIP` es una lista fija y por tanto siempre incompleta: acierta con
+    `node_modules` y falla con lo que cada repo decida (`target/`, `_build/`, un
+    directorio de temporales). Lo que un proyecto considera "no es mi código" ya
+    está escrito en su `.gitignore`, así que se lee de ahí en vez de adivinarlo —
+    y así no hay que cablear ningún nombre concreto (regla 6).
+
+    Un solo proceso con `--stdin`: preguntar fichero a fichero convertiría un
+    barrido barato en cientos de procesos, contra el presupuesto de la regla 2.
+    Si no hay git, o falla, no se filtra nada: quedarse corto es informar de más,
+    que es recuperable; pasarse sería esconder código sin decirlo.
+    """
+    if not rutas:
+        return set()
+    # `-z` en las DOS direcciones. Sin el, git aplica `core.quotepath` y en
+    # Windows devuelve `"generado\generado.ts"` —con comillas literales y \r—
+    # porque la barra invertida le parece un caracter especial. Ninguna ruta
+    # casaba y el filtro no quitaba nada... sin fallar: el peor modo de fallo.
+    entrada = "\0".join(
+        os.path.relpath(r, raiz).replace(os.sep, "/") for r in rutas)
+    try:
+        p = subprocess.run(
+            ["git", "-C", raiz, "check-ignore", "-z", "--stdin"],
+            input=entrada, capture_output=True, text=True, timeout=20,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return set()
+    if p.returncode not in (0, 1):   # 1 = ninguno ignorado; >1 = no es repo git
+        return set()
+    return {os.path.normpath(os.path.join(raiz, trozo))
+            for trozo in p.stdout.split("\0") if trozo.strip()}
+
+
 def _ficheros(raiz):
     """[(ruta, id_de_lenguaje)] del código que este motor sabe mirar."""
     fuera = []
@@ -599,6 +634,9 @@ def _ficheros(raiz):
             lang = lenguaje_de(name)
             if lang:
                 fuera.append((os.path.join(dirpath, name), lang))
+    ignorados = _ignorados_por_git(raiz, [r for r, _ in fuera])
+    if ignorados:
+        fuera = [(r, l) for r, l in fuera if os.path.normpath(r) not in ignorados]
     return fuera
 
 
