@@ -539,12 +539,13 @@ def load_boundaries(root, path=None):
         # existe = error: pediste unas reglas que no están, y pasar en verde sería
         # la falsa cobertura del invariante 4.
         error = ("no encuentro el fichero de fronteras: %s" % path) if explicit else None
-        return {"rules": [], "surfaces": [], "malformed": [], "error": error, "path": path}
+        return {"rules": [], "surfaces": [], "declared_edges": [], "malformed": [], "error": error, "path": path}
     except OSError as error:
         # Existe pero no se puede leer (permisos, es un directorio…): nunca silencioso.
         return {
             "rules": [],
             "surfaces": [],
+            "declared_edges": [],
             "malformed": [],
             "error": "no pude leer %s (%s)" % (path, error),
             "path": path,
@@ -552,6 +553,7 @@ def load_boundaries(root, path=None):
 
     rules = []
     surfaces = []
+    declared_edges = []
     malformed = []
     grupos = {}
     # Una linea que acaba en coma SIGUE en la siguiente. Sin esto un grupo de 15
@@ -572,6 +574,28 @@ def load_boundaries(root, path=None):
         lineas.append(pendiente)
     for line in lineas:
         if not line:
+            continue
+        if "=>" in line and "::" not in line:
+            # ARISTA DECLARADA: `MOD_A => MOD_B` — una dependencia que el analisis
+            # estatico no puede ver: cross-language, subprocess, HTTP, CLI, IPC.
+            # No es una regla, es un HECHO que el codigo no confiesa; se inyecta en
+            # el grafo como arista real y desde ahi participa en ciclos, fan-in/out,
+            # seleccion de tests y mapa, y las fronteras la gobiernan como a
+            # cualquier otra.
+            #
+            # El token es `=>` y NO `-->` a proposito: `-->` se obtiene borrando la
+            # barra de `-/->`, y ese typo de un caracter no daba un aviso — declaraba
+            # la dependencia CONTRARIA a la que se queria prohibir y el gate pasaba
+            # en verde. Dos cosas opuestas ("existe" y "prohibido") no pueden
+            # diferenciarse en un caracter (regla 9).
+            parts = [p.strip() for p in line.split("=>")]
+            if len(parts) == 2 and parts[0] and parts[1]:
+                for src in grupos.get(parts[0], [parts[0]]):
+                    for dst in grupos.get(parts[1], [parts[1]]):
+                        if src != dst:
+                            declared_edges.append((src, dst))
+            else:
+                malformed.append(line)
             continue
         if "=" in line and "-/->" not in line and "::" not in line:
             # GRUPO: `NUCLEO = capture, store, graph`. Un nombre para varios
@@ -615,8 +639,8 @@ def load_boundaries(root, path=None):
             # Contenido que NO es una regla válida (flecha con typo, dos flechas,
             # un lado vacío): enforced nada. Se avisa en vez de descartarse mudo.
             malformed.append(line)
-    return {"rules": rules, "surfaces": surfaces, "malformed": malformed,
-            "error": None, "path": path}
+    return {"rules": rules, "surfaces": surfaces, "declared_edges": declared_edges,
+            "malformed": malformed, "error": None, "path": path}
 
 
 def proponer_fronteras(report, declaradas=()):
@@ -1062,12 +1086,6 @@ def analyze(root, skip=DEFAULT_SKIP, since=None, boundaries=None, smells=False,
 
     skipped_nested = []
     nodes, edges, errors = (constructor or build_graph)(root, skip, include_nested, skipped_nested)
-    fan_out = {mod: len(deps) for mod, deps in edges.items()}
-    fan_in = {mod: 0 for mod in nodes}
-    for deps in edges.values():
-        for dep in deps:
-            fan_in[dep] = fan_in.get(dep, 0) + 1
-    cycles = find_cycles(edges)
     # Sin ruta explicita se DESCUBRE con la regla compartida: que `graph` y `check`
     # resolvieran sitios distintos hacia que el mismo repo tuviera 33 reglas para
     # uno y 0 para el otro (ver find_boundaries).
@@ -1076,6 +1094,21 @@ def analyze(root, skip=DEFAULT_SKIP, since=None, boundaries=None, smells=False,
     boundaries_info = load_boundaries(root, boundaries)
     rules = boundaries_info["rules"]
     superficies = boundaries_info.get("surfaces") or []
+    # ARISTAS DECLARADAS: dependencias cross-language u otras que el análisis
+    # estático no ve. Se inyectan ANTES de calcular nada para que participen
+    # en ciclos, fan-in/out, violations, edge_list y el mapa.
+    for src, dst in boundaries_info.get("declared_edges") or []:
+        nodes.add(src)
+        nodes.add(dst)
+        if src not in edges:
+            edges[src] = set()
+        edges[src].add(dst)
+    fan_out = {mod: len(deps) for mod, deps in edges.items()}
+    fan_in = {mod: 0 for mod in nodes}
+    for deps in edges.values():
+        for dep in deps:
+            fan_in[dep] = fan_in.get(dep, 0) + 1
+    cycles = find_cycles(edges)
     violations = find_violations(edges, rules)
     # La superficie se comprueba sobre CALLS, que vive en el informe de simbolos.
     # Solo se pide si HAY superficies declaradas: quien no las usa no paga un

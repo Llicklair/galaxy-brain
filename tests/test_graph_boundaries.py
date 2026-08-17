@@ -221,7 +221,11 @@ def test_regla_que_no_casa_ningun_modulo_se_avisa(tmp_path):
 
 def test_regla_con_flecha_mal_escrita_es_malformed_no_muda(tmp_path):
     """El footgun del review: `-->` en vez de `-/->` antes se descartaba en
-    silencio y la frontera no enforced nada sin aviso."""
+    silencio y la frontera no enforced nada sin aviso.
+
+    Sigue siendo malformed DESPUES de que existan las aristas declaradas: esas
+    se escriben `=>` justamente para que este typo no se convierta en declarar
+    la dependencia contraria a la que se queria prohibir."""
     root = str(tmp_path)
     _write(root, ".gb-boundaries", "app.web --> app.db\n")  # flecha mal
     _write(root, "app/__init__.py", "")
@@ -262,7 +266,7 @@ def test_gate_falla_con_config_de_reglas_rota(tmp_path):
 
     from galaxybrain import cli
 
-    _write(root, ".gb-boundaries", "app.web --> app.db\n")  # flecha mal
+    _write(root, ".gb-boundaries", "app.web -> app.db\n")  # flecha mal (ni -/-> ni =>)
     assert cli.main(["graph", root, "--gate", "--color", "never"]) == 1
 
     _write(root, ".gb-boundaries", "inexistente.x -/-> tampoco.y\n")  # no casa nada

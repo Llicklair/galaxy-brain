@@ -446,6 +446,19 @@ def render_graph_cloud(
         # analizadores lo garantiza la relacion "graph y symbols ven lo mismo".
         if graph_report:
             importaciones = [tuple(e) for e in (graph_report.get("edge_list") or [])]
+            # Nodos cross-language: aristas declaradas (-->) pueden referenciar
+            # modulos que el analizador de simbolos no ve (Go, JS, Ruby...).
+            # Se inyectan como modulos para que la nube los dibuje y las aristas
+            # no apunten al vacio.
+            existentes = set(implicados)
+            for a, b in importaciones:
+                for n in (a, b):
+                    if n not in existentes:
+                        implicados.append(n)
+                        kinds[n] = "module"
+                        grupo_de[n] = n
+                        docs[n] = ""
+                        existentes.add(n)
 
         # Siembra jerarquica de GitNexus: modulos en espiral de angulo aureo,
         # cada simbolo junto a su modulo con jitter determinista.
