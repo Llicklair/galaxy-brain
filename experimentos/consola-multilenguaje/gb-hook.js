@@ -160,14 +160,22 @@
     // Install handlers
     // ---------------------------------------------------------------
 
-    process.on('uncaughtException', function gbUncaughtException(err) {
+    // `uncaughtExceptionMonitor`, NOT `uncaughtException`. Subscribing to the
+    // monitor does NOT count as handling the exception, so Node proceeds with
+    // its default behaviour: it prints the trace and exits 1, exactly as it
+    // would with no hook installed.
+    //
+    // With `uncaughtException` you must re-throw for the trace to appear at all,
+    // and that costs both things the observer must not change: the process exits
+    // 7 instead of 1, and the hook's own frames land in the trace. A crash
+    // console that alters how the program dies is not observing it.
+    //
+    // Measured 3/3 across sync, thrown and async crashes — see
+    // docs/CONSOLA-MULTILENGUAJE.md.
+    process.on('uncaughtExceptionMonitor', function gbUncaughtException(err) {
       try {
         writeRecord(buildRecord(err, 'main'));
       } catch (_) { /* silent */ }
-      // Set exit code and let Node die naturally.
-      process.exitCode = 1;
-      // Re-throw so the default handler prints the trace and exits.
-      throw err;
     });
 
     process.on('unhandledRejection', function gbUnhandledRejection(reason) {
