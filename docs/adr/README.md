@@ -25,6 +25,13 @@ frameworks lo hacen" no es una razón. Cada ADR lleva su sección de evidencia c
 | [0008](0008-el-grafo-declara-su-techo.md) | El grafo declara su techo en vez de rellenarlo |
 | [0009](0009-multilenguaje-por-referencia.md) | El grafo se abre a JS/TS con un parser externo por referencia |
 | [0010](0010-el-tercer-rechazo-tiene-que-ganarselo.md) | Un tercer rechazo tiene que ganárselo: la barra, escrita antes del candidato |
+| [0010 *(bis)*](0010-repos-mixtos-los-dos-motores-conviven.md) | Repos mixtos: los dos motores conviven (enmienda al 0009) |
+| [0004 *(enmienda)*](0004-enmienda-multilenguaje.md) | El eje lenguaje del 0004, enmendado — **propuesta, sin medir** |
+| [0012](0012-consola-multilenguaje.md) | Consola multilenguaje: hook nativo + fallback stderr — **propuesta, sin medir** |
+
+**El 0010 está usado dos veces**: el de repos mixtos llegó después y de facto es el 11. No se
+renumera lo ya commiteado y citado desde fuera; se gasta el número, se deja escrito aquí y el
+siguiente ADR es el 0012. Antes de abrir uno nuevo, mirar cuál es el último de esta tabla.
 
 Una decisión que se revierte **no se borra**: se marca `Estado: sustituida por NNNN` y se escribe la
 nueva. El registro de lo que se probó y no funcionó vale tanto como el de lo que quedó.
