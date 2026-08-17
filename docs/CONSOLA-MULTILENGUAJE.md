@@ -26,8 +26,8 @@ requerir compilación previa:** java (necesita `gb-agent.jar`), C# (necesita `Gb
 
 | Lenguaje | Registros válidos | Mismo exit code | Misma traza | Vía |
 |---|---|---|---|---|
-| **js** | **3/3** | **no — 1 → 7** | **no — frames del hook** | `NODE_OPTIONS --require` |
-| **ruby** | **3/3** | sí | **no — pierde el fragmento** | `RUBYOPT -r` |
+| **js** | **3/3** | **no — 1 → 7** → **sí tras `8e7a8f9`** | **no** → **idéntica** | `NODE_OPTIONS --require` |
+| **ruby** | **3/3** | sí | idéntica (el ruido era del runner) | `RUBYOPT -r` |
 | php | 0/3 por el runner · **1/1 a mano** | sí | sí | `-d auto_prepend_file`, **no automático** |
 | lua | 0/3 | sí | **no — hook en la traza** | `LUA_INIT` |
 | go | **0/1** | — | — | fallback stderr |
@@ -79,7 +79,24 @@ tiene justo para esto: suscribirse **no cuenta como manejar** la excepción, as�
 su curso por defecto.
 
 El defecto no era un límite de Node. Era elegir el gancho equivocado, y el cambio es
-`uncaughtException` → `uncaughtExceptionMonitor` en [`gb-hook.js`](https://github.com/Llicklair/galaxy-brain/blob/spike/consola-multilenguaje/experimentos/consola-multilenguaje/gb-hook.js).
+`uncaughtException` → `uncaughtExceptionMonitor`. **Aplicado al spike** (`8e7a8f9`, rama
+`spike/consola-multilenguaje`) y vuelto a medir con el banco:
+
+| | antes | después |
+|---|---|---|
+| registros válidos (js) | 3/3 | 3/3 |
+| mismo exit code | **no — 1 → 7** | **sí** |
+| traza, con `--require` directo | **no** | **idéntica byte a byte** |
+
+### Y la traza de ruby tampoco era culpa del hook
+
+Al remedir apareció que `ruby` seguía marcando «traza distinta» aun sin tocar nada. Instalado
+directamente (`ruby -r gb-hook.rb`) la traza es **idéntica** y el exit code también. Lo que
+ensuciaba stderr era **el runner**, `gb-run.py`, que mete una línea en blanco antes de la salida del
+programa. Defecto suyo, no de los hooks, y de otro tamaño.
+
+Corregido eso, **js y ruby cumplen el criterio 5 de punta a punta**: capturan el error entero y el
+programa muere exactamente como habría muerto.
 
 Queda por comprobar si los demás runtimes tienen su equivalente —un gancho de *observación* frente a
 uno de *manejo*—, porque ese es el eje que decide el criterio 5, no la lista de lenguajes. Y sigue
@@ -111,17 +128,21 @@ consigo mismo; y 6 de los 16 lenguajes ni siquiera se han podido probar en esta 
 **Recomendación:** la [ADR 0012](adr/0012-consola-multilenguaje.md) se queda en **propuesta**, y el
 siguiente paso no es añadir lenguajes. Por orden:
 
-1. **Cambiar el gancho en js** a `uncaughtExceptionMonitor` — medido, 3/3 perfecto. Es lo que
-   convierte al único lenguaje bien cubierto en uno que además respeta el criterio 5.
-2. **Buscar el equivalente en cada runtime.** El eje que decide no es «¿hay hook?» sino «¿hay un
-   gancho de OBSERVACIÓN, o solo uno de MANEJO?». La tabla de tiers de la ADR está ordenada por el
-   eje equivocado.
-3. **Una sola convención de almacén.** Hoy son tres y no se leen entre sí.
-4. **Decidir qué se hace con Go**, donde no hay hook y el fallback no registró nada.
+1. ~~Cambiar el gancho en js~~ — **hecho** (`8e7a8f9`), 3/3 perfecto.
+2. **Una sola convención de almacén.** Hoy son tres y no se leen entre sí. Mientras eso siga así,
+   `gb last/show/list` no puede ver nada de lo que capturan los hooks (criterio 3), y da igual
+   cuántos lenguajes se añadan.
+3. **Quitar el ruido del runner** en stderr: una línea en blanco de más basta para suspender el
+   criterio 5 de todos los lenguajes a la vez, y no tiene nada que ver con ellos.
+4. **Buscar el gancho de observación en cada runtime.** El eje que decide no es «¿hay hook
+   instalable por env-var?» sino **«¿hay un gancho de OBSERVACIÓN o solo uno de MANEJO?»**. La tabla
+   de tiers de la ADR está ordenada por el eje equivocado, y este banco es la prueba: js estaba en
+   la casilla buena por el motivo equivocado.
+5. **Decidir qué se hace con Go**, donde no hay hook y el fallback no registró nada.
 
-Lo que ya **no** procede es cerrarla por el exit code: ese defecto tiene arreglo conocido y medido.
-Lo que tampoco procede es aceptarla — sigue sin haber un solo lenguaje que pase los cinco criterios
-de punta a punta, y eso es lo que este documento tendrá que poder afirmar algún día.
+Lo que ya **no** procede es cerrarla por el exit code. Lo que tampoco procede es aceptarla: **js y
+ruby pasan hoy los criterios 1, 2 y 5**, pero el 3 y el 4 no los pasa nadie —el almacén no habla
+consigo mismo y `gb status` no existe—, y 6 de los 16 lenguajes ni se han podido probar.
 
 ## Reproducirlo
 

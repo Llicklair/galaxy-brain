@@ -9,11 +9,16 @@
 > **0 registros** en Go — el único lenguaje donde es la única vía. Eso activa el criterio de aborto 1
 > escrito más abajo. Y el almacén tiene tres convenciones de fichero incompatibles entre sí.
 >
-> **El exit code tiene arreglo, y es una palabra:** `uncaughtException` →
-> `uncaughtExceptionMonitor`, el evento que Node tiene para observar sin manejar. Medido 3/3:
-> captura el error entero **y** el proceso muere exactamente igual. Así que ya no procede cerrar el
-> ADR por ahí — pero tampoco aceptarlo: sigue sin haber un lenguaje que pase los cinco criterios de
-> punta a punta.
+> **El exit code tenía arreglo, y era una palabra:** `uncaughtException` →
+> `uncaughtExceptionMonitor`, el evento que Node tiene para observar sin manejar. **Aplicado**
+> (`8e7a8f9`) y remedido: 3/3, captura el error entero y el proceso muere exactamente igual. Con eso,
+> **js y ruby pasan los criterios 1, 2 y 5**.
+>
+> Lo que bloquea ahora no son los lenguajes: es el **criterio 3**. Los hooks escriben
+> `crashes.jsonl`, `store_universal.py` lee `*.crashes.jsonl` —un glob que no casa ese nombre— y el
+> gb real usa `index.jsonl`. Mientras el almacén no hable consigo mismo, `gb last/show/list` no ve
+> nada de lo capturado y da igual cuántos lenguajes se añadan. El criterio 4 (`gb status`) tampoco
+> existe.
 >
 > Y la tabla de tiers de más abajo está ordenada por el eje equivocado. Lo que decide no es «¿hay
 > hook instalable por env-var?» sino **«¿hay un gancho de OBSERVACIÓN o solo uno de MANEJO?»** — el
