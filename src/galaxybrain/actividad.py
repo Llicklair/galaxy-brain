@@ -142,6 +142,11 @@ def commitados_recientes(root, informe_simbolos, ahora, ventana=VENTANA_COMMIT, 
     rango = ["%s..HEAD" % base] if base else []
     salida = graph_mod._git(root, "log", *(rango + [
         "--since=%d.seconds.ago" % int(ventana),
+        # Lo que ESTE arbol escribio, no lo que se trajo: en un merge, el diff
+        # contra el primer padre son los ficheros del OTRO, y sin este filtro
+        # ponerse al dia enciende en el mapa modulos que nunca tocaste. Mismo
+        # arreglo y mismo motivo que en `_eventos_commit` (18-ago-2026).
+        "--first-parent", "--no-merges",
         "--name-only", "--relative", "--format=%ct"]))
     if not salida:
         return set(), None
@@ -607,6 +612,13 @@ def _eventos_commit(root, informe_simbolos, ahora, ventana, base, agente):
         # trabajando donde nunca estuvo. Salio en la tirada real de 4 agentes
         # (18-ago-2026) en cuanto el segundo se puso al dia con el primero.
         "--first-parent",
+        # Y `--no-merges` por lo mismo un paso mas alla: en un merge, el diff
+        # contra el primer padre son los ficheros que trajo EL OTRO. Sin esto,
+        # ponerse al dia con alguien te acredita su trabajo — y peor: le genera
+        # a el una deuda "mismo-nodo" contigo por un fichero que nunca tocaste.
+        # Salio midiendo la deuda de los 4 agentes reales (18-ago-2026).
+        # Integrar es integrar; escribir es escribir.
+        "--no-merges",
         "--name-only", "--relative", "--format=%ct|%h"]))
     if not salida:
         return []
@@ -768,3 +780,119 @@ def cronologia(raiz, informe_simbolos, ahora=None, ventana=VENTANA_CRONOLOGIA, t
         evento["nodos"] = sorted(evento["nodos"])
         evento["hace_seg"] = int(max(0, ahora - evento["ts"]))
     return pelicula
+
+
+def _depende(informe_simbolos, de_modulos, a_modulos, de_modulo=None):
+    """¿Alguno de `de_modulos` YA llama a alguno de `a_modulos`?
+
+    Las aristas son `[llamante, llamado, clase]`, así que aquí la dirección sí
+    importa — y es lo único que separa «puedo apoyarme en su código» de «si me
+    apoyo, cierro un ciclo».
+    """
+    de_modulo = _mapa_de_modulos(informe_simbolos) if de_modulo is None else de_modulo
+    de_modulos, a_modulos = set(de_modulos), set(a_modulos)
+    for arista in informe_simbolos.get("edges") or ():
+        if len(arista) < 2:
+            continue
+        if (arista[2] if len(arista) > 2 else "") in ESTRUCTURA:
+            continue
+        mo = de_modulo.get(arista[0], arista[0])
+        md = de_modulo.get(arista[1], arista[1])
+        if mo != md and mo in de_modulos and md in a_modulos:
+            return True
+    return False
+
+
+def deuda(raiz, informe_simbolos, arbol=None, ahora=None, ventana=VENTANA_CRONOLOGIA):
+    """Lo que OTRO agente ya cambió, toca lo tuyo, y tú todavía no tienes.
+
+    Esta es la pieza que convierte la película en algo accionable, y la razón de
+    que exista: con cuatro agentes a la vez el problema no es verlos, es saber
+    **cuándo pararte a ponerte al día**. Sincronizar por reloj («cada 10 min»)
+    desperdicia trabajo cuando nadie te toca nada y llega tarde cuando sí. Aquí
+    la respuesta la da el grafo: solo hay deuda si lo que el otro cambió es tu
+    nodo o un vecino tuyo.
+
+    Sigue sin orquestar nada (ADR 0006, `gb provee, no orquesta`): dice el hecho
+    —«el commit `abc123` de `dos` toca `lib.b`, del que cuelgas, y no lo
+    tienes»— y quien decide qué hacer con él es el agente o su orquestador.
+
+    Dos clases, que no son lo mismo y por eso no se funden:
+
+    - `mismo-nodo`: los dos estáis escribiendo el MISMO módulo. Es un choque, y
+      cuanto más tarde te enteres más caro sale el merge.
+    - `vecino`: el otro cambió algo de lo que tú dependes (o que depende de ti).
+      No choca, pero puedes estar construyendo sobre una versión vieja.
+    """
+    ahora = time.time() if ahora is None else ahora
+    salida = {"arbol": "", "mio": [], "deuda": [], "motivo": ""}
+
+    raiz = os.path.abspath(raiz)
+    toplevel = (graph_mod._git(raiz, "rev-parse", "--show-toplevel") or "").strip()
+    if not toplevel:
+        salida["motivo"] = "sin repositorio git: no hay agentes que derivar"
+        return salida
+    rel = os.path.relpath(raiz, os.path.abspath(toplevel))
+
+    arbol = os.path.abspath(arbol or raiz)
+    propio = (graph_mod._git(arbol, "rev-parse", "--show-toplevel") or "").strip()
+    if not propio:
+        salida["motivo"] = "sin repositorio git: no hay agentes que derivar"
+        return salida
+    salida["arbol"] = os.path.basename(os.path.normpath(propio))
+
+    mi_analisis = os.path.normpath(os.path.join(propio, rel)) if rel != "." else propio
+    de_modulo = _mapa_de_modulos(informe_simbolos)
+    mios = set(nodos_tocados(mi_analisis, informe_simbolos))
+    # Lo que YA commiteaste tambien es tuyo: si no, quien va commiteando limpio
+    # se queda sin deuda justo por trabajar bien — el mismo sesgo que ya se
+    # corrigio en `instantanea` el 10-ago-2026.
+    cabeza_raiz = (graph_mod._git(toplevel, "rev-parse", "HEAD") or "").strip()
+    propios_commit, _ = commitados_recientes(
+        mi_analisis, informe_simbolos, ahora, ventana=ventana,
+        base="" if os.path.abspath(propio) == os.path.abspath(toplevel) else cabeza_raiz)
+    mios |= set(propios_commit)
+    salida["mio"] = sorted(mios)
+    if not mios:
+        salida["motivo"] = "este arbol no ha tocado ningun nodo del mapa"
+        return salida
+
+    alcance = set(_vecinos(informe_simbolos, sorted(mios), de_modulo))
+
+    pelicula = cronologia(raiz, informe_simbolos, ahora=ahora, ventana=ventana)
+    for evento in pelicula["eventos"]:
+        if os.path.abspath(evento["ruta"]) == os.path.abspath(mi_analisis):
+            continue  # lo tuyo no es deuda tuya
+        if evento["tipo"] != "commit" or not evento["id"]:
+            # Lo que otro tiene a medio guardar no es deuda: no hay nada que
+            # traerse todavia, y avisar de ello seria una alarma sin accion.
+            continue
+        if graph_mod._git(mi_analisis, "merge-base", "--is-ancestor",
+                          evento["id"], "HEAD") is not None:
+            continue  # ya lo tienes
+        chocan = sorted(mios & set(evento["nodos"]))
+        vecinos = sorted(alcance & set(evento["nodos"]))
+        if not chocan and not vecinos:
+            continue
+        salida["deuda"].append({
+            "agente": evento["agente"],
+            "id": evento["id"],
+            "hace_seg": evento["hace_seg"],
+            "clase": "mismo-nodo" if chocan else "vecino",
+            "por": chocan or vecinos,
+            "nodos": evento["nodos"],
+            # Traerse el codigo de otro es gratis; APOYARSE en el no siempre.
+            # Si su modulo ya llama al tuyo, llamarle tu cierra un ciclo — y un
+            # ciclo de imports rompe el arranque, no da un aviso.
+            #
+            # Medido con cuatro agentes reales (18-ago-2026): tres integraron
+            # bien y el cuarto se cargo su propio arbol exactamente asi. Uno de
+            # ellos lo esquivo por su cuenta y lo dijo; los otros no tenian por
+            # que saberlo. El dato existia en el grafo y nadie lo estaba
+            # enseñando donde se toma la decision.
+            "ciclo_si_llamas": _depende(
+                informe_simbolos, set(evento["nodos"]), mios, de_modulo),
+        })
+    # Lo que choca primero: es lo que mas cuesta cuanto mas tarde se mire.
+    salida["deuda"].sort(key=lambda d: (d["clase"] != "mismo-nodo", d["hace_seg"]))
+    return salida

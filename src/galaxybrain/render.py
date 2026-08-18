@@ -199,6 +199,48 @@ def _render_frame(frame, style, project):
 MARKS = {"ok": "+", "parcial": "~", "falta": "!", "no-detectable": "?", "esqueleto": "o"}
 
 
+def render_deuda(salida, style):
+    """Qué han cambiado los demás que toca tu suelo y aún no tienes.
+
+    El `mismo-nodo` va arriba y en rojo porque es lo unico que EXIGE algo: dos
+    agentes escribiendo el mismo modulo, y el merge se encarece cada minuto. El
+    `vecino` es amarillo: no choca, pero puedes estar construyendo sobre una
+    version vieja. Y si no hay deuda se dice, en vez de callar — un silencio
+    aqui se lee igual que "no lo he mirado".
+    """
+    lines = []
+    if salida.get("motivo") and not salida.get("deuda"):
+        return style("%s: %s" % (salida.get("arbol") or "este arbol", salida["motivo"]), DIM)
+
+    mio = ", ".join(salida.get("mio") or ()) or "nada"
+    lines.append(style("%s — tocas %s" % (salida.get("arbol") or "este arbol", mio), BOLD))
+    if not salida.get("deuda"):
+        lines.append(style("sin deuda: nadie ha tocado tu suelo desde que empezaste", DIM))
+        return "\n".join(lines)
+
+    for d in salida["deuda"]:
+        choca = d["clase"] == "mismo-nodo"
+        lines.append(style(
+            "%s %-10s %-8s %-9s %s (hace %ds)" % (
+                "!" if choca else " ",
+                d["clase"], d["agente"], d["id"],
+                ", ".join(d["por"]), d["hace_seg"]),
+            RED if choca else YELLOW))
+        # Traerlo es gratis; apoyarse en el no. Va pegado a su linea y no al
+        # pie: es una decision que se toma leyendo ESA fila.
+        if d.get("ciclo_si_llamas"):
+            lines.append(style(
+                "    OJO: su modulo ya llama al tuyo. Traelo, pero si le llamas "
+                "tu cierras un ciclo de imports (y eso no avisa: revienta al arrancar).",
+                RED))
+    choques = sum(1 for d in salida["deuda"] if d["clase"] == "mismo-nodo")
+    lines.append(style(
+        "%d por traer%s. Es un hecho, no una orden: gb no orquesta (ADR 0006)."
+        % (len(salida["deuda"]), ", %d en tu mismo modulo" % choques if choques else ""),
+        DIM))
+    return "\n".join(lines)
+
+
 def render_floor(report, style):
     """El suelo: que hay, que falta, y que no puede mirar esto.
 

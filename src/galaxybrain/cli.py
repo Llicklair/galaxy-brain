@@ -1703,6 +1703,25 @@ def cmd_check(args):
     return 1 if report["range_error"] else 0
 
 
+def cmd_sync(args):
+    from . import actividad
+    from . import symbols as symbols_mod
+
+    root = os.path.abspath(args.path or ".")
+    informe = symbols_mod.analyze(root)
+    salida = actividad.deuda(root, informe)
+    if args.json:
+        emit(json.dumps(salida, ensure_ascii=False, indent=2))
+    else:
+        emit(render.render_deuda(salida, _style(args)))
+    # SIEMPRE 0, aunque haya un choque. Salir != 0 seria convertir un hecho en
+    # una puerta, y decidir por el orquestador es justo lo que la ADR 0006 dice
+    # que gb no hace. Ademas repetiria el error que ya documenta `cmd_check`:
+    # gatear una senal ensena a saltarsela. Aqui se informa delante de quien
+    # decide, que es lo que la hace inevitable.
+    return 0
+
+
 def cmd_tests(args):
     """Qué tests correr por lo que cambió. Sin `--run`, no ejecuta nada.
 
@@ -2205,6 +2224,14 @@ def build_parser():
         help="analizar tambien los subproyectos anidados (por defecto se omiten y se dicen)",
     )
     graph_p.set_defaults(func=cmd_graph)
+
+    sync = subparsers.add_parser(
+        "sync", help="que han cambiado los otros agentes que toca lo tuyo y no tienes"
+    )
+    sync.add_argument("path", nargs="?", default=".", help="raiz del proyecto (por defecto .)")
+    sync.add_argument("--json", action="store_true", help="salida cruda")
+    sync.add_argument("--color", choices=["auto", "always", "never"], default="auto")
+    sync.set_defaults(func=cmd_sync)
 
     check = subparsers.add_parser(
         "check", help="que le hizo un cambio a los tests y al acoplamiento"
