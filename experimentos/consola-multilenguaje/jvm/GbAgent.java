@@ -64,6 +64,21 @@ public class GbAgent {
             // Chain to previous handler so the app's own crash logic still fires.
             if (previousHandler != null) {
                 previousHandler.uncaughtException(thread, throwable);
+            } else {
+                // No previous handler is the NORMAL case, and it is a trap: the
+                // JVM's default is not a handler at all, so installing ours
+                // replaces it and the stack trace silently disappears. Measured:
+                // with the agent, `String s = null; s.length()` printed nothing
+                // at all — the console deleted the only thing the program was
+                // still telling you, and wrote no record either.
+                //
+                // Do NOT delegate to thread.getThreadGroup().uncaughtException():
+                // its default implementation looks the default handler up again —
+                // us — and loops forever. Also measured, the hard way.
+                //
+                // So the default gets reproduced by hand, in the JVM's own format.
+                System.err.print("Exception in thread \"" + thread.getName() + "\" ");
+                throwable.printStackTrace(System.err);
             }
         });
 
