@@ -52,3 +52,7 @@ experimentos/
 # Los experimentos viven fuera del repo: Desktop/gb-lenguajes/_desde-galaxy-brain
 experiments/
 experimento/
+
+# Entorno local y notas de voz: son de esta maquina, no del repo.
+.venv/
+.voz/
