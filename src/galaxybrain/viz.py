@@ -752,6 +752,25 @@ def render_graph_cloud(
     motor = _hashlib.sha1(_NUBE.encode("utf-8")).hexdigest()[:8]
     pie = "%s  ·  motor %s" % (pie, motor) if pie else "motor %s" % motor
 
+    # La huella del DATO, que es distinta de la del motor: qué nodos y qué
+    # aristas hay. El navegador guarda las posiciones ya convergidas para que el
+    # refresco no haga bailar el mapa, pero la clave era solo el TÍTULO — el
+    # mismo (`mapa · galaxy-brain`) para cualquier alcance y cualquier versión
+    # del grafo. Con `usadas === N` la física ni corría: se pintaban las
+    # posiciones viejas sobre aristas nuevas, y el mapa enseñaba una estructura
+    # que ya no existía sin avisar de nada.
+    #
+    # Lo destapó Marcos el 18-ago-2026 viendo el MISMO fichero con dos formas
+    # distintas en el navegador y en el de VS Code: uno traía posiciones
+    # guardadas y el otro arrancaba limpio. Con la huella en la clave, un grafo
+    # distinto no puede heredar el sitio de otro, y dos navegadores con el mismo
+    # grafo convergen a la misma forma (la siembra es determinista: hash, cero
+    # `Math.random`).
+    huella = _hashlib.sha1(
+        (_json.dumps([n.get("id") for n in datos], sort_keys=True)
+         + _json.dumps(lista_aristas, sort_keys=True)).encode("utf-8")
+    ).hexdigest()[:10]
+
     return _NUBE % {
         "title": _html.escape(title),
         "resumen": _html.escape(resumen),
@@ -764,6 +783,7 @@ def render_graph_cloud(
         # `null` cuando quien llama no lo sella: el JS envejece entonces solo
         # con el tiempo de pagina abierta.
         "gen_ts": str(int(gen_ts)) if gen_ts is not None else "null",
+        "huella": huella,
         "leyenda": leyenda,
         # El embudo del ciclo del error en la cabecera, ya formateado por quien
         # llama. Cadena vacia (ni hueco) si el proyecto no tiene capturas.
@@ -1024,6 +1044,7 @@ _NUBE = """<!doctype html>
 <script>
 // ================= datos =================
 const NODOS = %(nodos)s, ARISTAS = %(aristas)s, LADO = 1000, GEN_TS = %(gen_ts)s;
+const HUELLA = '%(huella)s';   // qué nodos y qué aristas: ver `huella` en viz.py
 const ARCHIVOS = %(archivos)s, RAIZ = %(raiz)s, CODIGO = %(codigo)s;
 // ============ el lienzo confiesa (14-ago: demasiados errores mudos) =========
 // Un error de runtime dejaba el mapa en blanco o congelado SIN DECIR NADA
@@ -1497,7 +1518,7 @@ function pinta(t){
 // sitio ya convergido y pinta quieto; con pocos nodos nuevos se deja un
 // asentamiento corto y frio para colocarlos sin sacudir al resto; con muchos
 // (>20 por ciento) la forma cambio de verdad y la convergencia se re-anima.
-const POSICIONES = 'gb-pos:' + document.title;
+const POSICIONES = 'gb-pos:' + document.title + ':' + HUELLA;
 try{
   const previas = JSON.parse(sessionStorage.getItem(POSICIONES) || 'null');
   if(previas && MAXIT && N>1){
