@@ -60,13 +60,25 @@ La consola de errores era exclusivamente Python ([ADR 0004](0004-un-lenguaje-un-
 - Un usuario de un repo multi-lenguaje obtiene grafo + selección de tests pero **cero captura de crashes** para todo lo que no sea Python. El valor de la consola desaparece en el lenguaje mayoritario del ecosistema de agentes (JS/TS).
 - Un **spike** barrió los 16 lenguajes no-Python del grafo y escribió un hook por lenguaje para ver si el patrón se repetía. Vive en la rama `spike/consola-multilenguaje` (commit `cab9e29`), fuera de `main` y fuera del paquete:
 
-| Categoría | Lenguajes | Mecanismo |
-|---|---|---|
-| **Viables** (hook nativo, install por env-var, cero cambios de código) | JS, TS/TSX, Java, Kotlin, Scala, Ruby, PHP, C# | `NODE_OPTIONS`, `JAVA_TOOL_OPTIONS`, `RUBYOPT`, `auto_prepend_file`, `DOTNET_STARTUP_HOOKS` |
-| **Parciales** (hay hook, pero no install transparente) | Dart, Rust, Lua, Elixir, Swift, C | wrapper, `LD_PRELOAD` o configuración a nivel de proyecto |
-| **Inviable por hook** (sin mecanismo global) | Go | `recover()` es por goroutine |
+La tabla original clasificaba por «¿se instala por variable de entorno?». **Ese eje no predice
+nada** — se equivocó en las dos direcciones a la vez (PHP estaba entre los viables y no lo es; Lua
+estaba entre los parciales y sí instala transparente). El eje que decide, medido 4 de 4, es otro:
 
-- **El fallback universal existe:** todo runtime imprime a stderr cuando muere. Un parser de stderr no da variables locales, pero da tipo de excepción + traza + exit code — suficiente para `gb last` y `gb list`.
+| Categoría | Lenguajes | Estado |
+|---|---|---|
+| **Gancho de OBSERVACIÓN** — el runtime sigue su curso; capturar no cambia el programa | **js**, **java**, **php**, **lua** | los 4 **medidos y arreglados**: `uncaughtExceptionMonitor`, replicar el default de la JVM, `register_shutdown_function`+`error_get_last`, message handler de `xpcall` |
+| **Solo gancho de MANEJO** — capturar *es* atender el error | csharp, ruby (miden bien hoy, sin re-verificar por este eje) · kotlin, scala, elixir, swift, dart, C (sin medir) | pendientes: hay que buscarles el punto de observación o declararlos fuera |
+| **Sin gancho instalable** | **go**, **rust** | **fuera** (ver abajo): `recover()` es por goroutine; `set_hook` exige tocar el código del usuario |
+
+Lo que cuesta equivocarse de eje, medido: los cuatro hooks del primer grupo **rompían el programa
+observado** antes de arreglarlos — js cambiaba el exit code, java borraba la traza, lua impedía que
+el programa se ejecutara, y php hacía las dos cosas a la vez (255 → 0, `Fatal error` borrado).
+
+- ~~**El fallback universal existe:** todo runtime imprime a stderr cuando muere.~~ **Descartado el
+  18-ago por el criterio de aborto 1 de este mismo documento.** Sí produce registros (10 de 11 casos
+  en Go, incluido el panic en goroutine secundaria), pero **no distingue el tipo del mensaje**:
+  `exception.type` vale `panic` en los 40 registros de go y rust, y el dato **no está en stderr** —
+  `panic_any` lo borra en el runtime. Con go y rust sin otra vía, quedan fuera del alcance.
 
 > **Lo que este ADR NO tiene todavía:** el spike demuestra que los hooks se pueden
 > **escribir**, no que **capturen**. No hay una sola medida de crashes reales por
