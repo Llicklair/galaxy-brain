@@ -292,8 +292,9 @@ observación** — js, java, php, lua necesitaron arreglo; csharp y ruby ya esta
 (ruby con un filtro de menos). Los seis capturan con registro y dejan el programa observado intacto:
 **100 % en exit code, stdout y stderr**.
 
-**No:** que esto esté cerca de entrar. El criterio 3 no lo pasa nadie, el 4 no existe, y 6 de los 16
-lenguajes no se han podido probar en esta máquina por falta de runtime.
+**No:** que esté terminada. Falta el criterio 4 (`gb status`), y 6 de los 16 lenguajes no se han
+podido probar en esta máquina por falta de runtime. Pero ya no hay ningún bloqueo estructural: lo
+que queda es trabajo acotado, no una incógnita.
 
 ### Marcador por criterio
 
@@ -301,7 +302,7 @@ lenguajes no se han podido probar en esta máquina por falta de runtime.
 |---|---|
 | 1. ≥3 crashes producen registros correctos | **6/6 lenguajes medidos** |
 | 2. Validan contra el schema v2 | **9 % (9/105)** — el enum `exception.origin` no lo respeta ningún hook |
-| 3. `gb last/show/list` sin modificación | **0 %** — tres convenciones de almacén, y el orden de frames invertido |
+| 3. `gb last/show/list` sin modificación | **cumplido** (`94bcef7`) — buzón + normalización; `store.py` y `render.py` con **cero líneas** de cambio |
 | 4. `gb status` declara el mecanismo | **no existe** |
 | 5. El hook no altera el programa | **100 % (10/10)** en los seis, tras cuatro arreglos |
 
@@ -309,12 +310,10 @@ lenguajes no se han podido probar en esta máquina por falta de runtime.
 alcance ya recortado por su propio criterio de aborto. Lo que queda, por orden:
 
 1. ~~Cambiar el gancho en js~~ · ~~java~~ · ~~php~~ · ~~lua~~ · ~~ruby~~ — **hechos y medidos**.
-2. **Una sola convención de almacén** (criterio 3). Es lo único que bloquea, y no es mapear campos:
-   el orden de los frames está invertido en siete lenguajes, así que la captura se pinta apuntando
-   al sitio equivocado sin lanzar un error. Hay propuesta escrita con criterio comprobable en
-   [propuesta-almacen-unificado.md](propuesta-almacen-unificado.md), **sin implementar a propósito**:
-   se diseñó para 8 lenguajes y el alcance se recortó a los que tengan gancho de observación.
-   Construirla antes de que el alcance asiente sería sobre un plano viejo.
+2. ~~Una sola convención de almacén~~ — **hecho** (`94bcef7`). `crashes.jsonl` pasa a ser un buzón
+   y una función lo traduce al almacén de siempre; `store.py` y `render.py` con cero líneas de
+   cambio. Lo caro no era mapear campos: el orden de los frames estaba invertido en siete lenguajes,
+   así que la captura se pintaba apuntando al arranque del runtime sin lanzar un error.
 3. **`gb status`** (criterio 4).
 4. **Los lenguajes sin runtime aquí** — elixir, swift, dart, kotlin, scala, C: primero la pregunta
    del eje, y solo después medir.

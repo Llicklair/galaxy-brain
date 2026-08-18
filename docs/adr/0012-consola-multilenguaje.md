@@ -1,6 +1,6 @@
 # 12. Consola multilenguaje por mecanismo nativo + fallback stderr
 
-**Estado:** propuesta — alcance **recortado por su propio criterio de aborto**; 6 lenguajes medidos y en verde por el criterio 5, **bloqueada por el criterio 3** · **Fecha:** 2026-08-16 · **Supercede (solo el eje lenguaje):** [0004](0004-un-lenguaje-un-runtime-un-tipo-de-fallo.md) · **Extiende:** [0009](0009-multilenguaje-por-referencia.md)
+**Estado:** propuesta **decidible** — alcance recortado por su propio criterio de aborto; **4 de 5 criterios cumplidos y demostrados**, solo falta `gb status` · **Fecha:** 2026-08-16 · **Supercede (solo el eje lenguaje):** [0004](0004-un-lenguaje-un-runtime-un-tipo-de-fallo.md) · **Extiende:** [0009](0009-multilenguaje-por-referencia.md)
 
 > **La medición está hecha: [CONSOLA-MULTILENGUAJE.md](../CONSOLA-MULTILENGUAJE.md).** De 6 lenguajes
 > probados, capturan 2 por el camino que este ADR describe (js y ruby, 3/3 cada uno, registros
@@ -13,6 +13,21 @@
 > `uncaughtExceptionMonitor`, el evento que Node tiene para observar sin manejar. **Aplicado**
 > (`8e7a8f9`) y remedido: 3/3, captura el error entero y el proceso muere exactamente igual. Con eso,
 > **js y ruby pasan los criterios 1, 2 y 5**.
+>
+> **QUINTA vuelta (18-ago) — el criterio 3 está CUMPLIDO** (`94bcef7`, rama del spike).
+> `crashes.jsonl` pasa a ser un **buzón**, no un almacén: `buzon.normaliza()` traduce y
+> `buzon.drena()` pasa las líneas nuevas al almacén de siempre con marca de agua por bytes.
+> **`store.py` y `render.py` no cambian ni una línea** —comprobado con `git diff` contra
+> `main`— que es lo que el criterio pedía literalmente. Demostrado con el CLI de verdad:
+> 17 registros reales de 8 lenguajes, `gb list` rc=0, y `gb show` pintando una captura de
+> Java en `CrashTest.java:3`. 14 tests nuevos; 900 en verde.
+>
+> Y con él se cae `store_universal.py` entero: su glob no casaba su propio fichero, su
+> validador rechazaba 24 de 24 registros suyos, y usaba `Path.home()` fijo ignorando
+> `GB_HOME`.
+>
+> **Queda el criterio 4** (`gb status` declarando el mecanismo activo) y los seis lenguajes
+> sin runtime en esta máquina. Nada más.
 >
 > **CUARTA vuelta (18-ago) — el eje va 6 de 6.** csharp y ruby, verificados por el eje nuevo sobre 5 casos límite cada uno (crash, salida limpia, exit code propio, stdout antes de morir, excepción en hilo): **programa observado intacto 100 % (10/10)** en exit code, stdout y stderr, y **registros espurios 25 % → 0 %**. csharp pasó los cinco sin tocar una línea. A ruby le faltaba un filtro: `exit 3` es un `SystemExit`, así que capturaba salidas normales como si fueran fallos.
 >
