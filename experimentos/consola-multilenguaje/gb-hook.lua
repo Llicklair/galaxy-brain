@@ -1,296 +1,245 @@
-#!/usr/bin/env lua
---- Galaxy Brain crash capture launcher for Lua.
+--- gb-hook.lua ARREGLADO — se instala por LUA_INIT y replica el default a mano.
 ---
---- Wraps the user's script in xpcall, captures crash details (locals,
---- stack frames) via debug.getlocal/debug.getinfo, and writes a JSON
---- schema v2 record to ~/.galaxy-brain/crashes.jsonl before re-raising.
+--- Dos defectos del original:
+---   1. Era un WRAPPER (`lua gb-hook.lua script.lua`) pero gb-run.py lo cargaba
+---      con LUA_INIT=@gb-hook.lua. Cargado asi no hay arg[1], asi que imprimia
+---      "Usage:" y os.exit(1): el programa observado NO LLEGABA A EJECUTARSE.
+---   2. Como wrapper, tras el fallo hacia error(err, 0) desde main(), de modo que
+---      la traza que imprimia el interprete era la del HOOK, no la del programa.
 ---
---- Usage:
----   lua gb-hook.lua user_script.lua [args...]
+--- Aqui el message handler de xpcall es el punto de OBSERVACION (corre antes de
+--- desenrollar la pila, ve el stack real), y despues se replica a mano el informe
+--- del interprete —"lua: <msg>\n<traceback>"— recortando los frames del hook.
+--- Mismo texto, mismo exit code.
+---
+--- Install: LUA_INIT=@/ruta/gb-hook.lua
 
--- ===================================================================
--- Minimal JSON encoder (no external deps)
--- ===================================================================
+local NULO = setmetatable({}, {__tostring = function() return 'null' end})
 
+-- ==================== JSON minimo ====================
 local function json_escape(s)
-    s = s:gsub('\\', '\\\\')
-    s = s:gsub('"', '\\"')
-    s = s:gsub('\n', '\\n')
-    s = s:gsub('\r', '\\r')
-    s = s:gsub('\t', '\\t')
-    s = s:gsub('[\x00-\x1f]', function(c)
-        return string.format('\\u%04x', c:byte())
-    end)
+    s = s:gsub('\\', '\\\\'):gsub('"', '\\"')
+    s = s:gsub('\n', '\\n'):gsub('\r', '\\r'):gsub('\t', '\\t')
+    s = s:gsub('[\x00-\x1f]', function(c) return string.format('\\u%04x', c:byte()) end)
     return s
 end
 
-local json_encode  -- forward declaration for recursion
+local json_encode
 
-local function json_encode_value(val, depth)
-    depth = depth or 0
-    if depth > 20 then return '"<max depth>"' end
-
-    local t = type(val)
-    if val == nil then
-        return 'null'
-    elseif t == 'boolean' then
-        return val and 'true' or 'false'
-    elseif t == 'number' then
-        if val ~= val then return '"NaN"' end         -- NaN
-        if val == math.huge then return '"Inf"' end
-        if val == -math.huge then return '"-Inf"' end
-        return tostring(val)
-    elseif t == 'string' then
-        return '"' .. json_escape(val) .. '"'
-    elseif t == 'table' then
-        return json_encode(val, depth + 1)
-    else
-        return '"' .. json_escape(tostring(val)) .. '"'
+local function json_value(v, depth)
+    if v == nil or v == NULO then return 'null' end
+    local t = type(v)
+    if t == 'boolean' then return v and 'true' or 'false' end
+    if t == 'number' then
+        if v ~= v or v == math.huge or v == -math.huge then return '"' .. tostring(v) .. '"' end
+        if math.type and math.type(v) == 'float' and v == math.floor(v) then
+            return string.format('%d', v)
+        end
+        return tostring(v)
     end
+    if t == 'string' then return '"' .. json_escape(v) .. '"' end
+    if t == 'table' then return json_encode(v, (depth or 0) + 1) end
+    return '"' .. json_escape(tostring(v)) .. '"'
 end
 
 json_encode = function(tbl, depth)
     depth = depth or 0
     if depth > 20 then return '"<max depth>"' end
-
-    -- Detect array vs object: a table is an array if keys are 1..#tbl.
-    local is_array = true
     local n = #tbl
-    if n == 0 then
-        -- could be empty array or empty object — treat as object if any key exists
-        if next(tbl) ~= nil then is_array = false end
-    else
-        for k, _ in pairs(tbl) do
+    local is_array = n > 0
+    if is_array then
+        for k in pairs(tbl) do
             if type(k) ~= 'number' or k < 1 or k > n or k ~= math.floor(k) then
-                is_array = false
-                break
+                is_array = false; break
             end
         end
+    elseif next(tbl) == nil then
+        is_array = true  -- tabla vacia -> []
     end
-
     local parts = {}
     if is_array then
-        for i = 1, n do
-            parts[#parts + 1] = json_encode_value(tbl[i], depth)
-        end
+        for i = 1, n do parts[#parts + 1] = json_value(tbl[i], depth) end
         return '[' .. table.concat(parts, ',') .. ']'
-    else
-        for k, v in pairs(tbl) do
-            local key = type(k) == 'string' and k or tostring(k)
-            parts[#parts + 1] = '"' .. json_escape(key) .. '":' .. json_encode_value(v, depth)
-        end
-        return '{' .. table.concat(parts, ',') .. '}'
     end
+    for k, v in pairs(tbl) do
+        parts[#parts + 1] = '"' .. json_escape(tostring(k)) .. '":' .. json_value(v, depth)
+    end
+    return '{' .. table.concat(parts, ',') .. '}'
 end
 
--- ===================================================================
--- Helpers
--- ===================================================================
+-- ==================== helpers ====================
+local SEP = package.config:sub(1, 1)
 
 local function get_home()
     return os.getenv('HOME') or os.getenv('USERPROFILE') or '.'
 end
 
-local function path_join(...)
-    local sep = package.config:sub(1, 1)  -- '/' or '\'
-    return table.concat({...}, sep)
+local function file_exists(p)
+    local f = io.open(p, 'r'); if f then f:close(); return true end; return false
 end
 
-local function file_exists(path)
-    local f = io.open(path, 'r')
-    if f then f:close(); return true end
-    return false
+local function get_cwd()
+    local h = io.popen(SEP == '\\' and 'cd' or 'pwd')
+    if not h then return '.' end
+    local c = h:read('*l'); h:close()
+    return c or '.'
 end
 
-local function detect_project_root()
-    -- Walk up from the working directory looking for .git
-    local sep = package.config:sub(1, 1)
-    -- Use io.popen to get cwd portably
-    local handle = io.popen('cd')  -- Windows
-    if not handle then
-        handle = io.popen('pwd')   -- Unix
+local function project_root(cwd)
+    local c = (cwd or ''):gsub('\\', '/')
+    while c ~= '' do
+        if file_exists(c .. '/.git') then return c end
+        local parent = c:match('^(.+)/[^/]+$')
+        if not parent then return NULO end
+        c = parent
     end
-    if not handle then return nil end
-    local cwd = handle:read('*l')
-    handle:close()
-    if not cwd or cwd == '' then return nil end
-
-    -- Normalise to forward slashes for easier manipulation.
-    cwd = cwd:gsub('\\', '/')
-
-    while true do
-        local git_path = cwd .. '/.git'
-        if file_exists(git_path) then
-            return cwd
-        end
-        local parent = cwd:match('^(.+)/[^/]+$')
-        if not parent then return nil end
-        cwd = parent
-    end
-end
-
-local function iso8601_now()
-    return os.date('!%Y-%m-%dT%H:%M:%SZ')
+    return NULO
 end
 
 local function mkdir_p(path)
-    -- Best-effort recursive mkdir.
-    local sep = package.config:sub(1, 1)
-    if sep == '\\' then
-        os.execute('mkdir "' .. path:gsub('/', '\\') .. '" 2>nul')
-    else
-        os.execute('mkdir -p "' .. path .. '" 2>/dev/null')
-    end
+    if SEP == '\\' then os.execute('mkdir "' .. path:gsub('/', '\\') .. '" 2>nul')
+    else os.execute('mkdir -p "' .. path .. '" 2>/dev/null') end
 end
 
--- ===================================================================
--- Crash capture
--- ===================================================================
-
-local function capture_locals(level)
-    local locals = {}
-    local i = 1
-    while true do
-        local name, value = debug.getlocal(level, i)
-        if not name then break end
-        if name:sub(1, 1) ~= '(' then  -- skip internal vars like "(*temporary)")
-            locals[name] = tostring(value)
-        end
-        i = i + 1
-    end
-    return locals
-end
-
-local function capture_stack(level)
+-- ==================== captura ====================
+local function frames_desde_pila(nivel)
     local frames = {}
-    local i = level
+    local i = nivel
     while true do
-        local info = debug.getinfo(i, 'nSlf')
+        local info = debug.getinfo(i, 'nSl')
         if not info then break end
+        local src = info.source or '?'
+        if src:sub(1, 1) == '@' then src = src:sub(2) end
+        local locales = nil
+        if i == nivel then
+            locales = {}
+            local j = 1
+            while true do
+                local nombre, valor = debug.getlocal(i, j)
+                if not nombre then break end
+                if nombre:sub(1, 1) ~= '(' then locales[nombre] = tostring(valor) end
+                j = j + 1
+            end
+            if next(locales) == nil then locales = nil end
+        end
         frames[#frames + 1] = {
-            source     = info.source or '?',
-            short_src  = info.short_src or '?',
-            what       = info.what or '?',
-            name       = info.name,
-            line       = info.currentline,
-            linedefined = info.linedefined,
+            file = src,
+            line = info.currentline or 0,
+            column = 0,
+            ['function'] = info.name or info.what or '?',
+            locals = locales,
         }
+        -- El main chunk del script observado cierra la pila util: por debajo solo
+        -- quedan xpcall y los frames del propio hook, que no son del programa.
+        if info.what == 'main' then break end
         i = i + 1
-        if #frames > 50 then break end  -- safety cap
+        if #frames >= 50 then break end
     end
     return frames
 end
 
-local function write_crash(err_msg, locals, stack_frames)
-    -- Build schema-v2 compliant frames from raw stack
-    local v2_frames = {}
-    for _, f in ipairs(stack_frames) do
-        local src = f.source or '?'
-        -- Strip leading '@' that Lua adds to file sources
-        if src:sub(1, 1) == '@' then src = src:sub(2) end
-        v2_frames[#v2_frames + 1] = {
-            file     = src,
-            line     = f.line or 0,
-            column   = 0,
-            ['function'] = f.name or f.what or '?',
-            locals   = nil,  -- filled below for the crash frame
-        }
-    end
-    -- Attach locals to the first user frame (the one that errored)
-    if #v2_frames > 0 and locals and next(locals) then
-        v2_frames[1].locals = locals
-    end
-
-    local cwd_handle = io.popen(package.config:sub(1,1) == '\\' and 'cd' or 'pwd')
-    local cwd = cwd_handle and cwd_handle:read('*l') or '.'
-    if cwd_handle then cwd_handle:close() end
-
-    local session_id = os.getenv('GB_SESSION_ID') or 'unknown'
-    -- Lua has no portable ppid; try GB_PPID env var set by gb-run.py
-    local ppid_str = os.getenv('GB_PPID')
-    local ppid_val = ppid_str and tonumber(ppid_str) or nil
-
+local function escribe(mensaje, traceback, frames)
+    local cwd = get_cwd()
+    local ppid = tonumber(os.getenv('GB_PPID'))
     local record = {
-        schema  = 2,
-        ts      = iso8601_now(),
-        session_id = session_id,
+        schema = 2,
+        ts = os.date('!%Y-%m-%dT%H:%M:%SZ'),
+        session_id = os.getenv('GB_SESSION_ID') or 'unknown',
         language = 'lua',
         exception = {
-            type    = 'runtime_error',
-            message = tostring(err_msg),
-            origin  = 'xpcall',
+            type = 'LuaError',
+            message = tostring(mensaje),
+            origin = 'message_handler',
         },
-        frames  = v2_frames,
+        frames = frames,
         process = {
-            cwd     = cwd,
-            project = detect_project_root(),
+            cwd = cwd,
+            project = project_root(cwd),
+            argv_forma = NULO,
             runtime = _VERSION,
-            pid     = nil,
-            ppid    = ppid_val,
+            pid = NULO,
+            ppid = ppid or NULO,
         },
-        traceback = debug.traceback(tostring(err_msg), 2),
+        traceback = traceback or NULO,
         capture_method = 'hook',
     }
-
-    local home = get_home()
-    local dir  = path_join(home, '.galaxy-brain')
-    local file = path_join(dir, 'crashes.jsonl')
-
+    local dir = get_home() .. SEP .. '.galaxy-brain'
     mkdir_p(dir)
+    local fh = io.open(dir .. SEP .. 'crashes.jsonl', 'a')
+    if fh then fh:write(json_encode(record) .. '\n'); fh:close() end
+end
 
-    local fh = io.open(file, 'a')
-    if fh then
-        fh:write(json_encode(record) .. '\n')
-        fh:close()
+--- Recorta del traceback los frames del propio hook: el interprete corta en
+--- "in main chunk" del script del usuario y cierra con "[C]: in ?".
+local function recorta(tb)
+    local lineas = {}
+    for l in (tb .. '\n'):gmatch('(.-)\n') do lineas[#lineas + 1] = l end
+    -- El PRIMER "in main chunk" es el del script observado; los de despues son
+    -- los del propio hook. Buscar desde el final se quedaba con los del hook.
+    local corte = nil
+    for i = 1, #lineas do
+        if lineas[i]:match('in main chunk%s*$') then corte = i; break end
+    end
+    if not corte then return tb end
+    local out = {}
+    for i = 1, corte do out[#out + 1] = lineas[i] end
+    out[#out + 1] = '\t[C]: in ?'
+    return table.concat(out, '\n')
+end
+
+-- Replica msghandler() de lua.c: mismo texto, mismas reglas para objetos de error.
+local function manejador(err)
+    local msg
+    local t = type(err)
+    if t == 'string' then
+        msg = err
+    elseif t == 'number' then
+        msg = tostring(err)
     else
-        io.stderr:write('[gb-hook.lua] WARNING: could not write crash record to ' .. file .. '\n')
+        local mt = getmetatable(err)
+        if mt and mt.__tostring then
+            local ok, s = pcall(tostring, err)
+            if ok and type(s) == 'string' then
+                pcall(escribe, s, nil, frames_desde_pila(3))
+                return s  -- lua.c devuelve el __tostring SIN traceback
+            end
+        end
+        msg = string.format('(error object is a %s value)', t)
     end
+    local tb = recorta(debug.traceback(msg, 2))
+    pcall(escribe, msg, tb, frames_desde_pila(3))
+    return tb
 end
 
--- ===================================================================
--- Error handler (runs before stack unwinds)
--- ===================================================================
+-- ==================== arranque via LUA_INIT ====================
+local function arranca()
+    if type(arg) ~= 'table' then return end
+    -- createargtable() de lua.c indexa desde el script: si NO hay script (lua -e,
+    -- lua -i, REPL) pone arg[0] = el propio interprete y no crea indices
+    -- negativos. Sin arg[-1] no hay script que observar y hay que apartarse: si
+    -- no, se intenta cargar lua.exe como fuente y se mata al programa.
+    if arg[-1] == nil then return end
+    -- El informe de lua.c se encabeza con progname: el EJECUTABLE tal cual se
+    -- invoco (arg[-1]) — en Windows, la ruta entera de lua.exe. Escribir 'lua:'
+    -- a pelo cambia la PRIMERA linea del stderr, que es la que lee un humano y
+    -- la que casa cualquier parseo de logs. Medido: 162 bytes -> 111.
+    _GB_PROG = tostring(arg[-1])
+    local script = arg[0]
+    if type(script) ~= 'string' or script == '' or script:sub(1, 1) == '-' then return end
+    if not file_exists(script) then return end
+    if script:match('gb%-hook%.lua$') then return end
 
-local captured_locals = nil
-local captured_stack  = nil
-
-local function error_handler(err)
-    -- Level 2 = the frame that errored (1 = this handler, 2 = caller).
-    captured_locals = capture_locals(2)
-    captured_stack  = capture_stack(2)
-    write_crash(err, captured_locals, captured_stack)
-    return err  -- return original error for re-raise
-end
-
--- ===================================================================
--- Main: load and run the user script
--- ===================================================================
-
-local function main()
-    local script = arg[1]
-    if not script then
-        io.stderr:write('Usage: lua gb-hook.lua <script.lua> [args...]\n')
-        os.exit(1)
-    end
-
-    -- Shift args so the user script sees its own args as arg[1], arg[2], ...
-    local new_arg = { [0] = script }
-    for i = 2, #arg do
-        new_arg[i - 1] = arg[i]
-    end
-    arg = new_arg
-
-    local chunk, load_err = loadfile(script)
+    local chunk, err = loadfile(script)
     if not chunk then
-        io.stderr:write('gb-hook.lua: failed to load script: ' .. tostring(load_err) .. '\n')
-        os.exit(1)
+        io.stderr:write(_GB_PROG .. ': ' .. tostring(err) .. '\n')
+        os.exit(1, true)
     end
-
-    local ok, err = xpcall(chunk, error_handler)
+    local ok, res = xpcall(chunk, manejador, table.unpack(arg, 1, #arg))
     if not ok then
-        -- Re-raise so the original exit behaviour is preserved.
-        error(err, 0)
+        io.stderr:write(_GB_PROG .. ': ' .. tostring(res) .. '\n')
+        os.exit(1, true)
     end
+    os.exit(0, true)
 end
 
-main()
+arranca()

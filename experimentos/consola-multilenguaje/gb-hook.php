@@ -1,274 +1,152 @@
 <?php
 /**
- * gb-hook.php — PHP crash capture hook for galaxy-brain (schema v2)
+ * gb-hook.php ARREGLADO — OBSERVACION, no MANEJO.
  *
- * Install: php.ini → auto_prepend_file = /path/to/gb-hook.php
+ * El original instalaba set_exception_handler + set_error_handler: los dos son
+ * MANEJADORES. Instalarlos hace que PHP considere la excepcion atendida:
+ * desaparece el "Fatal error: Uncaught ..." y el exit code 255 pasa a 0.
  *
- * Triple handler:
- *   1. set_exception_handler  — uncaught exceptions
- *   2. set_error_handler      — runtime errors (E_WARNING, E_NOTICE, etc.)
- *   3. register_shutdown_function + error_get_last() — fatal errors
+ * Aqui solo se usa register_shutdown_function + error_get_last(): corre DESPUES
+ * de que PHP ya haya reportado el fatal y salido por su camino normal. Observa.
+ * No sustituye a nada, asi que ni el exit code ni la salida cambian.
  *
- * Zero external dependencies. Dormant until a crash occurs.
- * Appends a JSON record to ~/.galaxy-brain/crashes.jsonl.
+ * Install: php -d auto_prepend_file=/ruta/gb-hook.php  (o php.ini)
  */
 
 (function () {
-    // Resolve home directory portably.
     $home = getenv('HOME') ?: getenv('USERPROFILE') ?: (
         getenv('HOMEDRIVE') && getenv('HOMEPATH')
             ? getenv('HOMEDRIVE') . getenv('HOMEPATH')
             : sys_get_temp_dir()
     );
-
     $crashesDir  = $home . DIRECTORY_SEPARATOR . '.galaxy-brain';
     $crashesFile = $crashesDir . DIRECTORY_SEPARATOR . 'crashes.jsonl';
 
-    // ---------------------------------------------------------------
-    // Helpers (closures to avoid polluting global namespace)
-    // ---------------------------------------------------------------
+    $NOMBRES = [
+        E_ERROR => 'E_ERROR', E_WARNING => 'E_WARNING', E_PARSE => 'E_PARSE',
+        E_NOTICE => 'E_NOTICE', E_CORE_ERROR => 'E_CORE_ERROR',
+        E_CORE_WARNING => 'E_CORE_WARNING', E_COMPILE_ERROR => 'E_COMPILE_ERROR',
+        E_COMPILE_WARNING => 'E_COMPILE_WARNING', E_USER_ERROR => 'E_USER_ERROR',
+        E_RECOVERABLE_ERROR => 'E_RECOVERABLE_ERROR',
+    ];
 
-    /**
-     * Walk up from $dir looking for .git.
-     */
-    $findProjectRoot = function (string $dir): ?string {
+    $findProjectRoot = function (string $dir) {
         $cur = realpath($dir) ?: $dir;
         while (true) {
-            if (file_exists($cur . DIRECTORY_SEPARATOR . '.git')) {
-                return $cur;
-            }
+            if (file_exists($cur . DIRECTORY_SEPARATOR . '.git')) return $cur;
             $parent = dirname($cur);
-            if ($parent === $cur) {
-                return null;  // filesystem root
-            }
+            if ($parent === $cur) return null;
             $cur = $parent;
         }
     };
 
-    /**
-     * Redact argv: keep flag names, replace values with <val>.
-     */
     $redactArgv = function (array $argv): array {
-        $result = [];
-        $count  = count($argv);
+        $result = []; $count = count($argv);
         for ($i = 0; $i < $count; $i++) {
-            $arg = $argv[$i];
-            if (preg_match('/^--?[a-zA-Z]/', $arg)) {
-                $eqPos = strpos($arg, '=');
-                if ($eqPos !== false) {
-                    $result[] = substr($arg, 0, $eqPos + 1) . '<val>';
-                } else {
-                    $result[] = $arg;
+            $a = $argv[$i];
+            if (preg_match('/^--?[a-zA-Z]/', $a)) {
+                $eq = strpos($a, '=');
+                if ($eq !== false) { $result[] = substr($a, 0, $eq + 1) . '<val>'; }
+                else {
+                    $result[] = $a;
                     if ($i + 1 < $count && !preg_match('/^--?[a-zA-Z]/', $argv[$i + 1])) {
-                        $result[] = '<val>';
-                        $i++;
+                        $result[] = '<val>'; $i++;
                     }
                 }
-            } else {
-                $result[] = $arg;
-            }
+            } else { $result[] = $a; }
         }
         return $result;
     };
 
-    /**
-     * Parse a backtrace array (from debug_backtrace or Exception::getTrace)
-     * into schema-v2 frames.
-     */
-    $parseTrace = function (array $trace): array {
-        $frames = [];
-        foreach ($trace as $frame) {
-            $frames[] = [
-                'file'     => $frame['file']     ?? '<internal>',
-                'line'     => $frame['line']      ?? 0,
-                'column'   => 0,  // PHP doesn't provide column info
-                'function' => isset($frame['class'])
-                    ? $frame['class'] . ($frame['type'] ?? '::') . ($frame['function'] ?? '')
-                    : ($frame['function'] ?? '<unknown>'),
-            ];
-        }
-        return $frames;
-    };
-
-    /**
-     * Build a schema-v2 crash record.
-     */
-    $buildRecord = function (
-        string $type,
-        string $message,
-        string $origin,
-        array  $frames,
-        string $rawTrace
-    ) use ($findProjectRoot, $redactArgv): array {
-        $cwd = getcwd() ?: '';
-        $sessionId = getenv('GB_SESSION_ID') ?: 'unknown';
-        // PHP doesn't have a built-in ppid function; use posix_getppid if available.
-        $ppid = function_exists('posix_getppid') ? posix_getppid() : null;
-        return [
-            'schema'     => 2,
-            'ts'         => date('c'),  // ISO 8601 with timezone
-            'session_id' => $sessionId,
-            'language'   => 'php',
-            'exception'  => [
-                'type'    => $type,
-                'message' => $message,
-                'origin'  => $origin,
-            ],
-            'frames'    => $frames,
-            'process'   => [
-                'cwd'        => $cwd,
-                'project'    => $findProjectRoot($cwd),
-                'argv_forma' => $redactArgv($_SERVER['argv'] ?? []),
-                'runtime'    => 'php ' . PHP_VERSION,
-                'pid'        => getmypid(),
-                'ppid'       => $ppid,
-            ],
-            'traceback'      => $rawTrace,
-            'capture_method' => 'hook',
-        ];
-    };
-
-    /**
-     * Append record to crashes.jsonl. Swallows all errors.
-     */
-    $writeRecord = function (array $record) use ($crashesDir, $crashesFile): void {
+    register_shutdown_function(function () use (
+        $crashesDir, $crashesFile, $NOMBRES, $findProjectRoot, $redactArgv
+    ): void {
         try {
-            if (!is_dir($crashesDir)) {
-                @mkdir($crashesDir, 0755, true);
+            $err = error_get_last();
+            if ($err === null) return;
+
+            $fatales = E_ERROR | E_PARSE | E_CORE_ERROR | E_COMPILE_ERROR
+                     | E_USER_ERROR | E_RECOVERABLE_ERROR;
+            if (!($err['type'] & $fatales)) return;
+
+            $mensajeCrudo = $err['message'];
+            $tipo    = $NOMBRES[$err['type']] ?? ('E_' . $err['type']);
+            $mensaje = $mensajeCrudo;
+            $origen  = 'shutdown';
+            $frames  = [];
+
+            // Excepcion no capturada: PHP la convierte en E_ERROR con el texto
+            // "Uncaught <Clase>: <mensaje> in <fichero>:<linea>\nStack trace:\n..."
+            if (preg_match('/^Uncaught\s+([\\\\A-Za-z_][\\\\A-Za-z0-9_]*)\s*:\s*(.*?)\s+in\s+(.+?):(\d+)\s*\nStack trace:\n(.*)$/s',
+                           $mensajeCrudo, $m)) {
+                $tipo    = $m[1];
+                $mensaje = $m[2];
+                $origen  = 'uncaught_exception';
+                $ficheroLanza = $m[3];
+                $lineaLanza   = (int) $m[4];
+                $traza        = $m[5];
+
+                $entradas = [];
+                foreach (explode("\n", $traza) as $l) {
+                    if (preg_match('/^#\d+\s+(.+)\((\d+)\):\s*(.+)$/', trim($l), $f)) {
+                        $entradas[] = ['file' => $f[1], 'line' => (int) $f[2], 'function' => $f[3]];
+                    } elseif (preg_match('/^#\d+\s+\{main\}$/', trim($l))) {
+                        $entradas[] = ['file' => $ficheroLanza, 'line' => 0, 'function' => '{main}'];
+                    }
+                }
+                // El punto exacto del lanzamiento: fichero:linea del mensaje, con
+                // el nombre de la funcion que aparece en #0 (a quien se llamo).
+                $frames[] = [
+                    'file' => $ficheroLanza, 'line' => $lineaLanza, 'column' => 0,
+                    'function' => $entradas[0]['function'] ?? '{main}',
+                ];
+                // La ultima entrada, "#N {main}", es el terminador de la traza de
+                // PHP, no un frame: no se emite.
+                $ultimo = count($entradas) - 1;
+                for ($i = 0; $i < $ultimo; $i++) {
+                    $e = $entradas[$i];
+                    $frames[] = [
+                        'file' => $e['file'], 'line' => $e['line'], 'column' => 0,
+                        'function' => $entradas[$i + 1]['function'] ?? '{main}',
+                    ];
+                }
             }
+
+            if (!$frames) {
+                $frames[] = [
+                    'file' => $err['file'] ?: '<unknown>', 'line' => (int) ($err['line'] ?? 0),
+                    'column' => 0, 'function' => '<fatal>',
+                ];
+            }
+
+            $cwd = getcwd() ?: '';
+            $record = [
+                'schema' => 2,
+                'ts' => date('c'),
+                'session_id' => getenv('GB_SESSION_ID') ?: 'unknown',
+                'language' => 'php',
+                'exception' => ['type' => $tipo, 'message' => $mensaje, 'origin' => $origen],
+                'frames' => $frames,
+                'process' => [
+                    'cwd' => $cwd,
+                    'project' => $findProjectRoot($cwd),
+                    'argv_forma' => $redactArgv($_SERVER['argv'] ?? []),
+                    'runtime' => 'php ' . PHP_VERSION,
+                    'pid' => getmypid(),
+                    'ppid' => function_exists('posix_getppid') ? posix_getppid() : null,
+                ],
+                'traceback' => $mensajeCrudo,
+                'capture_method' => 'hook',
+            ];
+
+            if (!is_dir($crashesDir)) @mkdir($crashesDir, 0755, true);
             @file_put_contents(
                 $crashesFile,
                 json_encode($record, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) . "\n",
                 FILE_APPEND | LOCK_EX
             );
         } catch (\Throwable $e) {
-            // Silent fail.
+            // Silencio: si la captura falla, el programa sigue como si no existiera.
         }
-    };
-
-    // Track whether we've already captured (avoid double-capture from
-    // exception handler + shutdown function for the same error).
-    $captured = false;
-
-    // ---------------------------------------------------------------
-    // 1. Uncaught exception handler
-    // ---------------------------------------------------------------
-    $previousExceptionHandler = set_exception_handler(
-        function (\Throwable $ex) use (
-            &$captured, $buildRecord, $parseTrace, $writeRecord,
-            &$previousExceptionHandler
-        ): void {
-            if (!$captured) {
-                $captured = true;
-                try {
-                    $frames   = $parseTrace($ex->getTrace());
-                    $rawTrace = $ex->getTraceAsString();
-                    $record   = $buildRecord(
-                        get_class($ex),
-                        $ex->getMessage(),
-                        'exception',
-                        $frames,
-                        $rawTrace
-                    );
-                    $writeRecord($record);
-                } catch (\Throwable $e) {
-                    // Silent fail.
-                }
-            }
-
-            // Chain to any previously installed handler.
-            if (is_callable($previousExceptionHandler)) {
-                ($previousExceptionHandler)($ex);
-            }
-        }
-    );
-
-    // ---------------------------------------------------------------
-    // 2. Error handler (non-fatal errors: warnings, notices, etc.)
-    //    Only capture errors that would be fatal or are severe.
-    // ---------------------------------------------------------------
-    $fatalErrorTypes = E_ERROR | E_PARSE | E_CORE_ERROR | E_COMPILE_ERROR | E_USER_ERROR;
-    $previousErrorHandler = set_error_handler(
-        function (
-            int $errno,
-            string $errstr,
-            string $errfile = '',
-            int $errline = 0
-        ) use (
-            &$captured, $fatalErrorTypes,
-            $buildRecord, $parseTrace, $writeRecord,
-            &$previousErrorHandler
-        ): bool {
-            // Only capture error types that are severe enough.
-            if ($errno & $fatalErrorTypes) {
-                if (!$captured) {
-                    $captured = true;
-                    try {
-                        $frames   = $parseTrace(debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS));
-                        $rawTrace = "Error [{$errno}] in {$errfile}:{$errline} — {$errstr}";
-                        $record   = $buildRecord(
-                            'E_' . $errno,
-                            $errstr,
-                            'error_handler',
-                            $frames,
-                            $rawTrace
-                        );
-                        $writeRecord($record);
-                    } catch (\Throwable $e) {
-                        // Silent fail.
-                    }
-                }
-            }
-
-            // Chain to previous handler or let PHP's default handle it.
-            if (is_callable($previousErrorHandler)) {
-                return ($previousErrorHandler)($errno, $errstr, $errfile, $errline);
-            }
-            return false;  // Let PHP's default error handler run.
-        }
-    );
-
-    // ---------------------------------------------------------------
-    // 3. Shutdown function — catches fatal errors that bypass the
-    //    error handler (E_ERROR, E_PARSE, segfaults reported via
-    //    error_get_last).
-    // ---------------------------------------------------------------
-    register_shutdown_function(
-        function () use (
-            &$captured, $fatalErrorTypes,
-            $buildRecord, $writeRecord
-        ): void {
-            $error = error_get_last();
-            if ($error === null) {
-                return;
-            }
-            // Only capture fatal-class errors.
-            if (!($error['type'] & $fatalErrorTypes)) {
-                return;
-            }
-            if ($captured) {
-                return;
-            }
-            $captured = true;
-            try {
-                $frames = [[
-                    'file'     => $error['file'] ?? '<unknown>',
-                    'line'     => $error['line'] ?? 0,
-                    'column'   => 0,
-                    'function' => '<fatal>',
-                ]];
-                $rawTrace = "Fatal [{$error['type']}] in {$error['file']}:{$error['line']} — {$error['message']}";
-                $record   = $buildRecord(
-                    'E_FATAL_' . $error['type'],
-                    $error['message'],
-                    'shutdown',
-                    $frames,
-                    $rawTrace
-                );
-                $writeRecord($record);
-            } catch (\Throwable $e) {
-                // Silent fail.
-            }
-        }
-    );
+    });
 })();
