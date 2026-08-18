@@ -250,49 +250,97 @@ una variable y te dice el flag a mano → **0 registros por esa vía**) y lua **
 instala transparente). Que se equivoque en ambos sentidos es la prueba de que el eje que la ordena
 —«¿hay hook instalable por env-var?»— no predice nada. El que predice es observación vs manejo.
 
+## Cuarta vuelta (18-ago): ruby y csharp, y los casos que un observador aún estropea
+
+Los dos capturaban bien, pero nadie los había mirado por el eje nuevo. Y el crash normal no es
+donde se rompe un hook de observación: se rompe en los bordes. Cinco casos por lenguaje —crash,
+salida limpia, exit code propio, stdout antes de morir, excepción en hilo secundario—, cada uno con
+una tirada de **control** sin hook para separar el ruido del runtime de lo que hace el hook.
+
+| Métrica | Antes | Después |
+|---|---|---|
+| programa observado intacto | 90 % (9/10) | **100 % (10/10)** |
+| exit code preservado | 100 % | **100 %** |
+| stdout idéntico | 100 % | **100 %** |
+| stderr idéntico | 90 % | **100 %** |
+| crashes capturados | 100 % (6/6) | **100 % (6/6)** |
+| **registros espurios** (sin crash) | **25 % (1/4)** | **0 % (0/4)** |
+
+Por lenguaje: **csharp 100 % (5/5) sin tocar una línea** — su `AppDomain.UnhandledException` no puede
+impedir la terminación, así que es observación por construcción. **ruby 80 % → 100 %**.
+
+### El defecto de ruby: `exit 3` también es una excepción
+
+`at_exit` miraba `$!` sin filtrar, y en Ruby una salida deliberada es un `SystemExit`. Un CLI que
+sale con 3, o un script que hace `exit 1` después de informar, dejaba una captura de un fallo que
+nunca ocurrió. No es cosmético: un histórico con salidas normales dentro deja de significar nada, y
+lo que no significa nada se deja de mirar — que es cómo muere un termómetro.
+
+El arreglo es una condición. El mecanismo ya estaba en el lado bueno del eje; lo que faltaba era el
+filtro.
+
+### Y el banco se equivocaba en un 20 %
+
+Acusaba al hook de alterar el stderr del caso `hilo`. Lo que cambia ahí es **la dirección de memoria
+del objeto Thread**, distinta en cada ejecución aunque no haya hook. Sin tirada de control, el banco
+le cobraba al hook el no determinismo del runtime.
+
 ## Qué se puede afirmar, y qué no
 
-**Sí:** el patrón se repite y el formato aguanta. Escribir un hook por lenguaje que produce un
-registro v2 correcto es viable — hay dos funcionando y un tercero a un flag de distancia.
+**Sí:** el eje está encontrado y el formato aguanta. **6 lenguajes verificados, 6 con gancho de
+observación** — js, java, php, lua necesitaron arreglo; csharp y ruby ya estaban en el lado bueno
+(ruby con un filtro de menos). Los seis capturan con registro y dejan el programa observado intacto:
+**100 % en exit code, stdout y stderr**.
 
-**No:** que esto esté cerca de entrar. Ningún lenguaje pasa los cinco criterios; el almacén no habla
-consigo mismo; y 6 de los 16 lenguajes ni siquiera se han podido probar en esta máquina.
+**No:** que esto esté cerca de entrar. El criterio 3 no lo pasa nadie, el 4 no existe, y 6 de los 16
+lenguajes no se han podido probar en esta máquina por falta de runtime.
 
-**Recomendación:** la [ADR 0012](adr/0012-consola-multilenguaje.md) se queda en **propuesta**, y el
-siguiente paso no es añadir lenguajes. Por orden:
+### Marcador por criterio
 
-0. **Recortar el alcance**, que es lo que manda el criterio de aborto 1 ya activado: fuera el
-   fallback stderr como capa universal, y con él **go y rust**, que no tienen otra vía. La ADR
-   pasa de «16 lenguajes en tres tiers» a «los que tengan gancho de observación», que hoy son
-   cuatro medidos.
-1. ~~Cambiar el gancho en js~~ — **hecho** (`8e7a8f9`), 3/3 perfecto.
-2. **Una sola convención de almacén.** Hoy son tres y no se leen entre sí. Mientras eso siga así,
-   `gb last/show/list` no puede ver nada de lo que capturan los hooks (criterio 3), y da igual
-   cuántos lenguajes se añadan.
-3. **Quitar el ruido del runner** en stderr: una línea en blanco de más basta para suspender el
-   criterio 5 de todos los lenguajes a la vez, y no tiene nada que ver con ellos.
-4. **Buscar el gancho de observación en cada runtime.** El eje que decide no es «¿hay hook
-   instalable por env-var?» sino **«¿hay un gancho de OBSERVACIÓN o solo uno de MANEJO?»**. La tabla
-   de tiers de la ADR está ordenada por el eje equivocado, y este banco es la prueba: js estaba en
-   la casilla buena por el motivo equivocado.
-5. **Decidir qué se hace con Go**, donde no hay hook y el fallback no registró nada.
+| Criterio de terminado | Estado |
+|---|---|
+| 1. ≥3 crashes producen registros correctos | **6/6 lenguajes medidos** |
+| 2. Validan contra el schema v2 | **9 % (9/105)** — el enum `exception.origin` no lo respeta ningún hook |
+| 3. `gb last/show/list` sin modificación | **0 %** — tres convenciones de almacén, y el orden de frames invertido |
+| 4. `gb status` declara el mecanismo | **no existe** |
+| 5. El hook no altera el programa | **100 % (10/10)** en los seis, tras cuatro arreglos |
 
-Lo que ya **no** procede es cerrarla por el exit code. Lo que tampoco procede es aceptarla: **js,
-ruby, java y csharp pasan hoy los criterios 1, 2 y 5**, pero el 3 y el 4 no los pasa nadie —el
-almacén no habla consigo mismo y `gb status` no existe—, y quedan lenguajes sin probar.
+**Recomendación:** la [ADR 0012](adr/0012-consola-multilenguaje.md) sigue en **propuesta**, con el
+alcance ya recortado por su propio criterio de aborto. Lo que queda, por orden:
+
+1. ~~Cambiar el gancho en js~~ · ~~java~~ · ~~php~~ · ~~lua~~ · ~~ruby~~ — **hechos y medidos**.
+2. **Una sola convención de almacén** (criterio 3). Es lo único que bloquea, y no es mapear campos:
+   el orden de los frames está invertido en siete lenguajes, así que la captura se pinta apuntando
+   al sitio equivocado sin lanzar un error. Hay propuesta escrita con criterio comprobable en
+   [propuesta-almacen-unificado.md](propuesta-almacen-unificado.md), **sin implementar a propósito**:
+   se diseñó para 8 lenguajes y el alcance se recortó a los que tengan gancho de observación.
+   Construirla antes de que el alcance asiente sería sobre un plano viejo.
+3. **`gb status`** (criterio 4).
+4. **Los lenguajes sin runtime aquí** — elixir, swift, dart, kotlin, scala, C: primero la pregunta
+   del eje, y solo después medir.
+
+Lo que ya **no** procede es cerrarla por el exit code, ni aceptarla con los criterios 3 y 4 a cero.
 
 ### Advertencia sobre este documento
 
-Sus números han cambiado **dos veces** por fallos del banco, no del código: una ruta POSIX pasada a
-un binario nativo, y un aislamiento de `HOME` que cuatro runtimes ignoran. Las dos veces el error
-apuntaba en la misma dirección —«no funciona»— y la primera estuvo a punto de cerrar la ADR.
+Sus números han cambiado **cuatro veces por fallos del banco**, no del código:
 
-Un banco que se equivoca hacia el no es tan peligroso como uno que se equivoca hacia el sí, y es
-más fácil de creerse: un resultado negativo no invita a comprobar nada. Cualquier cifra de aquí que
-vaya a decidir algo se remide antes.
+| Fallo del método | Dirección del error |
+|---|---|
+| ruta POSIX pasada a un binario nativo (dos veces) | «no funciona» |
+| aislamiento de `HOME` que cuatro runtimes ignoran | «no funciona» |
+| validación superficial dada por buena (`required` sin tipos ni enums) | «sí funciona» |
+| bancos concurrentes atribuyéndose registros ajenos | ambas |
+| sin tirada de control para el ruido no determinista | «no funciona» |
+
+**Cuatro de cinco apuntaban al «no»**, y el primero estuvo a punto de cerrar la ADR. Un banco que se
+equivoca hacia el no es más peligroso que uno que se equivoca hacia el sí, porque un resultado
+negativo no invita a comprobar nada: se archiva. Cualquier cifra de aquí que vaya a decidir algo se
+remide antes, y con tirada de control.
 
 ## Reproducirlo
 
-El banco es un script sin dependencias que extrae el spike de su rama con `git archive`, monta los
-casos y compara. Vive fuera del repo a propósito (es un experimento, no código de gb); lo que queda
-aquí son los números.
+Los bancos son scripts sin dependencias que extraen el spike de su rama con `git archive`, montan
+los casos y comparan contra una ejecución sin hook. Viven fuera del repo a propósito (son
+experimentos, no código de gb); lo que queda aquí son los números. El material de los lenguajes está
+en `Desktop/gb-lenguajes`.

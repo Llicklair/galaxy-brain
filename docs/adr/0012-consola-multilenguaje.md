@@ -1,6 +1,6 @@
 # 12. Consola multilenguaje por mecanismo nativo + fallback stderr
 
-**Estado:** propuesta — **su criterio de aborto 1 se ha ACTIVADO (18-ago-2026); el alcance se recorta** · **Fecha:** 2026-08-16 · **Supercede (solo el eje lenguaje):** [0004](0004-un-lenguaje-un-runtime-un-tipo-de-fallo.md) · **Extiende:** [0009](0009-multilenguaje-por-referencia.md)
+**Estado:** propuesta — alcance **recortado por su propio criterio de aborto**; 6 lenguajes medidos y en verde por el criterio 5, **bloqueada por el criterio 3** · **Fecha:** 2026-08-16 · **Supercede (solo el eje lenguaje):** [0004](0004-un-lenguaje-un-runtime-un-tipo-de-fallo.md) · **Extiende:** [0009](0009-multilenguaje-por-referencia.md)
 
 > **La medición está hecha: [CONSOLA-MULTILENGUAJE.md](../CONSOLA-MULTILENGUAJE.md).** De 6 lenguajes
 > probados, capturan 2 por el camino que este ADR describe (js y ruby, 3/3 cada uno, registros
@@ -13,6 +13,13 @@
 > `uncaughtExceptionMonitor`, el evento que Node tiene para observar sin manejar. **Aplicado**
 > (`8e7a8f9`) y remedido: 3/3, captura el error entero y el proceso muere exactamente igual. Con eso,
 > **js y ruby pasan los criterios 1, 2 y 5**.
+>
+> **CUARTA vuelta (18-ago) — el eje va 6 de 6.** csharp y ruby, verificados por el eje nuevo sobre 5 casos límite cada uno (crash, salida limpia, exit code propio, stdout antes de morir, excepción en hilo): **programa observado intacto 100 % (10/10)** en exit code, stdout y stderr, y **registros espurios 25 % → 0 %**. csharp pasó los cinco sin tocar una línea. A ruby le faltaba un filtro: `exit 3` es un `SystemExit`, así que capturaba salidas normales como si fueran fallos.
+>
+> **Lo que queda es el criterio 3, y solo ese.** Nadie lo pasa, y no es mapear campos: el
+> orden de los frames está invertido en siete lenguajes, así que la captura se pinta
+> apuntando al arranque del runtime en vez de a la línea que reventó, sin lanzar un error.
+> El criterio 4 (`gb status`) tampoco existe.
 >
 > **TERCERA vuelta (18-ago) — el criterio de aborto 1 de este mismo ADR se activa.** El fallback
 > stderr no distingue el tipo de excepción del mensaje en **go ni en rust**: `exception.type` vale
@@ -66,8 +73,8 @@ estaba entre los parciales y sí instala transparente). El eje que decide, medid
 
 | Categoría | Lenguajes | Estado |
 |---|---|---|
-| **Gancho de OBSERVACIÓN** — el runtime sigue su curso; capturar no cambia el programa | **js**, **java**, **php**, **lua** | los 4 **medidos y arreglados**: `uncaughtExceptionMonitor`, replicar el default de la JVM, `register_shutdown_function`+`error_get_last`, message handler de `xpcall` |
-| **Solo gancho de MANEJO** — capturar *es* atender el error | csharp, ruby (miden bien hoy, sin re-verificar por este eje) · kotlin, scala, elixir, swift, dart, C (sin medir) | pendientes: hay que buscarles el punto de observación o declararlos fuera |
+| **Gancho de OBSERVACIÓN** — el runtime sigue su curso; capturar no cambia el programa | **js · java · php · lua · csharp · ruby** | **6 verificados, 6 en el lado bueno.** Cuatro necesitaron arreglo (`uncaughtExceptionMonitor`, replicar el default de la JVM, `register_shutdown_function`+`error_get_last`, message handler de `xpcall`); csharp y ruby ya estaban — `AppDomain.UnhandledException` no puede impedir la terminación, y `at_exit` solo mira. A ruby le faltaba filtrar `SystemExit`, que es un filtro, no el mecanismo |
+| **Sin medir** — falta el runtime en la máquina | kotlin, scala, elixir, swift, dart, C | primero la pregunta del eje (¿observa o maneja?), y solo después medir. Kotlin y Scala corren sobre la JVM, así que heredarían el agente ya arreglado |
 | **Sin gancho instalable** | **go**, **rust** | **fuera** (ver abajo): `recover()` es por goroutine; `set_hook` exige tocar el código del usuario |
 
 Lo que cuesta equivocarse de eje, medido: los cuatro hooks del primer grupo **rompían el programa
