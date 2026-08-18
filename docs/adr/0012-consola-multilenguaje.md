@@ -1,6 +1,6 @@
 # 12. Consola multilenguaje por mecanismo nativo + fallback stderr
 
-**Estado:** propuesta **decidible** — **10 de 16 lenguajes cubiertos y medidos**, 4 de 5 criterios cumplidos; falta `gb status` y dos lenguajes que esta máquina no deja instalar · **Fecha:** 2026-08-16 · **Supercede (solo el eje lenguaje):** [0004](0004-un-lenguaje-un-runtime-un-tipo-de-fallo.md) · **Extiende:** [0009](0009-multilenguaje-por-referencia.md)
+**Estado:** propuesta **decidible** — **12 de 16 lenguajes cubiertos**, 4 de 5 criterios cumplidos; falta `gb status` y dos lenguajes que esta máquina no deja instalar · **Fecha:** 2026-08-16 · **Supercede (solo el eje lenguaje):** [0004](0004-un-lenguaje-un-runtime-un-tipo-de-fallo.md) · **Extiende:** [0009](0009-multilenguaje-por-referencia.md)
 
 > **La medición está hecha: [CONSOLA-MULTILENGUAJE.md](../CONSOLA-MULTILENGUAJE.md).** De 6 lenguajes
 > probados, capturan 2 por el camino que este ADR describe (js y ruby, 3/3 cada uno, registros
@@ -93,7 +93,7 @@ estaba entre los parciales y sí instala transparente). El eje que decide, medid
 | **Sin gancho de observación** — medido y descartado | **dart** | `runZonedGuarded` es lo único que ofrece y es manejo puro: el exit pasa de **255 a 0** y borra los 426 bytes de traza. Además exige reescribir el `main()` del usuario |
 | **Otra plataforma** | **C** | viable en Linux (`LD_PRELOAD` + `sigaction`); en Windows ese mecanismo no existe y el hook ni compila (`gmtime_r` es POSIX) |
 | **Sin medir** — el instalador pide administrador | elixir, swift | bloqueo de la máquina, no del diseño. Elixir descargado pero no arranca sin Erlang |
-| **Sin gancho instalable** | **go**, **rust** | **fuera** (ver abajo): `recover()` es por goroutine; `set_hook` exige tocar el código del usuario |
+| **Cubiertos por WRAPPER de stderr** — no hay hook, se envuelve la invocación | **go**, **rust** | **readmitidos**: el criterio de aborto 1 se disparó con un dato incompleto (el parser escribía `panic` sin leer el mensaje). Con el tipo derivado del stderr: **67 %**, y `panic` declarado en el resto. Límites que siguen: no es transparente, y solo ve lo que mata al proceso |
 
 Lo que cuesta equivocarse de eje, medido: los cuatro hooks del primer grupo **rompían el programa
 observado** antes de arreglarlos — js cambiaba el exit code, java borraba la traza, lua impedía que

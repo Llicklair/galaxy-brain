@@ -361,6 +361,54 @@ Los instaladores de ambos exigen elevación (`otp_win64_29.0.5.exe` y el toolcha
 ninguno publica un build portable. Elixir sí se descargó (8,3 MB) pero no arranca sin Erlang. Queda
 como **no medido**, que es distinto de «no funciona».
 
+## Séptima vuelta (18-ago): el criterio de aborto se disparó con un dato incompleto
+
+Go y rust se dejaron fuera porque `exception.type` valía `panic` en los 40 registros, y de ahí se
+concluyó que *«el dato no está en stderr»*. **Era cierto de la salida, no del stderr**: el parser
+escribía la constante literal sin leer el mensaje.
+
+Formas reales, medidas con Go 1.26 y rustc 1.95:
+
+| Salida del runtime | ¿Tipo derivable? |
+|---|---|
+| `panic: runtime error: invalid memory address or nil pointer dereference` | **sí** — `nil pointer dereference` |
+| `panic: runtime error: index out of range [9] with length 2` | **sí** |
+| `panic: runtime error: integer divide by zero` | **sí** |
+| `panic: (*main.ErrNeg) 0x12105bb8c060` | **sí** — el tipo del valor |
+| `panic: codigo 42` | no — el valor implementa `error`, Go imprime su texto |
+| `panic: texto suelto` | no — el valor es un string |
+| `thread 'main' panicked at …` + `called Option::unwrap() on a None value` | **sí** — Rust no tiene tipos, pero la clase sí |
+| … + `index out of bounds: the len is 2 but the index is 9` | **sí** |
+| … + `mensaje propio` | no — `panic!` del usuario |
+
+**Tipo distinguido del mensaje: 67 % (6/9), antes 0 % (0/9).** Los tres que no siguen diciendo
+`panic`, declarado y no inventado (regla 9): un tipo a ojo es peor que ninguno, porque manda a
+buscar el fallo que no es.
+
+Verificado end-to-end, **5 de 5** con el tipo bueno en el registro: `runtime error: nil pointer
+dereference`, `runtime error: index out of range`, `runtime error: integer divide by zero`,
+`Option::unwrap on None`, `index out of bounds`.
+
+### Lo que esto significa para la ADR
+
+El criterio de aborto 1 decía: *«si el fallback stderr no distingue tipo de excepción del mensaje en
+≥ 2 lenguajes, se recorta el alcance»*. Se activó — y **se activó mal**, porque la medición que lo
+disparó no medía el stderr sino una constante en el código.
+
+**Go y rust vuelven a ser candidatos**, con dos salvedades que siguen en pie y no dependen de esto:
+
+- **Ninguno tiene gancho de observación instalable.** El wrapper de stderr no altera el programa
+  (por construcción: no se mete dentro), pero exige envolver la invocación — no es transparente.
+- **El fallback solo ve lo que mata al proceso.** Un panic en hilo secundario de Rust deja exit 0 y
+  cero registros.
+
+Así que el estado correcto no es «fuera», es **«cubiertos por una vía distinta, con su límite
+escrito»**. Que es exactamente lo que el proyecto le exige a cualquier capa.
+
+**Es la sexta vez que una medición de este banco sale mal, y la quinta hacia el «no funciona».**
+Esta vez el error no fue de método sino de lectura: se creyó una salida sin comprobar de dónde
+venía. Un `grep` al parser habría bastado.
+
 ## El marcador final: grafo y consola, lenguaje por lenguaje
 
 El grafo se midió sobre los mismos 16 proyectos de `gb-lenguajes`, con `gb graph` y `gb symbols`.
@@ -377,8 +425,8 @@ El grafo se midió sobre los mismos 16 proyectos de `gb-lenguajes`, con `gb grap
 | ruby | 3 · 2 · 5 | sí | **100 %** |
 | php | 3 · 1 · 5 | — | **100 %** |
 | lua | 3 · 2 · 7 | — | **100 %** |
-| go | 3 · 1 · 6 | — | **fuera**: el fallback no distingue tipo de mensaje |
-| rust | 4 · 1 · 7 | sí | **fuera**: `set_hook` exige tocar el código |
+| go | 3 · 1 · 6 | — | **cubierto por wrapper**: tipo derivado al 67 %; no hay hook transparente |
+| rust | 4 · 1 · 7 | sí | **cubierto por wrapper**: ídem; `set_hook` exige tocar el código |
 | dart | 3 · 1 · 6 | sí | **fuera**: `runZonedGuarded` lleva el exit de 255 a 0 |
 | c | 3 · 2 · 6 | sí | **solo Linux**: `LD_PRELOAD`, y no compila en Windows |
 | elixir | 4 · 1 · 9 | — | **sin medir**: Erlang exige elevación |
@@ -422,7 +470,7 @@ que queda es trabajo acotado, no una incógnita.
 
 | Criterio de terminado | Estado |
 |---|---|
-| 1. ≥3 crashes producen registros correctos | **10 de 16** (9 medidos + tsx por herencia) · 3 descartados con dato · 1 de plataforma · 2 sin medir |
+| 1. ≥3 crashes producen registros correctos | **12 de 16** (9 con hook nativo + tsx por herencia + go y rust por wrapper) · 1 descartado con dato (dart) · 1 de plataforma (C) · 2 sin medir |
 | 2. Validan contra el schema v2 | **9 % (9/105)** — el enum `exception.origin` no lo respeta ningún hook |
 | 3. `gb last/show/list` sin modificación | **cumplido** (`94bcef7`) — buzón + normalización; `store.py` y `render.py` con **cero líneas** de cambio |
 | 4. `gb status` declara el mecanismo | **no existe** |
