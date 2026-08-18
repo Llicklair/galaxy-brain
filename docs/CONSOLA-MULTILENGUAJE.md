@@ -311,6 +311,102 @@ consecuencia es de etiquetado: el hook resuelve `/\.tsx?$/` a `"ts"`, así que u
 `.tsx` se guarda como `ts`. El grafo sí los distingue (son dos entradas de la tabla). Es una
 discrepancia menor, y queda declarada aquí en vez de descubrirse mirando un informe raro.
 
+## Sexta vuelta (18-ago): los seis que faltaban, con sus runtimes instalados
+
+Se instalaron en `~/gb-runtimes` (1,8 GB, todo portable y sin privilegios de administrador):
+Kotlin 2.4.10, Scala 3.3.8, Dart 3.13.1 y gcc 16.2 (MinGW-w64). Erlang y Swift **no se pudieron
+instalar**: sus dos instaladores exigen elevación y no hay build portable oficial.
+
+### Kotlin y Scala: la hipótesis de la JVM se sostiene
+
+Corren sobre la misma máquina virtual que Java, así que la apuesta era que heredaran el agente ya
+arreglado **sin tocar una línea**. Se sostuvo:
+
+| | intacto | capturado | espurios | etiqueta |
+|---|---|---|---|---|
+| **kotlin** | **100 % (3/3)** | **100 %** | **0 %** | `language: kotlin` |
+| **scala** | **100 % (3/3)** | **100 %** | **0 %** | `language: scala` |
+
+Dos lenguajes por el precio de comprobar una cosa. Y el agente distingue bien cuál es cuál, aunque
+la excepción sea la misma `java.lang.NullPointerException` de la JVM.
+
+> **Detalle que costó una vuelta:** al instalar el agente por `JAVA_TOOL_OPTIONS`, **la JVM imprime
+> ella misma** una línea `Picked up JAVA_TOOL_OPTIONS: …` en stderr — y la termina en `\n` mientras
+> el resto de su salida usa `\r\n`. No es del agente y no se le puede cobrar, pero **sí altera el
+> stderr del programa observado**: es un coste del mecanismo de instalación, no del hook, y se
+> declara aparte. Mi primer filtro la cortaba mal y acusó al agente de perder tres bytes por línea.
+
+### Dart: el peor caso, y sin alternativa
+
+`runZonedGuarded` es lo único que Dart ofrece, y es manejo puro. Medido contra el programa sin hook:
+
+| | sin hook | con hook |
+|---|---|---|
+| exit code | **255** | **0** |
+| stderr | **426 bytes** | **0** |
+
+Es el defecto de php, pero **en Dart no hay arreglo**: no existe un gancho de observación, y el hook
+del spike además exige *reescribir el `main()` del usuario* («rename your existing main() to
+userMain()»), lo que ya lo saca de «instalable». **Dos motivos independientes para dejarlo fuera.**
+
+### C: viable en Linux, no en Windows
+
+El hook usa `sigaction` + `__attribute__((constructor))` e instala por `LD_PRELOAD` — un mecanismo
+que **no existe en Windows**. Y ni siquiera compila aquí: usa `gmtime_r`, que es POSIX (`gcc` lo
+rechaza y sugiere `gmtime_s`). No es un fallo del hook: es que su plataforma es otra.
+
+### Erlang/Elixir y Swift: bloqueados por la máquina, no por el diseño
+
+Los instaladores de ambos exigen elevación (`otp_win64_29.0.5.exe` y el toolchain de Swift), y
+ninguno publica un build portable. Elixir sí se descargó (8,3 MB) pero no arranca sin Erlang. Queda
+como **no medido**, que es distinto de «no funciona».
+
+## El marcador final: grafo y consola, lenguaje por lenguaje
+
+El grafo se midió sobre los mismos 16 proyectos de `gb-lenguajes`, con `gb graph` y `gb symbols`.
+
+| Lenguaje | Grafo: módulos · aristas · símbolos | Techo declarado | Consola |
+|---|---|---|---|
+| js | 3 · 2 · 5 | — | **100 %** |
+| ts | 3 · 2 · 6 | — | **100 %** |
+| tsx | 3 · 2 · 6 | — | hereda Node (no tiene runtime propio) |
+| java | 3 · **0** · 9 | sí | **100 %** |
+| kotlin | 3 · **0** · 6 | sí | **100 %** |
+| scala | 3 · **0** · 6 | sí | **100 %** |
+| csharp | 3 · **0** · 6 | sí | **100 %** |
+| ruby | 3 · 2 · 5 | sí | **100 %** |
+| php | 3 · 1 · 5 | — | **100 %** |
+| lua | 3 · 2 · 7 | — | **100 %** |
+| go | 3 · 1 · 6 | — | **fuera**: el fallback no distingue tipo de mensaje |
+| rust | 4 · 1 · 7 | sí | **fuera**: `set_hook` exige tocar el código |
+| dart | 3 · 1 · 6 | sí | **fuera**: `runZonedGuarded` lleva el exit de 255 a 0 |
+| c | 3 · 2 · 6 | sí | **solo Linux**: `LD_PRELOAD`, y no compila en Windows |
+| elixir | 4 · 1 · 9 | — | **sin medir**: Erlang exige elevación |
+| swift | 4 · **0** · 7 | sí | **sin medir**: el toolchain exige elevación |
+
+### Lo que dicen estos números
+
+**El grafo funciona en los 16 de 16.** Todos devuelven módulos y símbolos; ninguno falla ni miente.
+Los cinco que devuelven **0 aristas** no están rotos: en java, kotlin, scala, csharp y swift las
+clases del mismo paquete se usan sin `import`, así que no hay arista que derivar — y los cinco
+**declaran ese techo** en su propia salida, que es lo que los distingue de un cero que significa
+«no hay acoplamiento».
+
+**La consola funciona en 10 de 16**, y no por casualidad sino por un criterio: **tener un gancho de
+observación**. Nueve medidos al 100 % en las tres métricas (programa intacto, crashes capturados,
+cero registros espurios) más tsx por herencia. Los seis restantes se reparten en tres motivos
+distintos, y ninguno es «no lo hemos intentado»:
+
+- **3 descartados con dato**: go y rust (el fallback no distingue el tipo del mensaje, y el dato no
+  está en stderr), dart (su único mecanismo destruye el exit code y la traza).
+- **1 de plataforma**: C es viable en Linux y no en Windows.
+- **2 sin medir**: elixir y swift, bloqueados por instaladores que piden administrador.
+
+**Grafo y consola no cubren lo mismo, y esa asimetría es del problema, no de gb.** El grafo necesita
+un parser y se integra por referencia; la consola necesita un enganche al runtime, y hay runtimes
+que no lo ofrecen. Lo que sí es exigible a las dos capas es que **digan lo que no ven** — y eso
+ahora lo hacen las dos.
+
 ## Qué se puede afirmar, y qué no
 
 **Sí:** el eje está encontrado y el formato aguanta. **6 lenguajes verificados, 6 con gancho de
@@ -326,11 +422,11 @@ que queda es trabajo acotado, no una incógnita.
 
 | Criterio de terminado | Estado |
 |---|---|
-| 1. ≥3 crashes producen registros correctos | **8 de 16 resueltos** (7 medidos + tsx por herencia); 2 fuera por el criterio de aborto; 6 sin runtime en esta máquina |
+| 1. ≥3 crashes producen registros correctos | **10 de 16** (9 medidos + tsx por herencia) · 3 descartados con dato · 1 de plataforma · 2 sin medir |
 | 2. Validan contra el schema v2 | **9 % (9/105)** — el enum `exception.origin` no lo respeta ningún hook |
 | 3. `gb last/show/list` sin modificación | **cumplido** (`94bcef7`) — buzón + normalización; `store.py` y `render.py` con **cero líneas** de cambio |
 | 4. `gb status` declara el mecanismo | **no existe** |
-| 5. El hook no altera el programa | **100 %** en los siete medidos, tras cinco arreglos |
+| 5. El hook no altera el programa | **100 %** en los nueve medidos, tras cinco arreglos |
 
 **Recomendación:** la [ADR 0012](adr/0012-consola-multilenguaje.md) sigue en **propuesta**, con el
 alcance ya recortado por su propio criterio de aborto. Lo que queda, por orden:
