@@ -145,6 +145,24 @@ def test_sin_repo_git_lo_dice(tmp_path):
     assert "sin repositorio git" in d["motivo"]
 
 
+def test_una_deuda_vieja_no_caduca(cadena):
+    """La película es de esta sesión; la deuda no.
+
+    Lo que otro commiteó hace tres horas y tú nunca te trajiste TE SIGUE
+    FALTANDO. Acotar la deuda por reloj la haría envejecer hasta desaparecer, y
+    una deuda que se calla sola es peor que no medirla: el silencio se lee como
+    «no hay nada».
+    """
+    viejo = _agente(cadena, "viejo")
+    _trabaja(viejo, "a", 10800, "\n# de hace tres horas\n")   # fuera de la ventana
+    yo = _agente(cadena, "yo")
+    _trabaja(yo, "b", 20, "\n# yo, ahora\n")
+
+    d = _deuda(cadena, yo)
+    assert [x["agente"] for x in d["deuda"]] == ["viejo"]
+    assert d["deuda"][0]["hace_seg"] > 3600
+
+
 def test_avisa_cuando_apoyarse_en_el_otro_cerraria_un_ciclo(cuatro):
     """El fallo que destapó la tirada real con cuatro agentes: tres integraron
     bien y el cuarto se cargó su propio árbol llamando al módulo que ya le
@@ -180,6 +198,30 @@ def test_gb_sync_contesta_desde_el_worktree_del_agente(cuatro, capsys, monkeypat
     assert cli.main(["sync"]) == 0
     salida = capsys.readouterr().out
     assert "lib.b" in salida
+
+
+def test_desde_su_arbol_el_agente_ve_su_suelo_aunque_lleve_horas(cadena, capsys, monkeypatch):
+    """El fallo que solo aparecía ejecutándolo COMO lo ejecuta un agente.
+
+    `rev-parse --show-toplevel` desde un worktree devuelve ESE worktree, no el
+    repo principal. Con su propia cabeza como base, el rango salía `HEAD..HEAD`
+    —vacío— y la única red que quedaba era la ventana de tiempo: a la hora,
+    `gb sync` le contestaba «no has tocado nada» a un agente con tres commits
+    encima, y se callaba una deuda que existía.
+
+    Llamado con la raíz canónica (como en los demás tests) nunca fallaba. Por eso
+    este test entra por el CLI y desde el árbol.
+    """
+    yo = _agente(cadena, "yo")
+    _trabaja(yo, "b", 10800, "\n# mio, hace tres horas\n")
+    otro = _agente(cadena, "otro")
+    _trabaja(otro, "a", 9000, "\n# suyo, hace dos horas y media\n")
+    monkeypatch.chdir(yo)
+
+    assert cli.main(["sync"]) == 0
+    salida = capsys.readouterr().out
+    assert "lib.b" in salida, "no reconoce su propio suelo"
+    assert "otro" in salida, "se calla una deuda vieja"
 
 
 def test_gb_sync_nunca_gatea(cuatro, capsys, monkeypatch):

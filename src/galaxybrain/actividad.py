@@ -803,6 +803,36 @@ def _depende(informe_simbolos, de_modulos, a_modulos, de_modulo=None):
     return False
 
 
+def _commits_de_rango(root, rango, nodos_por_ruta):
+    """Los commits de `rango` con los nodos que toca cada uno. Sin ventana.
+
+    `--first-parent --no-merges` por lo mismo de siempre: lo que ESE arbol
+    escribio, no lo que se trajo de otro.
+    """
+    registro = graph_mod._git(
+        root, "log", rango, "--first-parent", "--no-merges",
+        "--name-only", "--relative", "--format=%ct|%h")
+    if not registro:
+        return []
+    commits, actual = [], None
+    for linea in registro.splitlines():
+        linea = linea.strip()
+        if not linea:
+            continue
+        if "|" in linea and linea.split("|", 1)[0].isdigit():
+            ts, sha = linea.split("|", 1)
+            actual = {"ts": int(ts), "id": sha.strip(), "nodos": set()}
+            commits.append(actual)
+            continue
+        if actual is None:
+            continue
+        qual = nodos_por_ruta.get(os.path.normcase(os.path.abspath(
+            os.path.join(root, linea))))
+        if qual:
+            actual["nodos"].add(qual)
+    return commits
+
+
 def deuda(raiz, informe_simbolos, arbol=None, ahora=None, ventana=VENTANA_CRONOLOGIA):
     """Lo que OTRO agente ya cambió, toca lo tuyo, y tú todavía no tienes.
 
@@ -843,15 +873,39 @@ def deuda(raiz, informe_simbolos, arbol=None, ahora=None, ventana=VENTANA_CRONOL
 
     mi_analisis = os.path.normpath(os.path.join(propio, rel)) if rel != "." else propio
     de_modulo = _mapa_de_modulos(informe_simbolos)
+    nodos_por_ruta = {}
+    for qual, nodo in {n["qual"]: n for n in informe_simbolos.get("nodes", [])
+                       if n.get("qual") and n.get("kind") == "module"}.items():
+        if nodo.get("file"):
+            nodos_por_ruta[os.path.normcase(os.path.abspath(
+                os.path.join(mi_analisis, nodo["file"])))] = qual
+
     mios = set(nodos_tocados(mi_analisis, informe_simbolos))
     # Lo que YA commiteaste tambien es tuyo: si no, quien va commiteando limpio
     # se queda sin deuda justo por trabajar bien — el mismo sesgo que ya se
     # corrigio en `instantanea` el 10-ago-2026.
-    cabeza_raiz = (graph_mod._git(toplevel, "rev-parse", "HEAD") or "").strip()
-    propios_commit, _ = commitados_recientes(
-        mi_analisis, informe_simbolos, ahora, ventana=ventana,
-        base="" if os.path.abspath(propio) == os.path.abspath(toplevel) else cabeza_raiz)
-    mios |= set(propios_commit)
+    # La base es la cabeza del arbol PRINCIPAL, y hay que pedirsela a la lista de
+    # worktrees: `rev-parse --show-toplevel` desde un worktree devuelve ESE
+    # worktree, no el repo principal. Con la suya propia, el rango salia
+    # `HEAD..HEAD` —vacio— y `gb sync` contestaba "no has tocado nada" a un
+    # agente con tres commits encima. Solo se veia ejecutandolo DESDE el arbol
+    # del agente, que es justo como lo usa un agente (18-ago-2026).
+    arboles = aislado._worktrees(toplevel)
+    principal, cabeza_raiz = arboles[0] if arboles else (toplevel, "")
+    if os.path.abspath(propio) != os.path.abspath(principal) and cabeza_raiz:
+        # Tu trabajo es lo que has puesto POR ENCIMA de la base, sin ventana: a
+        # las dos horas de no commitear seguias teniendo un suelo, y con ventana
+        # `gb sync` pasaba a decir "no has tocado nada" y se callaba una deuda
+        # que existia. El silencio se lee como "no hay nada" (18-ago-2026).
+        for commit in _commits_de_rango(mi_analisis, "%s..HEAD" % cabeza_raiz,
+                                        nodos_por_ruta):
+            mios |= commit["nodos"]
+    else:
+        # El arbol raiz no tiene base contra la que recortar: toda la historia
+        # del repo seria "suya". Ahi si manda el reloj, y se dice.
+        propios_commit, _ = commitados_recientes(
+            mi_analisis, informe_simbolos, ahora, ventana=ventana, base="")
+        mios |= set(propios_commit)
     salida["mio"] = sorted(mios)
     if not mios:
         salida["motivo"] = "este arbol no ha tocado ningun nodo del mapa"
@@ -859,28 +913,31 @@ def deuda(raiz, informe_simbolos, arbol=None, ahora=None, ventana=VENTANA_CRONOL
 
     alcance = set(_vecinos(informe_simbolos, sorted(mios), de_modulo))
 
-    pelicula = cronologia(raiz, informe_simbolos, ahora=ahora, ventana=ventana)
-    for evento in pelicula["eventos"]:
-        if os.path.abspath(evento["ruta"]) == os.path.abspath(mi_analisis):
+    # SIN VENTANA, y a proposito. La pelicula (`cronologia`) es de esta sesion y
+    # por eso mira un rato hacia atras; la deuda no: lo que otro commiteo hace
+    # tres horas y tu nunca te trajiste TE SIGUE FALTANDO. Acotarla por reloj
+    # haria que envejeciera hasta desaparecer — y una deuda que se calla sola es
+    # peor que no medirla, porque el silencio se lee como "no hay nada".
+    #
+    # Y ademas sale mas barato: `HEAD..<su cabeza>` es exactamente "lo que el
+    # tiene y yo no", una llamada a git por arbol, sin recorrer eventos ni
+    # preguntar por cada uno si ya lo tienes.
+    for ruta, cabeza in arboles:
+        if os.path.abspath(ruta) == os.path.abspath(propio) or not cabeza:
             continue  # lo tuyo no es deuda tuya
-        if evento["tipo"] != "commit" or not evento["id"]:
-            # Lo que otro tiene a medio guardar no es deuda: no hay nada que
-            # traerse todavia, y avisar de ello seria una alarma sin accion.
-            continue
-        if graph_mod._git(mi_analisis, "merge-base", "--is-ancestor",
-                          evento["id"], "HEAD") is not None:
-            continue  # ya lo tienes
-        chocan = sorted(mios & set(evento["nodos"]))
-        vecinos = sorted(alcance & set(evento["nodos"]))
-        if not chocan and not vecinos:
-            continue
-        salida["deuda"].append({
-            "agente": evento["agente"],
-            "id": evento["id"],
-            "hace_seg": evento["hace_seg"],
-            "clase": "mismo-nodo" if chocan else "vecino",
-            "por": chocan or vecinos,
-            "nodos": evento["nodos"],
+        agente = os.path.basename(os.path.normpath(ruta))
+        for commit in _commits_de_rango(mi_analisis, "HEAD..%s" % cabeza, nodos_por_ruta):
+            chocan = sorted(mios & commit["nodos"])
+            vecinos = sorted(alcance & commit["nodos"])
+            if not chocan and not vecinos:
+                continue
+            salida["deuda"].append({
+                "agente": agente,
+                "id": commit["id"],
+                "hace_seg": int(max(0, ahora - commit["ts"])),
+                "clase": "mismo-nodo" if chocan else "vecino",
+                "por": chocan or vecinos,
+                "nodos": sorted(commit["nodos"]),
             # Traerse el codigo de otro es gratis; APOYARSE en el no siempre.
             # Si su modulo ya llama al tuyo, llamarle tu cierra un ciclo — y un
             # ciclo de imports rompe el arranque, no da un aviso.
@@ -890,9 +947,9 @@ def deuda(raiz, informe_simbolos, arbol=None, ahora=None, ventana=VENTANA_CRONOL
             # ellos lo esquivo por su cuenta y lo dijo; los otros no tenian por
             # que saberlo. El dato existia en el grafo y nadie lo estaba
             # enseñando donde se toma la decision.
-            "ciclo_si_llamas": _depende(
-                informe_simbolos, set(evento["nodos"]), mios, de_modulo),
-        })
+                "ciclo_si_llamas": _depende(
+                    informe_simbolos, commit["nodos"], mios, de_modulo),
+            })
     # Lo que choca primero: es lo que mas cuesta cuanto mas tarde se mire.
     salida["deuda"].sort(key=lambda d: (d["clase"] != "mismo-nodo", d["hace_seg"]))
     return salida
