@@ -1,6 +1,6 @@
 # 12. Consola multilenguaje por mecanismo nativo + fallback stderr
 
-**Estado:** propuesta — alcance **recortado por su propio criterio de aborto**; 6 lenguajes medidos y en verde por el criterio 5, **bloqueada por el criterio 3** · **Fecha:** 2026-08-16 · **Supercede (solo el eje lenguaje):** [0004](0004-un-lenguaje-un-runtime-un-tipo-de-fallo.md) · **Extiende:** [0009](0009-multilenguaje-por-referencia.md)
+**Estado:** propuesta **decidible** — **10 de 16 lenguajes cubiertos y medidos**, 4 de 5 criterios cumplidos; falta `gb status` y dos lenguajes que esta máquina no deja instalar · **Fecha:** 2026-08-16 · **Supercede (solo el eje lenguaje):** [0004](0004-un-lenguaje-un-runtime-un-tipo-de-fallo.md) · **Extiende:** [0009](0009-multilenguaje-por-referencia.md)
 
 > **La medición está hecha: [CONSOLA-MULTILENGUAJE.md](../CONSOLA-MULTILENGUAJE.md).** De 6 lenguajes
 > probados, capturan 2 por el camino que este ADR describe (js y ruby, 3/3 cada uno, registros
@@ -13,6 +13,21 @@
 > `uncaughtExceptionMonitor`, el evento que Node tiene para observar sin manejar. **Aplicado**
 > (`8e7a8f9`) y remedido: 3/3, captura el error entero y el proceso muere exactamente igual. Con eso,
 > **js y ruby pasan los criterios 1, 2 y 5**.
+>
+> **QUINTA vuelta (18-ago) — el criterio 3 está CUMPLIDO** (`94bcef7`, rama del spike).
+> `crashes.jsonl` pasa a ser un **buzón**, no un almacén: `buzon.normaliza()` traduce y
+> `buzon.drena()` pasa las líneas nuevas al almacén de siempre con marca de agua por bytes.
+> **`store.py` y `render.py` no cambian ni una línea** —comprobado con `git diff` contra
+> `main`— que es lo que el criterio pedía literalmente. Demostrado con el CLI de verdad:
+> 17 registros reales de 8 lenguajes, `gb list` rc=0, y `gb show` pintando una captura de
+> Java en `CrashTest.java:3`. 14 tests nuevos; 900 en verde.
+>
+> Y con él se cae `store_universal.py` entero: su glob no casaba su propio fichero, su
+> validador rechazaba 24 de 24 registros suyos, y usaba `Path.home()` fijo ignorando
+> `GB_HOME`.
+>
+> **Queda el criterio 4** (`gb status` declarando el mecanismo activo) y los seis lenguajes
+> sin runtime en esta máquina. Nada más.
 >
 > **CUARTA vuelta (18-ago) — el eje va 6 de 6.** csharp y ruby, verificados por el eje nuevo sobre 5 casos límite cada uno (crash, salida limpia, exit code propio, stdout antes de morir, excepción en hilo): **programa observado intacto 100 % (10/10)** en exit code, stdout y stderr, y **registros espurios 25 % → 0 %**. csharp pasó los cinco sin tocar una línea. A ruby le faltaba un filtro: `exit 3` es un `SystemExit`, así que capturaba salidas normales como si fueran fallos.
 >
@@ -73,8 +88,11 @@ estaba entre los parciales y sí instala transparente). El eje que decide, medid
 
 | Categoría | Lenguajes | Estado |
 |---|---|---|
-| **Gancho de OBSERVACIÓN** — el runtime sigue su curso; capturar no cambia el programa | **js · java · php · lua · csharp · ruby** | **6 verificados, 6 en el lado bueno.** Cuatro necesitaron arreglo (`uncaughtExceptionMonitor`, replicar el default de la JVM, `register_shutdown_function`+`error_get_last`, message handler de `xpcall`); csharp y ruby ya estaban — `AppDomain.UnhandledException` no puede impedir la terminación, y `at_exit` solo mira. A ruby le faltaba filtrar `SystemExit`, que es un filtro, no el mecanismo |
-| **Sin medir** — falta el runtime en la máquina | kotlin, scala, elixir, swift, dart, C | primero la pregunta del eje (¿observa o maneja?), y solo después medir. Kotlin y Scala corren sobre la JVM, así que heredarían el agente ya arreglado |
+| **Gancho de OBSERVACIÓN** — el runtime sigue su curso; capturar no cambia el programa | **js · ts · java · kotlin · scala · php · lua · csharp · ruby** (+ **tsx** por herencia) | **9 medidos, 9 en el lado bueno, 100 % en las tres métricas.** Cinco necesitaron arreglo; csharp, ruby, kotlin y scala ya estaban — kotlin y scala **heredaron el agente de la JVM sin tocar una línea** |
+| **Sin runtime propio** — se compila antes de correr | **tsx** | **resuelto por herencia**: Node no ejecuta `.tsx` (JSX no pasa por `--experimental-strip-types`), así que lo que corre siempre es el JS transpilado. Hereda el hook de Node, ya verificado. Se etiqueta `ts` |
+| **Sin gancho de observación** — medido y descartado | **dart** | `runZonedGuarded` es lo único que ofrece y es manejo puro: el exit pasa de **255 a 0** y borra los 426 bytes de traza. Además exige reescribir el `main()` del usuario |
+| **Otra plataforma** | **C** | viable en Linux (`LD_PRELOAD` + `sigaction`); en Windows ese mecanismo no existe y el hook ni compila (`gmtime_r` es POSIX) |
+| **Sin medir** — el instalador pide administrador | elixir, swift | bloqueo de la máquina, no del diseño. Elixir descargado pero no arranca sin Erlang |
 | **Sin gancho instalable** | **go**, **rust** | **fuera** (ver abajo): `recover()` es por goroutine; `set_hook` exige tocar el código del usuario |
 
 Lo que cuesta equivocarse de eje, medido: los cuatro hooks del primer grupo **rompían el programa

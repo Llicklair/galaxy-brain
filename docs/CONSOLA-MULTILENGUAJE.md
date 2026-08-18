@@ -285,6 +285,128 @@ Acusaba al hook de alterar el stderr del caso `hilo`. Lo que cambia ahí es **la
 del objeto Thread**, distinta en cada ejecución aunque no haya hook. Sin tirada de control, el banco
 le cobraba al hook el no determinismo del runtime.
 
+## Quinta vuelta (18-ago): ts y tsx, sin instalar nada
+
+Node 24 ejecuta TypeScript nativo (`--experimental-strip-types`), así que **ts se pudo medir con lo
+que ya había**. Mismos 5 casos límite, mismo método con tirada de control:
+
+| Métrica | ts |
+|---|---|
+| programa observado intacto | **100 % (5/5)** |
+| crashes capturados | **100 % (3/3)** |
+| registros espurios | **0 % (0/2)** |
+
+Y el hook etiqueta bien: `language: "ts"` cuando algún frame apunta a un `.ts`, `"js"` si no. El
+mismo hook de Node, sin un cambio.
+
+### `tsx` no tiene runtime, y eso es la respuesta
+
+Node **no ejecuta `.tsx`**: `--experimental-strip-types` no soporta JSX, y falla en la primera
+etiqueta. No es una limitación que haya que rodear — es que **un `.tsx` nunca es lo que corre**.
+Siempre pasa antes por un transpilador (esbuild, swc, vite, Next), y lo que el runtime ejecuta es
+JavaScript. El crash ocurre en Node, con la pila apuntando al `.tsx` original si hay source maps.
+
+Así que **tsx no necesita hook propio: hereda el de Node**, que ya está verificado. La única
+consecuencia es de etiquetado: el hook resuelve `/\.tsx?$/` a `"ts"`, así que una captura de un
+`.tsx` se guarda como `ts`. El grafo sí los distingue (son dos entradas de la tabla). Es una
+discrepancia menor, y queda declarada aquí en vez de descubrirse mirando un informe raro.
+
+## Sexta vuelta (18-ago): los seis que faltaban, con sus runtimes instalados
+
+Se instalaron en `~/gb-runtimes` (1,8 GB, todo portable y sin privilegios de administrador):
+Kotlin 2.4.10, Scala 3.3.8, Dart 3.13.1 y gcc 16.2 (MinGW-w64). Erlang y Swift **no se pudieron
+instalar**: sus dos instaladores exigen elevación y no hay build portable oficial.
+
+### Kotlin y Scala: la hipótesis de la JVM se sostiene
+
+Corren sobre la misma máquina virtual que Java, así que la apuesta era que heredaran el agente ya
+arreglado **sin tocar una línea**. Se sostuvo:
+
+| | intacto | capturado | espurios | etiqueta |
+|---|---|---|---|---|
+| **kotlin** | **100 % (3/3)** | **100 %** | **0 %** | `language: kotlin` |
+| **scala** | **100 % (3/3)** | **100 %** | **0 %** | `language: scala` |
+
+Dos lenguajes por el precio de comprobar una cosa. Y el agente distingue bien cuál es cuál, aunque
+la excepción sea la misma `java.lang.NullPointerException` de la JVM.
+
+> **Detalle que costó una vuelta:** al instalar el agente por `JAVA_TOOL_OPTIONS`, **la JVM imprime
+> ella misma** una línea `Picked up JAVA_TOOL_OPTIONS: …` en stderr — y la termina en `\n` mientras
+> el resto de su salida usa `\r\n`. No es del agente y no se le puede cobrar, pero **sí altera el
+> stderr del programa observado**: es un coste del mecanismo de instalación, no del hook, y se
+> declara aparte. Mi primer filtro la cortaba mal y acusó al agente de perder tres bytes por línea.
+
+### Dart: el peor caso, y sin alternativa
+
+`runZonedGuarded` es lo único que Dart ofrece, y es manejo puro. Medido contra el programa sin hook:
+
+| | sin hook | con hook |
+|---|---|---|
+| exit code | **255** | **0** |
+| stderr | **426 bytes** | **0** |
+
+Es el defecto de php, pero **en Dart no hay arreglo**: no existe un gancho de observación, y el hook
+del spike además exige *reescribir el `main()` del usuario* («rename your existing main() to
+userMain()»), lo que ya lo saca de «instalable». **Dos motivos independientes para dejarlo fuera.**
+
+### C: viable en Linux, no en Windows
+
+El hook usa `sigaction` + `__attribute__((constructor))` e instala por `LD_PRELOAD` — un mecanismo
+que **no existe en Windows**. Y ni siquiera compila aquí: usa `gmtime_r`, que es POSIX (`gcc` lo
+rechaza y sugiere `gmtime_s`). No es un fallo del hook: es que su plataforma es otra.
+
+### Erlang/Elixir y Swift: bloqueados por la máquina, no por el diseño
+
+Los instaladores de ambos exigen elevación (`otp_win64_29.0.5.exe` y el toolchain de Swift), y
+ninguno publica un build portable. Elixir sí se descargó (8,3 MB) pero no arranca sin Erlang. Queda
+como **no medido**, que es distinto de «no funciona».
+
+## El marcador final: grafo y consola, lenguaje por lenguaje
+
+El grafo se midió sobre los mismos 16 proyectos de `gb-lenguajes`, con `gb graph` y `gb symbols`.
+
+| Lenguaje | Grafo: módulos · aristas · símbolos | Techo declarado | Consola |
+|---|---|---|---|
+| js | 3 · 2 · 5 | — | **100 %** |
+| ts | 3 · 2 · 6 | — | **100 %** |
+| tsx | 3 · 2 · 6 | — | hereda Node (no tiene runtime propio) |
+| java | 3 · **0** · 9 | sí | **100 %** |
+| kotlin | 3 · **0** · 6 | sí | **100 %** |
+| scala | 3 · **0** · 6 | sí | **100 %** |
+| csharp | 3 · **0** · 6 | sí | **100 %** |
+| ruby | 3 · 2 · 5 | sí | **100 %** |
+| php | 3 · 1 · 5 | — | **100 %** |
+| lua | 3 · 2 · 7 | — | **100 %** |
+| go | 3 · 1 · 6 | — | **fuera**: el fallback no distingue tipo de mensaje |
+| rust | 4 · 1 · 7 | sí | **fuera**: `set_hook` exige tocar el código |
+| dart | 3 · 1 · 6 | sí | **fuera**: `runZonedGuarded` lleva el exit de 255 a 0 |
+| c | 3 · 2 · 6 | sí | **solo Linux**: `LD_PRELOAD`, y no compila en Windows |
+| elixir | 4 · 1 · 9 | — | **sin medir**: Erlang exige elevación |
+| swift | 4 · **0** · 7 | sí | **sin medir**: el toolchain exige elevación |
+
+### Lo que dicen estos números
+
+**El grafo funciona en los 16 de 16.** Todos devuelven módulos y símbolos; ninguno falla ni miente.
+Los cinco que devuelven **0 aristas** no están rotos: en java, kotlin, scala, csharp y swift las
+clases del mismo paquete se usan sin `import`, así que no hay arista que derivar — y los cinco
+**declaran ese techo** en su propia salida, que es lo que los distingue de un cero que significa
+«no hay acoplamiento».
+
+**La consola funciona en 10 de 16**, y no por casualidad sino por un criterio: **tener un gancho de
+observación**. Nueve medidos al 100 % en las tres métricas (programa intacto, crashes capturados,
+cero registros espurios) más tsx por herencia. Los seis restantes se reparten en tres motivos
+distintos, y ninguno es «no lo hemos intentado»:
+
+- **3 descartados con dato**: go y rust (el fallback no distingue el tipo del mensaje, y el dato no
+  está en stderr), dart (su único mecanismo destruye el exit code y la traza).
+- **1 de plataforma**: C es viable en Linux y no en Windows.
+- **2 sin medir**: elixir y swift, bloqueados por instaladores que piden administrador.
+
+**Grafo y consola no cubren lo mismo, y esa asimetría es del problema, no de gb.** El grafo necesita
+un parser y se integra por referencia; la consola necesita un enganche al runtime, y hay runtimes
+que no lo ofrecen. Lo que sí es exigible a las dos capas es que **digan lo que no ven** — y eso
+ahora lo hacen las dos.
+
 ## Qué se puede afirmar, y qué no
 
 **Sí:** el eje está encontrado y el formato aguanta. **6 lenguajes verificados, 6 con gancho de
@@ -292,29 +414,28 @@ observación** — js, java, php, lua necesitaron arreglo; csharp y ruby ya esta
 (ruby con un filtro de menos). Los seis capturan con registro y dejan el programa observado intacto:
 **100 % en exit code, stdout y stderr**.
 
-**No:** que esto esté cerca de entrar. El criterio 3 no lo pasa nadie, el 4 no existe, y 6 de los 16
-lenguajes no se han podido probar en esta máquina por falta de runtime.
+**No:** que esté terminada. Falta el criterio 4 (`gb status`), y 6 de los 16 lenguajes no se han
+podido probar en esta máquina por falta de runtime. Pero ya no hay ningún bloqueo estructural: lo
+que queda es trabajo acotado, no una incógnita.
 
 ### Marcador por criterio
 
 | Criterio de terminado | Estado |
 |---|---|
-| 1. ≥3 crashes producen registros correctos | **6/6 lenguajes medidos** |
+| 1. ≥3 crashes producen registros correctos | **10 de 16** (9 medidos + tsx por herencia) · 3 descartados con dato · 1 de plataforma · 2 sin medir |
 | 2. Validan contra el schema v2 | **9 % (9/105)** — el enum `exception.origin` no lo respeta ningún hook |
-| 3. `gb last/show/list` sin modificación | **0 %** — tres convenciones de almacén, y el orden de frames invertido |
+| 3. `gb last/show/list` sin modificación | **cumplido** (`94bcef7`) — buzón + normalización; `store.py` y `render.py` con **cero líneas** de cambio |
 | 4. `gb status` declara el mecanismo | **no existe** |
-| 5. El hook no altera el programa | **100 % (10/10)** en los seis, tras cuatro arreglos |
+| 5. El hook no altera el programa | **100 %** en los nueve medidos, tras cinco arreglos |
 
 **Recomendación:** la [ADR 0012](adr/0012-consola-multilenguaje.md) sigue en **propuesta**, con el
 alcance ya recortado por su propio criterio de aborto. Lo que queda, por orden:
 
 1. ~~Cambiar el gancho en js~~ · ~~java~~ · ~~php~~ · ~~lua~~ · ~~ruby~~ — **hechos y medidos**.
-2. **Una sola convención de almacén** (criterio 3). Es lo único que bloquea, y no es mapear campos:
-   el orden de los frames está invertido en siete lenguajes, así que la captura se pinta apuntando
-   al sitio equivocado sin lanzar un error. Hay propuesta escrita con criterio comprobable en
-   [propuesta-almacen-unificado.md](propuesta-almacen-unificado.md), **sin implementar a propósito**:
-   se diseñó para 8 lenguajes y el alcance se recortó a los que tengan gancho de observación.
-   Construirla antes de que el alcance asiente sería sobre un plano viejo.
+2. ~~Una sola convención de almacén~~ — **hecho** (`94bcef7`). `crashes.jsonl` pasa a ser un buzón
+   y una función lo traduce al almacén de siempre; `store.py` y `render.py` con cero líneas de
+   cambio. Lo caro no era mapear campos: el orden de los frames estaba invertido en siete lenguajes,
+   así que la captura se pintaba apuntando al arranque del runtime sin lanzar un error.
 3. **`gb status`** (criterio 4).
 4. **Los lenguajes sin runtime aquí** — elixir, swift, dart, kotlin, scala, C: primero la pregunta
    del eje, y solo después medir.
