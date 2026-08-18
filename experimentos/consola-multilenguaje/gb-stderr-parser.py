@@ -39,6 +39,80 @@ CRASHES_FILE = CRASHES_DIR / "crashes.jsonl"
 # Helpers
 # -------------------------------------------------------------------
 
+
+# --- Tipo derivado del mensaje ------------------------------------------------
+#
+# El primer banco concluyo que el tipo "no esta en stderr" porque exc_type valia
+# "panic" en los 40 registros. Era cierto de la SALIDA, no del stderr: se estaba
+# poniendo la constante sin mirar. Midiendo las formas reales aparece que Go SI
+# lo dice en casi todas, y Rust dice la clase aunque no tenga tipos.
+#
+# Lo que NO se puede derivar sigue saliendo "panic" — declarado, no inventado
+# (regla 9). Un tipo a ojo es peor que ninguno: manda a buscar el fallo que no es.
+
+_GO_RUNTIME = (
+    ("invalid memory address or nil pointer dereference", "nil pointer dereference"),
+    ("index out of range", "index out of range"),
+    ("integer divide by zero", "integer divide by zero"),
+    ("slice bounds out of range", "slice bounds out of range"),
+    ("close of closed channel", "close of closed channel"),
+    ("send on closed channel", "send on closed channel"),
+    ("assignment to entry in nil map", "nil map write"),
+    ("interface conversion", "interface conversion"),
+    ("stack overflow", "stack overflow"),
+)
+
+_RUST_CLASES = (
+    ("called `Option::unwrap()` on a `None` value", "Option::unwrap on None"),
+    ("called `Result::unwrap()` on an `Err` value", "Result::unwrap on Err"),
+    ("called `Option::expect()` on a `None` value", "Option::expect on None"),
+    ("index out of bounds", "index out of bounds"),
+    ("attempt to divide by zero", "divide by zero"),
+    ("attempt to subtract with overflow", "subtract with overflow"),
+    ("attempt to add with overflow", "add with overflow"),
+    ("slice index starts at", "slice index out of range"),
+    ("capacity overflow", "capacity overflow"),
+)
+
+
+def tipo_go(mensaje):
+    """El tipo de un panic de Go, o 'panic' si no se puede derivar.
+
+    Formas medidas (Go 1.26):
+      panic: runtime error: <clase>      -> la clase, que es lo accionable
+      panic: (*main.MiError) 0x...       -> el tipo del valor, tal cual
+      panic: codigo 42                   -> NO derivable: el valor implementa
+                                            error/Stringer y Go imprime su texto
+      panic: texto suelto                -> NO derivable: el valor es un string
+    """
+    m = (mensaje or "").strip()
+    if m.startswith("runtime error:"):
+        resto = m[len("runtime error:"):].strip()
+        for aguja, nombre in _GO_RUNTIME:
+            if aguja in resto:
+                return "runtime error: " + nombre
+        return "runtime error"
+    if m.startswith("(") and ")" in m:
+        tipo = m[1:m.index(")")].strip()
+        # Solo si parece un tipo de Go (`*paquete.Tipo`), no una frase.
+        if tipo and " " not in tipo and ("." in tipo or tipo.startswith("*")):
+            return tipo
+    return "panic"
+
+
+def tipo_rust(mensaje):
+    """La clase de un panic de Rust, o 'panic'.
+
+    Rust no tiene excepciones tipadas: lo que hay es un mensaje. Pero los panics
+    de la biblioteca estandar tienen texto fijo, y esa clase es exactamente lo
+    que un humano usa para saber que ha pasado.
+    """
+    m = (mensaje or "").strip()
+    for aguja, nombre in _RUST_CLASES:
+        if aguja in m:
+            return nombre
+    return "panic"
+
 def find_project_root(start: str) -> str | None:
     """Walk up from `start` looking for a .git directory."""
     cur = Path(start).resolve()
@@ -191,7 +265,7 @@ def detect_go_crash(stderr: str) -> dict[str, Any] | None:
 
     return {
         "language": "go",
-        "exc_type": "panic",
+        "exc_type": tipo_go(panic_message),
         "exc_message": panic_message,
         "origin": f"goroutine-{goroutine_id}",
         "frames": frames,
@@ -293,7 +367,7 @@ def detect_rust_crash(stderr: str) -> dict[str, Any] | None:
 
     return {
         "language": "rust",
-        "exc_type": "panic",
+        "exc_type": tipo_rust(message),
         "exc_message": message,
         "origin": f"thread-{thread}",
         "frames": frames,
