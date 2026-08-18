@@ -142,9 +142,32 @@ líneas nuevas— y el fichero acumulado revisado, la foto es otra:
 | php | sí *(hook a mano)* | sí | idéntica |
 | go · rust · lua | registros válidos en el fichero acumulado, **no medidos limpiamente aquí** | — | — |
 
-De los 26 registros acumulados en `~/.galaxy-brain/crashes.jsonl` —mezcla de pruebas previas y de
-este banco— **23 validan contra el schema v2** y cubren 8 lenguajes. Los 3 que no: dos sin `language`
-ni `exception` ni `frames`, y uno con `language: "unknown"` y `frames` vacío.
+De los registros acumulados en `~/.galaxy-brain/crashes.jsonl` —mezcla de pruebas previas y de este
+banco, 8 lenguajes— **el 91 % trae todos los campos que el schema marca como `required`**.
+
+> **Corrección (18-ago).** Aquí se afirmó que «23 de 26 validan contra el schema v2». **Era
+> engañoso**, y lo destapó el agente que estudió el almacén. Yo comprobaba solo que los campos
+> `required` estuvieran presentes y no vacíos; pasando los mismos registros por
+> `store_universal.validate()` —el validador que el propio spike escribió para esto— pasan **9 de
+> 105**. La causa dominante no es un campo que falte: es que `exception.origin` declara un enum que
+> **ningún hook respeta** (`goroutine-1`, `thread-main`, `xpcall`, `uncaught_exception`…), más
+> divergencias de tipo (`pid` como string, `argv_forma` como lista donde el schema dice string).
+>
+> **El criterio 2 de la ADR tampoco está pasado.** No son tres convenciones de almacén: son ocho
+> dialectos que se parecen lo bastante como para que una comprobación superficial los dé por buenos
+> — que es exactamente lo que hizo la mía.
+
+### El fallo más caro no es un campo: es el ORDEN de los frames
+
+Ningún inventario de campos lo habría encontrado. `render._headline_index` recorre la pila hacia
+atrás para elegir el frame que sale de titular, porque **Python emite el más interno el último**. js,
+java, csharp, ruby, php, go y rust la emiten **al revés**.
+
+Verificado sobre un registro js real de 9 frames: el titular que elige gb es
+`node:internal/main/run_main_module:33` —el arranque de Node— en lugar de `crash_js.js:1`, que es la
+línea que reventó. No lanza excepción, no avisa, y el usuario ve una captura con pinta de correcta
+apuntando al sitio equivocado. El peor modo de fallo de toda la consola, en la única función cuyo
+trabajo es decidir dónde mirar primero.
 
 ### Java se tragaba la traza entera
 
