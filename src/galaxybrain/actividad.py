@@ -572,3 +572,199 @@ def instantanea(raiz, informe_simbolos, ahora=None):
 
     foto["cruces"] = sorted(q for q, d in foto["por_nodo"].items() if len(d["agentes"]) > 1)
     return foto
+
+
+#: La ventana de la PELICULA: 3600 s. Deliberadamente distinta de
+#: `VENTANA_COMMIT` (600 s) porque son preguntas distintas: aquella contesta
+#: "¿esta alguien aqui AHORA?" y esta "¿en que orden paso lo de esta sesion?".
+#: Igualarlas habria hecho que la secuencia durase lo que dura la presencia, que
+#: es justo lo que hace inutil una cronologia.
+VENTANA_CRONOLOGIA = 3600
+
+
+def _eventos_commit(root, informe_simbolos, ahora, ventana, base, agente):
+    """Un evento por commit de ese arbol dentro de la ventana. Orden real.
+
+    `commitados_recientes` contesta "¿ha commiteado hace poco?" fundiendo todos
+    los commits en un conjunto y una edad. Aqui hace falta lo contrario: cada
+    commit por separado, con su hora, porque la pregunta es la SECUENCIA.
+    """
+    nodes = {n["qual"]: n for n in informe_simbolos.get("nodes", []) if n.get("qual")}
+    if not nodes:
+        return []
+    por_ruta = {}
+    for qual, nodo in nodes.items():
+        ruta = nodo.get("file")
+        if ruta and nodo.get("kind") == "module":
+            por_ruta[os.path.normcase(os.path.abspath(os.path.join(root, ruta)))] = qual
+
+    rango = ["%s..HEAD" % base] if base else []
+    salida = graph_mod._git(root, "log", *(rango + [
+        "--since=%d.seconds.ago" % int(ventana),
+        # `--first-parent`: lo que ESTE arbol hizo, no lo que se trajo de otro.
+        # Sin esto, en cuanto un agente mergea el commit de otro, ese commit
+        # ajeno reaparece como evento SUYO — y la pelicula enseña a alguien
+        # trabajando donde nunca estuvo. Salio en la tirada real de 4 agentes
+        # (18-ago-2026) en cuanto el segundo se puso al dia con el primero.
+        "--first-parent",
+        "--name-only", "--relative", "--format=%ct|%h"]))
+    if not salida:
+        return []
+
+    eventos, actual = [], None
+    for linea in salida.splitlines():
+        linea = linea.strip()
+        if not linea:
+            continue
+        if "|" in linea and linea.split("|", 1)[0].isdigit():
+            ts, sha = linea.split("|", 1)
+            actual = {"ts": int(ts), "agente": agente, "tipo": "commit",
+                      "id": sha.strip(), "ruta": root, "nodos": set()}
+            eventos.append(actual)
+            continue
+        if actual is None:
+            continue
+        qual = por_ruta.get(os.path.normcase(os.path.abspath(os.path.join(root, linea))))
+        if qual:
+            actual["nodos"].add(qual)
+    # Un commit que no toca ningun nodo del mapa (docs, config) no es un evento
+    # de propagacion: se cae en vez de aparecer vacio y ensuciar la linea.
+    return [e for e in eventos if e["nodos"]]
+
+
+def cronologia(raiz, informe_simbolos, ahora=None, ventana=VENTANA_CRONOLOGIA, tope=200):
+    """La PELICULA, no la foto: en que orden trabajo cada agente y a quien llego.
+
+    `instantanea` contesta "¿quien esta tocando esto AHORA?" y esa es su virtud;
+    lo que no contesta es "¿que paso antes de esto?". Con varios agentes a la vez
+    la pregunta util no es solo donde esta cada uno, sino **en que momento tocó
+    cada uno y como se propago** lo que hizo por el grafo hasta el trabajo de
+    otro.
+
+    Nadie declara nada, igual que en el resto del modulo: los eventos salen de
+    los commits de cada worktree (hora exacta, del propio git) y de los mtime de
+    lo que aun no esta commiteado.
+
+    **El techo, escrito y no escondido:** un `mtime` solo conoce la ULTIMA
+    escritura de cada fichero. Un agente que edito `carrito.py` cinco veces
+    aparece una vez, en su ultima. Los commits si son exactos y por eso llevan
+    `id`. Una edicion sin commitear es un evento con la hora de su ultimo
+    guardado, y se marca `tipo: "edicion"` para que nadie la lea como un hito.
+
+    Devuelve `{"eventos": [...], "propagaciones": [...], "motivo": ""}`.
+    """
+    ahora = time.time() if ahora is None else ahora
+    pelicula = {"eventos": [], "propagaciones": [], "motivo": ""}
+
+    raiz = os.path.abspath(raiz)
+    toplevel = (graph_mod._git(raiz, "rev-parse", "--show-toplevel") or "").strip()
+    if not toplevel:
+        pelicula["motivo"] = "sin repositorio git: no hay agentes que derivar"
+        return pelicula
+    rel = os.path.relpath(raiz, os.path.abspath(toplevel))
+
+    arboles = aislado._worktrees(toplevel)
+    cabeza = dict(arboles).get(os.path.abspath(toplevel), "")
+    de_modulo = _mapa_de_modulos(informe_simbolos)
+
+    for ruta, _head in arboles:
+        analisis = os.path.normpath(os.path.join(ruta, rel)) if rel != "." else ruta
+        if not os.path.isdir(analisis):
+            continue
+        agente = os.path.basename(os.path.normpath(ruta))
+        es_raiz = os.path.abspath(ruta) == os.path.abspath(toplevel)
+        pelicula["eventos"].extend(_eventos_commit(
+            analisis, informe_simbolos, ahora, ventana,
+            "" if es_raiz else cabeza, agente))
+
+        # Lo sucio: un evento por fichero, con la hora de su ultimo guardado.
+        modulos = {
+            os.path.normcase(n.get("qual") or ""): n.get("qual")
+            for n in informe_simbolos.get("nodes", [])
+            if n.get("kind") == "module"
+        }
+        for fichero in ficheros_tocados(analisis):
+            try:
+                ts = int(os.stat(fichero).st_mtime)
+            except OSError:
+                continue
+            if ahora - ts > ventana:
+                continue
+            try:
+                mod = graph_mod.module_name(fichero, analisis)
+            except ValueError:  # otra unidad de disco en Windows
+                continue
+            qual = modulos.get(os.path.normcase(mod))
+            if not qual:
+                continue
+            pelicula["eventos"].append({
+                "ts": ts, "agente": agente, "tipo": "edicion",
+                "id": "", "ruta": analisis, "nodos": {qual}})
+
+    pelicula["eventos"].sort(key=lambda e: (e["ts"], e["agente"], e["id"]))
+    if tope and len(pelicula["eventos"]) > tope:
+        # Se recorta por la COLA vieja y se dice: un tope silencioso se lee como
+        # "esto es todo lo que paso", que es exactamente la mentira que el resto
+        # del proyecto persigue.
+        recortados = len(pelicula["eventos"]) - tope
+        pelicula["eventos"] = pelicula["eventos"][-tope:]
+        pelicula["motivo"] = "%d evento(s) mas antiguos, fuera del tope" % recortados
+
+    # La propagacion: B toco algo que HABLA con lo que A acababa de cambiar. Es
+    # una arista del grafo cruzada con el reloj — ninguna de las dos sola lo dice.
+    vecinos_cache = {}
+    for i, antes in enumerate(pelicula["eventos"]):
+        clave = frozenset(antes["nodos"])
+        if clave not in vecinos_cache:
+            vecinos_cache[clave] = set(_vecinos(informe_simbolos, sorted(clave), de_modulo))
+        alcance = vecinos_cache[clave]
+        if not alcance:
+            continue
+        for despues in pelicula["eventos"][i + 1:]:
+            if despues["agente"] == antes["agente"]:
+                continue
+            tocados = alcance & despues["nodos"]
+            for nodo in sorted(tocados):
+                pelicula["propagaciones"].append({
+                    "de": antes["agente"], "a": despues["agente"], "por": nodo,
+                    "seg": int(despues["ts"] - antes["ts"]),
+                    "desde": sorted(antes["nodos"]),
+                    "_id_antes": antes["id"], "_ruta_despues": despues["ruta"],
+                })
+
+    # Un mismo par (de, a, nodo) puede salir de varios eventos: se queda el
+    # PRIMER salto, que es cuando la informacion llego de verdad.
+    visto, unicas = set(), []
+    for p in pelicula["propagaciones"]:
+        clave = (p["de"], p["a"], p["por"])
+        if clave in visto:
+            continue
+        visto.add(clave)
+        unicas.append(p)
+    pelicula["propagaciones"] = unicas
+
+    # LO QUE SEPARA «se propago» de «coincidieron», y sin esto la capa mentiria
+    # con cara de hecho: que dos agentes toquen nodos vecinos, uno despues del
+    # otro, NO significa que al segundo le llegara nada. Si su worktree no tiene
+    # el commit del primero en su historia, trabajaron a ciegas el uno del otro
+    # — eso no es comunicacion, es RIESGO DE CHOQUE, y es justo lo contrario.
+    #
+    # Se comprueba en el arbol del que llega despues: `merge-base --is-ancestor`
+    # devuelve por codigo de salida, asi que aqui vale `is not None` y no la
+    # verdad de la cadena (`_git` da "" cuando el comando va bien y calla).
+    #
+    # Lo destapo la tirada real de 4 agentes (18-ago-2026): salieron tres saltos
+    # encadenados que parecian una conversacion, y ninguno lo era — los cuatro
+    # worktrees colgaban de la misma base y ninguno habia visto al otro.
+    for p in pelicula["propagaciones"]:
+        sha, arbol = p.pop("_id_antes", ""), p.pop("_ruta_despues", "")
+        if not sha or not arbol:
+            p["heredado"] = None   # una edicion sin commitear no se puede heredar
+            continue
+        p["heredado"] = graph_mod._git(
+            arbol, "merge-base", "--is-ancestor", sha, "HEAD") is not None
+
+    for evento in pelicula["eventos"]:
+        evento["nodos"] = sorted(evento["nodos"])
+        evento["hace_seg"] = int(max(0, ahora - evento["ts"]))
+    return pelicula
