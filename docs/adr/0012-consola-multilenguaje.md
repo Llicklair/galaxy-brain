@@ -88,8 +88,9 @@ estaba entre los parciales y sí instala transparente). El eje que decide, medid
 
 | Categoría | Lenguajes | Estado |
 |---|---|---|
-| **Gancho de OBSERVACIÓN** — el runtime sigue su curso; capturar no cambia el programa | **js · java · php · lua · csharp · ruby** | **6 verificados, 6 en el lado bueno.** Cuatro necesitaron arreglo (`uncaughtExceptionMonitor`, replicar el default de la JVM, `register_shutdown_function`+`error_get_last`, message handler de `xpcall`); csharp y ruby ya estaban — `AppDomain.UnhandledException` no puede impedir la terminación, y `at_exit` solo mira. A ruby le faltaba filtrar `SystemExit`, que es un filtro, no el mecanismo |
-| **Sin medir** — falta el runtime en la máquina | kotlin, scala, elixir, swift, dart, C | primero la pregunta del eje (¿observa o maneja?), y solo después medir. Kotlin y Scala corren sobre la JVM, así que heredarían el agente ya arreglado |
+| **Gancho de OBSERVACIÓN** — el runtime sigue su curso; capturar no cambia el programa | **js · ts · java · php · lua · csharp · ruby** | **7 verificados, 7 en el lado bueno.** Cuatro necesitaron arreglo (`uncaughtExceptionMonitor`, replicar el default de la JVM, `register_shutdown_function`+`error_get_last`, message handler de `xpcall`); csharp y ruby ya estaban — `AppDomain.UnhandledException` no puede impedir la terminación, y `at_exit` solo mira. A ruby le faltaba filtrar `SystemExit`, que es un filtro, no el mecanismo |
+| **Sin runtime propio** — se compila antes de correr | **tsx** | **resuelto por herencia**: Node no ejecuta `.tsx` (JSX no pasa por `--experimental-strip-types`), así que lo que corre siempre es el JS transpilado. Hereda el hook de Node, ya verificado. Se etiqueta `ts` |
+| **Sin medir** — falta el runtime en la máquina | kotlin, scala, elixir, swift, dart, C | primero la pregunta del eje (¿observa o maneja?), y solo después medir. **Kotlin y Scala corren sobre la JVM**, así que heredarían el agente ya arreglado — es la apuesta más barata de las seis |
 | **Sin gancho instalable** | **go**, **rust** | **fuera** (ver abajo): `recover()` es por goroutine; `set_hook` exige tocar el código del usuario |
 
 Lo que cuesta equivocarse de eje, medido: los cuatro hooks del primer grupo **rompían el programa

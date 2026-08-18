@@ -285,6 +285,32 @@ Acusaba al hook de alterar el stderr del caso `hilo`. Lo que cambia ahí es **la
 del objeto Thread**, distinta en cada ejecución aunque no haya hook. Sin tirada de control, el banco
 le cobraba al hook el no determinismo del runtime.
 
+## Quinta vuelta (18-ago): ts y tsx, sin instalar nada
+
+Node 24 ejecuta TypeScript nativo (`--experimental-strip-types`), así que **ts se pudo medir con lo
+que ya había**. Mismos 5 casos límite, mismo método con tirada de control:
+
+| Métrica | ts |
+|---|---|
+| programa observado intacto | **100 % (5/5)** |
+| crashes capturados | **100 % (3/3)** |
+| registros espurios | **0 % (0/2)** |
+
+Y el hook etiqueta bien: `language: "ts"` cuando algún frame apunta a un `.ts`, `"js"` si no. El
+mismo hook de Node, sin un cambio.
+
+### `tsx` no tiene runtime, y eso es la respuesta
+
+Node **no ejecuta `.tsx`**: `--experimental-strip-types` no soporta JSX, y falla en la primera
+etiqueta. No es una limitación que haya que rodear — es que **un `.tsx` nunca es lo que corre**.
+Siempre pasa antes por un transpilador (esbuild, swc, vite, Next), y lo que el runtime ejecuta es
+JavaScript. El crash ocurre en Node, con la pila apuntando al `.tsx` original si hay source maps.
+
+Así que **tsx no necesita hook propio: hereda el de Node**, que ya está verificado. La única
+consecuencia es de etiquetado: el hook resuelve `/\.tsx?$/` a `"ts"`, así que una captura de un
+`.tsx` se guarda como `ts`. El grafo sí los distingue (son dos entradas de la tabla). Es una
+discrepancia menor, y queda declarada aquí en vez de descubrirse mirando un informe raro.
+
 ## Qué se puede afirmar, y qué no
 
 **Sí:** el eje está encontrado y el formato aguanta. **6 lenguajes verificados, 6 con gancho de
@@ -300,11 +326,11 @@ que queda es trabajo acotado, no una incógnita.
 
 | Criterio de terminado | Estado |
 |---|---|
-| 1. ≥3 crashes producen registros correctos | **6/6 lenguajes medidos** |
+| 1. ≥3 crashes producen registros correctos | **8 de 16 resueltos** (7 medidos + tsx por herencia); 2 fuera por el criterio de aborto; 6 sin runtime en esta máquina |
 | 2. Validan contra el schema v2 | **9 % (9/105)** — el enum `exception.origin` no lo respeta ningún hook |
 | 3. `gb last/show/list` sin modificación | **cumplido** (`94bcef7`) — buzón + normalización; `store.py` y `render.py` con **cero líneas** de cambio |
 | 4. `gb status` declara el mecanismo | **no existe** |
-| 5. El hook no altera el programa | **100 % (10/10)** en los seis, tras cuatro arreglos |
+| 5. El hook no altera el programa | **100 %** en los siete medidos, tras cinco arreglos |
 
 **Recomendación:** la [ADR 0012](adr/0012-consola-multilenguaje.md) sigue en **propuesta**, con el
 alcance ya recortado por su propio criterio de aborto. Lo que queda, por orden:
