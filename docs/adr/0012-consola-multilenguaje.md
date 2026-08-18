@@ -14,6 +14,13 @@
 > (`8e7a8f9`) y remedido: 3/3, captura el error entero y el proceso muere exactamente igual. Con eso,
 > **js y ruby pasan los criterios 1, 2 y 5**.
 >
+> **Segunda vuelta (18-ago), con los hooks compilados del banco `gb-lenguajes`:** java y csharp
+> también capturan con registro válido. Java tenía el defecto más grave de todos — el agente
+> **borraba la traza entera** del programa observado, sin que el exit code lo delatara — y es el
+> mismo error que js en otro lenguaje: engancharse donde se *maneja* en vez de donde se *observa*.
+> Arreglado y medido (`86c944d`). **Reordenar la tabla de tiers por ese eje ya no es una hipótesis:
+> hay dos casos.**
+>
 > Lo que bloquea ahora no son los lenguajes: es el **criterio 3**. Los hooks escriben
 > `crashes.jsonl`, `store_universal.py` lee `*.crashes.jsonl` —un glob que no casa ese nombre— y el
 > gb real usa `index.jsonl`. Mientras el almacén no hable consigo mismo, `gb last/show/list` no ve

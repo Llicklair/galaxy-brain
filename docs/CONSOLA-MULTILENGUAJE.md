@@ -117,6 +117,54 @@ Con eso se activa el **criterio de aborto 1** que la propia ADR escribió: *«Si
 distingue tipo de excepción del mensaje en ≥2 lenguajes, se recorta el alcance a solo los lenguajes
 con hook nativo»*. Y el recorte deja **js y ruby**, ambos suspendiendo el criterio 5.
 
+## Segunda vuelta (18-ago): el banco del escritorio, y un fallo de método
+
+`gb-lenguajes/hooks` trae lo que la copia del repo no tenía —`gb-agent.jar` y `GbHook.dll`
+compilados—, así que se pudieron medir **Java y C#**, los dos que la ADR pone entre los «viables» y
+que se habían quedado sin probar.
+
+Y al medirlos apareció que **el banco de la primera vuelta estaba mal**. Aislaba cada tirada
+poniendo `HOME`/`USERPROFILE`, y eso funciona en Node, Ruby, PHP y Lua pero **no** en Java, C#, Go ni
+Rust: sus runtimes resuelven el home por otra vía (en la JVM, `user.home` sale del SO, no del
+entorno del proceso). Sus registros se escribían en el fichero real mientras el banco miraba el
+aislado, así que informaba «SIN REGISTRO» sobre hooks que funcionaban. Segunda vez que este banco se
+equivoca hacia «no funciona».
+
+Con el método arreglado —no aislar, sino **marcar**: contar el fichero antes y atribuir solo las
+líneas nuevas— y el fichero acumulado revisado, la foto es otra:
+
+| Lenguaje | Registro válido | Mismo exit code | Misma traza |
+|---|---|---|---|
+| **js** | 3/3 | sí *(tras `8e7a8f9`)* | idéntica *(tras `8e7a8f9`)* |
+| **ruby** | 3/3 | sí | idéntica |
+| **java** | sí | sí | **no** → **idéntica** *(tras `86c944d`)* |
+| **csharp** | sí | sí | idéntica |
+| php | sí *(hook a mano)* | sí | idéntica |
+| go · rust · lua | registros válidos en el fichero acumulado, **no medidos limpiamente aquí** | — | — |
+
+De los 26 registros acumulados en `~/.galaxy-brain/crashes.jsonl` —mezcla de pruebas previas y de
+este banco— **23 validan contra el schema v2** y cubren 8 lenguajes. Los 3 que no: dos sin `language`
+ni `exception` ni `frames`, y uno con `language: "unknown"` y `frames` vacío.
+
+### Java se tragaba la traza entera
+
+El defecto más grave encontrado, y no se parecía a un defecto: con el agente puesto,
+`String s = null; s.length()` no imprimía **nada**. Sin él, su `NullPointerException` con fichero y
+línea. La consola borraba lo único que el programa seguía diciendo, y el exit code seguía siendo 1,
+así que nada delataba la pérdida.
+
+`Thread.setDefaultUncaughtExceptionHandler` **sustituye** al default de la JVM — y ese default no es
+un handler: la traza la imprime el `ThreadGroup` justo cuando no hay ninguno instalado. El agente
+encadenaba a `previousHandler`, que en el caso normal es `null`.
+
+La solución obvia también es una trampa: delegar en `thread.getThreadGroup().uncaughtException()`
+vuelve a consultar el default handler —nosotros— y entra en **bucle infinito**. Se replica el
+default a mano. Medido: mismo exit code y traza idéntica (`86c944d`).
+
+**Es el mismo error que en js, en otro lenguaje**: engancharse donde se *maneja* en vez de donde se
+*observa*. Dos de dos. Ese es el eje por el que hay que reordenar la tabla de tiers de la ADR, y
+ahora hay dos casos que lo sostienen en vez de uno.
+
 ## Qué se puede afirmar, y qué no
 
 **Sí:** el patrón se repite y el formato aguanta. Escribir un hook por lenguaje que produce un
@@ -140,9 +188,19 @@ siguiente paso no es añadir lenguajes. Por orden:
    la casilla buena por el motivo equivocado.
 5. **Decidir qué se hace con Go**, donde no hay hook y el fallback no registró nada.
 
-Lo que ya **no** procede es cerrarla por el exit code. Lo que tampoco procede es aceptarla: **js y
-ruby pasan hoy los criterios 1, 2 y 5**, pero el 3 y el 4 no los pasa nadie —el almacén no habla
-consigo mismo y `gb status` no existe—, y 6 de los 16 lenguajes ni se han podido probar.
+Lo que ya **no** procede es cerrarla por el exit code. Lo que tampoco procede es aceptarla: **js,
+ruby, java y csharp pasan hoy los criterios 1, 2 y 5**, pero el 3 y el 4 no los pasa nadie —el
+almacén no habla consigo mismo y `gb status` no existe—, y quedan lenguajes sin probar.
+
+### Advertencia sobre este documento
+
+Sus números han cambiado **dos veces** por fallos del banco, no del código: una ruta POSIX pasada a
+un binario nativo, y un aislamiento de `HOME` que cuatro runtimes ignoran. Las dos veces el error
+apuntaba en la misma dirección —«no funciona»— y la primera estuvo a punto de cerrar la ADR.
+
+Un banco que se equivoca hacia el no es tan peligroso como uno que se equivoca hacia el sí, y es
+más fácil de creerse: un resultado negativo no invita a comprobar nada. Cualquier cifra de aquí que
+vaya a decidir algo se remide antes.
 
 ## Reproducirlo
 
