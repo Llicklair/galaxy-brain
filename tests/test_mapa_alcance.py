@@ -100,6 +100,43 @@ def test_el_refresco_automatico_respeta_el_alcance_grabado(tmp_path):
         os.path.abspath(os.path.join(root, "src")))
 
 
+def test_sin_ruta_escrita_manda_el_alcance_QUE_EL_MAPA_YA_TENIA(tmp_path):
+    """El agujero que dejaba inútil todo lo demás.
+
+    `who` analizaba el cwd por defecto, y el mapa es UNO por repo: un
+    `gb who --html` tecleado desde la raíz reescribía con el árbol entero el
+    mapa que estaba acotado a `src`. Pasó TRES veces en un día, dos de ellas
+    ejecutando diagnósticos. Ya había un aviso y no bastó — solo se ve en el
+    instante, y el refresco automático manda su stderr a DEVNULL.
+    """
+    root = _proyecto(str(tmp_path))
+    mapa = os.path.join(root, "mapa.html")
+    cli.main(["who", os.path.join(root, "src"), "--html", mapa])
+    assert cli._alcance_de_mapa(mapa).endswith("src")
+
+    # sin ruta escrita, desde la raiz del proyecto: NO debe ampliarse
+    hecho = os.getcwd()
+    try:
+        os.chdir(root)
+        cli.main(["who", "--html", mapa])
+    finally:
+        os.chdir(hecho)
+
+    assert cli._alcance_de_mapa(mapa).endswith("src"), (
+        "un `who` sin ruta se ha llevado por delante el alcance elegido")
+
+
+def test_con_ruta_escrita_manda_la_ruta(tmp_path):
+    """El control: si esto no pasara, el alcance sería inamovible y no habría
+    forma de ampliarlo. Escribir la ruta es la bandera explícita."""
+    root = _proyecto(str(tmp_path))
+    mapa = os.path.join(root, "mapa.html")
+    cli.main(["who", os.path.join(root, "src"), "--html", mapa])
+
+    cli.main(["who", root, "--html", mapa])           # ruta explicita
+    assert not cli._alcance_de_mapa(mapa).endswith("src")
+
+
 def test_sin_marca_el_refresco_sigue_analizando_la_raiz(tmp_path):
     """Sin alcance grabado no se inventa uno: el comportamiento de siempre."""
     root = _proyecto(str(tmp_path))

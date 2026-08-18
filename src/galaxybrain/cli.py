@@ -136,6 +136,28 @@ def _procedencia(root):
     return "generado el %s (sin repo git)" % momento
 
 
+def _mapa_existente(root):
+    """El `mapa.html` que este proyecto YA usa, o None — y las bases donde se buscó.
+
+    UNO por repo: se mira la raíz analizada y la del repo por encima, porque
+    `gb who src` tiene que refrescar el mapa del toplevel y no fabricarse otro.
+    """
+    from . import floor as _floor
+
+    bases = [root]
+    try:
+        arriba = _floor._raiz_del_repo_por_encima(root)
+    except Exception:      # noqa: BLE001 — sin git se sigue igual
+        arriba = None
+    if arriba:
+        bases.append(arriba)
+    for base in bases:
+        candidato = os.path.join(base, "mapa.html")
+        if os.path.exists(candidato):
+            return candidato, bases
+    return None, bases
+
+
 def _alcance_de_mapa(path):
     """De que raiz es el mapa que YA esta escrito ahi, o None.
 
@@ -1380,6 +1402,23 @@ def cmd_who(args):
     from . import actividad
 
     root = os.path.abspath(args.path or ".")
+    # SIN ruta escrita, el alcance lo manda el mapa que ya existe.
+    #
+    # `who` analizaba el cwd por defecto, y como el mapa es UNO por repo, un
+    # `gb who --html` tecleado desde la raíz reescribía con el árbol entero el
+    # mapa que estaba acotado a `src`: 435 nodos pasan a 1606, entran los tests
+    # y los bancos, y parece que el proyecto ha cambiado. Pasó TRES veces en un
+    # día, dos de ellas ejecutando diagnósticos. Ya había un aviso y no bastó:
+    # solo se ve en el instante, y el refresco automático manda stderr a DEVNULL.
+    #
+    # Así que la norma va en el defecto y no en acordarse: sin escribir nada
+    # sale lo que el mapa YA era, y cambiar de alcance cuesta escribir la ruta
+    # (`gb who .`), que además deja el aviso delante.
+    if getattr(args, "path", None) is None and args.html:
+        previo, _bases = _mapa_existente(root)
+        grabado = _alcance_de_mapa(previo) if previo else None
+        if grabado and os.path.isdir(grabado):
+            root = grabado
     informe = _analiza_simbolos(root)
     if informe["root_error"]:
         sys.stderr.write("[gb who] %s\n" % informe["root_error"])
@@ -1432,21 +1471,8 @@ def cmd_who(args):
             # verdad. Y el mapa que el usuario tenia abierto se quedaba viejo
             # sin que nada lo dijera — el mismo fallo del 14-ago que motivo
             # refrescar EL de la raiz, ahora por el otro lado.
-            from . import floor as _floor
-
-            bases = [root]
-            try:
-                arriba = _floor._raiz_del_repo_por_encima(root)
-            except Exception:      # noqa: BLE001 — sin git se sigue igual
-                arriba = None
-            if arriba:
-                bases.append(arriba)
-            for base in bases:
-                en_raiz = os.path.join(base, "mapa.html")
-                if os.path.exists(en_raiz):
-                    destino_html = en_raiz
-                    break
-            else:
+            destino_html, bases = _mapa_existente(root)
+            if destino_html is None:
                 # Ni el repo ni la raiz lo pidieron: fuera del proyecto (regla
                 # 7), pero con el slug del REPO para que analizar `src` y
                 # analizar `.` no dejen dos ficheros distintos.
@@ -2202,7 +2228,10 @@ def build_parser():
     who_p = subparsers.add_parser(
         "who", help="quien esta tocando que ahora mismo (derivado de los worktrees) y los cruces"
     )
-    who_p.add_argument("path", nargs="?", default=".", help="raiz del proyecto")
+    # `default=None` y no ".": hay que poder distinguir «no escribio ruta» de
+    # «escribio un punto». Sin ruta, con --html, el alcance lo manda el mapa que
+    # ya existe (ver cmd_who); con ruta explicita manda la ruta.
+    who_p.add_argument("path", nargs="?", default=None, help="raiz del proyecto")
     who_p.add_argument("--json", action="store_true", help="salida cruda")
     who_p.add_argument(
         "--watch", type=int, nargs="?", const=3, default=0, metavar="SEG",
