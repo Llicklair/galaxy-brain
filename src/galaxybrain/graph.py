@@ -112,6 +112,31 @@ def lenguajes_no_leidos(root, tope=2000):
     return cuenta
 
 
+def lenguajes_presentes(root, tope=2000):
+    """Los lenguajes de la tabla que tienen ficheros de verdad bajo `root`.
+
+    Se extrajo de `carencias_presentes` para que la consola de errores pueda
+    hacer la misma pregunta (`consola.estado`) sin repetir el recorrido ni el
+    criterio de poda: un solo sitio decide que cuenta como «este lenguaje esta
+    en este proyecto».
+    """
+    from . import lenguajes
+
+    presentes, vistos = set(), 0
+    for _dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if d not in DEFAULT_SKIP and not d.startswith(".")]
+        for name in filenames:
+            lang = lenguajes.POR_EXTENSION.get(os.path.splitext(name)[1].lower())
+            if lang:
+                presentes.add(lang)
+            vistos += 1
+            if vistos >= tope:
+                break
+        if vistos >= tope:
+            break
+    return frozenset(presentes)
+
+
 def carencias_presentes(root, tope=2000):
     """Los límites declarados de los lenguajes que HAY bajo `root`, o ().
 
@@ -130,18 +155,7 @@ def carencias_presentes(root, tope=2000):
     """
     from . import lenguajes
 
-    presentes, vistos = set(), 0
-    for _dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = [d for d in dirnames if d not in DEFAULT_SKIP and not d.startswith(".")]
-        for name in filenames:
-            lang = lenguajes.POR_EXTENSION.get(os.path.splitext(name)[1].lower())
-            if lang:
-                presentes.add(lang)
-            vistos += 1
-            if vistos >= tope:
-                break
-        if vistos >= tope:
-            break
+    presentes = lenguajes_presentes(root, tope)
 
     fuera = []
     for lang in sorted(presentes):

@@ -409,6 +409,73 @@ escrito»**. Que es exactamente lo que el proyecto le exige a cualquier capa.
 Esta vez el error no fue de método sino de lectura: se creyó una salida sin comprobar de dónde
 venía. Un `grep` al parser habría bastado.
 
+## Octava vuelta (18-ago): C en las dos plataformas, y el criterio 4 deja de faltar
+
+### C en Linux: no compilaba, y el hook salía en el stderr del programa
+
+«Viable en Linux» era una previsión, no una medición. Al medirla aparecieron dos fallos reales:
+
+1. **No compilaba** ni en Linux: faltaban `<stdlib.h>` (para `getenv`) y `<sys/stat.h>` (para
+   `mkdir`), y gcc 15 ya convierte esas declaraciones implícitas en error. El fallo de Windows
+   (`gmtime_r`) tapaba este.
+2. **Escribía su backtrace en el stderr del programa observado** (+397 bytes): el mismo defecto que
+   ya se corrigió en js, java, php, lua y ruby. Los frames pasan al registro, en hex, resolubles con
+   `addr2line`.
+
+Con los dos arreglos, sobre los mismos 5 casos: **intacto 100 % (5/5) · capturados 100 % (3/3) ·
+espurios 0 % (0/2)**.
+
+### C en Windows: no hay `LD_PRELOAD`, así que el mecanismo es otro
+
+`AppInit_DLLs` pide administrador, es global para toda la máquina y muere con Secure Boot; WER
+LocalDumps escribe en HKLM (administrador) y devuelve un `.dmp` que hay que parsear; la inyección
+tipo Detours cuesta lo mismo que un envolvente y la marca el antivirus. Lo que queda es lanzar el
+programa **como depurado** (`CreateProcess` + `DEBUG_ONLY_THIS_PROCESS`) y escuchar el bucle de
+eventos: no se carga nada dentro del proceso, la excepción llega estructurada (código, dirección,
+hilo) en vez de como texto de stderr, y al vivir fuera del proceso que muere no hay que programar
+async-signal-safe.
+
+**Y ahí apareció la trampa.** `UnhandledExceptionFilter()` de kernel32 comprueba si hay un depurador
+y, si lo hay, **se salta el filtro de último recurso que el programa instaló**. O sea: mirar cambia
+lo que hace cualquier programa con crash reporter propio (Sentry, Breakpad, Crashpad).
+
+El rodeo, medido: en la primera vuelta de una excepción mortal se anota lo visto, se **suelta** el
+depurador (`DebugActiveProcessStop`) y se deja que la excepción siga su curso —sin depurador
+enganchado, el filtro del programa sí corre— y luego se decide **por el resultado**: si el proceso
+murió con ese código, se escribe el registro; si salió limpio, no hubo crash. Coste declarado: tras
+soltar, deja de observar.
+
+| Windows, 6 casos | intacto | capturados | espurios |
+|---|---|---|---|
+| `--pegado` (quedarse enganchado) | 83 % (5/6) | 100 % (3/3) | 33 % (1/3) |
+| **`--soltar`** | **100 % (6/6)** | **100 % (3/3)** | **0 % (0/3)** |
+
+Tipo distinguido: **100 % (3/3)** —`0xC0000005`, `0xC0000094`, `0xC0000409`— frente al 67 % del
+fallback de stderr de go y rust. Exit code idéntico al del control en los seis casos.
+
+> **Dos fallos del banco, otra vez del método y no del código.** El primer banco corría bajo Git
+> Bash: bash remapea los exit codes (`0xC0000005` llegaba como 139) y sus tuberías tocan la salida.
+> Reescrito en PowerShell nativo apareció el segundo: `Start-Process -PassThru` devolvía `ExitCode`
+> **nulo**, y comparar nulo con nulo da igualdad — la métrica del exit code se estaba dando por
+> buena sin mirar nada. Van seis. Material: `gb-lenguajes/hooks/banco-c-windows.ps1` y
+> `banco-c-linux.sh`.
+
+### El criterio 4, cumplido
+
+`src/galaxybrain/consola.py` declara por lenguaje la **vía** (`hook-nativo` / `fallback-stderr` /
+`desactivado`, el vocabulario literal de la ADR), **cómo se arranca** (la variable de entorno o el
+envolvente), si está **armada en este entorno ahora mismo**, y **qué no ve**. `gb status` lo enseña
+solo para los lenguajes presentes en el árbol.
+
+Tres decisiones que no son de estilo:
+
+- **Lo no comprobable devuelve `None`, no `False`.** php se arma con una bandera en la invocación y
+  go con un envolvente: nada en el entorno los delata. Decir «NO armado» sería inventar un hecho.
+- **Un test de contrato** cae si mañana se añade un lenguaje al grafo sin declarar su consola. Es el
+  hueco que se lee como un dato, otra vez.
+- **«Desactivado» tiene que decir por qué**, porque no es lo mismo «se midió y estropea el programa»
+  (dart) que «no se pudo medir» (elixir, swift).
+
 ## El marcador final: grafo y consola, lenguaje por lenguaje
 
 El grafo se midió sobre los mismos 16 proyectos de `gb-lenguajes`, con `gb graph` y `gb symbols`.
@@ -428,7 +495,7 @@ El grafo se midió sobre los mismos 16 proyectos de `gb-lenguajes`, con `gb grap
 | go | 3 · 1 · 6 | — | **cubierto por wrapper**: tipo derivado al 67 %; no hay hook transparente |
 | rust | 4 · 1 · 7 | sí | **cubierto por wrapper**: ídem; `set_hook` exige tocar el código |
 | dart | 3 · 1 · 6 | sí | **fuera**: `runZonedGuarded` lleva el exit de 255 a 0 |
-| c | 3 · 2 · 6 | sí | **solo Linux**: `LD_PRELOAD`, y no compila en Windows |
+| c | 3 · 2 · 6 | sí | **100 %**: `LD_PRELOAD` en Linux · envolvente depurador en Windows |
 | elixir | 4 · 1 · 9 | — | **sin medir**: Erlang exige elevación |
 | swift | 4 · **0** · 7 | sí | **sin medir**: el toolchain exige elevación |
 
@@ -440,14 +507,15 @@ clases del mismo paquete se usan sin `import`, así que no hay arista que deriva
 **declaran ese techo** en su propia salida, que es lo que los distingue de un cero que significa
 «no hay acoplamiento».
 
-**La consola funciona en 10 de 16**, y no por casualidad sino por un criterio: **tener un gancho de
+**La consola funciona en 11 de 16**, y no por casualidad sino por un criterio: **tener un gancho de
 observación**. Nueve medidos al 100 % en las tres métricas (programa intacto, crashes capturados,
 cero registros espurios) más tsx por herencia. Los seis restantes se reparten en tres motivos
 distintos, y ninguno es «no lo hemos intentado»:
 
 - **3 descartados con dato**: go y rust (el fallback no distingue el tipo del mensaje, y el dato no
   está en stderr), dart (su único mecanismo destruye el exit code y la traza).
-- **1 de plataforma**: C es viable en Linux y no en Windows.
+- **1 con dos mecanismos**: C, medido al 100 % en las dos plataformas — `LD_PRELOAD` en Linux,
+  envolvente depurador en Windows (octava vuelta).
 - **2 sin medir**: elixir y swift, bloqueados por instaladores que piden administrador.
 
 **Grafo y consola no cubren lo mismo, y esa asimetría es del problema, no de gb.** El grafo necesita
@@ -462,18 +530,18 @@ observación** — js, java, php, lua necesitaron arreglo; csharp y ruby ya esta
 (ruby con un filtro de menos). Los seis capturan con registro y dejan el programa observado intacto:
 **100 % en exit code, stdout y stderr**.
 
-**No:** que esté terminada. Falta el criterio 4 (`gb status`), y 6 de los 16 lenguajes no se han
-podido probar en esta máquina por falta de runtime. Pero ya no hay ningún bloqueo estructural: lo
+**No:** que esté terminada. Queda el criterio 2 (el enum `exception.origin` que no respeta ningún
+hook), y 2 de los 16 lenguajes no se han podido probar en esta máquina por falta de runtime. Pero ya no hay ningún bloqueo estructural: lo
 que queda es trabajo acotado, no una incógnita.
 
 ### Marcador por criterio
 
 | Criterio de terminado | Estado |
 |---|---|
-| 1. ≥3 crashes producen registros correctos | **12 de 16** (9 con hook nativo + tsx por herencia + go y rust por wrapper) · 1 descartado con dato (dart) · 1 de plataforma (C) · 2 sin medir |
+| 1. ≥3 crashes producen registros correctos | **13 de 16** (10 con hook nativo —C incluido, en Linux y Windows— + tsx por herencia + go y rust por wrapper) · 1 descartado con dato (dart) · 2 sin medir |
 | 2. Validan contra el schema v2 | **9 % (9/105)** — el enum `exception.origin` no lo respeta ningún hook |
 | 3. `gb last/show/list` sin modificación | **cumplido** (`94bcef7`) — buzón + normalización; `store.py` y `render.py` con **cero líneas** de cambio |
-| 4. `gb status` declara el mecanismo | **no existe** |
+| 4. `gb status` declara el mecanismo | **cumplido** — `src/galaxybrain/consola.py` + el bloque `consola <lang>` de `gb status`: vía, arranque, si está armado ahora mismo y qué no ve |
 | 5. El hook no altera el programa | **100 %** en los nueve medidos, tras cinco arreglos |
 
 **Recomendación:** la [ADR 0012](adr/0012-consola-multilenguaje.md) sigue en **propuesta**, con el
@@ -484,9 +552,12 @@ alcance ya recortado por su propio criterio de aborto. Lo que queda, por orden:
    y una función lo traduce al almacén de siempre; `store.py` y `render.py` con cero líneas de
    cambio. Lo caro no era mapear campos: el orden de los frames estaba invertido en siete lenguajes,
    así que la captura se pintaba apuntando al arranque del runtime sin lanzar un error.
-3. **`gb status`** (criterio 4).
-4. **Los lenguajes sin runtime aquí** — elixir, swift, dart, kotlin, scala, C: primero la pregunta
-   del eje, y solo después medir.
+3. ~~**`gb status`** (criterio 4)~~ — **hecho**. `consola.py` declara por lenguaje la vía
+   (`hook-nativo` / `fallback-stderr` / `desactivado`), cómo se arranca, si está armada en este
+   entorno y **qué no ve**; `gb status` la enseña solo para los lenguajes presentes en el árbol.
+   Un test de contrato cae si mañana se añade un lenguaje al grafo sin declarar su consola.
+4. **El criterio 2** — el enum `exception.origin`, que no respeta ningún hook (9 % de validación).
+5. **Los dos lenguajes sin runtime aquí** — elixir y swift: sus instaladores exigen administrador.
 
 Lo que ya **no** procede es cerrarla por el exit code, ni aceptarla con los criterios 3 y 4 a cero.
 

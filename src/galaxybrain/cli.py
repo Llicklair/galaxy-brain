@@ -2099,6 +2099,15 @@ def cmd_status(args):
     ciclo = _ciclo_proyecto(os.getcwd())
     if ciclo:
         emit("  ciclo              : %s" % _embudo_ciclo(ciclo["embudo"]))
+
+    # Criterio 4 de la ADR 0012: declarar el MECANISMO, no solo el resultado.
+    # Un `gb last` vacio en un repo con Go significa una de dos cosas opuestas
+    # —no ha petado nada, o por ahi no miro— y hasta aqui se presentaban igual.
+    # Solo los lenguajes que estan de verdad en el arbol: los 17 serian ruido.
+    from . import consola
+
+    for ficha in consola.estado(os.getcwd()):
+        emit("  consola %-10s : %s" % (ficha["lenguaje"], consola.linea(ficha)))
     return 0
 
 

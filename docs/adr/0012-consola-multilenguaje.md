@@ -1,6 +1,6 @@
 # 12. Consola multilenguaje por mecanismo nativo + fallback stderr
 
-**Estado:** propuesta **decidible** — **12 de 16 lenguajes cubiertos**, 4 de 5 criterios cumplidos; falta `gb status` y dos lenguajes que esta máquina no deja instalar · **Fecha:** 2026-08-16 · **Supercede (solo el eje lenguaje):** [0004](0004-un-lenguaje-un-runtime-un-tipo-de-fallo.md) · **Extiende:** [0009](0009-multilenguaje-por-referencia.md)
+**Estado:** propuesta **decidible** — **13 de 16 lenguajes cubiertos** (C entra: Linux y Windows, 100 % en las dos), 4 de 5 criterios cumplidos; el criterio 4 (`gb status` declara el mecanismo) **ya está**, falta el 2 (el enum `exception.origin` que no respeta ningún hook) y dos lenguajes que esta máquina no deja instalar · **Fecha:** 2026-08-16 · **Supercede (solo el eje lenguaje):** [0004](0004-un-lenguaje-un-runtime-un-tipo-de-fallo.md) · **Extiende:** [0009](0009-multilenguaje-por-referencia.md)
 
 > **La medición está hecha: [CONSOLA-MULTILENGUAJE.md](../CONSOLA-MULTILENGUAJE.md).** De 6 lenguajes
 > probados, capturan 2 por el camino que este ADR describe (js y ruby, 3/3 cada uno, registros
