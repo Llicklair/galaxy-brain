@@ -18,7 +18,7 @@ import json
 import os
 import sys
 
-from . import __version__, bootstrap, config, idioma, render, store
+from . import __version__, bootstrap, buzon, config, idioma, render, store
 
 
 def emit(text):
@@ -2471,6 +2471,12 @@ def main(argv=None):
         parser.print_help()
         return 0
     store.mark_uso(_uso_label(args))
+    # Los hooks no-Python dejan sus capturas en un BUZON aparte; aqui se pasan al
+    # almacen de siempre para que `last`, `show` y `list` las vean sin enterarse
+    # del lenguaje (criterio 3 de la ADR 0012). Marca de agua por bytes: en
+    # regimen normal son 0 o 1 lineas nuevas y el coste es un seek. Nunca lanza:
+    # si el buzon falla, gb sigue como si no existiera (propiedad 5).
+    buzon.drena()
     rc = args.func(args)
     _refresca_mapa_estigmergia()
     return rc
