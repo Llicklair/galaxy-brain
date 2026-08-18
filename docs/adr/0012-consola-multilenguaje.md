@@ -1,6 +1,6 @@
 # 12. Consola multilenguaje por mecanismo nativo + fallback stderr
 
-**Estado:** propuesta — **medida el 18-ago-2026 y NO pasa sus propios criterios** · **Fecha:** 2026-08-16 · **Supercede (solo el eje lenguaje):** [0004](0004-un-lenguaje-un-runtime-un-tipo-de-fallo.md) · **Extiende:** [0009](0009-multilenguaje-por-referencia.md)
+**Estado:** propuesta — **su criterio de aborto 1 se ha ACTIVADO (18-ago-2026); el alcance se recorta** · **Fecha:** 2026-08-16 · **Supercede (solo el eje lenguaje):** [0004](0004-un-lenguaje-un-runtime-un-tipo-de-fallo.md) · **Extiende:** [0009](0009-multilenguaje-por-referencia.md)
 
 > **La medición está hecha: [CONSOLA-MULTILENGUAJE.md](../CONSOLA-MULTILENGUAJE.md).** De 6 lenguajes
 > probados, capturan 2 por el camino que este ADR describe (js y ruby, 3/3 cada uno, registros
@@ -13,6 +13,20 @@
 > `uncaughtExceptionMonitor`, el evento que Node tiene para observar sin manejar. **Aplicado**
 > (`8e7a8f9`) y remedido: 3/3, captura el error entero y el proceso muere exactamente igual. Con eso,
 > **js y ruby pasan los criterios 1, 2 y 5**.
+>
+> **TERCERA vuelta (18-ago) — el criterio de aborto 1 de este mismo ADR se activa.** El fallback
+> stderr no distingue el tipo de excepción del mensaje en **go ni en rust**: `exception.type` vale
+> `panic` en los 40 registros, y el dato **no está en stderr** (`panic_any` borra el tipo en el
+> runtime). Dos lenguajes de dos. Así que el alcance se recorta a los lenguajes con gancho nativo, y
+> **go y rust quedan fuera** — rust incluido, porque `set_hook` no se instala sin tocar el código del
+> usuario: no es «parcial», es inviable.
+>
+> **El eje correcto va 4 de 4** (js, java, php, lua): lo que decide no es «¿hay hook instalable por
+> env-var?» sino **«¿el gancho OBSERVA o MANEJA?»**. Los cuatro que capturaban manejaban, y los
+> cuatro rompían el programa. El peor, php: `set_exception_handler` borra el `Fatal error` y cambia
+> el exit code de **255 a 0** — con la consola puesta, un crash pasa en verde en cualquier CI.
+> La tabla de tiers de más abajo se equivoca en **las dos direcciones** (php sobra de «viables», lua
+> falta), que es la prueba de que ordena por el eje que no predice.
 >
 > **Segunda vuelta (18-ago), con los hooks compilados del banco `gb-lenguajes`:** java y csharp
 > también capturan con registro válido. Java tenía el defecto más grave de todos — el agente

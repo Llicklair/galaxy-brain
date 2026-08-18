@@ -188,6 +188,68 @@ default a mano. Medido: mismo exit code y traza idéntica (`86c944d`).
 *observa*. Dos de dos. Ese es el eje por el que hay que reordenar la tabla de tiers de la ADR, y
 ahora hay dos casos que lo sostienen en vez de uno.
 
+## Tercera vuelta (18-ago): tres mediciones en paralelo
+
+Tres agentes sobre territorios disjuntos — php+lua, go+rust, y el almacén. Detalle en
+[medicion-php-lua.md](medicion-php-lua.md), [medicion-go-rust.md](medicion-go-rust.md) y
+[propuesta-almacen-unificado.md](propuesta-almacen-unificado.md). Lo que sigue está verificado
+aparte antes de darlo por bueno.
+
+### El eje observación/manejo va 4 de 4
+
+Ya no es un patrón que se repite: es **el** criterio. Los cuatro hooks que capturaban estaban
+enganchados donde se *maneja*, y los cuatro rompían el programa observado de una forma distinta:
+
+| Lenguaje | Qué hacía el hook | Qué le hacía al programa |
+|---|---|---|
+| js | `uncaughtException` + re-lanzar | exit 1 → **7**, frames del hook en la traza |
+| java | `setDefaultUncaughtExceptionHandler` | **borraba la traza entera** |
+| **php** | `set_exception_handler` | **exit 255 → 0** y borraba el `Fatal error` |
+| lua | wrapper que re-lanza con `error(err,0)` | la traza pasaba a ser la del hook |
+
+**php es el peor de los cuatro**, y verificado a mano: `stdout` de 374 bytes a **0**, exit **255 →
+0**. Con la consola puesta, un crash de PHP **pasa en verde en cualquier CI**. Decirle a PHP que la
+excepción está atendida es exactamente eso: atenderla.
+
+Y lua enseña por qué «mismo exit code» no basta como control: su hook impedía que el programa
+**llegara a ejecutarse** —el runner lo cargaba por `LUA_INIT`, donde el `arg[1]` que espera no
+existe, así que imprimía `Usage:` y salía— y la columna del exit code decía «sí», porque el crash de
+lua también sale con 1. Una coincidencia numérica tapando la destrucción total.
+
+Los cuatro tienen arreglo y los cuatro son el mismo: buscar el punto de **observación**
+(`uncaughtExceptionMonitor`, replicar el default de la JVM, `register_shutdown_function` +
+`error_get_last`, el message handler de `xpcall`). En php el arreglo es **restar**: 274 → 152 líneas.
+
+### Go y Rust: el fallback funciona, y aun así no sirve
+
+Mi «0 registros en Go» era **falso** — el tercer fallo de método del mismo banco, y el segundo hacia
+el «no». Captura **10 de 11 casos**, incluido el panic en goroutine secundaria, justo donde
+`recover()` no llega.
+
+Pero `exception.type` vale **`panic`** en los 40 registros de go y rust. No es un defecto del
+parser: **el dato no está en stderr**. `panic(&ErrorDeNegocio{})` imprime `panic: codigo 42` sin el
+tipo, y `panic_any(...)` imprime `Box<dyn Any>` con el tipo ya borrado por el runtime.
+
+> Eso activa el **criterio de aborto 1** de la ADR, escrito antes de medir nada: *«Si el fallback
+> stderr no distingue tipo de excepción del mensaje en ≥ 2 lenguajes, se recorta el alcance a solo
+> los lenguajes con hook nativo»*. Dos lenguajes de dos. Se activa por el motivo correcto, y por eso
+> vale.
+
+Y **Rust no es «parcial»**: `std::panic::set_hook` no se instala sin tocar el código del usuario —no
+hay variable de entorno, y el propio spike llama a `install()` a mano en su `main.rs`—. Es tan
+inviable como Go. Su panic en hilo secundario deja exit 0, stderr completo y **cero registros**: el
+fallback solo ve lo que mata al proceso.
+
+Un defecto más, invisible: el tee del parser escribía con `sys.stderr.write` en modo texto, y Windows
+traduce `\n` → `\r\n`. **11 de 11 casos** salían con `\r` que el programa nunca escribió.
+
+### La tabla de tiers falla en las dos direcciones
+
+php **baja** (no hay env-var: `auto_prepend_file` es directiva de `.ini`, y el runner solo exporta
+una variable y te dice el flag a mano → **0 registros por esa vía**) y lua **sube** (`LUA_INIT` sí
+instala transparente). Que se equivoque en ambos sentidos es la prueba de que el eje que la ordena
+—«¿hay hook instalable por env-var?»— no predice nada. El que predice es observación vs manejo.
+
 ## Qué se puede afirmar, y qué no
 
 **Sí:** el patrón se repite y el formato aguanta. Escribir un hook por lenguaje que produce un
@@ -199,6 +261,10 @@ consigo mismo; y 6 de los 16 lenguajes ni siquiera se han podido probar en esta 
 **Recomendación:** la [ADR 0012](adr/0012-consola-multilenguaje.md) se queda en **propuesta**, y el
 siguiente paso no es añadir lenguajes. Por orden:
 
+0. **Recortar el alcance**, que es lo que manda el criterio de aborto 1 ya activado: fuera el
+   fallback stderr como capa universal, y con él **go y rust**, que no tienen otra vía. La ADR
+   pasa de «16 lenguajes en tres tiers» a «los que tengan gancho de observación», que hoy son
+   cuatro medidos.
 1. ~~Cambiar el gancho en js~~ — **hecho** (`8e7a8f9`), 3/3 perfecto.
 2. **Una sola convención de almacén.** Hoy son tres y no se leen entre sí. Mientras eso siga así,
    `gb last/show/list` no puede ver nada de lo que capturan los hooks (criterio 3), y da igual
