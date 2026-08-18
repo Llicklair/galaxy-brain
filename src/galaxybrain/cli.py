@@ -380,6 +380,25 @@ def _ficheros_tocados(root):
     return ficheros
 
 
+def _pelicula_para_mapa(root, informe_simbolos):
+    """La película como viaja al mapa: eventos con hora de git y propagaciones.
+
+    El mapa es la foto y su consola era el vídeo — pero un vídeo derivado de
+    comparar instantáneas entre recargas, que su propio texto admitía no cubrir:
+    «una sola regeneración al final siempre dirá cero». Esto ya existe y es
+    verificable (cada evento cita su sha), así que se le pasa.
+
+    Nunca lanza: si esto falla, el mapa sale igual y sin película. Un mapa que
+    no se dibuja por culpa del panel de al lado sería el peor cambio posible.
+    """
+    from . import actividad
+
+    try:
+        return actividad.cronologia(root, informe_simbolos)
+    except Exception:
+        return None
+
+
 def _tocados_para_mapa(root, informe_simbolos):
     """La capa de cambio como viaja al mapa: el conjunto de nodos modulo cuyo
     fichero esta tocado sin commitear.
@@ -1502,6 +1521,7 @@ def cmd_who(args):
                 ciclo=_ciclo_para_mapa(root, inf),
                 tocados=_tocados_para_mapa(root, inf),
                 actividad=foto,
+                pelicula=_pelicula_para_mapa(root, inf),
                 capturas=_capturas_para_mapa(root, inf),
                 suelo=_suelo_para_mapa(root),
                 sin_leer=_capturas_sin_leer(root),

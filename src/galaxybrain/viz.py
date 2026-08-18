@@ -384,6 +384,9 @@ def render_graph_cloud(
     # {fichero: texto} para el modal de codigo (14-ago): lo lee QUIEN LLAMA —
     # el renderer sigue sin mirar disco. None = el modal avisa y ofrece editor.
     codigo=None,
+    # La pelicula de `actividad.cronologia`: eventos con hora real de git y las
+    # propagaciones entre agentes. None = el mapa se queda como estaba.
+    pelicula=None,
 ):
     """La nube: nodos repartidos por fuerzas, coloreados por módulo, navegable.
 
@@ -612,6 +615,24 @@ def render_graph_cloud(
     # cuenta porque llegan por su carril y actividad no los mete en `agentes`.
     _enlazan = {q: d.get("enlazan", []) for q, d in (_act.get("por_nodo") or {}).items()
                 if d.get("enlazan")}
+    # La PELICULA, derivada de git: commits con su hora REAL y las propagaciones
+    # entre agentes. Hasta ahora la consola solo tenia eventos derivados de
+    # comparar instantaneas entre recargas, y su propio texto lo admitia: «una
+    # sola regeneracion al final siempre dira cero». Esto se ve a la primera, y
+    # cita el sha — es verificable, no una impresion.
+    _pel = pelicula or {}
+    _pelicula_js = {
+        "eventos": [
+            {"agente": e.get("agente"), "id": e.get("id"), "tipo": e.get("tipo"),
+             "nodos": e.get("nodos") or [], "hace": int(e.get("hace_seg") or 0)}
+            for e in (_pel.get("eventos") or []) if e.get("id")
+        ][-60:],
+        "propagaciones": [
+            {"de": p.get("de"), "a": p.get("a"), "por": p.get("por"),
+             "seg": int(p.get("seg") or 0), "heredado": p.get("heredado")}
+            for p in (_pel.get("propagaciones") or [])
+        ][:40],
+    }
     _orden_agentes = sorted(a["nombre"] for a in (_act.get("agentes") or []))
     _color_agente = {
         nombre: (_COLOR_AGENTE[i] if i < len(_COLOR_AGENTE) else _COLOR_AGENTE_EXTRA)
@@ -806,6 +827,7 @@ def render_graph_cloud(
         "color_ciclo": _COLOR_CICLO,
         "color_obra": _COLOR_OBRA,
         "agentes": _en_script(_json.dumps(_agentes_js, ensure_ascii=False)),
+        "pelicula": _en_script(_json.dumps(_pelicula_js, ensure_ascii=False)),
         # La consola de errores entra al lienzo por defecto: las capturas
         # recientes, con su nodo, para que el feed diga `peta` en movimiento.
         "capturas": _en_script(_json.dumps(capturas or [], ensure_ascii=False)),
@@ -1069,6 +1091,7 @@ const IMPORT_COLOR = '%(color_import)s', CICLO_COLOR = '%(color_ciclo)s';
 const EXTENDS_COLOR = '%(color_extends)s';
 const OBRA_COLOR = '%(color_obra)s';
 const AGENTES = %(agentes)s;
+const PELICULA = %(pelicula)s;   // git, no impresiones: ver `pelicula` en viz.py
 const CAPTURAS = %(capturas)s;
 const REFRESCO = %(refresco)s;
 const SIN_LEER = %(sin_leer)s;
@@ -1784,6 +1807,30 @@ const CMEM='gb-mapa-consola';
   let est=null; try{ est=JSON.parse(sessionStorage.getItem(CMEM)||'null'); }catch(_){}
   const log=(est && est.log)||[];
   const hora=new Date().toLocaleTimeString();
+  // Primero la PELICULA de git, que trae hora propia y sha. Va antes que los
+  // eventos por diferencia porque es mas vieja, y porque arregla el caso que
+  // este panel admitia no cubrir: una sola regeneracion decia cero. Se
+  // deduplica por sha, asi que recargar no la repite.
+  const yaVisto={}; for(const e of log){ if(e.k) yaVisto[e.k]=1; }
+  for(const e of ((PELICULA&&PELICULA.eventos)||[])){
+    if(!e.id || yaVisto[e.id]) continue;
+    yaVisto[e.id]=1;
+    log.push({h:new Date(Date.now()-(e.hace||0)*1000).toLocaleTimeString(),
+              c:(AGENTES[e.agente]||{}).c||'#94a3b8', a:e.agente,
+              t:e.tipo==='commit'?'commitea':'guarda',
+              d:(e.nodos||[]).join(', ')+' - '+e.id, k:e.id});
+  }
+  // La propagacion no es evento de nadie: es una ARISTA cruzada con el reloj.
+  // `heredado` la separa de una coincidencia — sin el, dos agentes que tocan
+  // cosas vecinas parecen hablarse cuando en realidad trabajan a ciegas.
+  for(const p of ((PELICULA&&PELICULA.propagaciones)||[])){
+    const k='p:'+p.de+'>'+p.a+':'+p.por;
+    if(yaVisto[k]) continue;
+    yaVisto[k]=1;
+    log.push({h:hora, c: p.heredado?'#ffffff':'#94a3b8', a:p.de+' -> '+p.a,
+              t: p.heredado?'LE LLEGA':'A CIEGAS',
+              d:'por '+p.por+' ('+p.seg+'s)'+(p.heredado?'':' - no tiene su commit'), k:k});
+  }
   for(const e of eventosEntre(est && est.snap, ahora))
     log.push({h:hora, c: e.t==='CRUCE' ? '#ffffff' : ((AGENTES[e.a]||{}).c||'#94a3b8'),
               a:e.a, t:e.t, d:e.d});

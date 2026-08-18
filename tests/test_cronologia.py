@@ -104,6 +104,24 @@ def cuatro(cadena):
     return cadena, arboles
 
 
+def test_el_mapa_lleva_la_pelicula(cuatro):
+    """El panel de actividad del mapa derivaba sus eventos comparando
+    instantáneas entre recargas, y su propio texto admitía el agujero: «una sola
+    regeneración al final siempre dirá cero». Con la película el mapa ya trae
+    hechos con hora de git y su sha a la PRIMERA, sin depender de recargas.
+    """
+    from galaxybrain import viz
+
+    raiz, _ = cuatro
+    informe = symbols.analyze(str(raiz))
+    pelicula = actividad.cronologia(str(raiz), informe)
+    html = viz.render_graph_cloud(informe, pelicula=pelicula, gen_ts=0)
+
+    assert "const PELICULA" in html
+    # El sha, literal: es lo que hace el evento verificable en vez de creible.
+    assert pelicula["eventos"][0]["id"] in html
+
+
 def test_sin_repo_git_lo_dice_y_no_inventa(tmp_path):
     pelicula = actividad.cronologia(str(tmp_path), {"nodes": []})
     assert pelicula["eventos"] == []
