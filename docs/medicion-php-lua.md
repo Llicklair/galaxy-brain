@@ -120,7 +120,7 @@ principal y por tanto `getTrace()` devuelve **vacío**) es justo el que el hook 
 ### Y el runner no instala nada
 
 `gb-run.py` para php **solo exporta `GB_PHP_HOOK` y te imprime el flag para que lo escribas tú**
-([líneas 141-149](../experimentos/consola-multilenguaje/gb-run.py) del spike). Medido: **0 registros
+(líneas 141-149 de `gb-run.py`, en la rama `spike/consola-multilenguaje`). Medido: **0 registros
 en 4/4 casos** por esa vía. La ADR clasifica php entre los «viables, install por env-var, **cero
 cambios de código**»; **hoy eso no es cierto**, y no hay env-var de PHP que lo arregle:
 `auto_prepend_file` es una directiva de `php.ini`, y `PHP_INI_SCAN_DIR` (lo único parecido a una
