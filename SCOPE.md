@@ -53,7 +53,7 @@ maquinaria del watch propio, que era la culpable medida, sigue fuera. Libreta 14
 
 | | |
 |---|---|
-| **Lenguaje (grafo)** | Python, con `ast` de la stdlib · JS/TS, con `ast-grep` **por referencia**. Dos motores. |
+| **Lenguaje (grafo)** | Python, con `ast` de la stdlib · 16 más, con `ast-grep` **por referencia** ([0009](docs/adr/0009-multilenguaje-por-referencia.md), [0010](docs/adr/0010-repos-mixtos-los-dos-motores-conviven.md)). Dos motores, 17 lenguajes, y en un repo mixto **conviven**. |
 | **Lenguaje (consola)** | Python. Uno. |
 | **Runtime** | Ejecución local. Uno. |
 | **Fallo (consola)** | Excepciones no capturadas. Uno. |

@@ -32,7 +32,15 @@ FICHEROS_GLOBALES = ("conftest.py", "pytest.ini", "tox.ini", "setup.cfg", "pypro
 #: `test_end_to_end.py` sin que la selección lo viera. Son opacos, así que van
 #: SIEMPRE — un 46% de la suite es un mal precio, pero un falso verde no tiene
 #: precio (SCOPE, criterio de muerte de esta familia).
-MARCAS_OPACAS = ("subprocess", "Popen", "runpy", "os.system", "os.spawn", "multiprocessing")
+#: `importlib` es la misma opacidad por otra puerta: cargar un fichero por RUTA
+#: (`spec_from_file_location`) ejercita codigo que el AST no puede seguir, porque
+#: la ruta es un string que se arma en tiempo de ejecucion. Aqui lo usan los tests
+#: de `bucle/`, que no es un paquete instalable. Hoy no colaba ninguno —todos
+#: traen ademas `subprocess`— salvo `test_escalera.py`, que se salvaba de rebote
+#: por otra red. Depender de que las dos marcas viajen juntas es depender de una
+#: coincidencia: separarlas es un refactor. Coste medido: +1 fichero de test.
+MARCAS_OPACAS = ("subprocess", "Popen", "runpy", "os.system", "os.spawn",
+                 "multiprocessing", "importlib")
 
 #: Para el caso INDIRECTO hace falta algo más fino: no basta con lanzar, hay que
 #: lanzar **código nuestro**. `graph._git` lanza `git`, `lenguajes._corre` lanza

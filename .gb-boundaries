@@ -1,0 +1,22 @@
+# Fronteras del REPO (todo el arbol). Las del paquete publicado viven aparte,
+# en src/.gb-boundaries, y son las que gatea el pre-commit.
+#
+# Aqui solo hay ARISTAS DECLARADAS: dependencias que existen de verdad y que
+# ningun analizador estatico puede ver. `bucle/` no es un paquete instalable, asi
+# que sus tests lo cargan por RUTA con importlib.spec_from_file_location, y uno
+# ejecuta la CLI como proceso. Para el AST son ficheros que no importan nada: 6
+# nodos flotando en el mapa y, al tocar bucle/, una seleccion de tests que se
+# rinde a la suite entera (754) porque no ve un solo camino.
+#
+# Cada linea de abajo esta comprobada leyendo el fichero, no supuesta.
+
+# --- tests que cargan bucle/ por ruta (importlib) ---
+tests.test_escalera      => bucle.escalera
+tests.test_preexistentes => bucle.escalera
+tests.test_agente_ancla  => bucle.agente
+tests.test_bucle         => bucle.bucle
+tests.test_bucle         => bucle.replay
+tests.test_bucle         => bucle.agente
+
+# --- tests que ejercitan gb como PROCESO (subprocess -m galaxybrain.cli) ---
+tests.test_herencia      => galaxybrain.cli

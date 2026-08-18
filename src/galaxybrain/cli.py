@@ -136,6 +136,47 @@ def _procedencia(root):
     return "generado el %s (sin repo git)" % momento
 
 
+def _mapa_existente(root):
+    """El `mapa.html` que este proyecto YA usa, o None — y las bases donde se buscó.
+
+    UNO por repo: se mira la raíz analizada y la del repo por encima, porque
+    `gb who src` tiene que refrescar el mapa del toplevel y no fabricarse otro.
+    """
+    from . import floor as _floor
+
+    bases = [root]
+    try:
+        arriba = _floor._raiz_del_repo_por_encima(root)
+    except Exception:      # noqa: BLE001 — sin git se sigue igual
+        arriba = None
+    if arriba:
+        bases.append(arriba)
+    for base in bases:
+        candidato = os.path.join(base, "mapa.html")
+        if os.path.exists(candidato):
+            return candidato, bases
+    return None, bases
+
+
+def _alcance_de_mapa(path):
+    """De que raiz es el mapa que YA esta escrito ahi, o None.
+
+    Solo la primera linea: el HTML pesa megas y esto corre antes de cada
+    escritura, incluido el refresco de `--watch`. Un mapa anterior a esta marca
+    devuelve None y no se avisa de nada — callar sobre lo que no se sabe es
+    preferible a inventarse un alcance viejo.
+    """
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as fh:
+            primera = fh.readline(400)
+    except OSError:
+        return None
+    marca = "<!-- gb:alcance "
+    if not primera.startswith(marca):
+        return None
+    return primera[len(marca):].split("-->")[0].strip() or None
+
+
 def _embudo_ciclo(embudo):
     """El embudo del ciclo del error en una linea. Hechos con su recuento, sin
     veredicto: "sin reaparecer" es lo maximo que se puede afirmar sin re-ejecutar."""
@@ -1361,6 +1402,23 @@ def cmd_who(args):
     from . import actividad
 
     root = os.path.abspath(args.path or ".")
+    # SIN ruta escrita, el alcance lo manda el mapa que ya existe.
+    #
+    # `who` analizaba el cwd por defecto, y como el mapa es UNO por repo, un
+    # `gb who --html` tecleado desde la raíz reescribía con el árbol entero el
+    # mapa que estaba acotado a `src`: 435 nodos pasan a 1606, entran los tests
+    # y los bancos, y parece que el proyecto ha cambiado. Pasó TRES veces en un
+    # día, dos de ellas ejecutando diagnósticos. Ya había un aviso y no bastó:
+    # solo se ve en el instante, y el refresco automático manda stderr a DEVNULL.
+    #
+    # Así que la norma va en el defecto y no en acordarse: sin escribir nada
+    # sale lo que el mapa YA era, y cambiar de alcance cuesta escribir la ruta
+    # (`gb who .`), que además deja el aviso delante.
+    if getattr(args, "path", None) is None and args.html:
+        previo, _bases = _mapa_existente(root)
+        grabado = _alcance_de_mapa(previo) if previo else None
+        if grabado and os.path.isdir(grabado):
+            root = grabado
     informe = _analiza_simbolos(root)
     if informe["root_error"]:
         sys.stderr.write("[gb who] %s\n" % informe["root_error"])
@@ -1413,21 +1471,8 @@ def cmd_who(args):
             # verdad. Y el mapa que el usuario tenia abierto se quedaba viejo
             # sin que nada lo dijera — el mismo fallo del 14-ago que motivo
             # refrescar EL de la raiz, ahora por el otro lado.
-            from . import floor as _floor
-
-            bases = [root]
-            try:
-                arriba = _floor._raiz_del_repo_por_encima(root)
-            except Exception:      # noqa: BLE001 — sin git se sigue igual
-                arriba = None
-            if arriba:
-                bases.append(arriba)
-            for base in bases:
-                en_raiz = os.path.join(base, "mapa.html")
-                if os.path.exists(en_raiz):
-                    destino_html = en_raiz
-                    break
-            else:
+            destino_html, bases = _mapa_existente(root)
+            if destino_html is None:
                 # Ni el repo ni la raiz lo pidieron: fuera del proyecto (regla
                 # 7), pero con el slug del REPO para que analizar `src` y
                 # analizar `.` no dejen dos ficheros distintos.
@@ -1465,9 +1510,28 @@ def cmd_who(args):
 
         def _escribe_canvas(html):
             tmp = destino_html + ".tmp"
+            # El mapa es UNO por repo, asi que `gb who <otra-ruta>` lo reescribe
+            # entero — y un mapa con otro alcance no se lee como "otro alcance",
+            # se lee como "el codigo ha cambiado". Analizar el repo entero en vez
+            # de `src` mete tests, bancos y experimentos en el mismo lienzo: mas
+            # del triple de nodos y clusters sueltos que no estaban. Pasa sin
+            # querer, corriendo un diagnostico, y nada lo decia: el sello de
+            # procedencia solo llevaba fecha y commit. Aqui se estampa el alcance
+            # y se avisa cuando cambia. Avisa, no bloquea: cambiarlo a proposito
+            # es legitimo, y gatear una escritura legitima fabrica el falso
+            # positivo de la regla 9.
+            previo = _alcance_de_mapa(destino_html)
+            ahora = os.path.normcase(os.path.abspath(root))
+            if previo and previo != ahora:
+                sys.stderr.write(
+                    "[gb who] OJO: este mapa era de %s y pasa a ser de %s. Es el mismo\n"
+                    "         fichero para todo el repo, asi que lo que veas cambia de\n"
+                    "         sitio sin que el codigo se haya movido.\n" % (previo, ahora)
+                )
             try:
                 os.makedirs(os.path.dirname(destino_html) or ".", exist_ok=True)
                 with open(tmp, "w", encoding="utf-8") as fh:
+                    fh.write("<!-- gb:alcance %s -->\n" % ahora)
                     fh.write(html)
                 os.replace(tmp, destino_html)
             except OSError:
@@ -2164,7 +2228,10 @@ def build_parser():
     who_p = subparsers.add_parser(
         "who", help="quien esta tocando que ahora mismo (derivado de los worktrees) y los cruces"
     )
-    who_p.add_argument("path", nargs="?", default=".", help="raiz del proyecto")
+    # `default=None` y no ".": hay que poder distinguir «no escribio ruta» de
+    # «escribio un punto». Sin ruta, con --html, el alcance lo manda el mapa que
+    # ya existe (ver cmd_who); con ruta explicita manda la ruta.
+    who_p.add_argument("path", nargs="?", default=None, help="raiz del proyecto")
     who_p.add_argument("--json", action="store_true", help="salida cruda")
     who_p.add_argument(
         "--watch", type=int, nargs="?", const=3, default=0, metavar="SEG",
@@ -2340,6 +2407,26 @@ def _mapa_a_refrescar(root, ahora, rebote=60):
     return mapa
 
 
+def _args_del_refresco(root, mapa):
+    """Con que alcance regenera el hijo: el que el mapa YA tenia, si consta.
+
+    El refresco analizaba siempre la raiz del proyecto, asi que un mapa hecho a
+    proposito de `src/` volvia al repo entero al primer comando gb — 60 s de
+    rebote y otra vez tests, bancos y experimentos en el lienzo. No hay forma de
+    conservarlo: regenerarlo a mano dura hasta el siguiente comando, y el aviso
+    de cambio de alcance no se ve porque el hijo manda stderr a DEVNULL.
+
+    Un artefacto que el usuario acota y una automatica que se lo desacota es la
+    herramienta discutiendo con quien la usa. El alcance elegido manda; si no
+    consta (mapa anterior a la marca) o ya no existe, se cae a la raiz, que es
+    el comportamiento de siempre.
+    """
+    alcance = _alcance_de_mapa(mapa)
+    if alcance and os.path.isdir(alcance):
+        return ["who", alcance, "--html"]
+    return ["who", "--html"]
+
+
 def _refresca_mapa_estigmergia():
     """El mapa lo refresca quien pasa (estigmergia): cada comando gb, al
     terminar, suelta un hijo que regenera el mapa del proyecto y muere. Sin
@@ -2369,7 +2456,7 @@ def _refresca_mapa_estigmergia():
         else:
             suelto = {"start_new_session": True}
         subprocess.Popen(
-            [sys.executable, "-m", "galaxybrain.cli", "who", "--html"],
+            [sys.executable, "-m", "galaxybrain.cli"] + _args_del_refresco(root, mapa),
             cwd=root, env=dict(os.environ, GB_MAPA_HIJO="1"),
             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL, **suelto)

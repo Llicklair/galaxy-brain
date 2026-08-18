@@ -68,11 +68,52 @@ def _git(cwd, *args):
                    capture_output=True, text=True)
 
 
+#: El banco del enrutador que estos tests necesitan dentro del worktree. Vivía
+#: en `experimento/` y en `tests/test_experimento_uso.py`, commiteado en `main`
+#: — y eso ataba unos tests de la columna a que el repo publicado siguiera
+#: llevando encima un banco que su propio docstring llamaba «desechable». Ahora
+#: se fabrica aquí: el material del test viaja CON el test, y el repo puede
+#: soltar el banco sin que se caiga nada.
+_BANCO = {
+    "experimento/__init__.py": "",
+    "experimento/nucleo.py": "def calcula(a, b):\n"
+                             "    return int(str(a) + str(b))\n",
+    "experimento/capa.py": "from experimento.nucleo import calcula\n"
+                           "\n"
+                           "\n"
+                           "def procesa(pares):\n"
+                           "    return sum(calcula(a, b) for a, b in pares)\n",
+    "tests/test_experimento_uso.py": '"""Tests del banco del enrutador. Desechables, como el banco."""\n'
+                                     "\n"
+                                     "from experimento.capa import procesa\n"
+                                     "\n"
+                                     "\n"
+                                     "def test_procesa_suma_pares():\n"
+                                     "    assert procesa([(1, 2), (3, 4)]) == 12 + 34\n",
+}
+
+
 @pytest.fixture
 def worktree_real(tmp_path):
-    """Un worktree DE ESTE repo, con el banco dentro, para derivar de verdad."""
+    """Un worktree DE ESTE repo, con el banco dentro, para derivar de verdad.
+
+    El worktree es real —la derivación tiene que leer un árbol de git de verdad,
+    no una maqueta— pero el BANCO lo pone el test y no el repo: se escribe y se
+    commitea dentro del worktree, que está desprendido, así que `main` no se
+    entera.
+    """
     ruta = tmp_path / "wt-bucle-test"
     _git(bucle.RAIZ, "worktree", "add", "--detach", str(ruta), "main")
+    for rel, contenido in _BANCO.items():
+        destino = ruta / rel
+        destino.parent.mkdir(parents=True, exist_ok=True)
+        destino.write_text(contenido, encoding="utf-8")
+    _git(str(ruta), "add", *_BANCO)
+    # `--no-verify` aquí no es saltarse el gate: el pre-commit de este repo corre
+    # la suite entera, y esto ES la suite. Sin él, cada fixture relanza los 887
+    # tests dentro de un test y la pasada no termina nunca (medido: se colgó).
+    _git(str(ruta), "-c", "user.name=t", "-c", "user.email=t@t",
+         "commit", "-q", "--no-verify", "-m", "banco del enrutador (fixture)")
     yield ruta
     subprocess.run(["git", "worktree", "remove", "--force", str(ruta)],
                    cwd=bucle.RAIZ, capture_output=True)

@@ -446,6 +446,31 @@ def render_graph(report, style):
         lines.append(style("  AVISO: ni un modulo analizado — esto no comprueba nada.", YELLOW))
     lines.append("")
 
+    # El limite declarado del motor de cada lenguaje presente. Va PEGADO al
+    # recuento y no al final porque es lo que dice como hay que leer ese numero:
+    # "0 aristas" puede significar "no hay acoplamiento" o "por aqui no se ve", y
+    # las dos cosas se imprimian igual. Cuando hay modulos y CERO aristas, ese
+    # cero es justo el que enganna, asi que ahi el aviso sube de tono.
+    carencias = report.get("carencias") or []
+    if carencias:
+        cero_sospechoso = report["modules"] and not report["edges"]
+        plural = "" if len(carencias) == 1 else "s"
+        cabecera = ("OJO con el 0: hay modulos y ninguna arista, y el motor de este arbol "
+                    "tiene limite%s conocido%s:" % (plural, plural) if cero_sospechoso
+                    else "Lo que el motor de este arbol NO puede ver:")
+        lines.append(style(cabecera, YELLOW if cero_sospechoso else DIM))
+        # Un repo mixto junta los limites de todos sus lenguajes y se vuelve un
+        # muro que nadie lee — en el banco salieron siete de golpe. Se enseñan
+        # tres y se DICE cuantos quedan: esconder el resto en silencio seria
+        # repetir el problema que esto viene a arreglar.
+        for texto in carencias[:3]:
+            lines.append(style("  - %s" % texto, DIM))
+        if len(carencias) > 3:
+            lines.append(style("  ... y %d limite(s) mas de otros lenguajes de este arbol "
+                               "(`gb graph --json`, campo `carencias`)"
+                               % (len(carencias) - 3), DIM))
+        lines.append("")
+
     if report["cycles"]:
         lines.append(style("CICLOS de imports (acoplamiento circular — un hecho, no una opinion):", BOLD))
         for cyc in report["cycles"]:

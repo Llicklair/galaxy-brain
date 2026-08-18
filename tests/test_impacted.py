@@ -222,6 +222,40 @@ def test_los_opacos_no_se_cuentan_como_alcanzados(repo):
     assert len(report["tests"]) == 2, "y ademas entra el opaco"
 
 
+def test_cargar_por_ruta_con_importlib_tambien_es_opaco(repo):
+    """La misma opacidad por otra puerta: `spec_from_file_location` ejercita un
+    fichero cuya ruta se arma en tiempo de ejecucion, asi que el AST no puede
+    seguirla — igual que un subproceso.
+
+    En este repo lo usan los tests de `bucle/`, que no es un paquete instalable.
+    Ninguno colaba porque TODOS traian ademas `subprocess`; depender de que las
+    dos marcas viajen juntas es depender de una coincidencia que un refactor
+    deshace.
+    """
+    (repo / "tests" / "test_por_ruta.py").write_text(
+        "import importlib.util\n"
+        "import os\n"
+        "\n"
+        "_RUTA = os.path.join(os.path.dirname(__file__), '..', 'lib', 'nucleo.py')\n"
+        "_spec = importlib.util.spec_from_file_location('nucleo_suelto', _RUTA)\n"
+        "\n"
+        "\n"
+        "def test_algo():\n"
+        "    assert _spec is not None\n",
+        encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "por ruta")
+
+    _tocar(repo, "lib/nucleo.py", "return a + b", "return b + a")
+    _git(repo, "add", "-A")
+    report = impacted.analyze(str(repo), staged=True)
+
+    assert "tests/test_por_ruta.py" in report["opacos"]
+    assert "tests/test_por_ruta.py" in report["tests"]
+    assert "tests/test_resta.py" not in report["tests"], (
+        "sigue siendo una seleccion: marcar de mas no puede ser correr todo")
+
+
 def test_worktree_ve_lo_que_no_esta_en_el_indice(repo):
     """El caso de en medio de una edicion: escrito en disco, sin `git add`.
 

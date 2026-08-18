@@ -112,6 +112,45 @@ def lenguajes_no_leidos(root, tope=2000):
     return cuenta
 
 
+def carencias_presentes(root, tope=2000):
+    """Los límites declarados de los lenguajes que HAY bajo `root`, o ().
+
+    La tabla dice de cada lenguaje lo que su motor no consigue, y su docstring
+    promete que «se enseña al usuario y no se disimula». No se enseñaba: nadie
+    leía el campo. El caso que lo destapó — banco `gb-lenguajes`, 18-ago-2026 —
+    es el peor de todos, porque el silencio se lee como un dato: en `java`,
+    `csharp`, `kotlin` y `scala`, `gb graph` decía «3 modulos, 0 aristas
+    internas, 0 ciclo(s)» sobre proyectos con 2 llamadas cruzando de módulo a
+    módulo. Un cero que significa «por aquí no se ve» presentado igual que un
+    cero que significa «no hay».
+
+    Solo se nombran los lenguajes con ficheros de verdad en el árbol: enumerar
+    los límites de 16 lenguajes en un repo de uno es ruido, y el ruido se acaba
+    saltando igual que un aviso falso.
+    """
+    from . import lenguajes
+
+    presentes, vistos = set(), 0
+    for _dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if d not in DEFAULT_SKIP and not d.startswith(".")]
+        for name in filenames:
+            lang = lenguajes.POR_EXTENSION.get(os.path.splitext(name)[1].lower())
+            if lang:
+                presentes.add(lang)
+            vistos += 1
+            if vistos >= tope:
+                break
+        if vistos >= tope:
+            break
+
+    fuera = []
+    for lang in sorted(presentes):
+        for texto in lenguajes.LENGUAJES.get(lang, {}).get("carencias") or ():
+            if texto not in fuera:
+                fuera.append(texto)
+    return tuple(fuera)
+
+
 def frase_no_leido(root):
     """Una linea que nombra lo que hay y admite que no se lee, o None si no
     procede. `None` importa: sobre un repo Python vacio de verdad no hay nada
@@ -792,8 +831,36 @@ def _boundaries_elsewhere(root, consultado, max_arriba=3):
 
     for candidato in candidatos:
         if os.path.normcase(candidato) != consultado and os.path.isfile(candidato):
+            if not _promete_proteccion(candidato):
+                continue
             return candidato
     return None
+
+
+def _promete_proteccion(path):
+    """¿Ese fichero declara algo que PROTEGE — una frontera o una superficie?
+
+    Lo que hace peligroso un `.gb-boundaries` sin aplicar no es que exista: es que
+    promete una comprobacion que no se esta haciendo, y el verde se lee como
+    "limpio" cuando significa "no he mirado". Esa promesa la hacen `-/->` y `::`.
+
+    Un fichero que solo trae ARISTAS DECLARADAS (`=>`) o grupos no promete nada:
+    describe el grafo, no lo vigila. Denunciarlo bloquea un layout legitimo — el
+    de este mismo repo, donde `src/.gb-boundaries` gatea el paquete y el de la
+    raiz declara las dependencias invisibles del arbol entero (tests que cargan
+    `bucle/` por ruta). Bloquear ahi es fabricar el falso positivo que acaba en
+    `--no-verify`, que es exactamente lo que esta salvaguarda vino a evitar.
+
+    Ante la duda —no se puede leer, no se puede parsear— se responde que SI: no
+    poder comprobarlo no es motivo para callarse.
+    """
+    try:
+        info = load_boundaries(os.path.dirname(path), path)
+    except OSError:
+        return True
+    if info.get("error"):
+        return True
+    return bool(info.get("rules") or info.get("surfaces") or info.get("malformed"))
 
 
 def _under(module, pattern):
@@ -1127,6 +1194,10 @@ def analyze(root, skip=DEFAULT_SKIP, since=None, boundaries=None, smells=False,
     report = {
         "root": root,
         "root_error": root_error,
+        # Lo que el motor del lenguaje NO consigue ver aqui. Va en el informe y no
+        # solo en la tabla porque un limite que nadie lee no es un limite
+        # declarado: es el mismo silencio, con una nota de consuelo en el codigo.
+        "carencias": list(carencias_presentes(root)) if not root_error else [],
         "skipped_nested": sorted(skipped_nested),
         "include_nested": include_nested,
         "modules": len(nodes),

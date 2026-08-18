@@ -132,6 +132,44 @@ def test_el_typo_de_la_frontera_no_declara_la_dependencia_contraria(tmp_path):
     assert report["boundaries"] == 0
 
 
+def test_un_fichero_que_solo_declara_aristas_no_bloquea_el_gate_de_otra_carpeta(tmp_path):
+    """El layout de este repo: `src/.gb-boundaries` gatea el paquete y el de la
+    raiz declara las dependencias invisibles del arbol entero.
+
+    La salvaguarda de 'hay DOS ficheros de reglas' bloquea (exit 1) porque un
+    fichero sin aplicar promete una comprobacion que no se hace. Pero `=>` no
+    promete ninguna: describe el grafo, no lo vigila. Bloquear ahi fabrica el
+    falso positivo que acaba en `--no-verify` — lo que la salvaguarda venia a
+    evitar. Con reglas de verdad (`-/->`) sigue bloqueando: ver el test de al lado.
+    """
+    from galaxybrain import cli
+
+    root = str(tmp_path)
+    _write(root, "src/app/__init__.py", "")
+    _write(root, "src/app/web.py", "")
+    _write(root, "src/app/db.py", "")
+    _write(root, "src/.gb-boundaries", "app.web -/-> app.db\n")
+    _write(root, ".gb-boundaries", "tests.humo => app.web\n")   # solo declara
+
+    assert cli.main(["graph", os.path.join(root, "src"), "--gate", "--color", "never"]) == 0
+
+
+def test_pero_una_REGLA_sin_aplicar_sigue_bloqueando(tmp_path):
+    """El control del test de arriba. Lo que se afina es el criterio, no se
+    apaga la salvaguarda: un `-/->` que crees activo y no lo esta es protección
+    que no tienes, y eso sigue siendo exit 1."""
+    from galaxybrain import cli
+
+    root = str(tmp_path)
+    _write(root, "src/app/__init__.py", "")
+    _write(root, "src/app/web.py", "")
+    _write(root, "src/app/db.py", "")
+    _write(root, "src/.gb-boundaries", "app.web -/-> app.db\n")
+    _write(root, ".gb-boundaries", "app.web -/-> app.otra\n")   # REGLA sin aplicar
+
+    assert cli.main(["graph", os.path.join(root, "src"), "--gate", "--color", "never"]) == 1
+
+
 def test_el_nodo_cross_language_llega_al_mapa(tmp_path):
     """El mapa lee `edge_list`, pero sus nodos salen del informe de SIMBOLOS, que
     no sabe nada de un modulo en Go. Sin inyectarlo, la arista apunta a un nodo

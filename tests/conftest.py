@@ -1,10 +1,70 @@
 import os
 import sys
+import tempfile
 from pathlib import Path
 
 import pytest
 
-SRC = Path(__file__).resolve().parent.parent / "src"
+RAIZ = Path(__file__).resolve().parent.parent
+SRC = RAIZ / "src"
+
+
+def _dentro_del_repo(ruta):
+    try:
+        resuelta = Path(ruta).resolve()
+    except (OSError, ValueError):
+        return False
+    return resuelta == RAIZ or RAIZ in resuelta.parents
+
+
+def pytest_configure(config):
+    """Que `tmp_path` NUNCA caiga dentro del repo, venga como venga el entorno.
+
+    En esta maquina `TMPDIR` apunta al propio repo, asi que pytest creaba sus
+    temporales en `galaxy-brain/pytest-of-*/`. Diecinueve tests comprueban cosas
+    del tipo "sin repo git no se inventa un proyecto": con su tmp_path DENTRO de
+    galaxy-brain encuentran este repo como padre y fallan. Diecinueve rojos que
+    no son bugs, en un pre-commit que entonces hay que saltarse.
+
+    Y el modo de fallo simetrico es peor: un test que se apoye en encontrar un
+    repo pasaria en verde por el de al lado. Un veredicto que depende de una
+    variable de entorno de quien corre la suite no es un veredicto.
+
+    Solo se toca si el entorno ya esta roto, y NUNCA si hay `--basetemp`
+    explicito: quien lo pide manda. El destino es un subdirectorio DEDICADO,
+    nunca el temporal del usuario a pelo — pytest borra el contenido de basetemp
+    al arrancar, y apuntarlo a `%TEMP%` seria vaciarselo entero.
+    """
+    if getattr(config.option, "basetemp", None):
+        return
+    if not _dentro_del_repo(tempfile.gettempdir()):
+        return                      # entorno sano: no se toca nada
+
+    for candidato in (os.environ.get("TEMP"), os.environ.get("TMP"),
+                      "/tmp", str(Path.home())):
+        if not candidato or _dentro_del_repo(candidato):
+            continue
+        # El nombre no lleva "galaxy-brain" a proposito: hay tests que verifican
+        # que esa cadena NO aparece en el stderr de un hijo (asi comprueban que
+        # la consola esta desactivada), y la ruta del script sale en su traceback.
+        destino = Path(candidato) / "gb-pytest"
+        try:
+            destino.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            continue
+        config.option.basetemp = str(destino)
+        # `basetemp` arregla `tmp_path`, pero no a quien pregunta por el temporal
+        # del sistema: `tempfile.mkdtemp()` directo y, sobre todo, el codigo de gb
+        # que clasifica una captura por si cae bajo `gettempdir()`. Con el temporal
+        # apuntando al repo, `src/a.py` cuenta como exploracion y la clasificacion
+        # se invierte — no es un test fragil, es gb decidiendo mal. Se sanea para
+        # la suite entera, hijos incluidos (heredan este entorno).
+        for var in ("TMPDIR", "TEMP", "TMP"):
+            os.environ[var] = candidato
+        tempfile.tempdir = candidato
+        return
+    # Sin ningun sitio fuera del repo se sigue adelante: fallar aqui dejaria la
+    # suite sin correr, que es peor que correrla con los 19 rojos conocidos.
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
