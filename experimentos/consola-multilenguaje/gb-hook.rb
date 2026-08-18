@@ -129,5 +129,14 @@ module GBHook
 end
 
 at_exit do
-  GBHook.report_crash($!) if $!
+  # `$!` trae la ultima excepcion, y en Ruby `exit 3` TAMBIEN es una
+  # excepcion: SystemExit. Sin excluirla, un programa que termina como
+  # quiso —un CLI que sale con 3, un script que hace `exit 1` tras
+  # informar— deja una captura de un fallo que no existio. Medido:
+  # `puts 'me voy'; exit 3` escribia un registro tipo SystemExit.
+  #
+  # Ensuciar el historico con salidas normales no es un detalle: el
+  # embudo de `gb list` deja de significar nada, y lo que no significa
+  # nada se deja de mirar.
+  GBHook.report_crash($!) if $! && !$!.is_a?(SystemExit)
 end

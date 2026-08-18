@@ -93,6 +93,21 @@ _BANCO = {
 }
 
 
+def _limpia_worktree(ruta):
+    """Quita el worktree de `ruta` si quedó registrado, sin fallar si no está.
+
+    Hace falta ANTES de crear y no solo al terminar: la suite fija su `basetemp`
+    (ver `conftest.pytest_configure`), así que dos pasadas seguidas usan la MISMA
+    ruta — a diferencia del `pytest-of-*/pytest-N` de serie, que rota. Un
+    worktree registrado por la pasada anterior hace fallar `worktree add`, el
+    fixture muere sin ceder y deja OTRO registro: el estorbo se encadena y una
+    pasada rota tumba a las siguientes.
+    """
+    for cmd in (["git", "worktree", "remove", "--force", str(ruta)],
+                ["git", "worktree", "prune"]):
+        subprocess.run(cmd, cwd=bucle.RAIZ, capture_output=True)
+
+
 @pytest.fixture
 def worktree_real(tmp_path):
     """Un worktree DE ESTE repo, con el banco dentro, para derivar de verdad.
@@ -103,21 +118,30 @@ def worktree_real(tmp_path):
     entera.
     """
     ruta = tmp_path / "wt-bucle-test"
+    _limpia_worktree(ruta)
     _git(bucle.RAIZ, "worktree", "add", "--detach", str(ruta), "main")
-    for rel, contenido in _BANCO.items():
-        destino = ruta / rel
-        destino.parent.mkdir(parents=True, exist_ok=True)
-        destino.write_text(contenido, encoding="utf-8")
-    _git(str(ruta), "add", *_BANCO)
-    # `--no-verify` aquí no es saltarse el gate: el pre-commit de este repo corre
-    # la suite entera, y esto ES la suite. Sin él, cada fixture relanza los 887
-    # tests dentro de un test y la pasada no termina nunca (medido: se colgó).
-    _git(str(ruta), "-c", "user.name=t", "-c", "user.email=t@t",
-         "commit", "-q", "--no-verify", "-m", "banco del enrutador (fixture)")
-    yield ruta
-    subprocess.run(["git", "worktree", "remove", "--force", str(ruta)],
-                   cwd=bucle.RAIZ, capture_output=True)
-    subprocess.run(["git", "worktree", "prune"], cwd=bucle.RAIZ, capture_output=True)
+    try:
+        for rel, contenido in _BANCO.items():
+            destino = ruta / rel
+            destino.parent.mkdir(parents=True, exist_ok=True)
+            destino.write_text(contenido, encoding="utf-8")
+        # `-f` porque `experimento/` está en el .gitignore del repo desde que el
+        # banco salió de él: sin la bandera, `git add` de una ruta ignorada falla
+        # con exit 1 y se lleva por delante el fixture. Aquí el ignore no aplica
+        # — el banco es material del test, dentro de un worktree desprendido.
+        _git(str(ruta), "add", "-f", *_BANCO)
+        # `--no-verify` aquí no es saltarse el gate: el pre-commit de este repo
+        # corre la suite entera, y esto ES la suite. Sin él, cada fixture relanza
+        # los 886 tests dentro de un test y la pasada no termina (medido: se colgó).
+        _git(str(ruta), "-c", "user.name=t", "-c", "user.email=t@t",
+             "commit", "-q", "--no-verify", "-m", "banco del enrutador (fixture)")
+        yield ruta
+    finally:
+        # En `finally` y no tras el `yield`: si la preparación falla, el fixture
+        # muere ANTES de ceder y el worktree se queda registrado para siempre.
+        # Así se encadenaba — cada pasada rota dejaba el estorbo que rompía la
+        # siguiente, y siete tests caían por un fallo de una pasada anterior.
+        _limpia_worktree(ruta)
 
 
 def test_deriva_el_cambio_de_firma_del_arbol_no_del_relato(worktree_real):
