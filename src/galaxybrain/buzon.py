@@ -171,6 +171,49 @@ def _proyecto_de(cwd):
         actual = padre
 
 
+def _id_estable(registro):
+    """Un id derivado del CONTENIDO, para que reingestar no duplique.
+
+    `store.make_id` mete `os.urandom` a propósito: dos crashes idénticos en el
+    mismo segundo son dos crashes, y merecen dos entradas. Aquí es al revés —
+    una línea del buzón es UN hecho, y pasarla dos veces tiene que dar la misma
+    entrada.
+
+    Hace falta porque la marca de agua sola no basta: vive en un fichero
+    (`crashes.offset`) que se puede borrar, rotar o perder, y entonces el buzón
+    se relee entero. Pasó: 17 capturas duplicadas en un histórico real. Con el
+    id derivado del contenido, releer es gratis en vez de destructivo.
+    """
+    import hashlib
+
+    exc = registro.get("exception") or {}
+    frames = registro.get("frames") or []
+    primero = frames[0] if frames else {}
+    huella = "|".join(str(x) for x in (
+        registro.get("ts"), registro.get("language"), exc.get("type"),
+        exc.get("message"), primero.get("file"), primero.get("line"),
+        (registro.get("process") or {}).get("pid"),
+    ))
+    stamp = str(registro.get("ts", "")).replace(":", "").replace("-", "").replace("+", "p")
+    sufijo = hashlib.sha256(huella.encode("utf-8", "replace")).hexdigest()[:6]
+    return "%s-%s" % (stamp[:15] or "sin-fecha", sufijo)
+
+
+def _ya_archivado(registro):
+    """¿Este registro ya está en el almacén? Un `isfile`, sin leer el índice.
+
+    O(1) a propósito: esto corre antes de CADA comando de gb, y leer el índice
+    entero para decidirlo costaría el histórico completo por invocación
+    (regla 2).
+    """
+    from . import store
+
+    proc = registro.get("process") or {}
+    destino = (store.root() / "errors" / store._slug(proc.get("project") or proc.get("cwd"))
+               / ("%s.json" % registro["id"]))
+    return destino.is_file()
+
+
 def _ruta_buzon():
     """El buzón, bajo el home de gb — `GB_HOME` incluido.
 
@@ -235,6 +278,9 @@ def drena(limite=500):
                     continue
                 if not registro:
                     continue
+                registro["id"] = _id_estable(registro)
+                if _ya_archivado(registro):
+                    continue          # relectura del buzón: ya estaba
                 try:
                     store.write(registro)
                     entraron += 1

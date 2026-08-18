@@ -141,3 +141,29 @@ def test_los_seis_lenguajes_medidos_entran(gb_home, lang):
     _buzon(gb_home, _bruto(language=lang))
     assert buzon.drena() == 1
     assert store.read_index()
+
+
+def test_perder_la_marca_de_agua_no_duplica(gb_home):
+    """El fallo que costó 17 capturas duplicadas en un histórico real.
+
+    La idempotencia estaba puesta SOLO en `crashes.offset`, un fichero como
+    cualquier otro: se borra al limpiar, se pierde al rotar, y entonces el buzón
+    se relee entero y todo entra por segunda vez. Ahora el id se deriva del
+    contenido, así que releer es gratis en vez de destructivo.
+    """
+    _buzon(gb_home, _bruto(), _bruto(ts="2026-08-18T09:00:01.000Z"))
+    assert buzon.drena() == 2
+
+    os.remove(os.path.join(str(gb_home), "crashes.offset"))   # se pierde la marca
+    assert buzon.drena() == 0, "releer el buzón ha duplicado"
+    assert len(store.read_index()) == 2
+
+
+def test_dos_crashes_distintos_en_el_mismo_segundo_son_dos(gb_home):
+    """El control del test de arriba: deduplicar no puede tragarse hechos
+    distintos. Mismo instante, mismo tipo, distinto sitio -> dos entradas."""
+    _buzon(gb_home,
+           _bruto(frames=[{"file": "C:/proy/a.js", "line": 1, "function": "f"}]),
+           _bruto(frames=[{"file": "C:/proy/b.js", "line": 2, "function": "g"}]))
+    assert buzon.drena() == 2
+    assert len(store.read_index()) == 2
