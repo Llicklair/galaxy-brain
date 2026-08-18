@@ -483,6 +483,24 @@ it. `A -/-> B` promises "A does not depend on B", and there are languages where 
 module without importing it: `crate::b::f()` in Rust, or the same package in Java, C# and Kotlin.
 Checking only imports left that door open, and a real agent walked through it.
 
+The same fact has a second consequence, on the other side of the tool: in those languages the module
+graph can legitimately come back **empty**. Run `gb graph` on a Java project whose classes share a
+package and you get `3 modules, 0 internal edges` — not because nothing is coupled, but because
+there is no import to derive it from. So gb says which of the two it is:
+
+```
+3 modulos, 0 aristas internas, 0 ciclo(s)
+
+OJO con el 0: hay modulos y ninguna arista, y el motor de este arbol tiene un limite conocido:
+  - dos ficheros del mismo paquete se usan SIN import en Java, asi que no dejan arista de
+    modulo: 0 aristas aqui NO significa 0 acoplamiento. Las llamadas entre ellos si se ven
+```
+
+Every language declares what its engine cannot see, and gb prints it next to the number it qualifies
+— only for the languages actually present in the tree. A zero that means "nothing here" and a zero
+that means "not visible from here" used to print identically; that is the failure mode
+[ADR 0008](docs/adr/0008-el-grafo-declara-su-techo.md) exists to prevent.
+
 #### Dependencies the code never confesses
 
 The graph is derived, never declared — but it can only derive what an import statement writes down. A

@@ -157,6 +157,19 @@ def _lang(ag, extensiones, simbolos, imports=(), llamada=LLAMADA, globales=_COMU
 #:   "paquete" -> `app.util`, `proj/pkg`: se casa por sufijo contra los módulos que
 #:                EXISTEN en el árbol. No inventa nada: sin módulo real, no hay arista.
 #:   None      -> este lenguaje no tiene resolución fiable; se declara y no se finge.
+
+#: La carencia que comparten los lenguajes que resuelven por paquete y además
+#: dejan usar un tipo del MISMO paquete sin nombrarlo: no hay import que leer, así
+#: que el grafo de módulos sale a 0 aristas en un proyecto que sí está acoplado.
+#: Medido el 18-ago-2026 sobre gb-lenguajes: en `java`, `csharp`, `kotlin` y
+#: `scala`, `gb graph` decía «3 módulos, 0 aristas internas» mientras `gb symbols`
+#: veía 2 llamadas cruzando de módulo a módulo. El acoplamiento está, y la vista
+#: de imports no puede verlo — así que se dice (ADR 0008), no se rellena con
+#: aristas inventadas ni se deja pasar por un cero.
+MISMO_PAQUETE = ("dos ficheros del mismo paquete se usan SIN import en %s, asi que no dejan "
+                 "arista de modulo: 0 aristas aqui NO significa 0 acoplamiento. Las llamadas "
+                 "entre ellos si se ven — `gb symbols` las cuenta, y el gate las comprueba")
+
 LENGUAJES = {
     "js": _lang(
         "js", (".js", ".mjs", ".cjs", ".jsx"),
@@ -253,6 +266,7 @@ LENGUAJES = {
         llamada=("$FN($$$)", "$A.$FN($$$)"),
         tia=True, resolucion="paquete",
         sufijos_test=("Test", "Tests"), dirs_test=("test", "tests"),
+        carencias=(MISMO_PAQUETE % "Java",),
     ),
     "kotlin": _lang(
         "kotlin", (".kt", ".kts"),
@@ -263,6 +277,7 @@ LENGUAJES = {
         llamada=("$FN($$$)", "$A.$FN($$$)"),
         resolucion="paquete",
         sufijos_test=("Test",), dirs_test=("test", "tests"),
+        carencias=(MISMO_PAQUETE % "Kotlin",),
     ),
     "swift": _lang(
         "swift", (".swift",),
@@ -340,6 +355,7 @@ LENGUAJES = {
         llamada=("$FN($$$)", "$A.$FN($$$)"),
         resolucion="paquete",
         sufijos_test=("Test", "Spec"), dirs_test=("test", "tests"),
+        carencias=(MISMO_PAQUETE % "Scala",),
     ),
     "elixir": _lang(
         "elixir", (".ex", ".exs"),
@@ -367,6 +383,7 @@ LENGUAJES = {
         ("using $SRC;",),
         resolucion="paquete", tia=True,
         sufijos_test=("Test", "Tests"), dirs_test=("test", "tests"),
+        carencias=(MISMO_PAQUETE % "C#",),
     ),
     "c": _lang(
         "c", (".c", ".h"),
