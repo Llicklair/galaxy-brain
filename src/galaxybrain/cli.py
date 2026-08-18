@@ -1717,10 +1717,54 @@ def cmd_check(args):
         emit(json.dumps(report, ensure_ascii=False, indent=2))
     else:
         emit(render.render_changes(report, _style(args), brief=args.brief))
+        # Donde se ve: `check` es lo que un agente corre de verdad, y `gb sync`
+        # solo sirve si sabes que existe. No en --json, que tiene su forma.
+        aviso = _aviso_sync(root)
+        if aviso:
+            emit(aviso)
     # Un rango ilegible es error de USO (no hay nada revisado). Las senales, en
     # cambio, NO son motivo de salida != 0: son proxies, y gatear proxies fue el
     # error anterior. Informar delante de quien decide es lo que las hace inevitables.
     return 1 if report["range_error"] else 0
+
+
+def _aviso_sync(root):
+    """Una linea si otro agente ha tocado tu suelo, o None. Para `gb check`.
+
+    `gb sync` solo sirve si sabes que existe, y ese es el mismo agujero que
+    llevamos toda la sesion tapando: un hecho que solo aparece si preguntas por
+    el es un hecho que casi nadie ve. `check` es lo que un agente corre de
+    verdad —lo llama hasta el pre-commit—, asi que el aviso monta ahi.
+
+    Dos guardas para que no cueste ni moleste:
+    - Si no hay MAS de un worktree no hay con quien chocar: se sale con una sola
+      llamada a git, sin analizar simbolos (que es lo caro).
+    - Sin deuda no se dice nada. Aqui el silencio no engaña: `gb sync` esta un
+      comando de distancia y contesta lo mismo con detalle.
+    """
+    from . import actividad, aislado
+    from . import graph as graph_mod
+    from . import symbols as symbols_mod
+
+    try:
+        toplevel = (graph_mod._git(root, "rev-parse", "--show-toplevel") or "").strip()
+        if not toplevel or len(aislado._worktrees(toplevel)) < 2:
+            return None
+        salida = actividad.deuda(root, symbols_mod.analyze(root))
+        pendientes = salida.get("deuda") or []
+        if not pendientes:
+            return None
+        choques = sum(1 for d in pendientes if d["clase"] == "mismo-nodo")
+        ciclos = sum(1 for d in pendientes if d.get("ciclo_si_llamas"))
+        linea = "[gb sync] %d commit(s) de otro agente tocan tu suelo" % len(pendientes)
+        if choques:
+            linea += " · %d en TU mismo modulo" % choques
+        if ciclos:
+            linea += " · %d cerrarian un ciclo si les llamas" % ciclos
+        return linea + " (detalle: gb sync)"
+    except Exception:
+        # Un aviso no puede tumbar el comando al que se engancha.
+        return None
 
 
 def cmd_sync(args):

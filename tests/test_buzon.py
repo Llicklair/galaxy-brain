@@ -167,3 +167,32 @@ def test_dos_crashes_distintos_en_el_mismo_segundo_son_dos(gb_home):
            _bruto(frames=[{"file": "C:/proy/b.js", "line": 2, "function": "g"}]))
     assert buzon.drena() == 2
     assert len(store.read_index()) == 2
+
+
+def test_un_origin_fuera_del_enum_no_se_convierte_en_hilo():
+    """Inventar un dato es peor que no tenerlo.
+
+    `exception.origin` del schema v2 dice DONDE afloró la excepción (main,
+    thread, goroutine...), no cómo se capturó — eso es `capture_method`, otro
+    campo y otro enum. Confundirlos es fácil: el hook de C en Windows mandaba
+    `origin: "debugger"`, y gb lo pintaba como «hilo debugger», un hilo que no
+    existe en ninguna parte.
+    """
+    r = buzon.normaliza({"schema": 2, "lang": "c", "frames": [],
+                         "exception": {"type": "AV", "origin": "debugger"}})
+    assert r["thread"] == "MainThread"
+
+
+def test_pero_el_valor_crudo_no_se_tira():
+    """Tirarlo dejaría el registro limpio y el hook roto para siempre: nadie
+    volvería a ver la prueba de que manda algo que el schema no admite."""
+    r = buzon.normaliza({"schema": 2, "lang": "c", "frames": [],
+                         "exception": {"type": "AV", "origin": "debugger"}})
+    assert r["origin_fuera_de_schema"] == "debugger"
+
+
+def test_un_origin_del_enum_si_nombra_el_hilo():
+    r = buzon.normaliza({"schema": 2, "lang": "go", "frames": [],
+                         "exception": {"type": "panic", "origin": "goroutine"}})
+    assert r["thread"] == "goroutine"
+    assert "origin_fuera_de_schema" not in r

@@ -118,13 +118,14 @@ def normaliza(bruto):
         if isinstance(c, dict)
     ]
 
-    return {
+    origen_v2 = exc.get("origin") or bruto.get("origin")
+    registro = {
         "schema": 1,
         "ts": bruto.get("ts"),
         # De donde vino la captura. El v2 lo llama `capture_method`.
         "source": bruto.get("capture_method") or bruto.get("hook") or "hook-nativo",
         # gb lo usa solo para decir "hilo X" cuando no es el principal.
-        "thread": _hilo(exc.get("origin") or bruto.get("origin")),
+        "thread": _hilo(origen_v2),
         "language": lang,
         "exception": {
             "type": exc.get("type") or "?",
@@ -148,13 +149,41 @@ def normaliza(bruto):
             "program": proc.get("command"),
         },
     }
+    # El valor crudo, cuando no es del enum: ni se usa ni se tira. Tirarlo
+    # dejaria el registro limpio y el hook roto para siempre, porque nadie
+    # volveria a ver la prueba de que manda algo que el schema no admite.
+    if origen_v2 and origen_v2 not in ORIGENES:
+        registro["origin_fuera_de_schema"] = str(origen_v2)
+    return registro
+
+
+#: Los valores que el schema v2 admite en `exception.origin`: DONDE afloro la
+#: excepcion (el contexto de concurrencia), no como se capturo — eso es
+#: `capture_method`, que es otro campo y otro enum. Confundirlos es facil: yo
+#: mismo escribi `origin: "debugger"` en un hook el 18-ago-2026, que es un
+#: metodo de captura disfrazado de contexto.
+ORIGENES = frozenset((
+    "main", "thread", "unraisable", "promise", "goroutine",
+    "coroutine", "task", "signal", "process",
+))
+
+#: Los del enum que significan "el hilo principal": gb solo pinta el hilo cuando
+#: NO lo es, asi que lo normal se calla.
+_ORIGEN_PRINCIPAL = frozenset(("main", "thread-main", "exception", "process", "signal"))
 
 
 def _hilo(origen):
     """`main`/`goroutine-1`/`thread-main` -> el nombre de hilo que gb ensena.
 
-    gb solo lo pinta si NO es `MainThread`, asi que lo normal se calla."""
-    if not origen or origen in ("main", "thread-main", "exception", "process"):
+    Un valor FUERA del enum no se convierte en nombre de hilo. Antes si, y eso
+    fabricaba un hecho: un hook que mandaba `origin: "debugger"` hacia que gb
+    dijera «hilo debugger», un hilo que no existe en ningun sitio. Inventar un
+    dato es peor que no tenerlo — el valor crudo se conserva aparte
+    (`origin_fuera_de_schema`) para que se pueda arreglar el hook.
+    """
+    if not origen or origen in _ORIGEN_PRINCIPAL:
+        return "MainThread"
+    if origen not in ORIGENES:
         return "MainThread"
     return str(origen)
 

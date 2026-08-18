@@ -236,3 +236,24 @@ def test_gb_sync_nunca_gatea(cuatro, capsys, monkeypatch):
 
     assert cli.main(["sync"]) == 0
     assert "mismo-nodo" in capsys.readouterr().out
+
+
+def test_check_avisa_de_la_deuda_sin_que_le_pregunten(cuatro, capsys, monkeypatch):
+    """`gb sync` solo sirve si sabes que existe, y eso es el mismo agujero de
+    siempre: un hecho que solo aparece si preguntas por él es un hecho que casi
+    nadie ve. `check` es lo que un agente corre de verdad —lo llama hasta el
+    pre-commit—, así que el aviso monta ahí."""
+    _, arboles = cuatro
+    monkeypatch.chdir(arboles["dos"])
+
+    cli.main(["check"])
+    assert "[gb sync]" in capsys.readouterr().out
+
+
+def test_check_calla_cuando_trabajas_solo(cadena, capsys, monkeypatch):
+    """Sin otro worktree no hay con quien chocar. Un aviso que sale siempre es
+    el que se acaba ignorando, y ademas se ahorra analizar los simbolos."""
+    monkeypatch.chdir(cadena)
+
+    cli.main(["check"])
+    assert "[gb sync]" not in capsys.readouterr().out
