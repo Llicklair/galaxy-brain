@@ -132,8 +132,12 @@ def setup_env(
             activated.append(f"node: NODE_OPTIONS += --require gb-hook.js")
 
         elif lang == "go":
-            env.setdefault("GOTRACEBACK", "all")
-            activated.append("go: GOTRACEBACK=all (stderr capture active)")
+            # NO se toca GOTRACEBACK. Lo ponia en "all" para tener mas traza, y
+            # eso CAMBIA el stderr del programa observado — justo lo que el
+            # criterio 5 prohibe. La deteccion no lo necesita: el bloque
+            # "goroutine N [running]:" lo imprime Go por defecto. Medido con los
+            # 16 lenguajes a la vez, 19-ago-2026.
+            activated.append("go: se lee su stderr tal cual (sin tocar GOTRACEBACK)")
 
         elif lang == "ruby":
             hook_path = os.path.join(hooks_dir, "gb-hook.rb")
@@ -154,8 +158,12 @@ def setup_env(
             )
 
         elif lang == "rust":
-            env.setdefault("RUST_BACKTRACE", "1")
-            activated.append("rust: RUST_BACKTRACE=1 (stderr capture active)")
+            # Igual que go: RUST_BACKTRACE=1 añadia un "stack backtrace:" entero
+            # al stderr del programa. Se gana frames y se pierde la propiedad
+            # que sostiene toda esta capa — que mirar no cambie lo mirado. El
+            # panic sigue trayendo tipo, mensaje y fichero:linea:columna; quien
+            # quiera frames pone RUST_BACKTRACE el mismo, que es su decision.
+            activated.append("rust: se lee su stderr tal cual (sin tocar RUST_BACKTRACE)")
 
         elif lang == "csharp":
             hook_dll = os.path.join(hooks_dir, "dotnet-hook", "GbHook.dll")
@@ -543,7 +551,13 @@ def print_session_summary(session_id: str) -> int:
             if fname:
                 location = f" ({fname}:{fline})"
 
-        print(f"  {i}. {lang}: {exc_type} — {exc_msg}{location}", file=sys.stderr)
+        # Con el prefijo `[gb run]`, como TODO lo que escribe el envolvente. Sin
+        # el, esta linea se mezclaba con el stderr del programa y no habia forma
+        # de distinguirla de algo que hubiera escrito el: cualquiera que compare
+        # la salida contra una ejecucion sin envolvente ve una diferencia y no
+        # sabe de quien es. El envolvente ya no es transparente por definicion,
+        # pero al menos todo lo suyo lleva su firma (19-ago-2026).
+        print(f"[gb run]   {i}. {lang}: {exc_type} — {exc_msg}{location}", file=sys.stderr)
 
     return len(crashes)
 

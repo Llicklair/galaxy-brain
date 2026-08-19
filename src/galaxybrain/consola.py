@@ -359,23 +359,47 @@ def compilable(lang, plataforma=None):
 
 
 def _orden(ficha, carpeta, plataforma):
-    """El comando de construccion, ya resuelto. Lista de argv, sin shell."""
+    """Los comandos de construccion: lista de `(argv, subdirectorio)`, sin shell.
+
+    El subdirectorio importa: .NET solo produce el ensamblado bueno si se
+    construye DENTRO de su proyecto (ver abajo).
+    """
     import glob
 
     if ficha["dir"] == "jvm":
         clases = sorted(os.path.basename(c) for c in glob.glob(os.path.join(carpeta, "*.class")))
         if not clases:   # primera pasada: compilar
-            return [["javac", "GbAgent.java"]]
-        return [["jar", "cfm", "gb-agent.jar",
-                 os.path.join("META-INF", "MANIFEST.MF")] + clases]
+            return [(["javac", "GbAgent.java"], "")]
+        return [(["jar", "cfm", "gb-agent.jar",
+                  os.path.join("META-INF", "MANIFEST.MF")] + clases, "")]
     if ficha["dir"] == "dotnet":
-        return [["dotnet", "build", os.path.join("GbHook", "GbHook.csproj"),
-                 "-c", "Release", "-o", ".", "--nologo", "-v", "quiet"]]
+        # Con `-o .` apuntando al directorio padre, el SDK compilaba un
+        # ensamblado de 3,5 KB SIN la clase StartupHook. El runtime abortaba con
+        # TypeLoadException ANTES del Main del usuario: se perdia su stdout
+        # entero y el exit code pasaba de 0xC0000005 a 0xE0434352. Un hook que
+        # impide arrancar al programa observado es el peor fallo posible de esta
+        # capa, y solo se vio midiendo los 16 juntos (19-ago-2026).
+        return [(["dotnet", "build", "-c", "Release", "--nologo"], "GbHook")]
     if ficha["dir"] == "swift":
-        return [["swiftc", "-emit-library", "-o", "libgb_hook.dylib", "gb_hook.swift"]]
+        return [(["swiftc", "-emit-library", "-o", "libgb_hook.dylib", "gb_hook.swift"], "")]
     if plataforma.startswith("win"):
-        return [["gcc", "-O2", "-Wall", "-o", "gb-run.exe", "gb_run_win.c"]]
-    return [["gcc", "-shared", "-fPIC", "-O2", "-o", "gb-hook.so", "gb_hook.c"]]
+        return [(["gcc", "-O2", "-Wall", "-o", "gb-run.exe", "gb_run_win.c"], "")]
+    return [(["gcc", "-shared", "-fPIC", "-O2", "-o", "gb-hook.so", "gb_hook.c"], "")]
+
+
+def _recoge(ficha, carpeta):
+    """Deja `ficha['salida']` en `carpeta` cuando el compilador la escribe en su
+    propio sitio. Hoy solo .NET, que la pone en `GbHook/bin/Release/<tfm>/`."""
+    import glob
+    import shutil
+
+    if ficha["dir"] != "dotnet":
+        return
+    destino = os.path.join(carpeta, ficha["salida"])
+    for candidato in glob.glob(os.path.join(carpeta, "GbHook", "bin", "Release", "*",
+                                            ficha["salida"])):
+        shutil.copyfile(candidato, destino)
+        return
 
 
 def compila(lang, base=None, plataforma=None, timeout=300):
@@ -420,12 +444,13 @@ def compila(lang, base=None, plataforma=None, timeout=300):
 
     try:
         for _ in range(2):   # jvm necesita dos pasadas: javac y luego jar
-            for orden in _orden(ficha, carpeta, plataforma):
-                proceso = subprocess.run(orden, cwd=carpeta, capture_output=True,
-                                         text=True, timeout=timeout)
+            for orden, subdir in _orden(ficha, carpeta, plataforma):
+                proceso = subprocess.run(orden, cwd=os.path.join(carpeta, subdir),
+                                         capture_output=True, text=True, timeout=timeout)
                 if proceso.returncode != 0:
                     salida["error"] = (proceso.stderr or proceso.stdout or "").strip()[:400]
                     return salida
+            _recoge(ficha, carpeta)
             if os.path.isfile(destino):
                 break
     except (OSError, subprocess.SubprocessError) as exc:
