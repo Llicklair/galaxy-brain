@@ -290,7 +290,6 @@ def _capturas_para_mapa(root, informe_simbolos, tope=10):
     la correccion que salio de investigarlo). Sin capturas, lista vacia y ni
     rastro (regla 9)."""
     from . import changes
-    from . import graph as graph_mod
     from .capture import _project_root
 
     proyecto = _project_root(root) or os.path.abspath(root)
@@ -304,16 +303,69 @@ def _capturas_para_mapa(root, informe_simbolos, tope=10):
         for n in informe_simbolos.get("nodes", [])
         if n.get("kind") == "module"
     }
+
+    def _nodo_de(fichero):
+        """Fichero -> nodo del mapa, con CUALQUIER extension.
+
+        No vale `graph.module_name`: corta tres caracteres porque es de y para
+        Python, asi que `Paso.java` o `x.dart` no casaban con su nodo.
+        """
+        if not fichero:
+            return ""
+        rel = fichero
+        if not os.path.isabs(rel):
+            rel = os.path.join(root, rel)
+        try:
+            trozos = os.path.relpath(rel, root).replace("\\", "/").split("/")
+        except ValueError:
+            return ""
+        trozos = [t for t in trozos if t and t != "."]
+        if not trozos or trozos[0] == "..":
+            return ""
+        if trozos[0] == "src":
+            trozos = trozos[1:]
+        if not trozos:
+            return ""
+        if trozos[-1] != "__init__.py":
+            trozos[-1] = os.path.splitext(trozos[-1])[0]
+        else:
+            trozos = trozos[:-1]
+        return modulos.get(os.path.normcase(".".join(trozos))) or ""
+
+    def _nodo_por_frames(cid):
+        """El primer frame que es TUYO, cuando la cabecera no cae en ningun nodo.
+
+        La firma de una captura de la JVM apunta a una clase y la de dart al
+        fichero del runtime (`dart:isolate-patch/...`): ninguno es un nodo del
+        mapa, asi que la captura se quedaba sin sitio y su enlace no se dibujaba.
+        El frame de tu codigo si esta en la pila, un poco mas abajo — solo habia
+        que bajar a buscarlo (19-ago-2026).
+        """
+        import glob
+        import json as _json
+
+        rutas = glob.glob(str(store.root() / "errors" / "*" / ("%s.json" % cid)))
+        if not rutas:
+            return ""
+        try:
+            with open(rutas[0], encoding="utf-8") as fh:
+                registro = _json.load(fh)
+        except (OSError, ValueError):
+            return ""
+        for frame in reversed(registro.get("frames") or []):
+            if frame.get("is_library"):
+                continue
+            nodo = _nodo_de(frame.get("file") or "")
+            if nodo:
+                return nodo
+        return ""
+
     capturas = []
     for entrada in entradas:
         fichero = changes._fichero_de_firma(entrada.get("where") or "")
-        nodo = ""
-        if fichero:
-            try:
-                mod = graph_mod.module_name(fichero, root)
-                nodo = modulos.get(os.path.normcase(mod)) or ""
-            except ValueError:
-                pass
+        nodo = _nodo_de(fichero)
+        if not nodo:
+            nodo = _nodo_por_frames(entrada.get("id") or "")
         capturas.append({
             "id": entrada.get("id") or "",
             "ts": entrada.get("ts") or "",
