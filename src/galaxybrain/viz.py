@@ -391,6 +391,9 @@ def render_graph_cloud(
     # por sesion y pid del padre). Se pintan aparte de las aristas del grafo
     # porque son otro tipo de hecho: historia, no estructura.
     cadena=None,
+    # Las llamadas entre lenguajes que el CODIGO declara (literal resuelto).
+    # Candidatas: se pintan distinto de la cadena, que es lo que ocurrio.
+    cruzadas=None,
 ):
     """La nube: nodos repartidos por fuerzas, coloreados por módulo, navegable.
 
@@ -803,6 +806,14 @@ def render_graph_cloud(
     for _i, _n in enumerate(datos):
         if _n.get("id"):
             _indice_nodo[_n["id"]] = _i
+    _cruzadas_js = []
+    for _paso in (cruzadas or []):
+        _a = _indice_nodo.get(_paso.get("de"))
+        _b = _indice_nodo.get(_paso.get("a"))
+        if _a is None or _b is None or _a == _b:
+            continue
+        _cruzadas_js.append([_a, _b, _paso.get("lang") or ""])
+
     _cadena_js = []
     for _paso in (cadena or []):
         _a = _indice_nodo.get(_paso.get("de"))
@@ -848,6 +859,7 @@ def render_graph_cloud(
         "agentes": _en_script(_json.dumps(_agentes_js, ensure_ascii=False)),
         "pelicula": _en_script(_json.dumps(_pelicula_js, ensure_ascii=False)),
         "cadena": _en_script(_json.dumps(_cadena_js, ensure_ascii=False)),
+        "cruzadas": _en_script(_json.dumps(_cruzadas_js, ensure_ascii=False)),
         # La consola de errores entra al lienzo por defecto: las capturas
         # recientes, con su nodo, para que el feed diga `peta` en movimiento.
         "capturas": _en_script(_json.dumps(capturas or [], ensure_ascii=False)),
@@ -1113,6 +1125,7 @@ const OBRA_COLOR = '%(color_obra)s';
 const AGENTES = %(agentes)s;
 const PELICULA = %(pelicula)s;   // git, no impresiones: ver `pelicula` en viz.py
 const CADENA = %(cadena)s;     // llamadas que OCURRIERON entre lenguajes
+const CRUZADAS = %(cruzadas)s;   // llamadas que el CODIGO declara (candidatas)
 const CAPTURAS = %(capturas)s;
 const REFRESCO = %(refresco)s;
 const SIN_LEER = %(sin_leer)s;
@@ -1386,6 +1399,25 @@ function pinta(t){
     cx.lineWidth = par[3] ? 2.4 : (capa===3 ? 1.8 : capa===4 ? 1.4 : 1);
     cx.beginPath(); cx.moveTo(WX[a],WY[a]); cx.lineTo(WX[b],WY[b]); cx.stroke();
   }
+  // ---- candidatas: lo que el CODIGO dice que lanza a quien -------------------
+  // En ambar y a trazos LARGOS, distinto de la cadena (rosa, trazo corto): una
+  // dice "aqui pone que llama a ese", la otra "ese proceso lanzo a aquel". Se
+  // pintan las dos porque no son la misma verdad, y confundirlas seria vender
+  // una intencion como un hecho.
+  if(CRUZADAS.length){
+    cx.save();
+    cx.setLineDash([12,6]);
+    cx.lineWidth = 1.6;
+    cx.strokeStyle = '#f59e0b';
+    for(const paso of CRUZADAS){
+      const a=paso[0], b=paso[1];
+      if(agenteFoco!==null && !cercaAg.has(a) && !cercaAg.has(b)) continue;
+      cx.globalAlpha = (foco!==null && a!==foco && b!==foco) ? 0.12 : 0.55;
+      cx.beginPath(); cx.moveTo(WX[a],WY[a]); cx.lineTo(WX[b],WY[b]); cx.stroke();
+    }
+    cx.restore();
+  }
+
   // ---- la cadena: llamadas entre lenguajes que OCURRIERON --------------------
   // A trazos y en rosa, encima y sin mezclarse con ninguna capa del grafo: no es
   // estructura, es historia. El grafo dice "este codigo importa a ese"; esto

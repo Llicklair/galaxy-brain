@@ -325,6 +325,21 @@ def _capturas_para_mapa(root, informe_simbolos, tope=10):
     return capturas
 
 
+def _cruzadas_para_mapa(root, informe_simbolos, informe_grafo=None):
+    """Las llamadas entre lenguajes que el CODIGO declara (ver `cruzadas.py`).
+
+    Candidatas, no confirmadas: dicen "este fichero lanza ese", no "esto
+    ocurrio". Quien confirma es la tirada, por el trace de las capturas. Nunca
+    lanza: si esto falla, el mapa sale igual.
+    """
+    from . import cruzadas
+
+    try:
+        return cruzadas.aristas(root, informe_simbolos, informe_grafo)
+    except Exception:
+        return []
+
+
 def _cadena_para_mapa(root, capturas):
     """Las llamadas ENTRE LENGUAJES que de verdad ocurrieron, o [].
 
@@ -1619,6 +1634,7 @@ def cmd_who(args):
                 pelicula=_pelicula_para_mapa(root, inf),
                 capturas=_capturas_para_mapa(root, inf),
                 cadena=_cadena_para_mapa(root, _capturas_para_mapa(root, inf)),
+                cruzadas=_cruzadas_para_mapa(root, inf, grafo),
                 suelo=_suelo_para_mapa(root),
                 sin_leer=_capturas_sin_leer(root),
                 codigo=_codigo_para_mapa(root, inf),
