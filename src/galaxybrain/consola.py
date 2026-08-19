@@ -172,6 +172,95 @@ _C_WINDOWS = {
 }
 
 
+#: Los hooks que gb TRAE consigo, por lenguaje. Solo los de fichero suelto y
+#: cero dependencias: se copian y ya funcionan. Los que necesitan compilarse (el
+#: agente de la JVM, la DLL de .NET, el .so de C) no estan aqui a proposito —
+#: prometer un despliegue que luego pide un compilador seria peor que decir que
+#: no lo hay, y el que lo pida se lo encontraria roto en su maquina.
+HOOKS_EMPAQUETADOS = {
+    "js": "gb-hook.js",
+    "ts": "gb-hook.js",     # Node ejecuta TS nativo: mismo hook, sin cambios
+    "tsx": "gb-hook.js",    # y un .tsx nunca es lo que corre (ver `techo`)
+    "ruby": "gb-hook.rb",
+    "php": "gb-hook.php",
+    "lua": "gb-hook.lua",
+}
+
+#: Como se arma cada uno con la ruta REAL, ya desplegada. `None` = no se arma
+#: con una variable de entorno y hay que decirlo, no disimularlo.
+_ARRANQUE_REAL = {
+    "NODE_OPTIONS": 'NODE_OPTIONS="--require %s"',
+    "RUBYOPT": 'RUBYOPT="-r %s"',
+    "LUA_INIT": 'LUA_INIT="@%s"',
+}
+
+#: Los que no se arman con una variable de entorno igualmente merecen la linea
+#: EXACTA con su ruta: que php pida una bandera no es motivo para devolverle al
+#: usuario un nombre de fichero suelto que tendra que ir a buscar.
+_ARRANQUE_POR_LENGUAJE = {
+    "php": "php -d auto_prepend_file=%s <tu script.php>",
+}
+
+
+def _dir_hooks():
+    from . import config
+
+    return os.path.join(str(config.home()), "hooks")
+
+
+def desplegados():
+    """Los hooks que YA estan en disco: {lenguaje: ruta}. Vacio si ninguno."""
+    base = _dir_hooks()
+    fuera = {}
+    for lang, fichero in HOOKS_EMPAQUETADOS.items():
+        ruta = os.path.join(base, fichero)
+        if os.path.isfile(ruta):
+            fuera[lang] = ruta
+    return fuera
+
+
+def despliega(destino=None):
+    """Copia a disco los hooks que gb trae. Devuelve una ficha por lenguaje.
+
+    Hasta hoy `consola.py` DECLARABA que js se arma con `NODE_OPTIONS` y nadie
+    ponia el fichero en ningun sitio: la consola multilenguaje estaba medida,
+    documentada y era inusable. Esto la pone en el disco del usuario.
+
+    Lo que gb NO puede hacer, y por eso se imprime en vez de ejecutarse: un
+    proceso no puede cambiar el entorno de quien lo llamo. La variable la
+    exporta la persona (o su orquestador); aqui se da la linea exacta, con la
+    ruta real, para que no haya que inventarsela.
+    """
+    import shutil
+
+    base = destino or _dir_hooks()
+    os.makedirs(base, exist_ok=True)
+    origen = os.path.join(os.path.dirname(os.path.abspath(__file__)), "hooks_lang")
+
+    fichas = []
+    for lang in sorted(HOOKS_EMPAQUETADOS):
+        fichero = HOOKS_EMPAQUETADOS[lang]
+        de, a = os.path.join(origen, fichero), os.path.join(base, fichero)
+        if not os.path.isfile(de):
+            continue
+        if not os.path.isfile(a) or os.path.getmtime(de) > os.path.getmtime(a):
+            shutil.copyfile(de, a)
+        ficha = mecanismo(lang) or {}
+        plantilla = (_ARRANQUE_REAL.get(ficha.get("env") or "")
+                     or _ARRANQUE_POR_LENGUAJE.get(lang))
+        fichas.append({
+            "lenguaje": lang,
+            "ruta": a,
+            # La linea exacta, con la ruta real ya puesta.
+            "exporta": (plantilla % a) if plantilla else None,
+            "arranque": ficha.get("arranque") or "",
+            # Si se arma exportando una variable o invocando con bandera: no es
+            # lo mismo y el usuario tiene que saber cual de las dos le toca.
+            "por_entorno": bool(ficha.get("env")),
+        })
+    return fichas
+
+
 def mecanismo(lang, plataforma=None):
     """La ficha de `lang`, resuelta para la plataforma (None = la de ahora)."""
     plataforma = sys.platform if plataforma is None else plataforma

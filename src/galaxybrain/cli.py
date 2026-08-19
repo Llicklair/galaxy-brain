@@ -888,6 +888,25 @@ def cmd_show(args):
 
 
 def cmd_on(args):
+    if getattr(args, "lenguajes", False):
+        from . import consola
+
+        fichas = consola.despliega()
+        if not fichas:
+            emit("no hay hooks empaquetados en esta instalacion de gb")
+            return 1
+        emit("hooks desplegados en %s" % os.path.dirname(fichas[0]["ruta"]))
+        for f in fichas:
+            emit("  %-5s %s" % (f["lenguaje"], f["exporta"] or f["arranque"]))
+        # Lo que gb NO puede hacer, dicho y no disimulado: un proceso no cambia
+        # el entorno de quien lo llamo. Si esto "se activara solo" el usuario
+        # creeria tener capturas que no tiene, que es el peor de los estados.
+        emit("")
+        emit("gb no puede exportarlas por ti: un proceso no cambia el entorno de")
+        emit("quien lo llamo. Pegalas en el shell que lance tus procesos y")
+        emit("`gb status` pasara a decir 'armado' en esos lenguajes.")
+        return 0
+
     ok, message = bootstrap.enable()
     emit(message)
     return 0 if ok else 1
@@ -2240,6 +2259,11 @@ def build_parser():
     show.set_defaults(func=cmd_show)
 
     on = subparsers.add_parser("on", help="activar la captura en este entorno")
+    on.add_argument(
+        "--lenguajes",
+        action="store_true",
+        help="desplegar los hooks de los otros lenguajes y decir como armarlos",
+    )
     on.set_defaults(func=cmd_on)
 
     off = subparsers.add_parser("off", help="desactivarla")

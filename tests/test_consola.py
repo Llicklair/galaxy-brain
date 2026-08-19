@@ -108,3 +108,56 @@ def test_status_ensena_el_mecanismo(tmp_path, capsys, monkeypatch):
     salida = capsys.readouterr().out
     assert "consola js" in salida
     assert "consola python" in salida
+
+
+def test_el_hook_de_js_empaquetado_es_el_ARREGLADO(tmp_path):
+    """El que se despliega tiene que ser el que pasó la medición, no el otro.
+
+    Casi se empaqueta el equivocado: la copia de trabajo en `gb-lenguajes/hooks`
+    seguía siendo la vieja —`uncaughtException` + re-lanzar—, que cambia el exit
+    code del programa observado de 1 a 7 y le mete sus frames en la traza. El
+    arreglo (`uncaughtExceptionMonitor`, observar sin manejar) vivía solo en la
+    rama del spike. Este test existe para que ese error no se repita en silencio.
+    """
+    from galaxybrain import consola
+
+    fichas = consola.despliega(str(tmp_path))
+    js = [f for f in fichas if f["lenguaje"] == "js"][0]
+    fuente = open(js["ruta"], encoding="utf-8").read()
+
+    assert "uncaughtExceptionMonitor" in fuente
+    assert "process.on('uncaughtException'," not in fuente
+
+
+def test_despliega_da_la_linea_con_la_ruta_de_verdad(tmp_path):
+    """Un nombre de fichero suelto obliga al usuario a ir a buscarlo: la línea
+    tiene que poder pegarse tal cual."""
+    from galaxybrain import consola
+
+    fichas = {f["lenguaje"]: f for f in consola.despliega(str(tmp_path))}
+    assert fichas["js"]["exporta"].startswith('NODE_OPTIONS="--require ')
+    assert fichas["js"]["ruta"] in fichas["js"]["exporta"]
+    # php no se arma por entorno, y se dice en vez de disimularlo.
+    assert fichas["php"]["por_entorno"] is False
+    assert fichas["php"]["ruta"] in fichas["php"]["exporta"]
+
+
+def test_desplegar_dos_veces_no_rompe_nada(tmp_path):
+    from galaxybrain import consola
+
+    consola.despliega(str(tmp_path))
+    segundas = consola.despliega(str(tmp_path))
+    assert segundas, "el segundo despliegue no devolvio nada"
+    assert len(consola.desplegados()) >= 0   # sin GB_HOME apuntado aqui, solo no revienta
+
+
+def test_gb_on_lenguajes_despliega_y_dice_como_armarlo(tmp_path, capsys, monkeypatch):
+    """De punta a punta. Y dice lo que gb NO puede hacer: un proceso no cambia
+    el entorno de quien lo llamó, así que la variable la exporta la persona."""
+    from galaxybrain import cli
+
+    monkeypatch.setenv("GB_HOME", str(tmp_path))
+    assert cli.main(["on", "--lenguajes"]) == 0
+    salida = capsys.readouterr().out
+    assert "NODE_OPTIONS" in salida
+    assert "no puede exportarlas por ti" in salida
