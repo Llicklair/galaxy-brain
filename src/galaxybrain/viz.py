@@ -387,6 +387,10 @@ def render_graph_cloud(
     # La pelicula de `actividad.cronologia`: eventos con hora real de git y las
     # propagaciones entre agentes. None = el mapa se queda como estaba.
     pelicula=None,
+    # Las llamadas entre lenguajes que OCURRIERON (derivadas de las capturas,
+    # por sesion y pid del padre). Se pintan aparte de las aristas del grafo
+    # porque son otro tipo de hecho: historia, no estructura.
+    cadena=None,
 ):
     """La nube: nodos repartidos por fuerzas, coloreados por módulo, navegable.
 
@@ -792,6 +796,21 @@ def render_graph_cloud(
          + _json.dumps(lista_aristas, sort_keys=True)).encode("utf-8")
     ).hexdigest()[:10]
 
+    # La cadena viaja por INDICE de nodo, como las aristas: el JS no resuelve
+    # nombres. Un paso cuyo nodo no esta en el mapa se cae — no se dibuja media
+    # linea hacia ninguna parte.
+    _indice_nodo = {}
+    for _i, _n in enumerate(datos):
+        if _n.get("id"):
+            _indice_nodo[_n["id"]] = _i
+    _cadena_js = []
+    for _paso in (cadena or []):
+        _a = _indice_nodo.get(_paso.get("de"))
+        _b = _indice_nodo.get(_paso.get("a"))
+        if _a is None or _b is None or _a == _b:
+            continue
+        _cadena_js.append([_a, _b, _paso.get("de_lang") or "", _paso.get("a_lang") or ""])
+
     return _NUBE % {
         "title": _html.escape(title),
         "resumen": _html.escape(resumen),
@@ -828,6 +847,7 @@ def render_graph_cloud(
         "color_obra": _COLOR_OBRA,
         "agentes": _en_script(_json.dumps(_agentes_js, ensure_ascii=False)),
         "pelicula": _en_script(_json.dumps(_pelicula_js, ensure_ascii=False)),
+        "cadena": _en_script(_json.dumps(_cadena_js, ensure_ascii=False)),
         # La consola de errores entra al lienzo por defecto: las capturas
         # recientes, con su nodo, para que el feed diga `peta` en movimiento.
         "capturas": _en_script(_json.dumps(capturas or [], ensure_ascii=False)),
@@ -1092,6 +1112,7 @@ const EXTENDS_COLOR = '%(color_extends)s';
 const OBRA_COLOR = '%(color_obra)s';
 const AGENTES = %(agentes)s;
 const PELICULA = %(pelicula)s;   // git, no impresiones: ver `pelicula` en viz.py
+const CADENA = %(cadena)s;     // llamadas que OCURRIERON entre lenguajes
 const CAPTURAS = %(capturas)s;
 const REFRESCO = %(refresco)s;
 const SIN_LEER = %(sin_leer)s;
@@ -1365,6 +1386,34 @@ function pinta(t){
     cx.lineWidth = par[3] ? 2.4 : (capa===3 ? 1.8 : capa===4 ? 1.4 : 1);
     cx.beginPath(); cx.moveTo(WX[a],WY[a]); cx.lineTo(WX[b],WY[b]); cx.stroke();
   }
+  // ---- la cadena: llamadas entre lenguajes que OCURRIERON --------------------
+  // A trazos y en rosa, encima y sin mezclarse con ninguna capa del grafo: no es
+  // estructura, es historia. El grafo dice "este codigo importa a ese"; esto
+  // dice "ese proceso lanzo a aquel". Un subprocess no deja rastro en el AST de
+  // nadie, asi que estas lineas NO se derivan del codigo: salen de las capturas
+  // de una tirada real (misma sesion + pid del padre).
+  if(CADENA.length){
+    cx.save();
+    cx.setLineDash([7,5]);
+    cx.lineWidth = 2;
+    for(const paso of CADENA){
+      const a=paso[0], b=paso[1];
+      if(agenteFoco!==null && !cercaAg.has(a) && !cercaAg.has(b)) continue;
+      cx.globalAlpha = (foco!==null && a!==foco && b!==foco) ? 0.15 : 0.8;
+      cx.strokeStyle = '#f472b6';
+      cx.beginPath(); cx.moveTo(WX[a],WY[a]); cx.lineTo(WX[b],WY[b]); cx.stroke();
+      // La punta, para que se vea QUIEN llamo a quien: una linea sin direccion
+      // se lee al reves la mitad de las veces.
+      const dx=WX[b]-WX[a], dy=WY[b]-WY[a], d=Math.hypot(dx,dy)||1;
+      const px=WX[b]-dx/d*9, py=WY[b]-dy/d*9, nx=-dy/d*4, ny=dx/d*4;
+      cx.setLineDash([]);
+      cx.beginPath(); cx.moveTo(WX[b],WY[b]); cx.lineTo(px+nx,py+ny);
+      cx.lineTo(px-nx,py-ny); cx.closePath(); cx.fillStyle='#f472b6'; cx.fill();
+      cx.setLineDash([7,5]);
+    }
+    cx.restore();
+  }
+
   // ---- sinapsis: la señal del agente fluyendo por su onda --------------------
   // Cada arista que sale de un nodo tocado se enciende con el color de SU agente
   // y un paquete viaja del nodo tocado hacia el vecino: el cambio propagandose

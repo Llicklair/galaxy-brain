@@ -325,6 +325,61 @@ def _capturas_para_mapa(root, informe_simbolos, tope=10):
     return capturas
 
 
+def _cadena_para_mapa(root, capturas):
+    """Las llamadas ENTRE LENGUAJES que de verdad ocurrieron, o [].
+
+    Un `subprocess` no deja rastro en el AST de nadie, asi que el grafo no puede
+    derivar que js llamo a ruby: estaticamente son islas, y pintar una linea ahi
+    seria inventarla. Pero en una tirada con la consola puesta si queda prueba
+    —cada captura trae su `session_id` y el pid de su proceso y el de su padre—,
+    y con eso la cadena se DERIVA de lo que paso.
+
+    Por eso viaja aparte de las aristas del grafo y se pinta distinto: es otro
+    tipo de hecho. Una dice «este codigo importa a ese»; esta dice «ese proceso
+    lanzo a aquel». Fundirlas seria vender como estructura lo que es historia.
+
+    Techo: solo se ve la cadena de los procesos que REVENTARON, porque solo esos
+    dejan captura. Un eslabon que fue bien no aparece.
+    """
+    import glob
+    import json as _json
+
+    por_pid, fichas = {}, []
+    for captura in capturas:
+        cid = captura.get("id")
+        if not cid:
+            continue
+        rutas = glob.glob(str(store.root() / "errors" / "*" / ("%s.json" % cid)))
+        if not rutas:
+            continue
+        try:
+            with open(rutas[0], encoding="utf-8") as fh:
+                registro = _json.load(fh)
+        except (OSError, ValueError):
+            continue
+        proc = registro.get("process") or {}
+        pid = proc.get("pid")
+        if pid is None:
+            continue
+        ficha = {"nodo": captura.get("nodo") or "",
+                 "lang": registro.get("language") or "",
+                 "pid": pid, "ppid": proc.get("ppid"),
+                 "sesion": registro.get("session_id") or ""}
+        por_pid[(ficha["sesion"], pid)] = ficha
+        fichas.append(ficha)
+
+    cadena = []
+    for ficha in fichas:
+        padre = por_pid.get((ficha["sesion"], ficha["ppid"]))
+        if not padre or not padre["nodo"] or not ficha["nodo"]:
+            continue
+        if padre["nodo"] == ficha["nodo"]:
+            continue
+        cadena.append({"de": padre["nodo"], "a": ficha["nodo"],
+                       "de_lang": padre["lang"], "a_lang": ficha["lang"]})
+    return cadena
+
+
 # Los tres ayudantes siguientes volvieron el 14-ago con viz.py (decision del
 # owner: el mapa principal es el canvas). Son los del cli previo al recorte
 # 3229ddd, verbatim: solo datos para el lienzo, cero maquinaria de watch.
@@ -1555,6 +1610,7 @@ def cmd_who(args):
                 actividad=foto,
                 pelicula=_pelicula_para_mapa(root, inf),
                 capturas=_capturas_para_mapa(root, inf),
+                cadena=_cadena_para_mapa(root, _capturas_para_mapa(root, inf)),
                 suelo=_suelo_para_mapa(root),
                 sin_leer=_capturas_sin_leer(root),
                 codigo=_codigo_para_mapa(root, inf),
