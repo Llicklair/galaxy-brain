@@ -822,6 +822,17 @@ def render_graph_cloud(
             continue
         _cadena_js.append([_a, _b, _paso.get("de_lang") or "", _paso.get("a_lang") or ""])
 
+    # Nada se dibuja sin estar en la leyenda. Las dos clases nuevas son lineas,
+    # no puntos, y se nombran por lo que SON: una dice lo que el codigo declara
+    # y la otra lo que ocurrio. Solo aparecen si hay alguna — una leyenda que
+    # nombra lo que no esta en pantalla es tan mala como una linea sin nombre.
+    if _cruzadas_js:
+        leyenda += ('<span><i class="linea" style="color:#f59e0b"></i>'
+                    'lanza otro lenguaje (en el codigo)</span>')
+    if _cadena_js:
+        leyenda += ('<span><i class="linea" style="color:#f472b6"></i>'
+                    'lo lanzo (ocurrio, con captura)</span>')
+
     return _NUBE % {
         "title": _html.escape(title),
         "resumen": _html.escape(resumen),
