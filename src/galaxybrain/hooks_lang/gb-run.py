@@ -496,6 +496,17 @@ def redact_argv(argv: list[str]) -> list[str]:
     return result
 
 
+def _trace_vigente() -> dict[str, Any]:
+    """`trace_id` y `parent_span` del TRACEPARENT que hay ahora en el entorno."""
+    partes = (os.environ.get("TRACEPARENT") or "").split("-")
+    if len(partes) != 4 or len(partes[1]) != 32:
+        return {}
+    fuera = {"trace_id": partes[1]}
+    if len(partes[2]) == 16:
+        fuera["parent_span"] = partes[2]
+    return fuera
+
+
 def build_stderr_record(
     crash: dict[str, Any],
     session_id: str,
@@ -533,6 +544,11 @@ def build_stderr_record(
         },
         "traceback": crash["traceback"],
         "capture_method": "stderr",
+        # El trace vigente cuando se lanzo el programa. NO es el padre inmediato
+        # —el panic puede venir de un nieto y el texto no dice de quien— sino el
+        # ultimo ancestro que pudo rotar el TRACEPARENT. Es un enlace REAL, no
+        # el mas fino: mejor un ancestro cierto que ningun sitio en el mapa.
+        **_trace_vigente(),
     }
 
 
@@ -675,6 +691,13 @@ def main() -> int:
     # Set up environment
     env = os.environ.copy()
     activated = setup_env(detected, session_id, env)
+
+    # El envolvente TAMBIEN entra en el trace. Sin esto, `_trace_vigente()` leia
+    # su propio entorno —donde no habia TRACEPARENT, porque solo se pone en el
+    # del hijo— y los registros de go, rust y dart salian sin trace: capturados y
+    # sueltos, otra vez.
+    if env.get("TRACEPARENT"):
+        os.environ["TRACEPARENT"] = env["TRACEPARENT"]
 
     # Also set GB_PPID for cross-language correlation
     env["GB_PPID"] = str(os.getpid())

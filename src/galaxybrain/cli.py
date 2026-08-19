@@ -452,7 +452,18 @@ def _cadena_para_mapa(root, capturas):
             continue
         cadena.append({"de": padre["nodo"], "a": ficha["nodo"],
                        "de_lang": padre["lang"], "a_lang": ficha["lang"]})
-    return cadena
+
+    # Un mismo salto, una sola linea. Al mirar mas capturas para no perder
+    # enlaces entran tambien las de tiradas ANTERIORES del mismo proyecto, y el
+    # mapa pintaba tres veces la misma flecha: mas tinta y ni un hecho mas.
+    visto, unicas = set(), []
+    for paso in cadena:
+        clave = (paso["de"], paso["a"])
+        if clave in visto:
+            continue
+        visto.add(clave)
+        unicas.append(paso)
+    return unicas
 
 
 # Los tres ayudantes siguientes volvieron el 14-ago con viz.py (decision del
@@ -1685,7 +1696,10 @@ def cmd_who(args):
                 actividad=foto,
                 pelicula=_pelicula_para_mapa(root, inf),
                 capturas=_capturas_para_mapa(root, inf),
-                cadena=_cadena_para_mapa(root, _capturas_para_mapa(root, inf)),
+                # La cadena se calcula sobre MAS capturas de las que el
+                # mapa pinta (tope 10): con 12 crashes en una tirada, dos se
+                # caian del tope y sus enlaces desaparecian sin motivo visible.
+                cadena=_cadena_para_mapa(root, _capturas_para_mapa(root, inf, tope=40)),
                 cruzadas=_cruzadas_para_mapa(root, inf, grafo),
                 suelo=_suelo_para_mapa(root),
                 sin_leer=_capturas_sin_leer(root),

@@ -137,6 +137,17 @@ static void registra(DWORD codigo, const void *direccion, DWORD pid, DWORD tid,
        igual que un dato que falta. */
     fprintf(f, "},\"pid\":%lu,\"tid\":%lu", (unsigned long)pid, (unsigned long)tid);
     if (sesion && *sesion) fprintf(f, ",\"session_id\":\"%s\"", sesion);
+    /* El trace W3C que venga en el entorno: el ancestro cierto de este proceso.
+       C no puede rotar el suyo (es un envolvente, no un hook dentro), asi que
+       cuelga del ultimo que si pudo — un enlace real aunque no sea el mas fino,
+       que es mejor que quedarse fuera del mapa. */
+    const char *tp = getenv("TRACEPARENT");
+    if (tp && strlen(tp) >= 55 && tp[2] == '-' && tp[35] == '-') {
+        char traza[33], padre[17];
+        memcpy(traza, tp + 3, 32);  traza[32] = '\0';
+        memcpy(padre, tp + 36, 16); padre[16] = '\0';
+        fprintf(f, ",\"trace_id\":\"%s\",\"parent_span\":\"%s\"", traza, padre);
+    }
     /* El directorio, para que el buzon pueda deducir el proyecto. Sin el, la
        captura de C quedaba fuera de toda vista por proyecto: archivada, pero
        invisible en el mapa y en el `gb last` del repo. Las barras se escapan
