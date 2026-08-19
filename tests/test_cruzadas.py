@@ -90,3 +90,31 @@ def test_sin_nodos_en_el_mapa_no_hay_media_arista(tmp_path):
     _escribe(tmp_path, "motor.php", "<?php echo 1;\n")
 
     assert cruzadas.aristas(str(tmp_path), {"nodes": []}) == []
+
+
+def test_toda_clase_de_arista_del_mapa_tiene_leyenda():
+    """El contrato que evita el fallo de raíz: la leyenda se GENERA de la tabla
+    de clases, así que no se puede añadir una línea al mapa y olvidarse de
+    nombrarla. Antes eran dos trozos de código distintos escritos a mano, y por
+    eso la rosa y la ámbar se pintaron sin nombre durante tres commits."""
+    from galaxybrain import viz
+
+    for clase in viz.CLASES_ARISTA:
+        assert clase["etiqueta"], "%s sin etiqueta" % clase["clave"]
+        assert clase["color"].startswith("#"), "%s sin color" % clase["clave"]
+
+    presentes = {c["clave"]: True for c in viz.CLASES_ARISTA}
+    html = viz._leyenda_aristas(presentes)
+    for clase in viz.CLASES_ARISTA:
+        assert clase["etiqueta"] in html
+
+
+def test_la_leyenda_NO_nombra_lo_que_no_esta_en_pantalla():
+    """En un repo de un solo lenguaje, «lanza otro lenguaje» manda a buscar una
+    línea que no existe. Nombrar de más es tan malo como nombrar de menos."""
+    from galaxybrain import viz
+
+    html = viz._leyenda_aristas({"import": True})
+    assert "import (exacto)" in html
+    assert "lanza otro lenguaje" not in html
+    assert "lo lanzo" not in html

@@ -364,6 +364,40 @@ def _estilo_vieja(refresco):
     return "background:#161b22cc;border:1px solid #30363d;color:#8b949e"
 
 
+#: TODA clase de arista que el mapa puede pintar, en un solo sitio: color,
+#: etiqueta y la pregunta que decide si aparece. La leyenda se GENERA de aqui,
+#: asi que no se puede dibujar algo sin nombrarlo — que era el fallo real: yo
+#: añadia una clase, pintaba su linea, y la leyenda se quedaba atras porque
+#: vivia en otro trozo de codigo escrito a mano. Un mapa con una linea sin
+#: nombre es tinta a ojo por muy bien derivada que este (19-ago-2026).
+#:
+#: `clave` es la que usa el JS para pintar: mismo color aqui y alli, por
+#: construccion, no por acordarse.
+CLASES_ARISTA = (
+    {"clave": "import", "color": _COLOR_IMPORT, "etiqueta": "import (exacto)"},
+    {"clave": "llamada", "color": "#94a3b8", "etiqueta": "llamada (inferida)"},
+    {"clave": "extiende", "color": _COLOR_EXTENDS, "etiqueta": "extiende"},
+    {"clave": "cruzada", "color": "#f59e0b",
+     "etiqueta": "lanza otro lenguaje (en el codigo)"},
+    {"clave": "cadena", "color": "#f472b6",
+     "etiqueta": "lo lanzo (ocurrio, con captura)"},
+)
+
+
+def _leyenda_aristas(presentes):
+    """Las entradas de leyenda de las clases que HAY. Ni una mas, ni una menos.
+
+    Nombrar lo que no esta en pantalla es tan malo como no nombrar lo que si:
+    en un repo de un solo lenguaje, una leyenda con "lanza otro lenguaje" manda
+    a buscar una linea que no existe.
+    """
+    return "".join(
+        '<span><i class="linea" style="color:%s"></i>%s</span>'
+        % (c["color"], c["etiqueta"])
+        for c in CLASES_ARISTA if presentes.get(c["clave"])
+    )
+
+
 def render_graph_cloud(
     report,
     title="galaxy-brain — grafo",
@@ -540,30 +574,14 @@ def render_graph_cloud(
             '<span><i style="background:%s"></i>%s</span>' % (_KIND_COLOR[k], k)
             for k in ("module", "class", "function", "method")
         )
-        if importaciones:
-            # Se dice de donde sale cada arista: el import es un hecho exacto y la
-            # llamada es inferencia. Un grafo que no distingue las dos invita a
-            # gatear sobre la mitad que no se puede gatear.
-            #
-            # El color NO puede repetir ninguno de _KIND_COLOR: en la primera
-            # version puse el mismo ambar que ya usaban las clases, y dos clases
-            # sueltas se leian como si fueran parte de la capa de imports.
-            #
-            # Y aqui NO va el porcentaje. El 19% es COBERTURA —cuantas candidatas
-            # se resolvieron— y en la leyenda se leia como fiabilidad, o sea justo
-            # al reves: las aristas dibujadas son las que SI se resolvieron. El
-            # numero exacto ya va en la cabecera, con su denominador.
-            # Aristas: se dibujan como LINEA, no como punto.
-            leyenda += (
-                '<span><i class="linea" style="color:%s"></i>import (exacto)</span>'
-                '<span><i class="linea" style="color:#94a3b8"></i>llamada (inferida)</span>'
-            ) % _COLOR_IMPORT
-        if herencia:
-            # Extends es hecho exacto del ast, como el import: su linea se nombra.
-            leyenda += (
-                '<span><i class="linea" style="color:%s"></i>extiende</span>'
-                % _COLOR_EXTENDS
-            )
+        # Se dice de donde sale cada arista: el import es un hecho exacto y la
+        # llamada es inferencia. Un grafo que no distingue las dos invita a
+        # gatear sobre la mitad que no se puede gatear. Y aqui NO va el
+        # porcentaje: el 19 % es COBERTURA —cuantas candidatas se resolvieron— y
+        # en la leyenda se leia al reves, como fiabilidad.
+        _presentes_aristas = {"import": bool(importaciones),
+                              "llamada": bool(importaciones),
+                              "extiende": bool(herencia)}
     else:
         llamadas = [(a, b) for a, b in (report.get("edge_list") or [])]
         jerarquia = []
@@ -822,16 +840,13 @@ def render_graph_cloud(
             continue
         _cadena_js.append([_a, _b, _paso.get("de_lang") or "", _paso.get("a_lang") or ""])
 
-    # Nada se dibuja sin estar en la leyenda. Las dos clases nuevas son lineas,
-    # no puntos, y se nombran por lo que SON: una dice lo que el codigo declara
-    # y la otra lo que ocurrio. Solo aparecen si hay alguna — una leyenda que
-    # nombra lo que no esta en pantalla es tan mala como una linea sin nombre.
-    if _cruzadas_js:
-        leyenda += ('<span><i class="linea" style="color:#f59e0b"></i>'
-                    'lanza otro lenguaje (en el codigo)</span>')
-    if _cadena_js:
-        leyenda += ('<span><i class="linea" style="color:#f472b6"></i>'
-                    'lo lanzo (ocurrio, con captura)</span>')
+    # La leyenda de aristas se GENERA de la tabla, con las clases que de verdad
+    # hay en este mapa. Añadir una clase nueva y olvidarse de nombrarla deja de
+    # ser posible: es el mismo dato.
+    _presentes = dict(locals().get("_presentes_aristas") or {})
+    _presentes["cruzada"] = bool(_cruzadas_js)
+    _presentes["cadena"] = bool(_cadena_js)
+    leyenda += _leyenda_aristas(_presentes)
 
     return _NUBE % {
         "title": _html.escape(title),
