@@ -791,6 +791,10 @@ def _depende(informe_simbolos, de_modulos, a_modulos, de_modulo=None):
     """
     de_modulo = _mapa_de_modulos(informe_simbolos) if de_modulo is None else de_modulo
     de_modulos, a_modulos = set(de_modulos), set(a_modulos)
+    if not de_modulos or not a_modulos:
+        return False
+
+    salidas = {}
     for arista in informe_simbolos.get("edges") or ():
         if len(arista) < 2:
             continue
@@ -798,8 +802,27 @@ def _depende(informe_simbolos, de_modulos, a_modulos, de_modulo=None):
             continue
         mo = de_modulo.get(arista[0], arista[0])
         md = de_modulo.get(arista[1], arista[1])
-        if mo != md and mo in de_modulos and md in a_modulos:
-            return True
+        if mo and md and mo != md:
+            salidas.setdefault(mo, set()).add(md)
+
+    # TRANSITIVO, y no de un salto. Un salto solo caza el ciclo corto (b llama a
+    # a, luego a no puede llamar a b) y deja pasar el largo, que rompe igual: en
+    # la cadena a<-b<-c<-d, llamar a `d` desde `a` cierra a->d->c->b->a y nadie
+    # avisaba. Lo vio un agente por su cuenta en la tirada del 19-ago-2026 y se
+    # abstuvo razonandolo; el siguiente no tiene por que darse cuenta.
+    #
+    # `_vecinos` sigue siendo de un salto a proposito (la consola de un agente
+    # tiene que caber en un vistazo). Aqui no: no es lo que se ENSEÑA, es lo que
+    # decide si algo se rompe al arrancar.
+    vistos, cola = set(de_modulos), list(de_modulos)
+    while cola:
+        actual = cola.pop()
+        for siguiente in salidas.get(actual, ()):
+            if siguiente in a_modulos:
+                return True
+            if siguiente not in vistos:
+                vistos.add(siguiente)
+                cola.append(siguiente)
     return False
 
 

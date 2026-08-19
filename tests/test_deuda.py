@@ -257,3 +257,54 @@ def test_check_calla_cuando_trabajas_solo(cadena, capsys, monkeypatch):
 
     cli.main(["check"])
     assert "[gb sync]" not in capsys.readouterr().out
+
+
+@pytest.fixture
+def diamante(tmp_path):
+    """Un grafo donde el ciclo NO se ve de un salto: m→n, p→q, q→m.
+
+    Nadie forma ciclo todavía. Pero si `m` llamara a `p`, se cerraría
+    m→p→q→m — y entre `p` y `m` no hay ninguna arista directa que lo delate.
+    """
+    root = tmp_path / "proyecto"
+    (root / "lib").mkdir(parents=True)
+    (root / "lib" / "__init__.py").write_text("", encoding="utf-8")
+    (root / "lib" / "n.py").write_text("def paso_n(x):\n    return x\n", encoding="utf-8")
+    (root / "lib" / "m.py").write_text(
+        "from lib.n import paso_n\n\n\ndef paso_m(x):\n    return paso_n(x)\n", encoding="utf-8")
+    (root / "lib" / "q.py").write_text(
+        "from lib.m import paso_m\n\n\ndef paso_q(x):\n    return paso_m(x)\n", encoding="utf-8")
+    (root / "lib" / "p.py").write_text(
+        "from lib.q import paso_q\n\n\ndef paso_p(x):\n    return paso_q(x)\n", encoding="utf-8")
+    _git(root, "init", "-q")
+    _git(root, "config", "user.email", "t@t.t")
+    _git(root, "config", "user.name", "t")
+    _git(root, "add", "-A")
+    _git_fechado(root, 7200, "commit", "-qm", "base")
+    return root
+
+
+def test_el_ciclo_que_no_se_ve_de_un_salto_tambien_avisa(diamante):
+    """Un solo salto caza el ciclo corto y deja pasar el largo, que rompe igual.
+
+    `yo` trabaja en `lib.m`. El otro hace UN commit que toca `lib.n` (vecino
+    mío, y llamarlo es seguro: ya le llamo) y `lib.p`. De `p` a `m` no hay
+    arista directa —el chequeo de un salto diría «adelante»— pero sí camino:
+    p→q→m. Llamar a `p` desde `m` revienta al arrancar.
+
+    Lo destapó un agente en la tirada del 19-ago-2026: se abstuvo razonando la
+    cadena entera por su cuenta. El siguiente no tiene por qué darse cuenta.
+    """
+    yo = _agente(diamante, "yo")
+    _trabaja(yo, "m", 40, "\n# mio\n")
+
+    otro = _agente(diamante, "otro")
+    for mod in ("n", "p"):
+        ruta = otro / "lib" / ("%s.py" % mod)
+        ruta.write_text(ruta.read_text(encoding="utf-8") + "\n# suyo\n", encoding="utf-8")
+    _git(otro, "add", "-A")
+    _git_fechado(otro, 20, "commit", "-qm", "n y p en el mismo commit")
+
+    d = _deuda(diamante, yo)
+    assert d["deuda"], "el andamio no produjo deuda que juzgar"
+    assert d["deuda"][0]["ciclo_si_llamas"] is True
