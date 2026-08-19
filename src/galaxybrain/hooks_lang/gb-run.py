@@ -166,7 +166,12 @@ def setup_env(
             activated.append("rust: se lee su stderr tal cual (sin tocar RUST_BACKTRACE)")
 
         elif lang == "csharp":
-            hook_dll = os.path.join(hooks_dir, "dotnet-hook", "GbHook.dll")
+            # `dotnet/`, no `dotnet-hook/`: es donde lo deja el instalador de gb
+            # (`gb on --lenguajes`). Con la ruta vieja el envolvente decia "dll
+            # not found, skipped" y C# se quedaba sin consola en un repo mixto
+            # sin que nadie se enterara — el aviso se pierde entre las demas
+            # lineas. Visto en el experimento poliglota, 19-ago-2026.
+            hook_dll = os.path.join(hooks_dir, "dotnet", "GbHook.dll")
             if os.path.isfile(hook_dll):
                 existing = env.get("DOTNET_STARTUP_HOOKS", "")
                 sep = ";" if sys.platform == "win32" else ":"
@@ -402,6 +407,25 @@ def _normaliza_saltos(stderr: str) -> str:
     registro no se escribia. Medido con rustc 1.95 el 19-ago-2026.
     """
     return stderr.replace("\r\n", "\n")
+
+
+def detect_stderr_crashes(stderr: str) -> list[dict[str, Any]]:
+    """TODOS los crashes que se reconozcan en ese stderr, uno por lenguaje.
+
+    En un repo mixto este stderr es el del arbol de procesos entero: go, rust y
+    dart pueden haber reventado en la misma cadena. Devolver solo el primero
+    tiraba dos crashes reales a la basura sin decirlo.
+    """
+    stderr = _normaliza_saltos(stderr)
+    fuera = []
+    for detector in STDERR_DETECTORS:
+        try:
+            resultado = detector(stderr)
+        except Exception:
+            continue
+        if resultado is not None:
+            fuera.append(resultado)
+    return fuera
 
 
 def detect_stderr_crash(stderr: str) -> dict[str, Any] | None:
@@ -675,8 +699,12 @@ def main() -> int:
             # Attempt crash detection on stderr
             if exit_code != 0:
                 full_stderr = "".join(stderr_chunks)
-                crash = detect_stderr_crash(full_stderr)
-                if crash is not None:
+                # TODOS los detectores, no el primero que acierte. En un repo
+                # mixto el stderr que llega aqui es el del ARBOL entero: si go,
+                # rust y dart revientan en la misma cadena, quedarse con el
+                # primero tira dos crashes reales a la basura. Se vio en el
+                # experimento poliglota (19-ago-2026): go tapaba a rust y dart.
+                for crash in detect_stderr_crashes(full_stderr):
                     record = build_stderr_record(
                         crash, session_id, child_argv, proc.pid,
                     )

@@ -183,7 +183,10 @@ _C_WINDOWS = {
     "arranque": "envolvente: gb-run.exe --soltar <programa>",
     "env": None,
     "marca": None,
-    "techo": "tras soltar el depurador deja de observar: una segunda excepcion ya no se ve",
+    "techo": ("tras soltar el depurador deja de observar (una segunda excepcion ya no se ve), y "
+              "solo cubre el proceso que EL lanza: en un repo mixto, un binario de C llamado por "
+              "otro programa se queda sin consola salvo que quien le llama use el envolvente. En "
+              "Linux no pasa: LD_PRELOAD lo heredan los hijos"),
 }
 
 

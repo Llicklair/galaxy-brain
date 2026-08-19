@@ -100,6 +100,13 @@ internal class StartupHook
         JsonField(sb, "ts", DateTime.UtcNow.ToString("o")); // ISO 8601
         JsonField(sb, "language", "csharp");
         JsonField(sb, "hook", "dotnet-startup-hook");
+        // El id de sesion, que reparte `gb run` y heredan los procesos hijos: es
+        // lo que convierte N registros sueltos en UNA historia. Era el unico
+        // hook de los siete que no lo escribia, asi que en un repo mixto su
+        // crash salia huerfano — capturado, pero sin poder atarlo a la cadena
+        // que lo produjo (experimento poliglota, 19-ago-2026).
+        var sesion = Environment.GetEnvironmentVariable("GB_SESSION_ID");
+        if (!string.IsNullOrEmpty(sesion)) JsonField(sb, "session_id", sesion);
 
         // Exception chain.
         sb.Append("\"exception\":");
