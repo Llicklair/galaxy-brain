@@ -141,21 +141,33 @@ MECANISMOS = {
         "arranque": "—",
         "env": None,
         "marca": None,
-        "techo": "runZonedGuarded es manejo puro: lleva el exit code de 255 a 0 y borra la traza",
+        # Dos motivos independientes, y el segundo es el que lo deja fuera del
+        # instalador: no hay forma de ponerlo sin editar el codigo del usuario.
+        "techo": ("runZonedGuarded es manejo puro: lleva el exit code de 255 a 0 y borra la "
+                  "traza, y ademas exige reescribir tu main()"),
     },
     "elixir": {
         "via": "desactivado",
         "arranque": "—",
         "env": None,
         "marca": None,
-        "techo": "sin medir: Erlang no se pudo instalar sin administrador",
+        # Mismo criterio que tumbo el `set_hook` de rust: si hay que tocar el
+        # proyecto de quien lo instala, no es instalable. Aqui pide editar
+        # config.exs Y definir el modulo en lib/.
+        "techo": ("sin medir (Erlang exige elevacion) y su hook pide editar tu config.exs y "
+                  "definir el modulo en tu lib/: tocar tu codigo no es instalar"),
     },
     "swift": {
+        # Sigue en `desactivado` aunque gb ya empaquete su fuente: NADIE lo ha
+        # medido. Ponerlo en `hook-nativo` porque compila seria dar por
+        # verificado lo que solo esta construido, y esa es exactamente la
+        # diferencia que este campo existe para marcar.
         "via": "desactivado",
-        "arranque": "—",
-        "env": None,
-        "marca": None,
-        "techo": "sin medir: el toolchain no se pudo instalar sin administrador",
+        "arranque": "DYLD_INSERT_LIBRARIES libgb_hook.dylib (se construye con swiftc)",
+        "env": "DYLD_INSERT_LIBRARIES",
+        "marca": "gb_hook",
+        "techo": ("sin medir: el toolchain exige elevacion en esta maquina. Se construye donde "
+                  "haya swiftc (macOS), y ahi aun depende de que SIP permita la inyeccion"),
     },
 }
 
@@ -172,11 +184,21 @@ _C_WINDOWS = {
 }
 
 
-#: Los hooks que gb TRAE consigo, por lenguaje. Solo los de fichero suelto y
-#: cero dependencias: se copian y ya funcionan. Los que necesitan compilarse (el
-#: agente de la JVM, la DLL de .NET, el .so de C) no estan aqui a proposito —
-#: prometer un despliegue que luego pide un compilador seria peor que decir que
-#: no lo hay, y el que lo pida se lo encontraria roto en su maquina.
+#: Los que no tienen gancho de observacion instalable y se cubren ENVOLVIENDO la
+#: invocacion: `gb-run.py` lanza el programa y lee su stderr cuando muere. Es
+#: Python puro y sin dependencias, asi que no hay nada que compilar.
+#:
+#: Su techo va escrito en MECANISMOS y no se disimula: el tipo se deriva del
+#: mensaje en 6 de 9 formas de panic, y un panic en hilo secundario deja exit 0
+#: y cero registros. Cubierto por una via distinta, con su limite escrito — que
+#: es lo que este proyecto le exige a cualquier capa.
+HOOKS_ENVOLVENTE = {
+    "go": "gb-run.py",
+    "rust": "gb-run.py",
+}
+
+#: Los hooks de fichero suelto y cero dependencias: se copian y ya funcionan.
+#: Los que hay que construir van en COMPILABLES, mas abajo.
 HOOKS_EMPAQUETADOS = {
     "js": "gb-hook.js",
     "ts": "gb-hook.js",     # Node ejecuta TS nativo: mismo hook, sin cambios
@@ -199,6 +221,8 @@ _ARRANQUE_REAL = {
 #: usuario un nombre de fichero suelto que tendra que ir a buscar.
 _ARRANQUE_POR_LENGUAJE = {
     "php": "php -d auto_prepend_file=%s <tu script.php>",
+    "go": "python %s go run ./cmd",
+    "rust": "python %s cargo run",
 }
 
 
@@ -237,9 +261,12 @@ def despliega(destino=None):
     os.makedirs(base, exist_ok=True)
     origen = os.path.join(os.path.dirname(os.path.abspath(__file__)), "hooks_lang")
 
+    todos = dict(HOOKS_EMPAQUETADOS)
+    todos.update(HOOKS_ENVOLVENTE)
+
     fichas = []
-    for lang in sorted(HOOKS_EMPAQUETADOS):
-        fichero = HOOKS_EMPAQUETADOS[lang]
+    for lang in sorted(todos):
+        fichero = todos[lang]
         de, a = os.path.join(origen, fichero), os.path.join(base, fichero)
         if not os.path.isfile(de):
             continue
@@ -292,6 +319,14 @@ COMPILABLES = {
         "dir": "c", "salida": "gb-hook.so", "herramientas": ("gcc",),
         "exporta": 'LD_PRELOAD="%s"',
     },
+    # Swift solo se construye donde hay `swiftc` —en la practica, macOS— y su
+    # instalacion depende ademas de que SIP permita DYLD_INSERT_LIBRARIES. Se
+    # empaqueta igual: fuera de macOS dira "falta swiftc", que es un hecho sobre
+    # ESTA maquina, y no "swift no se puede", que seria falso.
+    "swift": {
+        "dir": "swift", "salida": "libgb_hook.dylib", "herramientas": ("swiftc",),
+        "exporta": 'DYLD_INSERT_LIBRARIES="%s"',
+    },
 }
 
 #: C en Windows no es el mismo hook con otra ruta: es otro mecanismo (envolvente
@@ -325,6 +360,8 @@ def _orden(ficha, carpeta, plataforma):
     if ficha["dir"] == "dotnet":
         return [["dotnet", "build", os.path.join("GbHook", "GbHook.csproj"),
                  "-c", "Release", "-o", ".", "--nologo", "-v", "quiet"]]
+    if ficha["dir"] == "swift":
+        return [["swiftc", "-emit-library", "-o", "libgb_hook.dylib", "gb_hook.swift"]]
     if plataforma.startswith("win"):
         return [["gcc", "-O2", "-Wall", "-o", "gb-run.exe", "gb_run_win.c"]]
     return [["gcc", "-shared", "-fPIC", "-O2", "-o", "gb-hook.so", "gb_hook.c"]]

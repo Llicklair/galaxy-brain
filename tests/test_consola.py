@@ -217,3 +217,82 @@ def test_construye_todo_no_lanza_aunque_no_haya_nada(tmp_path, monkeypatch):
 
     assert {f["lenguaje"] for f in fichas} == set(consola.COMPILABLES)
     assert all(f["falta"] for f in fichas)
+
+
+def test_go_y_rust_se_despliegan_con_su_envolvente(tmp_path):
+    """No tienen gancho instalable, pero eso no es motivo para dejarlos fuera:
+    se cubren envolviendo la invocación, y el envolvente es Python puro — no
+    hay nada que compilar. Su techo ya está escrito en MECANISMOS."""
+    from galaxybrain import consola
+
+    fichas = {f["lenguaje"]: f for f in consola.despliega(str(tmp_path))}
+    for lang in ("go", "rust"):
+        assert lang in fichas, "%s no se despliega" % lang
+        assert fichas[lang]["ruta"].endswith("gb-run.py")
+        assert fichas[lang]["ruta"] in fichas[lang]["exporta"]
+
+
+def test_swift_se_empaqueta_pero_sigue_declarandose_sin_medir():
+    """Que compile no es que funcione. Ponerlo en `hook-nativo` porque gb ya
+    trae su fuente seria dar por verificado lo que solo está construido, y esa
+    es justo la diferencia que este campo existe para marcar."""
+    from galaxybrain import consola
+
+    assert "swift" in consola.COMPILABLES
+    assert consola.MECANISMOS["swift"]["via"] == "desactivado"
+    assert "sin medir" in consola.MECANISMOS["swift"]["techo"]
+
+
+def test_dart_y_elixir_quedan_fuera_diciendo_por_que():
+    """Los dos exigen tocar el código de quien los instala —dart reescribir tu
+    main(), elixir editar tu config.exs y tu lib/—, que es el mismo criterio que
+    ya tumbó el `set_hook` de rust. Tocar tu código no es instalar."""
+    from galaxybrain import consola
+
+    for lang in ("dart", "elixir"):
+        assert lang not in consola.HOOKS_EMPAQUETADOS
+        assert lang not in consola.COMPILABLES
+        assert lang not in consola.HOOKS_ENVOLVENTE
+        assert consola.MECANISMOS[lang]["techo"], "%s no dice por que" % lang
+
+
+def _envolvente():
+    """El `gb-run.py` que gb despliega, cargado como modulo (lleva guion)."""
+    import importlib.util
+
+    from galaxybrain import consola
+
+    ruta = os.path.join(os.path.dirname(consola.__file__), "hooks_lang", "gb-run.py")
+    spec = importlib.util.spec_from_file_location("gb_run_empaquetado", ruta)
+    modulo = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(modulo)
+    return modulo
+
+
+def test_el_envolvente_normaliza_los_saltos_de_windows():
+    """El fallo que dejaba a rust sin capturar en Windows: el stderr llega con
+    CRLF y los patrones de panic piden LF, así que no casaba NUNCA. El
+    envolvente decía «stderr capture active» y no escribía un solo registro —
+    peor que no capturar, porque el usuario cree que sí."""
+    gb_run = _envolvente()
+    assert gb_run._normaliza_saltos("a\r\nb") == "a\nb"
+
+
+def test_el_envolvente_captura_aunque_lances_el_binario_ya_compilado():
+    """Miraba solo el nombre del comando: `cargo run` capturaba y `./mi_binario`
+    no. Lanzar el binario ya compilado es lo normal, no la excepción."""
+    gb_run = _envolvente()
+    assert gb_run.needs_stderr_capture("cargo") is True
+    assert gb_run.needs_stderr_capture("./petar.exe", ["rust"]) is True
+    assert gb_run.needs_stderr_capture("./petar.exe", ["python"]) is False
+
+
+def test_el_tipo_sale_del_MENSAJE_y_lo_que_no_se_sabe_sigue_siendo_panic():
+    """Escribir la constante «panic» disparó el criterio de aborto de la ADR
+    0012 — y lo disparó mal: el dato sí estaba en stderr, era el parser el que
+    no lo miraba. Lo que no se puede derivar se queda en «panic», declarado y no
+    inventado: un tipo a ojo manda a buscar el fallo que no es."""
+    gb_run = _envolvente()
+    assert gb_run.tipo_de_mensaje("index out of bounds: the len is 2") == "index out of bounds"
+    assert "nil pointer" in gb_run.tipo_de_mensaje("runtime error: nil pointer dereference")
+    assert gb_run.tipo_de_mensaje("codigo 42") == "panic"

@@ -43,6 +43,11 @@ pythonpath = ["."]
 line-length = 110
 target-version = "py39"
 src = ["src"]
+# Los hooks que gb despliega NO son codigo de gb: viajan tal cual, en la version
+# exacta que paso la medicion. Reformatearlos por estilo haria que lo instalado
+# dejara de ser lo medido — y ese error ya se colo una vez (se empaqueto un
+# gb-hook.js viejo). Se lintan igual que se lintaria un .jar: no se lintan.
+extend-exclude = ["src/galaxybrain/hooks_lang"]
 
 [tool.ruff.lint]
 # Se eligen las que cazan DEFECTOS, no las que opinan sobre el estilo. La regla 11
