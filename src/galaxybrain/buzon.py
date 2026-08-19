@@ -150,7 +150,12 @@ def normaliza(bruto):
         "process": {
             "cwd": cwd,
             "project": proyecto,
-            "pid": _int(proc.get("pid")),
+            # El pid tambien puede venir en la RAIZ: el envolvente de C lo
+            # escribe ahi. Sin este respaldo su captura se quedaba sin proceso y
+            # no se podia atar a nadie en la cadena.
+            "pid": _int(proc.get("pid") if proc.get("pid") is not None else bruto.get("pid")),
+            "ppid": _int(proc.get("ppid") if proc.get("ppid") is not None
+                         else bruto.get("ppid")),
             "runtime": proc.get("runtime"),
             "argv_forma": proc.get("argv_forma"),
             "program": proc.get("command"),

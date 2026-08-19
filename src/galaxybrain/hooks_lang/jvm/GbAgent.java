@@ -247,9 +247,18 @@ public class GbAgent {
         jsonField(sb, "pid", getPid(), false);
 
         // Parent PID for cross-language correlation.
-        String gbPpid = System.getenv("GB_PPID");
-        if (gbPpid != null) {
-            jsonField(sb, "ppid", gbPpid, false);
+        //
+        // El padre DE VERDAD, preguntado al sistema. Antes se cogia GB_PPID, que
+        // es el pid del envolvente `gb run`: el abuelo, o el bisabuelo, segun
+        // por donde vaya la cadena. Con eso, el arbol de procesos que se
+        // reconstruye despues es FALSO — todos cuelgan del envolvente y las
+        // llamadas reales entre lenguajes desaparecen (experimento poliglota,
+        // 19-ago-2026). GB_PPID queda de respaldo para Java 8, donde no se
+        // puede preguntar.
+        String ppid = getPpid();
+        if (ppid == null) ppid = System.getenv("GB_PPID");
+        if (ppid != null) {
+            jsonField(sb, "ppid", ppid, false);
         }
 
         // argv: redact values to avoid leaking secrets passed on the command line.
@@ -263,6 +272,23 @@ public class GbAgent {
             sb.setLength(sb.length() - 1);
         }
         sb.append('}');
+    }
+
+    private static String getPpid() {
+        // ProcessHandle.current().parent().get().pid(), por reflexion para
+        // seguir compilando en Java 8 (donde devuelve null y manda GB_PPID).
+        try {
+            Class<?> ph = Class.forName("java.lang.ProcessHandle");
+            Object current = ph.getMethod("current").invoke(null);
+            Object padre = ph.getMethod("parent").invoke(current);
+            Class<?> opt = Class.forName("java.util.Optional");
+            Boolean hay = (Boolean) opt.getMethod("isPresent").invoke(padre);
+            if (!Boolean.TRUE.equals(hay)) return null;
+            Object handle = opt.getMethod("get").invoke(padre);
+            return ph.getMethod("pid").invoke(handle).toString();
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     private static String getPid() {

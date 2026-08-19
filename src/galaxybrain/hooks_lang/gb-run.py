@@ -506,8 +506,16 @@ def build_stderr_record(
             "project": find_project_root(cwd),
             "argv_forma": redact_argv(child_argv),
             "runtime": f"gb-run/{crash['language']}",
-            "pid": child_pid,
-            "ppid": os.getpid(),
+            # SIN pid, y a proposito. Este registro sale de leer un stderr, y ese
+            # texto no dice QUE proceso lo escribio: en un arbol mixto el panic
+            # puede venir de un nieto. Poner aqui el pid del proceso envuelto
+            # inventaba un padre —js aparecia colgando de dart— y con eso la
+            # cadena reconstruida despues era falsa. Un hueco declarado vale mas
+            # que un dato que parece bueno (19-ago-2026).
+            "pid": None,
+            "ppid": None,
+            "pid_envuelto": child_pid,
+            "pid_envolvente": os.getpid(),
         },
         "traceback": crash["traceback"],
         "capture_method": "stderr",
