@@ -901,6 +901,19 @@ def cmd_on(args):
         # Lo que gb NO puede hacer, dicho y no disimulado: un proceso no cambia
         # el entorno de quien lo llamo. Si esto "se activara solo" el usuario
         # creeria tener capturas que no tiene, que es el peor de los estados.
+        # Los que hay que CONSTRUIR: se intentan todos, y el que no se pueda
+        # dice que herramienta le falta. "No disponible" a secas no aclara si
+        # el problema es del usuario, de gb o de la maquina.
+        for c in consola.construye_todo():
+            if c["ok"]:
+                emit("  %-5s %s" % (c["lenguaje"], c["exporta"]))
+            elif c["falta"]:
+                emit("  %-5s falta %s para construirlo" % (
+                    c["lenguaje"], " y ".join(c["falta"])))
+            else:
+                emit("  %-5s no se pudo construir: %s" % (
+                    c["lenguaje"], (c["error"] or "sin motivo").splitlines()[0][:90]))
+
         emit("")
         emit("gb no puede exportarlas por ti: un proceso no cambia el entorno de")
         emit("quien lo llamo. Pegalas en el shell que lance tus procesos y")

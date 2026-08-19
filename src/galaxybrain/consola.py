@@ -261,6 +261,159 @@ def despliega(destino=None):
     return fichas
 
 
+#: Los hooks que NO son un fichero suelto: hay que construirlos. gb trae la
+#: FUENTE y la compila en la maquina del usuario con la herramienta que ese
+#: lenguaje ya exige tener — quien programa en Java tiene un JDK, y si no lo
+#: tiene tampoco tiene nada que capturar. Lo que no se hace es meter binarios en
+#: el repo: no se pueden auditar, no valen para otra plataforma y envejecen mal.
+#:
+#: `herramientas` se comprueba ANTES de intentar nada, para poder decir «te
+#: falta javac» en vez de escupir el error de un compilador que no esta.
+COMPILABLES = {
+    "java": {
+        "dir": "jvm", "salida": "gb-agent.jar", "herramientas": ("javac", "jar"),
+        "exporta": 'JAVA_TOOL_OPTIONS="-javaagent:%s"',
+    },
+    # Kotlin y Scala corren sobre la misma maquina virtual y heredan el agente
+    # sin tocar una linea: medido el 18-ago-2026, 100 % los dos.
+    "kotlin": {
+        "dir": "jvm", "salida": "gb-agent.jar", "herramientas": ("javac", "jar"),
+        "exporta": 'JAVA_TOOL_OPTIONS="-javaagent:%s"',
+    },
+    "scala": {
+        "dir": "jvm", "salida": "gb-agent.jar", "herramientas": ("javac", "jar"),
+        "exporta": 'JAVA_TOOL_OPTIONS="-javaagent:%s"',
+    },
+    "csharp": {
+        "dir": "dotnet", "salida": "GbHook.dll", "herramientas": ("dotnet",),
+        "exporta": 'DOTNET_STARTUP_HOOKS="%s"',
+    },
+    "c": {
+        "dir": "c", "salida": "gb-hook.so", "herramientas": ("gcc",),
+        "exporta": 'LD_PRELOAD="%s"',
+    },
+}
+
+#: C en Windows no es el mismo hook con otra ruta: es otro mecanismo (envolvente
+#: depurador), otra fuente y otra forma de invocarlo.
+_COMPILABLE_C_WINDOWS = {
+    "dir": "c", "salida": "gb-run.exe", "herramientas": ("gcc",),
+    "exporta": "%s --soltar <tu programa.exe>",
+}
+
+
+def compilable(lang, plataforma=None):
+    """La ficha de construccion de `lang`, resuelta para la plataforma."""
+    plataforma = sys.platform if plataforma is None else plataforma
+    if lang == "c":
+        return dict(_COMPILABLE_C_WINDOWS if plataforma.startswith("win")
+                    else COMPILABLES["c"])
+    ficha = COMPILABLES.get(lang)
+    return dict(ficha) if ficha else None
+
+
+def _orden(ficha, carpeta, plataforma):
+    """El comando de construccion, ya resuelto. Lista de argv, sin shell."""
+    import glob
+
+    if ficha["dir"] == "jvm":
+        clases = sorted(os.path.basename(c) for c in glob.glob(os.path.join(carpeta, "*.class")))
+        if not clases:   # primera pasada: compilar
+            return [["javac", "GbAgent.java"]]
+        return [["jar", "cfm", "gb-agent.jar",
+                 os.path.join("META-INF", "MANIFEST.MF")] + clases]
+    if ficha["dir"] == "dotnet":
+        return [["dotnet", "build", os.path.join("GbHook", "GbHook.csproj"),
+                 "-c", "Release", "-o", ".", "--nologo", "-v", "quiet"]]
+    if plataforma.startswith("win"):
+        return [["gcc", "-O2", "-Wall", "-o", "gb-run.exe", "gb_run_win.c"]]
+    return [["gcc", "-shared", "-fPIC", "-O2", "-o", "gb-hook.so", "gb_hook.c"]]
+
+
+def compila(lang, base=None, plataforma=None, timeout=300):
+    """Construye el hook de `lang` en casa del usuario. Nunca lanza.
+
+    Devuelve `{"lenguaje", "ok", "ruta", "exporta", "falta", "error"}`. `falta`
+    lleva las herramientas que no estan, que es la unica respuesta util cuando
+    no se puede construir: «no disponible» a secas no dice si el problema es
+    tuyo, mio o de la maquina.
+    """
+    import shutil
+    import subprocess
+
+    plataforma = sys.platform if plataforma is None else plataforma
+    ficha = compilable(lang, plataforma)
+    salida = {"lenguaje": lang, "ok": False, "ruta": None,
+              "exporta": None, "falta": [], "error": ""}
+    if not ficha:
+        return salida
+
+    falta = [h for h in ficha["herramientas"] if not shutil.which(h)]
+    if falta:
+        salida["falta"] = falta
+        return salida
+
+    base = base or _dir_hooks()
+    origen = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                          "hooks_lang", ficha["dir"])
+    carpeta = os.path.join(base, ficha["dir"])
+    if not os.path.isdir(origen):
+        salida["error"] = "esta instalacion de gb no trae la fuente de %s" % lang
+        return salida
+    # Se construye en casa del usuario y no en site-packages: ese directorio
+    # puede ser de solo lectura, compartido entre entornos, o borrarse al
+    # actualizar. Y asi el .jar vive al lado del resto de hooks.
+    shutil.copytree(origen, carpeta, dirs_exist_ok=True)
+
+    destino = os.path.join(carpeta, ficha["salida"])
+    if os.path.isfile(destino):
+        salida.update(ok=True, ruta=destino, exporta=ficha["exporta"] % destino)
+        return salida
+
+    try:
+        for _ in range(2):   # jvm necesita dos pasadas: javac y luego jar
+            for orden in _orden(ficha, carpeta, plataforma):
+                proceso = subprocess.run(orden, cwd=carpeta, capture_output=True,
+                                         text=True, timeout=timeout)
+                if proceso.returncode != 0:
+                    salida["error"] = (proceso.stderr or proceso.stdout or "").strip()[:400]
+                    return salida
+            if os.path.isfile(destino):
+                break
+    except (OSError, subprocess.SubprocessError) as exc:
+        salida["error"] = str(exc)[:400]
+        return salida
+
+    if not os.path.isfile(destino):
+        salida["error"] = "el comando termino bien pero no dejo %s" % ficha["salida"]
+        return salida
+    salida.update(ok=True, ruta=destino, exporta=ficha["exporta"] % destino)
+    return salida
+
+
+def construye_todo(base=None, plataforma=None):
+    """Intenta construir TODOS los compilables. Una ficha por lenguaje.
+
+    Se intentan todos aunque falten herramientas: el resultado con `falta` es
+    justo lo que convierte «no tienes la consola de Java» en «instala un JDK».
+    """
+    vistos, fichas = {}, []
+    for lang in sorted(COMPILABLES):
+        ficha = compilable(lang, plataforma)
+        clave = (ficha["dir"], ficha["salida"])
+        if clave in vistos:
+            # java/kotlin/scala comparten agente: se construye una vez y se
+            # nombran los tres, porque el usuario busca SU lenguaje en la lista.
+            copia = dict(vistos[clave])
+            copia["lenguaje"] = lang
+            fichas.append(copia)
+            continue
+        resultado = compila(lang, base, plataforma)
+        vistos[clave] = resultado
+        fichas.append(resultado)
+    return fichas
+
+
 def mecanismo(lang, plataforma=None):
     """La ficha de `lang`, resuelta para la plataforma (None = la de ahora)."""
     plataforma = sys.platform if plataforma is None else plataforma

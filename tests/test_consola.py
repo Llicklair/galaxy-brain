@@ -161,3 +161,59 @@ def test_gb_on_lenguajes_despliega_y_dice_como_armarlo(tmp_path, capsys, monkeyp
     salida = capsys.readouterr().out
     assert "NODE_OPTIONS" in salida
     assert "no puede exportarlas por ti" in salida
+
+
+def test_los_compilables_traen_su_fuente():
+    """gb trae la FUENTE, no el binario: un .jar o una .dll en el repo no se
+    auditan, no valen para otra plataforma y envejecen mal."""
+    from galaxybrain import consola
+
+    base = os.path.join(os.path.dirname(consola.__file__), "hooks_lang")
+    for lang in consola.COMPILABLES:
+        carpeta = os.path.join(base, consola.compilable(lang)["dir"])
+        assert os.path.isdir(carpeta), "%s no trae fuente" % lang
+
+
+def test_sin_la_herramienta_se_dice_CUAL_falta(tmp_path, monkeypatch):
+    """«No disponible» a secas no aclara si el problema es tuyo, de gb o de la
+    máquina. «Falta javac» sí, y se arregla en un minuto."""
+    from galaxybrain import consola
+
+    monkeypatch.setattr("shutil.which", lambda *_a, **_k: None)
+    r = consola.compila("java", str(tmp_path))
+
+    assert r["ok"] is False
+    assert r["falta"] == ["javac", "jar"]
+    assert not r["error"], "no deberia haber intentado nada"
+
+
+def test_java_kotlin_y_scala_comparten_el_mismo_agente():
+    """Corren sobre la misma máquina virtual, así que se construye una vez. Se
+    nombran los tres porque el usuario busca SU lenguaje en la lista."""
+    from galaxybrain import consola
+
+    salidas = {lang: consola.compilable(lang)["salida"]
+               for lang in ("java", "kotlin", "scala")}
+    assert set(salidas.values()) == {"gb-agent.jar"}
+
+
+def test_c_se_construye_distinto_en_cada_plataforma():
+    """No es el mismo hook con otra ruta: en Windows es otro mecanismo, otra
+    fuente y otra forma de invocarlo."""
+    from galaxybrain import consola
+
+    assert consola.compilable("c", "win32")["salida"] == "gb-run.exe"
+    assert consola.compilable("c", "linux")["salida"] == "gb-hook.so"
+    assert "LD_PRELOAD" in consola.compilable("c", "linux")["exporta"]
+
+
+def test_construye_todo_no_lanza_aunque_no_haya_nada(tmp_path, monkeypatch):
+    """Un instalador que revienta a mitad deja al usuario peor que si no lo
+    hubiera ejecutado: sin hooks y sin saber cuáles sí podía tener."""
+    from galaxybrain import consola
+
+    monkeypatch.setattr("shutil.which", lambda *_a, **_k: None)
+    fichas = consola.construye_todo(str(tmp_path))
+
+    assert {f["lenguaje"] for f in fichas} == set(consola.COMPILABLES)
+    assert all(f["falta"] for f in fichas)
