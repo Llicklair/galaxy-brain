@@ -137,25 +137,28 @@ MECANISMOS = {
         "techo": "",
     },
     "dart": {
-        "via": "desactivado",
-        "arranque": "—",
+        # Cambia de "desactivado" a envolvente el 19-ago-2026, y no por rebajar
+        # el criterio: el que fallaba era `runZonedGuarded` (manejo puro, exit
+        # 255 -> 0, traza borrada y reescribir tu main()). Leer su stderr desde
+        # fuera no toca el programa y le deja el exit code intacto.
+        "via": "fallback-stderr",
+        "arranque": "envolvente: python gb-run.py dart run <programa>",
         "env": None,
         "marca": None,
-        # Dos motivos independientes, y el segundo es el que lo deja fuera del
-        # instalador: no hay forma de ponerlo sin editar el codigo del usuario.
-        "techo": ("runZonedGuarded es manejo puro: lleva el exit code de 255 a 0 y borra la "
-                  "traza, y ademas exige reescribir tu main()"),
+        "techo": ("solo se ve lo que MATA al proceso: una excepcion capturada dentro, o en un "
+                  "isolate que no tumba el programa, no deja registro"),
     },
     "elixir": {
-        "via": "desactivado",
-        "arranque": "—",
+        # El envolvente ya lo cubre, pero NADIE lo ha ejecutado: no hay Erlang
+        # en esta maquina (su instalador exige elevacion), asi que el parser
+        # esta escrito contra el formato documentado y no contra una tirada
+        # real. Se dice aqui en vez de dejar que se lea como verificado.
+        "via": "fallback-stderr",
+        "arranque": "envolvente: python gb-run.py mix run",
         "env": None,
         "marca": None,
-        # Mismo criterio que tumbo el `set_hook` de rust: si hay que tocar el
-        # proyecto de quien lo instala, no es instalable. Aqui pide editar
-        # config.exs Y definir el modulo en lib/.
-        "techo": ("sin medir (Erlang exige elevacion) y su hook pide editar tu config.exs y "
-                  "definir el modulo en tu lib/: tocar tu codigo no es instalar"),
+        "techo": ("SIN MEDIR: no hay Erlang en esta maquina, asi que su parser esta escrito "
+                  "contra el formato documentado y no contra una ejecucion real"),
     },
     "swift": {
         # Sigue en `desactivado` aunque gb ya empaquete su fuente: NADIE lo ha
@@ -195,6 +198,12 @@ _C_WINDOWS = {
 HOOKS_ENVOLVENTE = {
     "go": "gb-run.py",
     "rust": "gb-run.py",
+    # Dart y elixir entran por aqui y no por un hook interno: el suyo exige
+    # tocar el codigo de quien lo instala (dart, reescribir main(); elixir,
+    # editar config.exs y lib/). Desde fuera no hace falta, y ademas dart
+    # conserva su exit 255 en vez de convertirlo en 0.
+    "dart": "gb-run.py",
+    "elixir": "gb-run.py",
 }
 
 #: Los hooks de fichero suelto y cero dependencias: se copian y ya funcionan.
@@ -223,6 +232,8 @@ _ARRANQUE_POR_LENGUAJE = {
     "php": "php -d auto_prepend_file=%s <tu script.php>",
     "go": "python %s go run ./cmd",
     "rust": "python %s cargo run",
+    "dart": "python %s dart run tu_programa.dart",
+    "elixir": "python %s mix run",
 }
 
 

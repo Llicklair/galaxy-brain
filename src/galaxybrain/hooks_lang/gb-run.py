@@ -55,6 +55,11 @@ LANGUAGE_MARKERS: list[tuple[str, list[str]]] = [
     ("csharp",  [".csproj", ".cs"]),
     ("java",    [".java", "pom.xml", "build.gradle", "build.gradle.kts"]),
     ("lua",     [".lua"]),
+    # Dart y elixir no llevan hook DENTRO del programa (el suyo exige tocar el
+    # codigo del usuario): se cubren leyendo su stderr desde fuera, igual que go
+    # y rust. Por eso solo hace falta reconocer el proyecto.
+    ("dart",    ["pubspec.yaml", ".dart"]),
+    ("elixir",  ["mix.exs", ".ex", ".exs"]),
 ]
 
 
@@ -304,7 +309,81 @@ def detect_rust_crash(stderr: str) -> dict[str, Any] | None:
     }
 
 
-STDERR_DETECTORS = [detect_go_crash, detect_rust_crash]
+def detect_dart_crash(stderr: str) -> dict[str, Any] | None:
+    """Detect a Dart unhandled exception in stderr output.
+
+    Dart quedo fuera de la consola porque su UNICO gancho interno
+    (`runZonedGuarded`) es manejo puro: lleva el exit code de 255 a 0, borra la
+    traza y exige reescribir el `main()` del usuario. Eso sigue siendo cierto —
+    y por eso aqui no se instala nada dentro del programa. Se lee su stderr
+    desde fuera, que es la misma via que ya cubre go y rust, con el mismo techo:
+    solo se ve lo que mata al proceso.
+    """
+    cabecera = re.search(r"^Unhandled exception:\s*\n(.+)$", stderr, re.MULTILINE)
+    if not cabecera:
+        return None
+    linea = cabecera.group(1).strip()
+
+    # `RangeError (length): Invalid value: ...` -> tipo y mensaje separados.
+    tipo_match = re.match(r"^([A-Z][A-Za-z0-9_]*)(?:\s*\([^)]*\))?\s*:\s*(.*)$", linea)
+    if tipo_match:
+        exc_type, message = tipo_match.group(1), tipo_match.group(2).strip()
+    else:
+        exc_type, message = "UnhandledException", linea
+
+    frames: list[dict[str, Any]] = []
+    for frame in re.finditer(r"^#\d+\s+(.+?)\s+\((.+?)(?::(\d+))?(?::(\d+))?\)\s*$",
+                             stderr, re.MULTILINE):
+        frames.append({
+            "function": frame.group(1).strip(),
+            "file": frame.group(2),
+            "line": int(frame.group(3)) if frame.group(3) else 0,
+            "column": int(frame.group(4)) if frame.group(4) else 0,
+        })
+
+    return {
+        "language": "dart", "exc_type": exc_type, "exc_message": message,
+        "origin": "main", "frames": frames,
+        "traceback": stderr[cabecera.start():].strip(),
+    }
+
+
+def detect_elixir_crash(stderr: str) -> dict[str, Any] | None:
+    """Detect an Elixir/Erlang crash in stderr output.
+
+    Mismo motivo que dart: su hook pide editar tu `config.exs` y definir el
+    modulo en tu `lib/`, o sea tocar el codigo de quien lo instala. Desde fuera
+    no hace falta.
+
+    **Sin medir**: no hay Erlang en esta maquina (su instalador exige
+    elevacion), asi que esto esta escrito contra el formato documentado y NO
+    contra una ejecucion real. Va declarado en `consola.MECANISMOS` para que
+    nadie lo lea como verificado.
+    """
+    error = re.search(r"^\*\*\s+\((\w+(?:\.\w+)*)\)\s*(.*)$", stderr, re.MULTILINE)
+    if not error:
+        return None
+
+    frames: list[dict[str, Any]] = []
+    for frame in re.finditer(r"^\s+(?:\([^)]*\)\s+)?(\S+):(\d+):\s+(.+)$",
+                             stderr, re.MULTILINE):
+        frames.append({
+            "function": frame.group(3).strip(),
+            "file": frame.group(1),
+            "line": int(frame.group(2)),
+            "column": 0,
+        })
+
+    return {
+        "language": "elixir", "exc_type": error.group(1),
+        "exc_message": error.group(2).strip(),
+        "origin": "process", "frames": frames,
+        "traceback": stderr[error.start():].strip(),
+    }
+
+
+STDERR_DETECTORS = [detect_go_crash, detect_rust_crash,
+                    detect_dart_crash, detect_elixir_crash]
 
 
 def _normaliza_saltos(stderr: str) -> str:
@@ -489,9 +568,9 @@ def needs_stderr_capture(cmd_name: str, detected: list[str] | None = None) -> bo
     # Strip .exe on Windows
     if base.endswith(".exe"):
         base = base[:-4]
-    if base in ("go", "cargo", "rustc"):
+    if base in ("go", "cargo", "rustc", "dart", "elixir", "mix", "iex"):
         return True
-    return any(lang in ("go", "rust") for lang in (detected or ()))
+    return any(lang in ("go", "rust", "dart", "elixir") for lang in (detected or ()))
 
 
 # -------------------------------------------------------------------

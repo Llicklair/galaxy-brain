@@ -36,12 +36,15 @@ def test_el_vocabulario_es_el_de_la_adr():
 
 
 def test_lo_desactivado_dice_por_que():
-    """«Desactivado» a secas no vale: hay que distinguir 'se midio y estropea el
-    programa' (dart) de 'no se pudo medir' (elixir, swift)."""
-    for lang in ("dart", "elixir", "swift"):
-        ficha = consola.MECANISMOS[lang]
-        assert ficha["via"] == "desactivado"
-        assert ficha["techo"], "%s no dice por que esta fuera" % lang
+    """«Desactivado» a secas no vale: hay que decir por que.
+
+    Solo queda swift, y su motivo es de MAQUINA (no hay toolchain aqui), no del
+    diseno. dart y elixir salieron de aqui el 19-ago-2026 al cubrirlos por
+    envolvente en vez de por hook interno.
+    """
+    apagados = [l for l, f in consola.MECANISMOS.items() if f["via"] == "desactivado"]
+    assert apagados == ["swift"], "cambio quien esta apagado: %s" % apagados
+    assert consola.MECANISMOS["swift"]["techo"]
 
 
 def test_armado_mira_la_variable_de_entorno_de_verdad():
@@ -243,17 +246,29 @@ def test_swift_se_empaqueta_pero_sigue_declarandose_sin_medir():
     assert "sin medir" in consola.MECANISMOS["swift"]["techo"]
 
 
-def test_dart_y_elixir_quedan_fuera_diciendo_por_que():
-    """Los dos exigen tocar el código de quien los instala —dart reescribir tu
-    main(), elixir editar tu config.exs y tu lib/—, que es el mismo criterio que
-    ya tumbó el `set_hook` de rust. Tocar tu código no es instalar."""
+def test_dart_y_elixir_entran_por_ENVOLVENTE_y_no_por_hook():
+    """Su hook interno exige tocar el código de quien lo instala —dart
+    reescribir tu main(), elixir editar tu config.exs y tu lib/—, que es el
+    criterio que ya tumbó el `set_hook` de rust. Pero eso solo descarta el hook,
+    no el lenguaje: leer su stderr desde fuera no toca nada y a dart le deja el
+    exit 255 intacto en vez de convertirlo en 0."""
     from galaxybrain import consola
 
     for lang in ("dart", "elixir"):
-        assert lang not in consola.HOOKS_EMPAQUETADOS
+        assert lang in consola.HOOKS_ENVOLVENTE
+        assert lang not in consola.HOOKS_EMPAQUETADOS, "%s no lleva hook dentro" % lang
         assert lang not in consola.COMPILABLES
-        assert lang not in consola.HOOKS_ENVOLVENTE
-        assert consola.MECANISMOS[lang]["techo"], "%s no dice por que" % lang
+        assert consola.MECANISMOS[lang]["via"] == "fallback-stderr"
+        assert consola.MECANISMOS[lang]["techo"], "%s no declara su techo" % lang
+
+
+def test_elixir_dice_que_NO_esta_medido():
+    """Que el parser exista no es que funcione: no hay Erlang en esta maquina,
+    asi que esta escrito contra el formato documentado. Decirlo es la
+    diferencia entre una capa honesta y una que promete."""
+    from galaxybrain import consola
+
+    assert "SIN MEDIR" in consola.MECANISMOS["elixir"]["techo"]
 
 
 def _envolvente():
@@ -296,3 +311,53 @@ def test_el_tipo_sale_del_MENSAJE_y_lo_que_no_se_sabe_sigue_siendo_panic():
     assert gb_run.tipo_de_mensaje("index out of bounds: the len is 2") == "index out of bounds"
     assert "nil pointer" in gb_run.tipo_de_mensaje("runtime error: nil pointer dereference")
     assert gb_run.tipo_de_mensaje("codigo 42") == "panic"
+
+
+DART_STDERR = """antes
+Unhandled exception:
+RangeError (length): Invalid value: Not in inclusive range 0..1: 9
+#0      List.[] (dart:core-patch/growable_array.dart)
+#1      main (file:///C:/x/petar.dart:4:10)
+"""
+
+ELIXIR_STDERR = """** (RuntimeError) boom
+    (mi_app 0.1.0) lib/mi_app.ex:5: MiApp.revienta/0
+    (elixir 1.18.0) lib/task/supervised.ex:101: Task.Supervised.invoke_mfa/2
+"""
+
+
+def test_dart_se_lee_de_su_stderr_con_tipo_y_frames():
+    """Medido de verdad con Dart 3.13 el 19-ago-2026: exit 255 igual que sin
+    envolvente —el hook interno lo convertia en 0— y stdout identico."""
+    gb_run = _envolvente()
+    r = gb_run.detect_dart_crash(DART_STDERR)
+
+    assert r["language"] == "dart"
+    assert r["exc_type"] == "RangeError"
+    assert "Not in inclusive range" in r["exc_message"]
+    assert len(r["frames"]) == 2
+    assert r["frames"][1]["line"] == 4
+
+
+def test_elixir_se_lee_de_su_stderr_aunque_aqui_no_haya_erlang():
+    """Escrito contra el formato documentado, NO contra una ejecucion real: en
+    esta maquina no hay Erlang. El test fija el contrato del parser; lo que no
+    fija es que elixir este verificado, y eso lo dice su `techo`."""
+    gb_run = _envolvente()
+    r = gb_run.detect_elixir_crash(ELIXIR_STDERR)
+
+    assert r["language"] == "elixir"
+    assert r["exc_type"] == "RuntimeError"
+    assert r["exc_message"] == "boom"
+    assert r["frames"][0]["file"] == "lib/mi_app.ex"
+    assert r["frames"][0]["line"] == 5
+
+
+def test_un_stderr_normal_no_se_lee_como_crash():
+    """Un detector que dispara con cualquier cosa llenaria el almacen de
+    fallos que no existieron, y eso destruye la confianza mas rapido que no
+    capturar nada."""
+    gb_run = _envolvente()
+    for texto in ("todo bien\n", "warning: algo\n", ""):
+        assert gb_run.detect_dart_crash(texto) is None
+        assert gb_run.detect_elixir_crash(texto) is None
