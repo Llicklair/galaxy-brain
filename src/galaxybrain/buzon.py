@@ -102,7 +102,14 @@ def normaliza(bruto):
 
     proc = bruto.get("process") or {}
     cwd = proc.get("cwd") or bruto.get("cwd")
-    proyecto = proc.get("project") or bruto.get("project")
+    # `project_root` es el nombre que usan los hooks de la JVM y de .NET, y va en
+    # la RAIZ del registro, no dentro de `process`. Sin leerlo, sus capturas
+    # quedaban sin proyecto: seguian en el almacen pero desaparecian de toda
+    # vista por proyecto —el mapa, `gb last` de un repo— o sea, capturadas y
+    # mudas. Un campo con el nombre que nadie lee se lee igual que un campo que
+    # falta (experimento poliglota, 19-ago-2026).
+    proyecto = (proc.get("project") or bruto.get("project")
+                or bruto.get("project_root") or proc.get("project_root"))
     if not proyecto and cwd:
         proyecto = _proyecto_de(cwd)
 

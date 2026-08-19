@@ -137,6 +137,19 @@ static void registra(DWORD codigo, const void *direccion, DWORD pid, DWORD tid,
        igual que un dato que falta. */
     fprintf(f, "},\"pid\":%lu,\"tid\":%lu", (unsigned long)pid, (unsigned long)tid);
     if (sesion && *sesion) fprintf(f, ",\"session_id\":\"%s\"", sesion);
+    /* El directorio, para que el buzon pueda deducir el proyecto. Sin el, la
+       captura de C quedaba fuera de toda vista por proyecto: archivada, pero
+       invisible en el mapa y en el `gb last` del repo. Las barras se escapan
+       porque en Windows son `\` y esto es JSON. */
+    char dir[MAX_PATH];
+    if (GetCurrentDirectoryA(MAX_PATH, dir)) {
+        fprintf(f, ",\"process\":{\"cwd\":\"");
+        for (const char *c = dir; *c; c++) {
+            if (*c == '\\') fputs("\\\\", f);
+            else fputc(*c, f);
+        }
+        fprintf(f, "\"}");
+    }
     fprintf(f, "}\n");
     fclose(f);
 }
