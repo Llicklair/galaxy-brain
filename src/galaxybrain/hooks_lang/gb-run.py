@@ -58,6 +58,10 @@ LANGUAGE_MARKERS: list[tuple[str, list[str]]] = [
     # Dart y elixir no llevan hook DENTRO del programa (el suyo exige tocar el
     # codigo del usuario): se cubren leyendo su stderr desde fuera, igual que go
     # y rust. Por eso solo hace falta reconocer el proyecto.
+    # C faltaba en esta tabla, asi que el envolvente nunca lo daba por presente
+    # y el arranque de su hook no se activaba jamas. Su lenguaje estaba medido,
+    # empaquetado y construido... y aqui invisible (experimento poliglota).
+    ("c",       [".c", ".h"]),
     ("dart",    ["pubspec.yaml", ".dart"]),
     ("elixir",  ["mix.exs", ".ex", ".exs"]),
 ]
@@ -666,6 +670,17 @@ def main() -> int:
 
     print(f"[gb run] Running: {' '.join(child_argv)}", file=sys.stderr)
     print(file=sys.stderr)
+
+    # C en Windows no tiene nada que se herede: su unica via es el envolvente
+    # depurador, y en `--arbol` cubre tambien a los nietos. Sin esto, en un repo
+    # mixto un binario de C llamado por otro programa se queda sin consola — y
+    # el resto del arbol si la tiene, que es la peor mezcla: parece que cubres
+    # todo. Solo se mete si el proyecto TIENE C y el envolvente esta construido.
+    if "c" in detected and sys.platform == "win32":
+        envolvente_c = HOOKS_DIR / "c" / "gb-run.exe"
+        if envolvente_c.is_file() and os.path.basename(child_argv[0]).lower() != "gb-run.exe":
+            child_argv = [str(envolvente_c), "--arbol"] + child_argv
+            print("[gb run]   + c: envolvente depurador sobre todo el arbol", file=sys.stderr)
 
     # Decide whether to capture stderr (for Go/Rust crash detection)
     capture_stderr = needs_stderr_capture(cmd_name, detected)

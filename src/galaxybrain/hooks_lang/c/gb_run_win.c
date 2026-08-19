@@ -117,6 +117,11 @@ static void registra(DWORD codigo, const void *direccion, DWORD pid, DWORD tid,
        `capture_method` COMO se capturo (hook/stderr/wrapper). Son dos campos
        distintos y meter aqui "debugger" era colar un metodo disfrazado de
        contexto: gb lo pintaba como un hilo llamado "debugger" que no existe. */
+    /* El id de sesion que reparte `gb run`: sin el, el crash de C queda
+       huerfano en un repo mixto — capturado, pero imposible de atar a la cadena
+       de procesos que lo produjo, que es justo lo que hace util un buzon comun.
+       Era el segundo hook al que le faltaba (experimento poliglota, 19-ago). */
+    const char *sesion = getenv("GB_SESSION_ID");
     fprintf(f,
             "{\"schema\":2,\"ts\":\"%s\",\"lang\":\"c\","
             "\"exception\":{\"origin\":\"%s\"},\"capture_method\":\"wrapper\","
@@ -125,21 +130,114 @@ static void registra(DWORD codigo, const void *direccion, DWORD pid, DWORD tid,
             ts, (tid == tid_principal ? "main" : "thread"), via,
             nombre_excepcion(codigo), (unsigned long)codigo);
     if (direccion) fprintf(f, ",\"address\":\"0x%p\"", direccion);
-    fprintf(f, "},\"pid\":%lu,\"tid\":%lu}\n",
-            (unsigned long)pid, (unsigned long)tid);
+    /* Ojo con el orden: el `session_id` va FUERA del objeto `error`. Puesto
+       dentro (que es donde cayo al primer intento) el registro sigue siendo
+       JSON valido y el campo existe... pero en el sitio que nadie mira, asi que
+       el crash seguia saliendo huerfano. Un dato en el sitio equivocado se lee
+       igual que un dato que falta. */
+    fprintf(f, "},\"pid\":%lu,\"tid\":%lu", (unsigned long)pid, (unsigned long)tid);
+    if (sesion && *sesion) fprintf(f, ",\"session_id\":\"%s\"", sesion);
+    fprintf(f, "}\n");
     fclose(f);
 }
 
+/* Los runtimes que YA traen su propio hook. En modo arbol el depurador ve las
+   excepciones de TODOS los procesos, y una NullReferenceException de .NET llega
+   al nivel nativo como un ACCESS_VIOLATION igual que el de un programa en C: sin
+   este filtro, el crash de C# entraba DOS veces —por su hook y por aqui— y el
+   segundo iba etiquetado como "c", que es sencillamente falso. Un registro mal
+   atribuido es peor que uno que falta: manda a mirar el lenguaje que no es. */
+static const char *RUNTIMES_CON_HOOK[] = {
+    "dotnet.exe", "java.exe", "javaw.exe", "node.exe", "ruby.exe", "php.exe",
+    "lua.exe", "python.exe", "pythonw.exe", "dart.exe", "scala.exe", "kotlin.exe",
+    NULL,
+};
+
+#define GB_MAX_PROCESOS 64
+static DWORD gb_pids[GB_MAX_PROCESOS];
+static char gb_imagenes[GB_MAX_PROCESOS][MAX_PATH];
+static int gb_n_procesos = 0;
+
+static void recuerda_proceso(DWORD pid, HANDLE proceso) {
+    if (gb_n_procesos >= GB_MAX_PROCESOS || !proceso) return;
+    DWORD tam = MAX_PATH;
+    char ruta[MAX_PATH] = "";
+    if (!QueryFullProcessImageNameA(proceso, 0, ruta, &tam)) return;
+    gb_pids[gb_n_procesos] = pid;
+    strncpy(gb_imagenes[gb_n_procesos], ruta, MAX_PATH - 1);
+    gb_imagenes[gb_n_procesos][MAX_PATH - 1] = '\0';
+    gb_n_procesos++;
+}
+
+/* Las DLL que delatan a un runtime con hook propio. Es mejor discriminador que
+   el nombre del ejecutable: un binario de .NET publicado se llama como quiera
+   (`paso.exe`), pero SIEMPRE carga coreclr/hostfxr. Y un programa en C no carga
+   ninguna de estas. */
+static const char *DLLS_DE_RUNTIME[] = {
+    "coreclr.dll", "hostfxr.dll", "hostpolicy.dll", "clrjit.dll",
+    "jvm.dll", "libnode.dll", "node.exe", "dart.dll",
+    NULL,
+};
+
+static DWORD gb_gestionados[GB_MAX_PROCESOS];
+static int gb_n_gestionados = 0;
+
+static void marca_gestionado(DWORD pid) {
+    for (int i = 0; i < gb_n_gestionados; i++) if (gb_gestionados[i] == pid) return;
+    if (gb_n_gestionados < GB_MAX_PROCESOS) gb_gestionados[gb_n_gestionados++] = pid;
+}
+
+static void mira_dll(DWORD pid, HANDLE fichero) {
+    if (!fichero) return;
+    char ruta[MAX_PATH] = "";
+    if (!GetFinalPathNameByHandleA(fichero, ruta, MAX_PATH, 0)) return;
+    const char *barra = strrchr(ruta, '\\');
+    const char *nombre = barra ? barra + 1 : ruta;
+    for (int j = 0; DLLS_DE_RUNTIME[j]; j++) {
+        if (_stricmp(nombre, DLLS_DE_RUNTIME[j]) == 0) { marca_gestionado(pid); return; }
+    }
+}
+
+static int lo_cubre_su_propio_hook(DWORD pid) {
+    for (int i = 0; i < gb_n_gestionados; i++) if (gb_gestionados[i] == pid) return 1;
+    for (int i = 0; i < gb_n_procesos; i++) {
+        if (gb_pids[i] != pid) continue;
+        const char *barra = strrchr(gb_imagenes[i], '\\');
+        const char *nombre = barra ? barra + 1 : gb_imagenes[i];
+        for (int j = 0; RUNTIMES_CON_HOOK[j]; j++) {
+            if (_stricmp(nombre, RUNTIMES_CON_HOOK[j]) == 0) return 1;
+        }
+        return 0;
+    }
+    return 0;   /* desconocido: se registra, que es el lado seguro */
+}
+
+
 int main(int argc, char **argv) {
     int soltar = 0;
+    /* --arbol: depurar tambien a los NIETOS (DEBUG_PROCESS en vez de
+       DEBUG_ONLY_THIS_PROCESS). Es lo unico que cubre a un binario de C llamado
+       por otro programa en un repo mixto: en Windows no hay nada que se herede
+       solo, al reves que LD_PRELOAD en Linux. Va detras de una bandera y no por
+       defecto porque tiene coste — engancha el depurador a TODO el arbol — y en
+       este proyecto lo que cuesta se enciende midiendo, no suponiendo. */
+    int arbol = 0;
     int i = 1;
     for (; i < argc; i++) {
         if (strcmp(argv[i], "--soltar") == 0)      soltar = 1;
         else if (strcmp(argv[i], "--pegado") == 0) soltar = 0;
+        else if (strcmp(argv[i], "--arbol") == 0)  arbol = 1;
         else break;
     }
+    /* En modo arbol manda `pegado`: `soltar` decide por el exit code del
+       proceso que se solto, y con nietos el que revienta puede no ser el que se
+       espera. Antes que dar un veredicto sobre el proceso equivocado, se observa
+       y se registra en la segunda vuelta. */
+    if (arbol) soltar = 0;
+
     if (i >= argc) {
-        fprintf(stderr, "uso: gb-run.exe [--soltar|--pegado] programa.exe [args...]\n");
+        fprintf(stderr,
+                "uso: gb-run.exe [--soltar|--pegado] [--arbol] programa.exe [args...]\n");
         return 2;
     }
 
@@ -163,7 +261,8 @@ int main(int argc, char **argv) {
     /* Handles heredados: el hijo escribe DIRECTO en nuestro stdout/stderr, sin
        tuberia intermedia. Un byte suyo es un byte nuestro, sin reescribir. */
     if (!CreateProcessA(NULL, cmd, NULL, NULL, TRUE,
-                        DEBUG_ONLY_THIS_PROCESS, NULL, NULL, &si, &pi)) {
+                        arbol ? DEBUG_PROCESS : DEBUG_ONLY_THIS_PROCESS,
+                        NULL, NULL, &si, &pi)) {
         fprintf(stderr, "gb-run: no se pudo lanzar (error %lu)\n", GetLastError());
         return 127;
     }
@@ -174,6 +273,9 @@ int main(int argc, char **argv) {
     /* El hilo del CREATE_PROCESS es el principal: con el se decide si la
        excepcion afloro en `main` o en un `thread`, que es lo que pide el enum. */
     DWORD tid_principal = 0;
+    /* La ultima excepcion registrada, para no contar dos veces la misma. */
+    DWORD ultimo_pid = 0, ultimo_codigo = 0;
+    const void *ultima_direccion = NULL;
 
     /* Lo visto en la primera vuelta, por si luego resulta que mato al proceso. */
     DWORD vi_codigo = 0, vi_pid = 0, vi_tid = 0;
@@ -217,18 +319,46 @@ int main(int argc, char **argv) {
             } else if (ev.u.Exception.dwFirstChance) {
                 /* Que la maneje el programa si tiene con que. Nosotros miramos. */
                 continuar = DBG_EXCEPTION_NOT_HANDLED;
+            } else if (arbol && lo_cubre_su_propio_hook(ev.dwProcessId)) {
+                /* Ese proceso ya tiene su hook dentro: lo suyo lo cuenta el, y
+                   contarlo aqui ademas lo etiquetaria como "c". */
+                continuar = DBG_EXCEPTION_NOT_HANDLED;
+            } else if (ev.dwProcessId == ultimo_pid
+                       && er->ExceptionCode == ultimo_codigo
+                       && er->ExceptionAddress == ultima_direccion) {
+                /* La MISMA excepcion, otra vez: en modo arbol el sistema la
+                   reporta dos veces y el mismo crash entraba duplicado en el
+                   buzon. Dos registros de un solo fallo no son mas informacion:
+                   son una cuenta inflada, y este proyecto vive de que sus
+                   numeros se puedan creer (19-ago-2026). */
+                continuar = DBG_EXCEPTION_NOT_HANDLED;
             } else {
                 /* Segunda vuelta: nadie la manejo. Esto si es un crash. */
                 registra(er->ExceptionCode, er->ExceptionAddress,
                          ev.dwProcessId, ev.dwThreadId, tid_principal, "debugger");
+                ultimo_pid = ev.dwProcessId;
+                ultimo_codigo = er->ExceptionCode;
+                ultima_direccion = er->ExceptionAddress;
                 continuar = DBG_EXCEPTION_NOT_HANDLED;
             }
         } else if (ev.dwDebugEventCode == CREATE_PROCESS_DEBUG_EVENT) {
             if (!tid_principal) tid_principal = ev.dwThreadId;
+            /* En modo arbol llegan tambien los nietos: su handle de fichero se
+               cierra en cuanto se recibe, o el proceso queda enganchado. */
+            recuerda_proceso(ev.dwProcessId, ev.u.CreateProcessInfo.hProcess);
+            if (ev.u.CreateProcessInfo.hFile) CloseHandle(ev.u.CreateProcessInfo.hFile);
+        } else if (ev.dwDebugEventCode == LOAD_DLL_DEBUG_EVENT) {
+            mira_dll(ev.dwProcessId, ev.u.LoadDll.hFile);
+            if (ev.u.LoadDll.hFile) CloseHandle(ev.u.LoadDll.hFile);
         } else if (ev.dwDebugEventCode == EXIT_PROCESS_DEBUG_EVENT) {
-            salida = ev.u.ExitProcess.dwExitCode;
-            ContinueDebugEvent(ev.dwProcessId, ev.dwThreadId, DBG_CONTINUE);
-            break;
+            /* Solo manda la muerte del proceso RAIZ: en modo arbol mueren
+               tambien los nietos, y salir con el primero dejaria la cadena a
+               medias y devolveria el exit code de quien no era. */
+            if (ev.dwProcessId == pi.dwProcessId) {
+                salida = ev.u.ExitProcess.dwExitCode;
+                ContinueDebugEvent(ev.dwProcessId, ev.dwThreadId, DBG_CONTINUE);
+                break;
+            }
         }
 
         ContinueDebugEvent(ev.dwProcessId, ev.dwThreadId, continuar);
