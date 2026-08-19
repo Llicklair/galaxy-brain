@@ -17,6 +17,15 @@
 local NULO = setmetatable({}, {__tostring = function() return 'null' end})
 
 -- ==================== JSON minimo ====================
+local gb_trace_id, gb_parent_span = nil, nil
+do
+  local previo = os.getenv('TRACEPARENT') or ''
+  local partes = {}
+  for x in string.gmatch(previo, '[^-]+') do partes[#partes+1] = x end
+  if #partes == 4 and #partes[2] == 32 then gb_trace_id = partes[2] end
+  if #partes == 4 and #partes[3] == 16 then gb_parent_span = partes[3] end
+end
+
 local function json_escape(s)
     s = s:gsub('\\', '\\\\'):gsub('"', '\\"')
     s = s:gsub('\n', '\\n'):gsub('\r', '\\r'):gsub('\t', '\\t')
@@ -145,6 +154,10 @@ local function escribe(mensaje, traceback, frames)
         schema = 2,
         ts = os.date('!%Y-%m-%dT%H:%M:%SZ'),
         session_id = os.getenv('GB_SESSION_ID') or 'unknown',
+        -- W3C Trace Context: de quien venimos. Lua no tiene setenv portable,
+        -- asi que puede ser HIJO en la cadena pero no padre — declarado.
+        trace_id = gb_trace_id,
+        parent_span = gb_parent_span,
         language = 'lua',
         exception = {
             type = 'LuaError',

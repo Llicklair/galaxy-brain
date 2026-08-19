@@ -344,7 +344,7 @@ def _cadena_para_mapa(root, capturas):
     import glob
     import json as _json
 
-    por_pid, fichas = {}, []
+    por_pid, por_span, fichas = {}, {}, []
     for captura in capturas:
         cid = captura.get("id")
         if not cid:
@@ -359,18 +359,26 @@ def _cadena_para_mapa(root, capturas):
             continue
         proc = registro.get("process") or {}
         pid = proc.get("pid")
-        if pid is None:
-            continue
         ficha = {"nodo": captura.get("nodo") or "",
-                 "lang": registro.get("language") or "",
-                 "pid": pid, "ppid": proc.get("ppid"),
-                 "sesion": registro.get("session_id") or ""}
-        por_pid[(ficha["sesion"], pid)] = ficha
+                  "lang": registro.get("language") or "",
+                  "pid": pid, "ppid": proc.get("ppid"),
+                  "sesion": registro.get("session_id") or "",
+                  "span": registro.get("span_id") or "",
+                  "padre_span": registro.get("parent_span") or ""}
+        if pid is not None:
+            por_pid[(ficha["sesion"], pid)] = ficha
+        if ficha["span"]:
+            por_span[ficha["span"]] = ficha
         fichas.append(ficha)
 
     cadena = []
     for ficha in fichas:
-        padre = por_pid.get((ficha["sesion"], ficha["ppid"]))
+        # Primero el SPAN (W3C Trace Context): lo hereda cualquier hijo por
+        # variable de entorno, sin que el runtime tenga que saber decir su pid.
+        # El pid queda de respaldo, para los hooks que aun no propagan trace.
+        padre = por_span.get(ficha["padre_span"]) if ficha["padre_span"] else None
+        if padre is None:
+            padre = por_pid.get((ficha["sesion"], ficha["ppid"]))
         if not padre or not padre["nodo"] or not ficha["nodo"]:
             continue
         if padre["nodo"] == ficha["nodo"]:

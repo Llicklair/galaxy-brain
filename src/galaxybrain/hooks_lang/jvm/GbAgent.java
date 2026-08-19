@@ -138,6 +138,17 @@ public class GbAgent {
         // session ID for cross-language correlation
         String sessionId = System.getenv("GB_SESSION_ID");
         jsonField(sb, "session_id", sessionId != null ? sessionId : "unknown", false);
+        // W3C Trace Context: de quien venimos. La JVM no puede reescribir su
+        // propio entorno, asi que puede ser HIJO en la cadena pero no padre;
+        // sus hijos heredan el TRACEPARENT del abuelo. Declarado, no disimulado.
+        String tp = System.getenv("TRACEPARENT");
+        if (tp != null) {
+            String[] partes = tp.split("-");
+            if (partes.length == 4 && partes[1].length() == 32) {
+                jsonField(sb, "trace_id", partes[1], false);
+                if (partes[2].length() == 16) jsonField(sb, "parent_span", partes[2], false);
+            }
+        }
 
         // hook
         jsonField(sb, "hook", "jvm-agent", false);

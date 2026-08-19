@@ -13,6 +13,20 @@
  * Install: php -d auto_prepend_file=/ruta/gb-hook.php  (o php.ini)
  */
 
+// W3C Trace Context por variable de entorno (spec de OpenTelemetry para cruzar
+// procesos sin red): el span de quien nos llamo queda como PADRE, se genera el
+// propio y se re-exporta con putenv() para los hijos. No depende de pids —
+// justo lo que en PHP no se puede preguntar sin la extension posix.
+$GLOBALS['gb_trace'] = (function () {
+    $previo = explode('-', getenv('TRACEPARENT') ?: '');
+    $traza = (count($previo) === 4 && strlen($previo[1]) === 32)
+        ? $previo[1] : bin2hex(random_bytes(16));
+    $padre = (count($previo) === 4 && strlen($previo[2]) === 16) ? $previo[2] : null;
+    $propio = bin2hex(random_bytes(8));
+    putenv("TRACEPARENT=00-$traza-$propio-01");
+    return ['trace_id' => $traza, 'span_id' => $propio, 'parent_span' => $padre];
+})();
+
 (function () {
     $home = getenv('HOME') ?: getenv('USERPROFILE') ?: (
         getenv('HOMEDRIVE') && getenv('HOMEPATH')
@@ -124,6 +138,9 @@
                 'schema' => 2,
                 'ts' => date('c'),
                 'session_id' => getenv('GB_SESSION_ID') ?: 'unknown',
+                'trace_id' => $GLOBALS['gb_trace']['trace_id'],
+                'span_id' => $GLOBALS['gb_trace']['span_id'],
+                'parent_span' => $GLOBALS['gb_trace']['parent_span'],
                 'language' => 'php',
                 'exception' => ['type' => $tipo, 'message' => $mensaje, 'origin' => $origen],
                 'frames' => $frames,

@@ -122,6 +122,20 @@ def setup_env(
     # Always set the session ID
     env["GB_SESSION_ID"] = session_id
 
+    # W3C Trace Context por variable de entorno: el estandar que OpenTelemetry
+    # define EXACTAMENTE para cruzar procesos cuando no hay red (CI, batch,
+    # subprocess). Se siembra aqui la raiz; cada hook que pueda leera este
+    # TRACEPARENT, se anotara como hijo del span que traiga, generara el suyo y
+    # lo exportara para SUS hijos.
+    #
+    # Por que esto y no los pids: el pid del padre no se puede preguntar en
+    # varios runtimes (lua, php y C# no tienen API portable) y el envolvente no
+    # puede atribuir lo que lee de un stderr. La variable, en cambio, la hereda
+    # todo hijo sin que nadie coopere.
+    if not env.get("TRACEPARENT"):
+        env["TRACEPARENT"] = "00-%s-%s-01" % (
+            uuid.uuid4().hex, uuid.uuid4().hex[:16])
+
     for lang in detected_languages:
         if lang == "python":
             # Python hooks use .pth files; just ensure GB_SESSION_ID is set (done above)

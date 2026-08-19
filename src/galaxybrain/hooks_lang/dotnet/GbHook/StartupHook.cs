@@ -107,6 +107,18 @@ internal class StartupHook
         // que lo produjo (experimento poliglota, 19-ago-2026).
         var sesion = Environment.GetEnvironmentVariable("GB_SESSION_ID");
         if (!string.IsNullOrEmpty(sesion)) JsonField(sb, "session_id", sesion);
+        // W3C Trace Context: quien nos llamo, y el nuestro para quien llamemos.
+        // .NET si puede reescribir su entorno, asi que aqui la cadena continua.
+        var tp = Environment.GetEnvironmentVariable("TRACEPARENT");
+        if (!string.IsNullOrEmpty(tp))
+        {
+            var partes = tp.Split('-');
+            if (partes.Length == 4 && partes[1].Length == 32)
+            {
+                JsonField(sb, "trace_id", partes[1]);
+                if (partes[2].Length == 16) JsonField(sb, "parent_span", partes[2]);
+            }
+        }
 
         // Exception chain.
         sb.Append("\"exception\":");

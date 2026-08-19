@@ -11,6 +11,27 @@
 
 'use strict';
 
+// ── W3C Trace Context por variable de entorno ──────────────────────────────
+// El estandar que OpenTelemetry define para cruzar procesos cuando no hay red.
+// Se lee el TRACEPARENT que dejo quien nos llamo, se anota su span como PADRE,
+// se genera uno propio y se re-exporta: cualquier hijo que lancemos lo hereda
+// sin que nadie tenga que cooperar. Es lo que los pids no podian dar — hay
+// runtimes que no saben decir quien es su padre.
+var gbTrace = (function () {
+  function hex(n) {
+    var s = '';
+    for (var i = 0; i < n; i++) s += Math.floor(Math.random() * 16).toString(16);
+    return s;
+  }
+  var previo = process.env.TRACEPARENT || '';
+  var partes = previo.split('-');
+  var traceId = (partes.length === 4 && partes[1].length === 32) ? partes[1] : hex(32);
+  var parentSpan = (partes.length === 4 && partes[2].length === 16) ? partes[2] : null;
+  var spanId = hex(16);
+  try { process.env.TRACEPARENT = '00-' + traceId + '-' + spanId + '-01'; } catch (_) {}
+  return { traceId: traceId, spanId: spanId, parentSpan: parentSpan };
+})();
+
 ;(function gbHookInit() {
   // Wrap the entire hook so a bug here never masks the real error.
   try {
@@ -122,6 +143,11 @@
         schema:  2,
         ts:      new Date().toISOString(),
         session_id: sessionId,
+        // W3C Trace Context: quien me llamo, sin depender de pids. Ver
+        // gbTrace() abajo.
+        trace_id: gbTrace.traceId,
+        span_id: gbTrace.spanId,
+        parent_span: gbTrace.parentSpan,
         language: detectLanguage(frames),
         exception: {
           type:    (err && err.constructor && err.constructor.name) || typeof err,

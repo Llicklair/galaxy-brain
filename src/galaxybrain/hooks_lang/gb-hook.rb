@@ -8,7 +8,23 @@
 # the process die normally (the original error message is preserved).
 
 require 'json'
+require 'securerandom'
 require 'fileutils'
+
+# W3C Trace Context por variable de entorno (spec de OpenTelemetry para cruzar
+# procesos sin red): se lee el TRACEPARENT de quien nos llamo, su span queda
+# como PADRE, se genera el propio y se re-exporta para los hijos. No depende de
+# pids, que es donde varios runtimes no llegan.
+GB_TRACE = begin
+  previo = (ENV['TRACEPARENT'] || '').split('-')
+  traza = (previo.length == 4 && previo[1].length == 32) ? previo[1] : SecureRandom.hex(16)
+  padre = (previo.length == 4 && previo[2].length == 16) ? previo[2] : nil
+  propio = SecureRandom.hex(8)
+  ENV['TRACEPARENT'] = "00-#{traza}-#{propio}-01"
+  { trace_id: traza, span_id: propio, parent_span: padre }
+rescue StandardError
+  { trace_id: nil, span_id: nil, parent_span: nil }
+end
 require 'socket'       # for hostname (stdlib)
 require 'time'         # for Time#iso8601 (stdlib)
 
@@ -87,6 +103,9 @@ module GBHook
         schema:  2,
         ts:      Time.now.iso8601,
         session_id: session_id,
+        trace_id: GB_TRACE[:trace_id],
+        span_id: GB_TRACE[:span_id],
+        parent_span: GB_TRACE[:parent_span],
         language: 'ruby',
         exception: {
           type:    exception.class.name,

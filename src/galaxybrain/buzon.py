@@ -164,6 +164,13 @@ def normaliza(bruto):
     # El valor crudo, cuando no es del enum: ni se usa ni se tira. Tirarlo
     # dejaria el registro limpio y el hook roto para siempre, porque nadie
     # volveria a ver la prueba de que manda algo que el schema no admite.
+    # El trace de W3C, tal cual viene: es lo que ata un crash con el proceso que
+    # lo llamo cuando el pid no se puede preguntar. Se copia sin tocar — el
+    # buzon no interpreta identificadores, solo los pasa.
+    for campo in ("trace_id", "span_id", "parent_span"):
+        if bruto.get(campo):
+            registro[campo] = bruto[campo]
+
     if origen_v2 and origen_v2 not in ORIGENES:
         registro["origin_fuera_de_schema"] = str(origen_v2)
     return registro
