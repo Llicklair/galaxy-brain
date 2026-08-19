@@ -392,6 +392,21 @@ def _cruzadas_para_mapa(root, informe_simbolos, informe_grafo=None):
         return []
 
 
+def _lanzadores_para_mapa(root, informe_simbolos, informe_grafo=None):
+    """Los nodos que LANZAN otro proceso, se sepa a quien o no.
+
+    Es sintaxis, o sea certeza total, y se estaba tirando: en el proyecto
+    poliglota son 13 ficheros que lanzan y ninguno se veia porque su destino
+    viaja en una variable. El destino es otra pregunta.
+    """
+    from . import cruzadas
+
+    try:
+        return cruzadas.lanzadores(root, informe_simbolos, informe_grafo)
+    except Exception:
+        return []
+
+
 def _cadena_para_mapa(root, capturas):
     """Las llamadas ENTRE LENGUAJES que de verdad ocurrieron, o [].
 
@@ -1701,6 +1716,7 @@ def cmd_who(args):
                 # caian del tope y sus enlaces desaparecian sin motivo visible.
                 cadena=_cadena_para_mapa(root, _capturas_para_mapa(root, inf, tope=40)),
                 cruzadas=_cruzadas_para_mapa(root, inf, grafo),
+                lanzadores=_lanzadores_para_mapa(root, inf, grafo),
                 suelo=_suelo_para_mapa(root),
                 sin_leer=_capturas_sin_leer(root),
                 codigo=_codigo_para_mapa(root, inf),

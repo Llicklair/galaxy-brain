@@ -118,6 +118,68 @@ def sitios(root, tope=2000):
     return fuera
 
 
+def qual_de_ruta(ruta, root):
+    """Ruta -> nombre de modulo, para CUALQUIER extension.
+
+    `graph.module_name` corta tres caracteres porque es de y para Python: con
+    `.lua` o `.php` devolvia `paso_lua.` —con el punto colgando— y no casaba con
+    ningun nodo del mapa.
+    """
+    try:
+        rel = os.path.relpath(ruta, root).replace("\\", "/")
+    except ValueError:   # otra unidad de disco en Windows
+        return ""
+    partes = [p for p in rel.split("/") if p and p != "."]
+    if partes and partes[0] == "src":
+        partes = partes[1:]
+    if not partes:
+        return ""
+    if partes[-1] == "__init__.py":
+        partes = partes[:-1]
+    else:
+        partes[-1] = os.path.splitext(partes[-1])[0]
+    return ".".join(partes)
+
+
+def _quals(informe_simbolos, informe_grafo=None):
+    """{qual normalizado: qual} de los modulos de los dos informes.
+
+    De los DOS porque en un proyecto pequeño o sin funciones el de simbolos
+    puede no traer ninguno y el del grafo si.
+    """
+    modulos = {}
+    for informe in (informe_simbolos, informe_grafo):
+        for n in (informe or {}).get("nodes", []) or ():
+            if n.get("kind") == "module" and n.get("qual"):
+                modulos.setdefault(os.path.normcase(n["qual"]), n["qual"])
+        # El informe del GRAFO no lleva `nodes`: sus modulos estan en `fan_in`.
+        # Sin mirar ahi, en un proyecto no-Python solo salia el unico .py que
+        # habia por medio — 1 nodo de 13 en el poliglota, y parecia que la
+        # deteccion fallaba cuando lo que fallaba era donde se preguntaba.
+        for qual in (informe or {}).get("fan_in") or {}:
+            if qual:
+                modulos.setdefault(os.path.normcase(qual), qual)
+    return modulos
+
+
+def lanzadores(root, informe_simbolos, informe_grafo=None, tope=2000):
+    """Los nodos que LANZAN otro proceso, se sepa a quien o no.
+
+    Que un fichero lance algo es un hecho con certeza total —es sintaxis— y se
+    estaba tirando a la basura cuando el destino venia de una variable: en el
+    proyecto poliglota, 13 de 13. El destino es otra pregunta y tiene su propia
+    arista; esto contesta «de aqui sale un proceso», que es por donde empieza a
+    tirar del hilo quien mira el mapa.
+    """
+    modulos = _quals(informe_simbolos, informe_grafo)
+    fuera = []
+    for sitio in sitios(root, tope):
+        qual = modulos.get(os.path.normcase(qual_de_ruta(sitio["fichero"], root)))
+        if qual and qual not in fuera:
+            fuera.append(qual)
+    return fuera
+
+
 def aristas(root, informe_simbolos, informe_grafo=None, tope=2000):
     """Los sitios con destino resuelto, como aristas entre nodos del mapa.
 
@@ -127,40 +189,10 @@ def aristas(root, informe_simbolos, informe_grafo=None, tope=2000):
     """
 
 
-    # Los modulos salen de los DOS informes: en un proyecto pequeño o sin
-    # funciones, el de simbolos puede no traer ninguno y el del grafo si. Con
-    # uno solo, las aristas se caian sin decir por que (medido en el banco
-    # literal: 5 sitios resueltos y 0 aristas dibujadas).
-    modulos = {}
-    for informe in (informe_simbolos, informe_grafo):
-        for n in (informe or {}).get("nodes", []) or ():
-            if n.get("kind") == "module" and n.get("qual"):
-                modulos.setdefault(os.path.normcase(n["qual"]), n["qual"])
-
-    def qual_de(ruta):
-        """Ruta -> nombre de modulo, para CUALQUIER extension.
-
-        `graph.module_name` corta tres caracteres porque es de y para Python:
-        con `.lua` o `.php` devolvia `paso_lua.` —con el punto colgando— y la
-        arista no casaba con ningun nodo. Aqui se quita la extension de verdad.
-        """
-        try:
-            rel = os.path.relpath(ruta, root).replace("\\", "/")
-        except ValueError:   # otra unidad de disco en Windows
-            return ""
-        partes = [p for p in rel.split("/") if p and p != "."]
-        if partes and partes[0] == "src":
-            partes = partes[1:]
-        if not partes:
-            return ""
-        if partes[-1] == "__init__.py":
-            partes = partes[:-1]
-        else:
-            partes[-1] = os.path.splitext(partes[-1])[0]
-        return ".".join(partes)
+    modulos = _quals(informe_simbolos, informe_grafo)
 
     def nodo_de(ruta):
-        return modulos.get(os.path.normcase(qual_de(ruta)))
+        return modulos.get(os.path.normcase(qual_de_ruta(ruta, root)))
 
     fuera, vistas = [], set()
     for sitio in sitios(root, tope):

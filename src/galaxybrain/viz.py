@@ -381,6 +381,11 @@ CLASES_ARISTA = (
      "etiqueta": "lanza otro lenguaje (en el codigo)"},
     {"clave": "cadena", "color": "#f472b6",
      "etiqueta": "lo lanzo (ocurrio, con captura)"},
+    # Este NO es una linea: es una marca sobre el nodo. Que un fichero lance un
+    # proceso es sintaxis —certeza total— aunque no se sepa a quien, y antes se
+    # tiraba: en el poliglota, 13 ficheros que lanzan y ninguno señalado.
+    {"clave": "lanza", "color": "#f59e0b", "tipo": "punto",
+     "etiqueta": "lanza un proceso (sitio en el codigo)"},
 )
 
 
@@ -391,11 +396,17 @@ def _leyenda_aristas(presentes):
     en un repo de un solo lenguaje, una leyenda con "lanza otro lenguaje" manda
     a buscar una linea que no existe.
     """
-    return "".join(
-        '<span><i class="linea" style="color:%s"></i>%s</span>'
-        % (c["color"], c["etiqueta"])
-        for c in CLASES_ARISTA if presentes.get(c["clave"])
-    )
+    trozos = []
+    for c in CLASES_ARISTA:
+        if not presentes.get(c["clave"]):
+            continue
+        if c.get("tipo") == "punto":
+            trozos.append('<span><i style="background:%s"></i>%s</span>'
+                          % (c["color"], c["etiqueta"]))
+        else:
+            trozos.append('<span><i class="linea" style="color:%s"></i>%s</span>'
+                          % (c["color"], c["etiqueta"]))
+    return "".join(trozos)
 
 
 def render_graph_cloud(
@@ -428,6 +439,9 @@ def render_graph_cloud(
     # Las llamadas entre lenguajes que el CODIGO declara (literal resuelto).
     # Candidatas: se pintan distinto de la cadena, que es lo que ocurrio.
     cruzadas=None,
+    # Los nodos que lanzan otro proceso (sitio de llamada en el codigo), sepan
+    # a quien o no. Es un hecho de sintaxis: certeza total.
+    lanzadores=None,
 ):
     """La nube: nodos repartidos por fuerzas, coloreados por módulo, navegable.
 
@@ -824,6 +838,9 @@ def render_graph_cloud(
     for _i, _n in enumerate(datos):
         if _n.get("id"):
             _indice_nodo[_n["id"]] = _i
+    _lanzadores_js = sorted(
+        _indice_nodo[q] for q in set(lanzadores or ()) if q in _indice_nodo)
+
     _cruzadas_js = []
     for _paso in (cruzadas or []):
         _a = _indice_nodo.get(_paso.get("de"))
@@ -846,6 +863,7 @@ def render_graph_cloud(
     _presentes = dict(locals().get("_presentes_aristas") or {})
     _presentes["cruzada"] = bool(_cruzadas_js)
     _presentes["cadena"] = bool(_cadena_js)
+    _presentes["lanza"] = bool(_lanzadores_js)
     leyenda += _leyenda_aristas(_presentes)
 
     return _NUBE % {
@@ -886,6 +904,7 @@ def render_graph_cloud(
         "pelicula": _en_script(_json.dumps(_pelicula_js, ensure_ascii=False)),
         "cadena": _en_script(_json.dumps(_cadena_js, ensure_ascii=False)),
         "cruzadas": _en_script(_json.dumps(_cruzadas_js, ensure_ascii=False)),
+        "lanzadores": _en_script(_json.dumps(_lanzadores_js, ensure_ascii=False)),
         # La consola de errores entra al lienzo por defecto: las capturas
         # recientes, con su nodo, para que el feed diga `peta` en movimiento.
         "capturas": _en_script(_json.dumps(capturas or [], ensure_ascii=False)),
@@ -1152,6 +1171,7 @@ const AGENTES = %(agentes)s;
 const PELICULA = %(pelicula)s;   // git, no impresiones: ver `pelicula` en viz.py
 const CADENA = %(cadena)s;     // llamadas que OCURRIERON entre lenguajes
 const CRUZADAS = %(cruzadas)s;   // llamadas que el CODIGO declara (candidatas)
+const LANZADORES = %(lanzadores)s; // nodos con un sitio de llamada a otro proceso
 const CAPTURAS = %(capturas)s;
 const REFRESCO = %(refresco)s;
 const SIN_LEER = %(sin_leer)s;
@@ -1425,6 +1445,23 @@ function pinta(t){
     cx.lineWidth = par[3] ? 2.4 : (capa===3 ? 1.8 : capa===4 ? 1.4 : 1);
     cx.beginPath(); cx.moveTo(WX[a],WY[a]); cx.lineTo(WX[b],WY[b]); cx.stroke();
   }
+  // ---- los que LANZAN un proceso --------------------------------------------
+  // Un cuadro abierto sobre el nodo, en el mismo ambar que su arista: dice "de
+  // aqui sale un proceso" aunque no se sepa a quien. Es sintaxis, o sea certeza
+  // total, y antes se tiraba entera cuando el destino venia de una variable.
+  if(LANZADORES.length){
+    cx.save();
+    cx.strokeStyle = '#f59e0b';
+    cx.lineWidth = 1.4;
+    cx.globalAlpha = 0.85;
+    for(const i of LANZADORES){
+      if(foco!==null && i!==foco) cx.globalAlpha = 0.25; else cx.globalAlpha = 0.85;
+      const r = (NODOS[i].r || 4) + 3.5;
+      cx.strokeRect(WX[i]-r, WY[i]-r, r*2, r*2);
+    }
+    cx.restore();
+  }
+
   // ---- candidatas: lo que el CODIGO dice que lanza a quien -------------------
   // En ambar y a trazos LARGOS, distinto de la cadena (rosa, trazo corto): una
   // dice "aqui pone que llama a ese", la otra "ese proceso lanzo a aquel". Se
