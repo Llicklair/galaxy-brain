@@ -182,24 +182,6 @@ def _quals(informe_simbolos, informe_grafo=None):
     return modulos
 
 
-def lanzadores(root, informe_simbolos, informe_grafo=None, tope=2000):
-    """Los nodos que LANZAN otro proceso, se sepa a quien o no.
-
-    Que un fichero lance algo es un hecho con certeza total —es sintaxis— y se
-    estaba tirando a la basura cuando el destino venia de una variable: en el
-    proyecto poliglota, 13 de 13. El destino es otra pregunta y tiene su propia
-    arista; esto contesta «de aqui sale un proceso», que es por donde empieza a
-    tirar del hilo quien mira el mapa.
-    """
-    modulos = _quals(informe_simbolos, informe_grafo)
-    fuera = []
-    for sitio in sitios(root, tope):
-        qual = modulos.get(os.path.normcase(qual_de_ruta(sitio["fichero"], root)))
-        if qual and qual not in fuera:
-            fuera.append(qual)
-    return fuera
-
-
 def aristas(root, informe_simbolos, informe_grafo=None, tope=2000):
     """Los sitios con destino resuelto, como aristas entre nodos del mapa.
 
