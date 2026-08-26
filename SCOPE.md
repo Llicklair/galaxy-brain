@@ -144,6 +144,19 @@ otro coste. Si la excepción propaga fuera de `asyncio.run()`, ya se captura por
 - **No es multi-lenguaje ni multi-runtime.** Ni CI, ni UI, ni servidor. No "más adelante" como coartada:
   no antes de que haya una razón medida escrita aquí.
 - **No cubre `asyncio` ni `multiprocessing`** en la consola: hilo principal e hilos de `threading`.
+- **La captura es LOCAL: por entorno Python, nunca por máquina** (decidido 2026-08-26, medido en
+  Windows). "Instalarlo en global" se planteó y se midió antes de descartarlo: un `.pth` en el
+  purelib del intérprete de sistema **no corre en los venvs** (un venv recién creado no lleva ese
+  purelib en `sys.path`, y arranca con el user-site deshabilitado), así que "global" no compra la
+  cobertura que promete — los venvs, que es donde vive el código real, quedan fuera igual. Cubrirlos
+  de verdad exigiría un `sitecustomize.py` colgado de un `PYTHONPATH` de máquina: pisa el
+  `sitecustomize` de cualquier otra herramienta y mete una variable de entorno que afecta a todo
+  proceso Python del sistema — maquinaria pesada contra la propiedad 1 del `.pth` (no romper nunca
+  el arranque ajeno). El alcance honesto es el que `gb status` ya declara: *el entorno donde gb
+  escribió el `.pth`*, un `gb on` por entorno. Dato del mismo día que refuerza la decisión: el
+  Python de la Microsoft Store tiene el purelib en `WindowsApps` (solo lectura de verdad, y
+  `os.access` responde `True` antes de que `open` falle con `Errno 13`) — hasta el "global" de un
+  solo intérprete es terreno hostil.
 - **No reproduce el pasado paso a paso.** El estado es el del momento en que muere el proceso, no un
   depurador con viaje en el tiempo.
 - **Sí enseña un canvas — desde el 14-ago-2026, y por un dato, no por bonito.** El A/B del 13-ago
