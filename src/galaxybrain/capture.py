@@ -189,7 +189,11 @@ def _project_root(start=None):
     except BaseException:  # noqa: BLE001
         return None
     while True:
-        if os.path.isdir(os.path.join(current, ".git")):
+        # exists, no isdir: en un worktree `.git` es un FICHERO que apunta al
+        # repo. Con isdir toda captura nacida en un worktree salia sin proyecto
+        # y la ficha de `gb show` perdia el ancla (nodo y llamantes) en
+        # silencio — medido con 3 agentes en worktrees el 26-ago-2026.
+        if os.path.exists(os.path.join(current, ".git")):
             return current
         parent = os.path.dirname(current)
         if parent == current:

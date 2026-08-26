@@ -41,3 +41,15 @@ def test_la_forma_tapa_rutas_y_cosas_que_no_parecen_subcomando():
     assert capture.forma_de_argv(["t", "/etc/passwd"]) == ["t", "<arg>"]
     assert capture.forma_de_argv(["t", "MiClaveSecreta"]) == ["t", "<arg>"]
     assert capture.forma_de_argv([]) == []
+
+
+def test_la_raiz_del_proyecto_se_ve_desde_un_worktree(tmp_path):
+    """En un worktree `.git` es un FICHERO que apunta al repo. Con isdir toda
+    captura nacida en un worktree salia sin `process.project` y la ficha de
+    `gb show` perdia el ancla (nodo y llamantes) en silencio — medido con
+    tres agentes en worktrees el 26-ago-2026."""
+    raiz = tmp_path / "obra"
+    (raiz / "nucleo").mkdir(parents=True)
+    (raiz / ".git").write_text("gitdir: /repo/.git/worktrees/obra\n",
+                               encoding="utf-8")
+    assert capture._project_root(str(raiz / "nucleo")) == str(raiz)
