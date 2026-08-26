@@ -242,9 +242,20 @@ def _id_estable(registro):
         exc.get("message"), primero.get("file"), primero.get("line"),
         (registro.get("process") or {}).get("pid"),
     ))
-    stamp = str(registro.get("ts", "")).replace(":", "").replace("-", "").replace("+", "p")
+    # El sello va en hora LOCAL, venga como venga el ts: el hook de Node
+    # escribe UTC (`toISOString`) y el de Python local con offset, y dos
+    # crashes separados por segundos salian como T1217 y T1417 — dos horas de
+    # mentira en el prefijo del id (medido el 26-ago-2026). La huella del
+    # sufijo sigue usando el ts crudo: reingestar debe dar el mismo id.
+    from . import store
+
+    momento = store.parse_ts(str(registro.get("ts") or ""))
+    if momento is not None:
+        stamp = momento.astimezone().strftime("%Y%m%dT%H%M%S")
+    else:
+        stamp = str(registro.get("ts", "")).replace(":", "").replace("-", "").replace("+", "p")[:15]
     sufijo = hashlib.sha256(huella.encode("utf-8", "replace")).hexdigest()[:6]
-    return "%s-%s" % (stamp[:15] or "sin-fecha", sufijo)
+    return "%s-%s" % (stamp or "sin-fecha", sufijo)
 
 
 def _ya_archivado(registro):

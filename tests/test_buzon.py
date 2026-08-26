@@ -196,3 +196,26 @@ def test_un_origin_del_enum_si_nombra_el_hilo():
                          "exception": {"type": "panic", "origin": "goroutine"}})
     assert r["thread"] == "goroutine"
     assert "origin_fuera_de_schema" not in r
+
+
+def test_el_sello_del_id_va_en_hora_local_venga_el_ts_como_venga():
+    """El hook de Node escribe UTC (toISOString) y el de Python local con
+    offset: dos crashes separados por segundos salian como T1217 y T1417 —
+    dos horas de mentira en el prefijo del id (26-ago-2026). El sello se
+    normaliza a hora local AL INGERIR, para todos los hooks de una vez."""
+    import datetime
+
+    en_utc = _bruto(ts="2026-08-26T12:17:43Z")
+    en_local = _bruto(
+        ts=datetime.datetime(2026, 8, 26, 12, 17, 43,
+                             tzinfo=datetime.timezone.utc)
+        .astimezone().isoformat(timespec="seconds"))
+    assert buzon._id_estable(en_utc).split("-")[0] == \
+        buzon._id_estable(en_local).split("-")[0]
+
+
+def test_un_ts_imparseable_no_tumba_el_id():
+    registro = _bruto(ts="ayer por la tarde")
+    assert buzon._id_estable(registro)
+    registro = _bruto(ts="")
+    assert buzon._id_estable(registro).startswith("sin-fecha-")
