@@ -361,3 +361,44 @@ def test_un_stderr_normal_no_se_lee_como_crash():
     for texto in ("todo bien\n", "warning: algo\n", ""):
         assert gb_run.detect_dart_crash(texto) is None
         assert gb_run.detect_elixir_crash(texto) is None
+
+
+def test_el_hook_de_js_avisa_en_stderr_al_capturar(tmp_path):
+    """El flujo del desconocido, en Node: quien solo lee stderr tiene que
+    saber que hay captura. Sin id a proposito — el id se acuna al ingerir el
+    buzon, no en el hook — asi que el aviso manda a `gb last` (26-ago-2026:
+    el agente que rompio Node no supo que habia captura hasta preguntar)."""
+    import shutil
+    import subprocess
+
+    import pytest
+
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node no esta en esta maquina")
+    hook = os.path.join(os.path.dirname(consola.__file__),
+                        "hooks_lang", "gb-hook.js")
+    guion = os.path.join(str(tmp_path), "peta.js")
+    with open(guion, "w", encoding="utf-8") as fh:
+        fh.write("null.valor;\n")
+    # HOME/USERPROFILE al temporal: el hook escribe en ~/.galaxy-brain y esta
+    # prueba no puede ensuciar el buzon real (la misma regla que la sonda).
+    entorno = dict(os.environ, NODE_OPTIONS="--require " + hook,
+                   HOME=str(tmp_path), USERPROFILE=str(tmp_path))
+    entorno.pop("GB_QUIET", None)
+    entorno.pop("GB_LANG", None)
+
+    muerte = subprocess.run([node, guion], capture_output=True, text=True,
+                            timeout=60, env=entorno)
+    assert muerte.returncode != 0
+    assert "estado capturado -> gb last" in muerte.stderr
+    assert os.path.exists(os.path.join(str(tmp_path), ".galaxy-brain",
+                                       "crashes.jsonl"))
+
+    en_ingles = subprocess.run([node, guion], capture_output=True, text=True,
+                               timeout=60, env=dict(entorno, GB_LANG="en"))
+    assert "state captured -> gb last" in en_ingles.stderr
+
+    callado = subprocess.run([node, guion], capture_output=True, text=True,
+                             timeout=60, env=dict(entorno, GB_QUIET="1"))
+    assert "capturado" not in callado.stderr and "captured" not in callado.stderr

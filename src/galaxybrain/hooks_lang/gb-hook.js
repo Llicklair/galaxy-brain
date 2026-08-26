@@ -177,6 +177,17 @@ var gbTrace = (function () {
           fs.mkdirSync(CRASHES_DIR, { recursive: true });
         }
         fs.appendFileSync(CRASHES_FILE, JSON.stringify(record) + '\n');
+        // El aviso, como en Python: quien solo lee stderr tiene que saber que
+        // hay captura. SIN id — el id se acuna al ingerir el buzon, no aqui, y
+        // fabricar uno paralelo seria mentir. `gb last` es la puerta honesta.
+        var quiet = String(process.env.GB_QUIET || '').toLowerCase();
+        if (quiet === '' || quiet === '0' || quiet === 'false' ||
+            quiet === 'no' || quiet === 'off') {
+          var aviso = (process.env.GB_LANG === 'en')
+            ? '[galaxy-brain] state captured -> gb last'
+            : '[galaxy-brain] estado capturado -> gb last';
+          process.stderr.write(aviso + '\n');
+        }
       } catch (_) {
         // Silent fail — never mask the real crash.
       }
