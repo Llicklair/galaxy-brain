@@ -118,3 +118,25 @@ def test_la_leyenda_NO_nombra_lo_que_no_esta_en_pantalla():
     assert "import (exacto)" in html
     assert "lanza otro lenguaje" not in html
     assert "lo lanzo" not in html
+
+
+def test_mencionar_un_lanzador_en_un_comentario_NO_es_lanzar(tmp_path):
+    """El caso real (26-ago-2026): `impacted.py` salio en el mapa con la marca
+    de «lanza un proceso» por citar `subprocess.run(` en un comentario `#:`.
+    Un sitio que no es codigo manda a leer una llamada que no existe."""
+    _escribe(tmp_path, "a.py", "#: para el AST, `subprocess.run([...])` es una llamada\nx = 1\n")
+    _escribe(tmp_path, "b.js", "// aqui NO se usa spawnSync(cmd)\nlet y = 1;\n")
+    _escribe(tmp_path, "c.lua", "-- os.execute(cmd) queda prohibido aqui\nlocal z = 1\n")
+    _escribe(tmp_path, "d.java", " * Runtime.getRuntime().exec(cmd) — javadoc\nclass D {}\n")
+
+    assert cruzadas.sitios(str(tmp_path)) == []
+
+
+def test_el_comentario_no_tapa_el_codigo_de_la_linea_siguiente(tmp_path):
+    """La otra mitad del criterio: quitar comentarios no puede costar sitios
+    reales. El mismo fichero, comentario arriba y llamada de verdad debajo."""
+    _escribe(tmp_path, "real.py",
+             "# subprocess.run() se documenta aqui\nimport subprocess\nsubprocess.run(['x'])\n")
+
+    sitios = cruzadas.sitios(str(tmp_path))
+    assert [s["linea"] for s in sitios] == [3]

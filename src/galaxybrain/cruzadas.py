@@ -48,6 +48,24 @@ LANZADORES = {
     ".dart": (r"\bProcess\.(?:run|start|runSync)\s*\(",),
 }
 
+#: Con que empieza una linea que es comentario, por extension. Solo la linea
+#: entera (tras el sangrado): distinguir un comentario a final de linea
+#: exigiria un lexer por lenguaje, y el caso medido era el otro — `impacted.py`
+#: salio en el mapa como lanzador por MENCIONAR `subprocess.run(` en un
+#: comentario `#:` (26-ago-2026). El `*` es la continuacion de un comentario de
+#: bloque en la familia C.
+_ALMOHADILLA = ("#",)
+_BARRAS = ("//", "/*", "*")
+COMENTARIOS = {
+    ".py": _ALMOHADILLA, ".rb": _ALMOHADILLA,
+    ".php": _ALMOHADILLA + _BARRAS,
+    ".lua": ("--",),
+    ".js": _BARRAS, ".mjs": _BARRAS, ".ts": _BARRAS, ".tsx": _BARRAS,
+    ".java": _BARRAS, ".kt": _BARRAS, ".scala": _BARRAS, ".cs": _BARRAS,
+    ".c": _BARRAS, ".h": _BARRAS, ".go": _BARRAS, ".rs": _BARRAS,
+    ".dart": _BARRAS,
+}
+
 _LITERAL = re.compile(r"""["']([^"']{2,160})["']""")
 
 #: Cuanto se lee de un fichero como mucho. Un `.min.js` de 4 MB no aporta
@@ -100,6 +118,8 @@ def sitios(root, tope=2000):
         except OSError:
             continue
         for n, linea in enumerate(texto.splitlines(), 1):
+            if linea.lstrip().startswith(COMENTARIOS.get(ext, ())):
+                continue  # mencionar un lanzador no es lanzar
             if not any(re.search(p, linea) for p in LANZADORES[ext]):
                 continue
             destino = None
