@@ -154,6 +154,14 @@ _CASOS = (
 )
 
 
+#: La sonda se arma SOLA en cada hijo. Esto mide la FRONTERA (que fallo deja
+#: registro con el hook puesto); la instalacion es otra pregunta y ya tiene su
+#: medidor (`verify`). Mezclarlas era el bug: con la captura de la maquina
+#: apagada, las 4 discrepancias decian "agujero en la frontera" cuando la
+#: verdad era "no instalado" — y los tests heredaban ese estado (26-ago-2026).
+_ARMA = "import galaxybrain.autoinstall\n"
+
+
 def coverage():
     """Ejecuta cada modo de fallo y comprueba si dejo registro.
 
@@ -174,7 +182,7 @@ def coverage():
         observado, detalle = None, ""
         try:
             subprocess.run(
-                [sys.executable, "-c", codigo],
+                [sys.executable, "-c", _ARMA + codigo],
                 capture_output=True,
                 encoding="utf-8",
                 errors="replace",

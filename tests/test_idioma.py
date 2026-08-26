@@ -34,8 +34,12 @@ def test_el_camino_del_desconocido_en_ingles(tmp_path):
                    "commit", "-q", "-m", "base"]):
         subprocess.run(orden, cwd=str(raiz), timeout=60)
     entorno = dict(os.environ, GB_LANG="en", GB_HOME=str(tmp_path / "hogar"))
+    # El hijo arma su propio hook: este test mide el IDIOMA del aviso, no el
+    # mecanismo .pth (eso es test_autoinstall). Heredar la instalacion de la
+    # maquina hacia que fallara en una maquina sana con la captura apagada.
     muerte = subprocess.run(
-        [sys.executable, "-c", "from caja import parte\nparte(1, 0)"],
+        [sys.executable, "-c",
+         "import galaxybrain.autoinstall\nfrom caja import parte\nparte(1, 0)"],
         cwd=str(raiz), capture_output=True, text=True, timeout=120,
         env=entorno)
     assert "state captured -> gb show" in muerte.stderr
