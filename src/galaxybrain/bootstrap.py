@@ -29,8 +29,40 @@ def site_packages():
     return Path(sysconfig.get_paths()["purelib"])
 
 
+def user_site_pth():
+    """Donde cae el .pth cuando purelib es de solo lectura (Python de la Store,
+    interpretes de sistema). Solo vale si este interprete carga el user-site al
+    arrancar; si esta deshabilitado (venv, -s, PYTHONNOUSERSITE), no es candidato."""
+    import site
+
+    if not getattr(site, "ENABLE_USER_SITE", False):
+        return None
+    try:
+        return Path(site.getusersitepackages()) / PTH_NAME
+    except (AttributeError, OSError):
+        return None
+
+
+def pth_candidates():
+    """Donde puede vivir el .pth, en orden de preferencia: purelib primero,
+    user-site como repliegue cuando purelib no acepta escrituras."""
+    candidatos = [site_packages() / PTH_NAME]
+    user = user_site_pth()
+    if user is not None and user != candidatos[0]:
+        candidatos.append(user)
+    return candidatos
+
+
 def pth_path():
-    return site_packages() / PTH_NAME
+    """El .pth activo si ya existe en algun candidato; si no, el preferido."""
+    candidatos = pth_candidates()
+    for candidato in candidatos:
+        try:
+            if candidato.exists():
+                return candidato
+        except OSError:
+            continue
+    return candidatos[0]
 
 
 def verify(executable=None):
@@ -184,11 +216,27 @@ def enable():
     try:
         if path.exists() and path.read_text(encoding="utf-8").strip() == PTH_LINE:
             ya_estaba = True
-        else:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(PTH_LINE + "\n", encoding="utf-8")
-    except OSError as error:
-        return False, "no se pudo escribir %s (%s)" % (path, error)
+    except OSError:
+        pass
+
+    if not ya_estaba:
+        # La unica prueba de escribibilidad es escribir: en el Python de la
+        # Store, os.access() responde True sobre un purelib (WindowsApps) que
+        # luego rechaza open() con EACCES. Si purelib no traga, repliegue al
+        # user-site — que este interprete tambien carga al arrancar.
+        candidatos = [path] + [c for c in pth_candidates() if c != path]
+        escrito, fallo = None, (path, "sin candidatos")
+        for candidato in candidatos:
+            try:
+                candidato.parent.mkdir(parents=True, exist_ok=True)
+                candidato.write_text(PTH_LINE + "\n", encoding="utf-8")
+                escrito = candidato
+                break
+            except OSError as error:
+                fallo = (candidato, error)
+        if escrito is None:
+            return False, "no se pudo escribir %s (%s)" % fallo
+        path = escrito
 
     ok, detail = verify()
     if not ok:
