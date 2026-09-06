@@ -36,7 +36,9 @@ from typing import Any
 # -------------------------------------------------------------------
 
 HOOKS_DIR = Path(__file__).resolve().parent
-CRASHES_DIR = Path.home() / ".galaxy-brain"
+# GB_HOME manda, como en el resto de gb: `store_universal` murio exactamente
+# por ignorarlo (ADR 0012) y este fichero repetia el pecado con Path.home() fijo.
+CRASHES_DIR = Path(os.environ.get("GB_HOME") or (Path.home() / ".galaxy-brain"))
 CRASHES_FILE = CRASHES_DIR / "crashes.jsonl"
 
 
@@ -167,13 +169,29 @@ def setup_env(
 
         elif lang == "php":
             hook_path = os.path.join(hooks_dir, "gb-hook.php")
-            # PHP auto_prepend_file via ini setting
-            existing = env.get("PHP_INI_SCAN_DIR", "")
-            # Use -d flag approach via PHP_INI; note for user
-            env["GB_PHP_HOOK"] = hook_path
-            activated.append(
-                f"php: GB_PHP_HOOK set (use: php -d auto_prepend_file={hook_path})"
-            )
+            # `auto_prepend_file` es una directiva de ini, no una variable — pero
+            # PHP_INI_SCAN_DIR SI se hereda, y un elemento VACIO en la lista
+            # conserva el escaneo por defecto (por eso el separador va delante
+            # cuando no habia nada). El .ini se escribe en GB_HOME: el paquete
+            # puede ser de solo lectura, el almacen por definicion no.
+            ini_dir = CRASHES_DIR / "php"
+            try:
+                ini_dir.mkdir(parents=True, exist_ok=True)
+                (ini_dir / "gb.ini").write_text(
+                    'auto_prepend_file="%s"\n' % hook_path.replace("\\", "/"),
+                    encoding="utf-8")
+                existing = env.get("PHP_INI_SCAN_DIR", "")
+                if str(ini_dir) not in existing:
+                    env["PHP_INI_SCAN_DIR"] = f"{existing}{os.pathsep}{ini_dir}"
+                env["GB_PHP_HOOK"] = hook_path
+                activated.append("php: PHP_INI_SCAN_DIR += gb.ini (auto_prepend_file)")
+            except OSError:
+                # Sin sitio donde dejar el ini se degrada a decir el comando
+                # exacto, que era todo lo que habia antes.
+                env["GB_PHP_HOOK"] = hook_path
+                activated.append(
+                    f"php: GB_PHP_HOOK set (use: php -d auto_prepend_file={hook_path})"
+                )
 
         elif lang == "rust":
             # Igual que go: RUST_BACKTRACE=1 añadia un "stack backtrace:" entero

@@ -33,7 +33,8 @@ $GLOBALS['gb_trace'] = (function () {
             ? getenv('HOMEDRIVE') . getenv('HOMEPATH')
             : sys_get_temp_dir()
     );
-    $crashesDir  = $home . DIRECTORY_SEPARATOR . '.galaxy-brain';
+    // GB_HOME manda, como en el resto de gb.
+    $crashesDir  = getenv('GB_HOME') ?: ($home . DIRECTORY_SEPARATOR . '.galaxy-brain');
     $crashesFile = $crashesDir . DIRECTORY_SEPARATOR . 'crashes.jsonl';
 
     $NOMBRES = [

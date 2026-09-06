@@ -380,9 +380,11 @@ def test_el_hook_de_js_avisa_en_stderr_al_capturar(tmp_path):
     guion = os.path.join(str(tmp_path), "peta.js")
     with open(guion, "w", encoding="utf-8") as fh:
         fh.write("null.valor;\n")
-    # HOME/USERPROFILE al temporal: el hook escribe en ~/.galaxy-brain y esta
-    # prueba no puede ensuciar el buzon real (la misma regla que la sonda).
+    # GB_HOME al temporal: desde el 6-sep-2026 los hooks lo leen PRIMERO (antes
+    # se aislaba por HOME, que era lo unico que miraban) y esta prueba no puede
+    # ensuciar el buzon real. HOME/USERPROFILE se redirigen igual, de respaldo.
     entorno = dict(os.environ, NODE_OPTIONS="--require " + hook,
+                   GB_HOME=os.path.join(str(tmp_path), ".galaxy-brain"),
                    HOME=str(tmp_path), USERPROFILE=str(tmp_path))
     entorno.pop("GB_QUIET", None)
     entorno.pop("GB_LANG", None)

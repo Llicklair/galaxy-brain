@@ -39,7 +39,9 @@ var gbTrace = (function () {
     var path = require('path');
     var os   = require('os');
 
-    var CRASHES_DIR  = path.join(os.homedir(), '.galaxy-brain');
+    /* GB_HOME manda, como en el resto de gb: sin leerlo, un GB_HOME apuntado a
+ * otro sitio dejaba estas capturas en el ~ real — escritas y perdidas. */
+var CRASHES_DIR  = process.env.GB_HOME || path.join(os.homedir(), '.galaxy-brain');
     var CRASHES_FILE = path.join(CRASHES_DIR, 'crashes.jsonl');
 
     // ---------------------------------------------------------------

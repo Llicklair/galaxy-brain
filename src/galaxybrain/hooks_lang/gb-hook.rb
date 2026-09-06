@@ -29,7 +29,8 @@ require 'socket'       # for hostname (stdlib)
 require 'time'         # for Time#iso8601 (stdlib)
 
 module GBHook
-  CRASHES_DIR  = File.join(Dir.home, '.galaxy-brain')
+  # GB_HOME manda, como en el resto de gb.
+  CRASHES_DIR  = ENV['GB_HOME'] || File.join(Dir.home, '.galaxy-brain')
   CRASHES_FILE = File.join(CRASHES_DIR, 'crashes.jsonl')
 
   class << self

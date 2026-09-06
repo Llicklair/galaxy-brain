@@ -367,7 +367,11 @@ public class GbAgent {
 
     private static void writeRecord(String json) {
         try {
-            Path dir = Paths.get(System.getProperty("user.home"), CRASHES_DIR);
+            // GB_HOME manda, como en el resto de gb.
+            String gbHome = System.getenv("GB_HOME");
+            Path dir = (gbHome != null && !gbHome.isEmpty())
+                    ? Paths.get(gbHome)
+                    : Paths.get(System.getProperty("user.home"), CRASHES_DIR);
             Files.createDirectories(dir);
             Path file = dir.resolve(CRASHES_FILE);
 

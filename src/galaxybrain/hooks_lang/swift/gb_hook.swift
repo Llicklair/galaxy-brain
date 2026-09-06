@@ -58,10 +58,11 @@ private var crashesPath: String = ""
 private var crashesCPath: [CChar] = []
 
 private func prepareOutputPath() {
+    // GB_HOME manda, como en el resto de gb.
     let home = ProcessInfo.processInfo.environment["HOME"]
         ?? ProcessInfo.processInfo.environment["USERPROFILE"]
         ?? NSHomeDirectory()
-    let dir = "\(home)/.galaxy-brain"
+    let dir = ProcessInfo.processInfo.environment["GB_HOME"] ?? "\(home)/.galaxy-brain"
 
     // Best-effort mkdir
     mkdir(dir, 0o755)

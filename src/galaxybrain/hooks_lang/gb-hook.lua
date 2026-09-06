@@ -179,7 +179,8 @@ local function escribe(mensaje, traceback, frames)
         traceback = traceback or NULO,
         capture_method = 'hook',
     }
-    local dir = get_home() .. SEP .. '.galaxy-brain'
+    -- GB_HOME manda, como en el resto de gb.
+local dir = os.getenv('GB_HOME') or (get_home() .. SEP .. '.galaxy-brain')
     mkdir_p(dir)
     local fh = io.open(dir .. SEP .. 'crashes.jsonl', 'a')
     if fh then fh:write(json_encode(record) .. '\n'); fh:close() end

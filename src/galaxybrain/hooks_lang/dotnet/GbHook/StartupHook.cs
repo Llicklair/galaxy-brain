@@ -315,8 +315,10 @@ internal class StartupHook
     {
         try
         {
+            // GB_HOME manda, como en el resto de gb.
+            string gbHome = Environment.GetEnvironmentVariable("GB_HOME");
             string home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-            string dir = Path.Combine(home, CrashesDir);
+            string dir = string.IsNullOrEmpty(gbHome) ? Path.Combine(home, CrashesDir) : gbHome;
             Directory.CreateDirectory(dir);
             string file = Path.Combine(dir, CrashesFile);
 

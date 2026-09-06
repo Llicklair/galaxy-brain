@@ -88,9 +88,17 @@ static int codigo_de_muerte(DWORD salida) {
     return (salida & 0xF0000000UL) == 0xC0000000UL;
 }
 
-/* El buzon: $HOME/.galaxy-brain/crashes.jsonl, con USERPROFILE de respaldo.
+/* El buzon: GB_HOME manda (como en el resto de gb); sin el,
+   $HOME/.galaxy-brain/crashes.jsonl con USERPROFILE de respaldo.
    Misma convencion que el hook de Linux, para que el almacen no note la via. */
 static void ruta_buzon(char *out, size_t cap) {
+    const char *gbhome = getenv("GB_HOME");
+    if (gbhome && *gbhome) {
+        snprintf(out, cap, "%s", gbhome);
+        CreateDirectoryA(out, NULL);
+        strncat(out, "\\crashes.jsonl", cap - strlen(out) - 1);
+        return;
+    }
     const char *home = getenv("HOME");
     if (!home || !*home) home = getenv("USERPROFILE");
     if (!home) home = ".";

@@ -260,14 +260,19 @@ static void gb_signal_handler(int sig, siginfo_t *info, void *ucontext) {
 
 __attribute__((constructor))
 static void gb_hook_init(void) {
-    /* Build the output path: ~/.galaxy-brain/crashes.jsonl */
-    const char *home = getenv("HOME");
-    if (!home) home = getenv("USERPROFILE");
-    if (!home) return;  /* can't determine home — silently do nothing */
-
+    /* Build the output path: GB_HOME manda (como en el resto de gb);
+       sin el, ~/.galaxy-brain/crashes.jsonl. */
+    const char *gbhome = getenv("GB_HOME");
     gb_path[0] = '\0';
-    gb_strcpy(gb_path, home, GB_PATH_SIZE);
-    gb_strcat(gb_path, "/.galaxy-brain", GB_PATH_SIZE);
+    if (gbhome && *gbhome) {
+        gb_strcpy(gb_path, gbhome, GB_PATH_SIZE);
+    } else {
+        const char *home = getenv("HOME");
+        if (!home) home = getenv("USERPROFILE");
+        if (!home) return;  /* can't determine home — silently do nothing */
+        gb_strcpy(gb_path, home, GB_PATH_SIZE);
+        gb_strcat(gb_path, "/.galaxy-brain", GB_PATH_SIZE);
+    }
 
     /* Best-effort mkdir (not async-signal-safe, but we're in constructor). */
     mkdir(gb_path, 0755);
