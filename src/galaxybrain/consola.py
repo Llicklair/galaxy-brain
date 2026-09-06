@@ -246,17 +246,6 @@ def _dir_hooks():
     return os.path.join(str(config.home()), "hooks")
 
 
-def desplegados():
-    """Los hooks que YA estan en disco: {lenguaje: ruta}. Vacio si ninguno."""
-    base = _dir_hooks()
-    fuera = {}
-    for lang, fichero in HOOKS_EMPAQUETADOS.items():
-        ruta = os.path.join(base, fichero)
-        if os.path.isfile(ruta):
-            fuera[lang] = ruta
-    return fuera
-
-
 def despliega(destino=None):
     """Copia a disco los hooks que gb trae. Devuelve una ficha por lenguaje.
 

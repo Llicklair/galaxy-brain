@@ -151,7 +151,6 @@ def test_desplegar_dos_veces_no_rompe_nada(tmp_path):
     consola.despliega(str(tmp_path))
     segundas = consola.despliega(str(tmp_path))
     assert segundas, "el segundo despliegue no devolvio nada"
-    assert len(consola.desplegados()) >= 0   # sin GB_HOME apuntado aqui, solo no revienta
 
 
 def test_gb_on_lenguajes_despliega_y_dice_como_armarlo(tmp_path, capsys, monkeypatch):
