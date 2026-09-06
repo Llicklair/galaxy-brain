@@ -673,6 +673,17 @@ def render_graph(report, style, brief=False):
         elif report.get("surfaces"):
             lines.append(style("Superficie publica respetada (%d modulo(s) con puerta declarada)."
                                % report["surfaces"], DIM))
+        # Las aristas de lanzamiento se DICEN con su procedencia: participan en
+        # ciclos y fronteras como cualquier import, y un ciclo que pase por una
+        # tiene que poder rastrearse hasta el spawn que la fabrico.
+        lanzamientos = report.get("aristas_lanzamiento") or []
+        if lanzamientos:
+            muestra = " · ".join("%s -> %s" % (a["de"], a["a"]) for a in lanzamientos[:4])
+            if len(lanzamientos) > 4:
+                muestra += " ..."
+            lines.append(style(
+                "%d arista(s) de lanzamiento (un proceso lanza a otro, leido del codigo): %s"
+                % (len(lanzamientos), muestra), DIM))
         lines.extend(render_sin_regla(report, style))
         for u in report.get("unmatched_rules", []):
             lines.append(

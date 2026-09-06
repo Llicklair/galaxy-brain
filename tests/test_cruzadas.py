@@ -140,3 +140,63 @@ def test_el_comentario_no_tapa_el_codigo_de_la_linea_siguiente(tmp_path):
 
     sitios = cruzadas.sitios(str(tmp_path))
     assert [s["linea"] for s in sitios] == [3]
+
+
+def test_la_arista_de_lanzamiento_entra_al_grafo(tmp_path):
+    """Un spawn con el destino ESCRITO y unico en el arbol tiene el rango de un
+    import: esta en el codigo y se lee sin ejecutar. Desde el 6-sep-2026 entra
+    al grafo con todos los derechos — ciclos, fan-in/out, fronteras — en vez de
+    quedarse en candidata del mapa."""
+    from galaxybrain import cli, graph
+
+    _escribe(tmp_path, "orquestador.py",
+             'import subprocess\nsubprocess.run(["node", "motor.js"])\n')
+    _escribe(tmp_path, "motor.js", "console.log(1);\n")
+
+    report = graph.analyze(str(tmp_path), constructor=cli._constructor_fusionado)
+    assert ["orquestador", "motor"] in report["edge_list"]
+    assert any(a["de"] == "orquestador" and a["a"] == "motor"
+               for a in report["aristas_lanzamiento"])
+
+
+def test_un_ciclo_entre_lenguajes_bloquea_el_gate(tmp_path):
+    """py lanza js y js lanza py: un ciclo real que ningun import confiesa.
+    Antes el gate pasaba en verde con el acoplamiento delante."""
+    from galaxybrain import cli, graph
+
+    _escribe(tmp_path, "a.py", 'import subprocess\nsubprocess.run(["node", "b.js"])\n')
+    _escribe(tmp_path, "b.js", 'spawnSync("python", ["a.py"]);\n')
+
+    report = graph.analyze(str(tmp_path), constructor=cli._constructor_fusionado)
+    assert report["cycles"], "el ciclo de lanzamientos no se detecto"
+    assert cli._graph_gate(report) != 0
+
+
+def test_un_basename_ambiguo_no_fabrica_arista(tmp_path):
+    """Dos ficheros con el mismo nombre en carpetas distintas: el literal ya no
+    dice a cual apunta. Antes ganaba el primero del paseo — la arista al
+    fichero que no es, el fallo exacto que este modulo promete no fabricar."""
+    from galaxybrain import cli, graph
+
+    _escribe(tmp_path, "cliente.py",
+             'import subprocess\nsubprocess.run(["node", "motor.js"])\n')
+    os.makedirs(os.path.join(str(tmp_path), "uno"))
+    os.makedirs(os.path.join(str(tmp_path), "dos"))
+    _escribe(tmp_path, os.path.join("uno", "motor.js"), "console.log(1);\n")
+    _escribe(tmp_path, os.path.join("dos", "motor.js"), "console.log(2);\n")
+
+    report = graph.analyze(str(tmp_path), constructor=cli._constructor_fusionado)
+    assert report["aristas_lanzamiento"] == []
+
+
+def test_en_un_arbol_de_un_solo_lenguaje_no_se_pasea(tmp_path):
+    """El guardian de latencia: sin mezcla de lenguajes no hay cruce posible y
+    no se paga el paseo. El lanzamiento py->py queda fuera a proposito — lo
+    prometido es la interconexion ENTRE lenguajes (decidido el 6-sep-2026)."""
+    from galaxybrain import graph
+
+    _escribe(tmp_path, "a.py", 'import subprocess\nsubprocess.run(["python", "b.py"])\n')
+    _escribe(tmp_path, "b.py", "x = 1\n")
+
+    report = graph.analyze(str(tmp_path))
+    assert report["aristas_lanzamiento"] == []

@@ -1205,6 +1205,21 @@ def analyze(root, skip=DEFAULT_SKIP, since=None, boundaries=None, smells=False,
         if src not in edges:
             edges[src] = set()
         edges[src].add(dst)
+    # ARISTAS DE LANZAMIENTO (decidido el 6-sep-2026): el caso corriente de un
+    # repo mixto — alguien lanza un proceso con el destino ESCRITO y ese
+    # fichero existe, unico, en el arbol. Mismo rango de evidencia que un
+    # import (esta en el codigo, se lee sin ejecutar), asi que entra al grafo
+    # con todos los derechos: ciclos, fan-in/out, fronteras y seleccion. Lo que
+    # viene en una variable sigue fuera (candidata en el mapa, no arista), y en
+    # un arbol de UN solo lenguaje no se paga el paseo (regla 2). Solo casa
+    # contra nodos que YA existen: esto conecta el grafo, no lo engorda.
+    lanzamientos = []
+    if not root_error:
+        from . import cruzadas
+        if cruzadas.hay_mezcla(root):
+            lanzamientos = cruzadas.aristas_de_nodos(root, nodes)
+            for arista in lanzamientos:
+                edges.setdefault(arista["de"], set()).add(arista["a"])
     fan_out = {mod: len(deps) for mod, deps in edges.items()}
     fan_in = {mod: 0 for mod in nodes}
     for deps in edges.values():
@@ -1249,6 +1264,10 @@ def analyze(root, skip=DEFAULT_SKIP, since=None, boundaries=None, smells=False,
         "surfaces": len(superficies),
         "surface_violations": cruces_superficie,
         "call_violations": cruces_llamada,
+        # La procedencia de las aristas de lanzamiento: sin ella, un ciclo que
+        # pase por una seria indistinguible de uno de imports y no se podria
+        # diagnosticar un falso positivo de resolucion.
+        "aristas_lanzamiento": lanzamientos,
         "modulos_sin_regla": modulos_sin_regla(nodes, rules, superficies, fuera),
         # Los excluidos del aviso que EXISTEN en el grafo: la decision se enseña,
         # no se esconde — "fuera a proposito" tiene que poder leerse en el informe.

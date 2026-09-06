@@ -95,17 +95,27 @@ def sitios(root, tope=2000):
     la ruta absoluta del fichero llamado, o None si el comando viene de una
     variable — que es un hecho tambien, y por eso el sitio se devuelve igual.
     """
-    del_arbol, vistos = {}, 0
+    del_arbol, repetidos, vistos = {}, set(), 0
     for base, dirs, nombres in os.walk(root):
         dirs[:] = [d for d in dirs if not d.startswith(".") and d not in
                    ("node_modules", "target", "build", "dist", "obj", "bin",
                     "__pycache__", "venv", ".venv")]
         for nombre in nombres:
             if os.path.splitext(nombre)[1].lower() in LANZADORES:
-                del_arbol.setdefault(nombre.lower(), os.path.join(base, nombre))
+                bajo = nombre.lower()
+                # Dos ficheros con el MISMO nombre en carpetas distintas: el
+                # literal `"paso.rb"` ya no dice a cual apunta. Antes ganaba el
+                # primero del paseo — una arista al fichero que no es, el fallo
+                # exacto que este modulo promete no fabricar. Ambiguo = no
+                # resuelve (el sitio sigue saliendo, sin destino).
+                if bajo in del_arbol:
+                    repetidos.add(bajo)
+                del_arbol.setdefault(bajo, os.path.join(base, nombre))
                 vistos += 1
         if vistos >= tope:
             break
+    for bajo in repetidos:
+        del del_arbol[bajo]
 
     fuera = []
     for nombre_bajo, ruta in sorted(del_arbol.items()):
@@ -195,6 +205,68 @@ def aristas(root, informe_simbolos, informe_grafo=None, tope=2000):
 
     def nodo_de(ruta):
         return modulos.get(os.path.normcase(qual_de_ruta(ruta, root)))
+
+    fuera, vistas = [], set()
+    for sitio in sitios(root, tope):
+        if not sitio["destino"]:
+            continue
+        de, a = nodo_de(sitio["fichero"]), nodo_de(sitio["destino"])
+        if not de or not a or de == a or (de, a) in vistas:
+            continue
+        vistas.add((de, a))
+        fuera.append({"de": de, "a": a, "linea": sitio["linea"],
+                      "lang": sitio["lang"]})
+    return fuera
+
+
+def hay_mezcla(root, tope=4000):
+    """¿El árbol tiene código fuente de más de una familia? Paseo con salida
+    temprana: es el guardián de latencia de `aristas_de_nodos` — en un repo de
+    un solo lenguaje no hay cruce posible y no se paga nada más (regla 2).
+    El lanzamiento py→py existe pero queda fuera a propósito: lo que se promete
+    es la INTERCONEXIÓN entre lenguajes (decidido el 6-sep-2026)."""
+    vistas, contados = set(), 0
+    for _base, dirs, nombres in os.walk(root):
+        dirs[:] = [d for d in dirs if not d.startswith(".") and d not in
+                   ("node_modules", "target", "build", "dist", "obj", "bin",
+                    "__pycache__", "venv", ".venv")]
+        for nombre in nombres:
+            ext = os.path.splitext(nombre)[1].lower()
+            if ext in LANZADORES:
+                vistas.add(".h" if ext == ".c" else ext)
+                if len(vistas) > 1:
+                    return True
+            contados += 1
+            if contados >= tope:
+                return len(vistas) > 1
+    return len(vistas) > 1
+
+
+def aristas_de_nodos(root, nodes, tope=2000):
+    """Las aristas de lanzamiento, casadas contra los NODOS de un grafo ya
+    construido (el fusionado incluye los módulos no-Python).
+
+    Para `graph.analyze`: ahí todavía no hay informe de símbolos, pero los
+    quals de módulo ya están en `nodes` — incluidos los sufijados por colisión
+    (`web.app:ts`). El sufijo se resuelve por la extensión del fichero real:
+    un destino `.ts` prefiere el nodo `:ts`, un `.py` el nodo sin sufijo.
+    """
+    por_base = {}
+    for qual in nodes:
+        base, _, sufijo = str(qual).partition(":")
+        por_base.setdefault(os.path.normcase(base), {})[sufijo] = qual
+
+    def nodo_de(ruta):
+        variantes = por_base.get(os.path.normcase(qual_de_ruta(ruta, root)))
+        if not variantes:
+            return None
+        ext = os.path.splitext(ruta)[1].lstrip(".").lower()
+        preferido = "" if ext == "py" else ext
+        if preferido in variantes:
+            return variantes[preferido]
+        if len(variantes) == 1:
+            return next(iter(variantes.values()))
+        return None   # dos nodos posibles y ninguno casa por extension: ambiguo
 
     fuera, vistas = [], set()
     for sitio in sitios(root, tope):
