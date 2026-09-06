@@ -15,6 +15,22 @@ if ! python -c "import galaxybrain" 2>/dev/null; then
     exit 0
 fi
 
+# Solo documentacion staged (.md): lint, suite y gate miran codigo que este
+# commit no puede tocar — correrlos es pagar ~7 min para comprobar lo que no
+# cambio (medido 6-sep-2026: cuatro commits, dos de ellos de docs, a suite
+# entera cada uno). No es la seleccion de `gb tests` (esa arriesga verdes
+# falsos y el comentario de abajo explica por que no se usa): es el caso
+# binario. Un .md mezclado con CUALQUIER otra cosa corre todo; staged vacio
+# tambien (ante la duda, todo). `gb check --staged` se queda: es rapido y mira
+# el diff de verdad. Y se DICE en vez de callarse: un salto mudo seria
+# indistinguible de un hook roto.
+staged=$(git diff --cached --name-only)
+if [ -n "$staged" ] && ! echo "$staged" | grep -qv '\.md$'; then
+    echo "[galaxy-brain] pre-commit: solo .md staged — la suite y el gate no aplican a este diff."
+    python -m galaxybrain.cli check --staged --brief --color never || true
+    exit 0
+fi
+
 # Lint PRIMERO: tarda 130 ms y caza nombres sin definir e imports muertos. Ponerlo
 # despues de una suite de 20 s seria pagar veinte segundos para que te digan que
 # te faltaba un import. Si ruff no esta, no bloquea — como con el paquete.
