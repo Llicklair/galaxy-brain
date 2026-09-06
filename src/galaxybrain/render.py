@@ -488,9 +488,16 @@ def render_sin_regla(report, style):
     de decision. Propone, nunca escribe: el fichero lo firma quien lo tiene.
     """
     sin_regla = report.get("modulos_sin_regla") or []
+    fuera = report.get("fuera_de_examen") or []
+    # La exclusion declarada se dice en una linea aunque no quede nada que avisar:
+    # una decision que desaparece del informe es indistinguible de un olvido.
+    linea_fuera = [
+        style("Fuera del examen a proposito (FUERA): %d modulo(s) — %s"
+              % (len(fuera), ", ".join(fuera)), DIM)
+    ] if fuera else []
     if not sin_regla:
-        return []
-    return [
+        return linea_fuera
+    return linea_fuera + [
         style(
             "Sin ninguna regla que los mencione: %d de %d modulo(s) — %s"
             % (len(sin_regla), report["modules"],

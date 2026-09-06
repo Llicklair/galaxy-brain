@@ -592,7 +592,8 @@ def load_boundaries(root, path=None):
         # existe = error: pediste unas reglas que no están, y pasar en verde sería
         # la falsa cobertura del invariante 4.
         error = ("no encuentro el fichero de fronteras: %s" % path) if explicit else None
-        return {"rules": [], "surfaces": [], "declared_edges": [], "malformed": [], "error": error, "path": path}
+        return {"rules": [], "surfaces": [], "declared_edges": [], "malformed": [],
+                "fuera": (), "error": error, "path": path}
     except OSError as error:
         # Existe pero no se puede leer (permisos, es un directorio…): nunca silencioso.
         return {
@@ -600,6 +601,7 @@ def load_boundaries(root, path=None):
             "surfaces": [],
             "declared_edges": [],
             "malformed": [],
+            "fuera": (),
             "error": "no pude leer %s (%s)" % (path, error),
             "path": path,
         }
@@ -692,8 +694,16 @@ def load_boundaries(root, path=None):
             # Contenido que NO es una regla válida (flecha con typo, dos flechas,
             # un lado vacío): enforced nada. Se avisa en vez de descartarse mudo.
             malformed.append(line)
+    # FUERA es un grupo con nombre reservado: sus miembros quedan EXCLUIDOS del
+    # aviso "sin ninguna regla que los mencione", a proposito y por escrito. Nacio
+    # con el `__init__` del propio gb (849a590 lo dejo fuera "a proposito" en el
+    # mensaje de commit y el aviso siguio persiguiendolo en cada gate): una
+    # decision que solo vive en un commit viejo no calla nada; declarada aqui, si.
+    # Es exclusion del AVISO, no de la ley: si una regla menciona al modulo, la
+    # regla se comprueba igual.
     return {"rules": rules, "surfaces": surfaces, "declared_edges": declared_edges,
-            "malformed": malformed, "error": None, "path": path}
+            "malformed": malformed, "fuera": tuple(grupos.get("FUERA", ())),
+            "error": None, "path": path}
 
 
 def proponer_fronteras(report, declaradas=()):
@@ -1013,7 +1023,7 @@ def es_modulo_de_test(nombre):
             or ultimo.lower().startswith("test_"))     # `test_carrito`, Python
 
 
-def modulos_sin_regla(nodes, rules, surfaces=()):
+def modulos_sin_regla(nodes, rules, surfaces=(), fuera=()):
     """Módulos que NINGUNA regla menciona — la cobertura de la ley, no su cumplimiento.
 
     `unmatched_rules` mira reglas sin realidad (typos, raíz equivocada). Esto mira
@@ -1028,6 +1038,10 @@ def modulos_sin_regla(nodes, rules, surfaces=()):
     Los módulos de TEST quedan exentos (`es_modulo_de_test`): un test no es
     arquitectura, y exigir que la ley los mencione hacía la cobertura imposible
     de satisfacer — una regla que nadie puede cumplir no informa de nada.
+
+    Los de `fuera` (grupo reservado FUERA) también, pero por DECISIÓN declarada:
+    "sin regla, y decidido" no es "sin regla". Igualdad exacta y no `_under`:
+    excluir el paquete raíz no puede tragarse el subárbol entero en silencio.
     """
     cubiertos = set()
     for src, dst in rules:
@@ -1038,13 +1052,14 @@ def modulos_sin_regla(nodes, rules, surfaces=()):
         for m in nodes:
             if _under(m, patron):
                 cubiertos.add(m)
+    cubiertos.update(m for m in nodes if m in set(fuera))
     return sorted(
         m for m in nodes
         if m not in cubiertos and not es_modulo_de_test(m)
     )
 
 
-def unmatched_rules(nodes, rules):
+def unmatched_rules(nodes, rules, fuera=()):
     """Reglas cuyo SRC o DST no casa con NINGÚN módulo del grafo.
 
     Una regla que no casa con nada nunca dispara: es un typo o —muy común— señal
@@ -1061,6 +1076,11 @@ def unmatched_rules(nodes, rules):
             out.append(
                 {"rule": "%s -/-> %s" % (src, dst), "src_matches": src_ok, "dst_matches": dst_ok}
             )
+    # Un FUERA que no nombra a nadie es el mismo fallo que una regla sin realidad:
+    # crees haber decidido sobre un modulo que no existe (typo o raiz equivocada).
+    for nombre in fuera:
+        if nombre not in nodes:
+            out.append({"rule": "FUERA = %s" % nombre, "src_matches": False, "dst_matches": False})
     return out
 
 
@@ -1175,6 +1195,7 @@ def analyze(root, skip=DEFAULT_SKIP, since=None, boundaries=None, smells=False,
     boundaries_info = load_boundaries(root, boundaries)
     rules = boundaries_info["rules"]
     superficies = boundaries_info.get("surfaces") or []
+    fuera = tuple(boundaries_info.get("fuera") or ())
     # ARISTAS DECLARADAS: dependencias cross-language u otras que el análisis
     # estático no ve. Se inyectan ANTES de calcular nada para que participen
     # en ciclos, fan-in/out, violations, edge_list y el mapa.
@@ -1228,7 +1249,10 @@ def analyze(root, skip=DEFAULT_SKIP, since=None, boundaries=None, smells=False,
         "surfaces": len(superficies),
         "surface_violations": cruces_superficie,
         "call_violations": cruces_llamada,
-        "modulos_sin_regla": modulos_sin_regla(nodes, rules, superficies),
+        "modulos_sin_regla": modulos_sin_regla(nodes, rules, superficies, fuera),
+        # Los excluidos del aviso que EXISTEN en el grafo: la decision se enseña,
+        # no se esconde — "fuera a proposito" tiene que poder leerse en el informe.
+        "fuera_de_examen": sorted(m for m in nodes if m in set(fuera)),
         # La ruta CONSULTADA, se hayan encontrado reglas o no. Sin esto, "0 reglas"
         # es un dato inaccionable: no dice donde habria que poner el fichero.
         "boundaries_path": boundaries_info["path"],
@@ -1236,7 +1260,7 @@ def analyze(root, skip=DEFAULT_SKIP, since=None, boundaries=None, smells=False,
         # de verdad enganna: crees que tienes fronteras y la gate no mira ninguna.
         "boundaries_elsewhere": _boundaries_elsewhere(root, boundaries_info["path"]),
         "violations": violations,
-        "unmatched_rules": unmatched_rules(nodes, rules),
+        "unmatched_rules": unmatched_rules(nodes, rules, fuera),
         "malformed_boundaries": boundaries_info["malformed"],
         "boundaries_error": boundaries_info["error"],
         "smells": smells,

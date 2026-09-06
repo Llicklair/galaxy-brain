@@ -529,3 +529,48 @@ def test_brief_no_resume_un_fallo(tmp_path):
     assert "CRUCES de frontera prohibidos" in salida
     assert not salida.startswith("gate ok")
 
+
+
+def test_fuera_declara_la_exclusion_y_el_aviso_calla(tmp_path):
+    """`FUERA = mod` es la decision "sin regla, y decidido" puesta donde el gate
+    la lee: el modulo sale del aviso pero la exclusion se imprime — una decision
+    que desaparece del informe es indistinguible de un olvido."""
+    root = str(tmp_path)
+    _write(root, ".gb-boundaries", "pkg.a -/-> pkg.b\nFUERA = pkg\n")
+    _write(root, "pkg/__init__.py", "")
+    _write(root, "pkg/a.py", "")
+    _write(root, "pkg/b.py", "")
+
+    report = graph.analyze(root)
+    assert "pkg" not in report["modulos_sin_regla"]
+    assert report["fuera_de_examen"] == ["pkg"]
+    salida = render.render_graph(report, render.Style(False), brief=True)
+    assert "Fuera del examen a proposito" in salida
+    assert "Sin ninguna regla que los mencione" not in salida
+
+
+def test_fuera_es_igualdad_exacta_no_frontera_de_punto(tmp_path):
+    """Excluir el paquete raiz no puede tragarse el subarbol: `FUERA = pkg`
+    deja fuera a `pkg` y solo a `pkg` — `pkg.suelto` sigue avisando."""
+    root = str(tmp_path)
+    _write(root, ".gb-boundaries", "pkg.a -/-> pkg.b\nFUERA = pkg\n")
+    _write(root, "pkg/__init__.py", "")
+    _write(root, "pkg/a.py", "")
+    _write(root, "pkg/suelto.py", "")
+
+    report = graph.analyze(root)
+    assert "pkg.suelto" in report["modulos_sin_regla"]
+    assert report["fuera_de_examen"] == ["pkg"]
+
+
+def test_fuera_con_nombre_fantasma_avisa(tmp_path):
+    """Un FUERA que no nombra a nadie es una regla sin realidad: crees haber
+    decidido sobre un modulo que no existe (typo o raiz equivocada)."""
+    root = str(tmp_path)
+    _write(root, ".gb-boundaries", "pkg.a -/-> pkg.b\nFUERA = pkg.fantasma\n")
+    _write(root, "pkg/__init__.py", "")
+    _write(root, "pkg/a.py", "")
+    _write(root, "pkg/b.py", "")
+
+    report = graph.analyze(root)
+    assert any(u["rule"] == "FUERA = pkg.fantasma" for u in report["unmatched_rules"])

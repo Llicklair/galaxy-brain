@@ -49,3 +49,9 @@ PRESENTACION -/-> HOOKS_LENGUAJE
 # los hooks, cazaba una llamada swift -> java resuelta por NOMBRE, un falso
 # positivo del motor de llamadas entre lenguajes). Un modulo de una linea
 # (`__version__`) no compra una regla que miente.
+#
+# Por eso FUERA casa por IGUALDAD EXACTA, no por frontera de punto: deja fuera
+# del aviso "sin regla" al modulo nombrado y solo a el. Es la decision de
+# 849a590 ("el __init__ queda fuera a proposito"), declarada donde el gate la
+# lee en vez de enterrada en un mensaje de commit.
+FUERA = galaxybrain
