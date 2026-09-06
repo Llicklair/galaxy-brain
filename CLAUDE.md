@@ -51,13 +51,19 @@ a publicarse. Hoy no se publica nada.
    modelo. La IA entra después del hecho, a mano y visible (ARCHITECTURE, regla 8).
 2. **Presupuesto de latencia.** < 1 s por edición, < 10 s por commit. Sobrepasarlo es violación de
    arquitectura, no un problema de rendimiento a optimizar luego.
-3. **Un runtime, un tipo de fallo — y el grafo con dos motores.** Ejecución local, y la consola
-   captura un solo tipo de fallo: excepciones no capturadas, solo en Python. El grafo lee 17
-   lenguajes (Python con `ast`; el resto con `ast-grep` por referencia,
-   [ADR 0009](docs/adr/0009-multilenguaje-por-referencia.md)). Añadir un lenguaje es una entrada en
-   la tabla `LENGUAJES` **más su sonda de conformidad**; estrechar tests con él exige **licencia
-   medida con rojos reales **y cascada exacta** (`tia`, criterio en [bancos/estricto.py](bancos/estricto.py)),
-   que hoy tienen js, ts, go, csharp, java, php, lua, rust y ruby (diez con Python).
+3. **Un runtime, un tipo de fallo — y multilenguaje en las dos familias.** Ejecución local y un
+   solo tipo de fallo: excepciones no capturadas. El grafo lee 17 lenguajes (Python con `ast`; el
+   resto con `ast-grep` por referencia, [ADR 0009](docs/adr/0009-multilenguaje-por-referencia.md)).
+   La consola captura en los lenguajes con **gancho de OBSERVACIÓN** — el eje que decide, medido:
+   observa sin manejar, mismo exit code, misma traza — (js/ts, JVM, csharp, ruby, php, lua, c,
+   swift) más el **envolvente stderr** para go/rust; dart descartado
+   ([ADR 0012](docs/adr/0012-consola-multilenguaje.md), aceptado el 6-sep-2026). Añadir un lenguaje
+   al grafo es una entrada en la tabla `LENGUAJES` **más su sonda de conformidad**; añadirlo a la
+   consola exige gancho que observe sin manejar, medido con los 5 casos límite del ADR, y todo
+   `origin` dentro del enum del schema (sonda en [tests/test_consola.py](tests/test_consola.py)).
+   Estrechar tests exige **licencia medida con rojos reales y cascada exacta** (`tia`, criterio en
+   [bancos/estricto.py](bancos/estricto.py)), que hoy tienen js, ts, go, csharp, java, php, lua,
+   rust y ruby (diez con Python).
    Y la conformidad se mide **por matriz de variantes, no por ejemplar**: una forma
    sintáctica equivalente (comillas simples, barril, `require` sin paréntesis) se
    prueba como equivalente — probar una sola certificó durante meses una cobertura

@@ -1,6 +1,14 @@
 # 12. Consola multilenguaje por mecanismo nativo + fallback stderr
 
-**Estado:** propuesta **decidible** — **13 de 16 lenguajes cubiertos** (C entra: Linux y Windows, 100 % en las dos), 4 de 5 criterios cumplidos; el criterio 4 (`gb status` declara el mecanismo) **ya está**, falta el 2 (el enum `exception.origin` que no respeta ningún hook) y dos lenguajes que esta máquina no deja instalar · **Fecha:** 2026-08-16 · **Supercede (solo el eje lenguaje):** [0004](0004-un-lenguaje-un-runtime-un-tipo-de-fallo.md) · **Extiende:** [0009](0009-multilenguaje-por-referencia.md)
+**Estado:** **ACEPTADA** el 6-sep-2026 — el criterio 2 se cerró ese día: todos los hooks emiten
+`exception.origin` dentro del enum (`message_handler`→`main` en lua, `shutdown`/`uncaught_exception`→`main`
+en php, `NSException`→`main` en swift, `goroutine-N`/`thread-N`→`goroutine`/`thread` en el envolvente;
+el detalle vive en `traceback`, que viaja crudo), con **sonda de conformidad sobre los fuentes** en
+`tests/test_consola.py` que caza regresiones también en runtimes que la máquina no ejecuta. De paso
+cayó un registro NSException que nacía como JSON inválido (coma colgante del `joined`). La regla 3 de
+CLAUDE.md y la fila de SCOPE.md se reescribieron el mismo día. Quedan fuera, por escrito: dart
+(descartado, solo manejo), elixir (sin medir, el instalador pide administrador) ·
+**Fecha:** 2026-08-16, aceptada 2026-09-06 · **Supercede (solo el eje lenguaje):** [0004](0004-un-lenguaje-un-runtime-un-tipo-de-fallo.md) · **Extiende:** [0009](0009-multilenguaje-por-referencia.md)
 
 > **La medición está hecha: [CONSOLA-MULTILENGUAJE.md](../CONSOLA-MULTILENGUAJE.md).** De 6 lenguajes
 > probados, capturan 2 por el camino que este ADR describe (js y ruby, 3/3 cada uno, registros
@@ -163,4 +171,4 @@ Medir el spike: provocar crashes reales en cada lenguaje y contar cuáles produc
 
 ## Relacionada
 
-[0004](0004-un-lenguaje-un-runtime-un-tipo-de-fallo.md) · [enmienda al 0004](0004-enmienda-multilenguaje.md) · [0009](0009-multilenguaje-por-referencia.md) · [0010](0010-repos-mixtos-los-dos-motores-conviven.md) · rama `spike/consola-multilenguaje` (`cab9e29`)
+[0004](0004-un-lenguaje-un-runtime-un-tipo-de-fallo.md) · [enmienda al 0004](0004-enmienda-multilenguaje.md) · [0009](0009-multilenguaje-por-referencia.md) · [0010](0010-repos-mixtos-los-dos-motores-conviven.md) · la rama `spike/consola-multilenguaje` se borró al aceptar (6-sep-2026): main la había absorbido y superado pieza a pieza. Su punta quedó como tag `archivo/spike-consola-multilenguaje` — los hashes citados aquí siguen resolubles — y el schema v2 vive en [docs/schema-crash-v2.json](../schema-crash-v2.json); la medición, en [CONSOLA-MULTILENGUAJE.md](../CONSOLA-MULTILENGUAJE.md)

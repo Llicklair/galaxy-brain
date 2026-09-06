@@ -1,0 +1,50 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "galaxy-brain crash record (universal)",
+  "type": "object",
+  "required": ["schema", "ts", "language", "exception", "frames", "process"],
+  "properties": {
+    "schema": { "const": 2, "description": "Schema version. 1 = Python-only legacy, 2 = universal" },
+    "ts": { "type": "string", "format": "date-time" },
+    "language": { "type": "string", "enum": ["python","js","ts","go","rust","java","kotlin","swift","ruby","php","lua","scala","elixir","csharp","c","dart"] },
+    "exception": {
+      "type": "object",
+      "required": ["type", "message"],
+      "properties": {
+        "type": { "type": "string", "description": "Exception class/type name" },
+        "module": { "type": ["string","null"], "description": "Module/package where the exception type is defined" },
+        "message": { "type": "string" },
+        "chain": { "type": "array", "items": { "$ref": "#/properties/exception" }, "description": "Chained/caused-by exceptions" },
+        "origin": { "type": "string", "enum": ["main","thread","unraisable","promise","goroutine","coroutine","task","signal","process"], "description": "Where the exception surfaced" }
+      }
+    },
+    "frames": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["file", "line", "function"],
+        "properties": {
+          "file": { "type": "string" },
+          "line": { "type": "integer" },
+          "column": { "type": ["integer","null"] },
+          "function": { "type": "string" },
+          "source": { "type": ["string","null"], "description": "Source line at crash point" },
+          "locals": { "type": ["object","null"], "description": "Local variables if available (Lua, Python)" }
+        }
+      }
+    },
+    "process": {
+      "type": "object",
+      "required": ["cwd", "project"],
+      "properties": {
+        "cwd": { "type": "string" },
+        "project": { "type": ["string","null"], "description": "Project root (detected by .git)" },
+        "argv_forma": { "type": ["string","null"], "description": "Command shape (values redacted)" },
+        "runtime": { "type": ["string","null"], "description": "Runtime version (node 20.1, java 17, etc.)" },
+        "pid": { "type": ["integer","null"] }
+      }
+    },
+    "traceback": { "type": ["string","null"], "description": "Raw traceback text as the runtime printed it" },
+    "capture_method": { "type": "string", "enum": ["hook","stderr","wrapper"], "description": "How the crash was captured" }
+  }
+}

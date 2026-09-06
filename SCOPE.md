@@ -54,11 +54,31 @@ maquinaria del watch propio, que era la culpable medida, sigue fuera. Libreta 14
 | | |
 |---|---|
 | **Lenguaje (grafo)** | Python, con `ast` de la stdlib · 16 más, con `ast-grep` **por referencia** ([0009](docs/adr/0009-multilenguaje-por-referencia.md), [0010](docs/adr/0010-repos-mixtos-los-dos-motores-conviven.md)). Dos motores, 17 lenguajes, y en un repo mixto **conviven**. |
-| **Lenguaje (consola)** | Python. Uno. |
+| **Lenguaje (consola)** | Python con `sys.excepthook` · más los lenguajes con **gancho de OBSERVACIÓN** (js/ts, java·kotlin·scala por el agente JVM, csharp, ruby, php, lua, c, swift) y el **envolvente stderr** para go/rust ([ADR 0012](docs/adr/0012-consola-multilenguaje.md), aceptado el 6-sep-2026). dart descartado (solo ofrece manejo); elixir sin medir. Cada `origin` respeta el enum del schema — sonda en [tests/test_consola.py](tests/test_consola.py). |
 | **Runtime** | Ejecución local. Uno. |
 | **Fallo (consola)** | Excepciones no capturadas. Uno. |
 
 Cualquier elemento nuevo en esa tabla es scope creep, no una mejora.
+
+#### Acercar la consola no-Python a Python (eje escrito el 6-sep-2026)
+
+Lo que Python tiene de regalo — frames vivos (locals) y armado automático (`.pth`) — el resto lo
+compra por partes, y solo donde el runtime lo vende barato:
+
+- **Armado** (fase 1, **cumplida el 6-sep-2026**): `gb-run <comando>` arma las variables de hook de
+  los lenguajes detectados para el HIJO y sus descendientes — un proceso no cambia el entorno de su
+  padre, pero sí el de lo que lanza. Apendiendo, nunca pisando; php entra por `PHP_INI_SCAN_DIR` +
+  `gb.ini` en GB_HOME; y **GB_HOME manda en TODOS los hooks** (clavaban `~/.galaxy-brain` — el mismo
+  pecado que mató a `store_universal`). Sonda y e2e en
+  [tests/test_envolvente.py](tests/test_envolvente.py). El armado por perfil de shell queda como
+  opt-in futuro, con permiso explícito: es tocar ficheros del usuario.
+- **Estado (locals)**: se coge donde el runtime lo regala — ruby (`TracePoint(:raise)` entrega el
+  binding) y php (los args de `getTrace()`) son los siguientes; lua ya trae parte. JS exige el
+  protocolo inspector: spike con criterio de aborto escrito (overhead armado ~0 y 3/3, o se descarta
+  por escrito). **JVM y C# quedan fuera**: sus locals cuestan JVMTI/ICorDebug, maquinaria de
+  depurador que no compra su coste. go/rust: techo estructural del stderr, declarado.
+- **Condición transversal**: sin redacción de secretos equivalente a la de Python, un lenguaje no
+  captura locals. Un estado sin criba es peor que ningún estado.
 
 #### Lo único que se declara a mano: las aristas que el código no confiesa
 
@@ -142,8 +162,9 @@ otro coste. Si la excepción propaga fuera de `asyncio.run()`, ya se captura por
 - **No juzga ni bloquea sobre proxies.** Las señales de `check` y de `graph --smells` informan; solo
   se bloquea sobre hechos (un ciclo de imports nuevo, un cruce de frontera declarado). Gatear proxies
   fue el error que hundió el enfoque anterior (ARCHITECTURE, regla 11).
-- **No es multi-lenguaje ni multi-runtime.** Ni CI, ni UI, ni servidor. No "más adelante" como coartada:
-  no antes de que haya una razón medida escrita aquí.
+- **Sí es multi-lenguaje (grafo y consola, [ADR 0012](docs/adr/0012-consola-multilenguaje.md)), pero NO
+  multi-runtime.** Ejecución local: gb no ejecuta otros runtimes por dentro, ni CI, ni UI, ni servidor.
+  No "más adelante" como coartada: no antes de que haya una razón medida escrita aquí.
 - **No cubre `asyncio` ni `multiprocessing`** en la consola: hilo principal e hilos de `threading`.
 - **La captura es LOCAL: por entorno Python, nunca por máquina** (decidido 2026-08-26, medido en
   Windows). "Instalarlo en global" se planteó y se midió antes de descartarlo: un `.pth` en el
