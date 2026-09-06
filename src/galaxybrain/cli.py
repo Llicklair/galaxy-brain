@@ -2438,7 +2438,16 @@ def build_parser():
     status.add_argument("--color", choices=("auto", "always", "never"), default="auto")
     status.set_defaults(func=cmd_status)
 
-    graph_p = subparsers.add_parser("graph", help="mapa de acoplamiento: imports, ciclos, hotspots")
+    graph_p = subparsers.add_parser(
+        "graph", help="mapa de acoplamiento: imports, ciclos, hotspots",
+        # El grafo DIBUJADO no vive aqui, y no decirlo costo caro: un agente miro
+        # este --help, no vio HTML/SVG, dedujo que "el canvas esta retirado" y se
+        # puso a dibujar a mano un SVG con la salida de --json. `graph` suena al
+        # sitio del grafo dibujado; el canvas cuelga de `who` porque ensena
+        # tambien presencia y errores, no solo imports. El puntero va en el help.
+        epilog="El grafo DIBUJADO no sale de aqui: `gb who --html` escribe el "
+               "canvas navegable (un HTML autocontenido). `gb graph` es el grafo "
+               "como datos (--json) y como gate (--gate).")
     graph_p.add_argument("path", nargs="?", default=".", help="raiz del proyecto (por defecto .)")
     graph_p.add_argument("--json", action="store_true", help="salida cruda")
     graph_p.add_argument("--color", choices=["auto", "always", "never"], default="auto")
