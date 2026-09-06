@@ -95,14 +95,15 @@ Siempre habrá un lenguaje que gb no parsea, así que esto no es andamiaje tempo
 no ha leído, gb no da veredictos.** Ni "sin señales", ni "no encontrado". Dice qué lenguaje ve y que
 no lo ha mirado. Se aplica igual el día que se soporten diez lenguajes.
 
-Los catorce comandos, por familia — si uno nuevo no cae en ninguna, no entra
+Los diecisiete comandos, por familia — si uno nuevo no cae en ninguna, no entra
 ([ARCHITECTURE.md](ARCHITECTURE.md) regla 4):
 
 | Familia | Comandos |
 |---|---|
-| **Qué forma tiene** (el motor) | `graph` · `symbols` · `calls` |
+| **Qué forma tiene** (el motor) | `graph` · `symbols` · `calls` · `dead` |
 | Dónde petó y con qué estado | `last` · `list` · `show` · `on` · `off` · `status` |
 | Qué le hizo cada cambio | `check` · `tests` · `delta` |
+| Quién toca qué, a la vez (agentes) | `who` · `sync` |
 | Qué le falta de base | `floor` |
 | Qué se aprendió, cross-repo | `memory` |
 

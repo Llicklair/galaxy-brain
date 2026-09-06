@@ -63,17 +63,22 @@ Regla derivada, y es la que decide la supervivencia a los meses:
 Una sola herramienta, `gb`, con una sola filosofía. Los comandos caen en familias; un comando nuevo
 tiene que caer en una de ellas o no entra:
 
-- **Qué forma tiene** — `graph · symbols · calls`. **El motor.** El mapa de acoplamiento
-  (imports, ciclos, hotspots), el grafo de símbolos (quién llama a quién, con su cobertura) y la
+- **Qué forma tiene** — `graph · symbols · calls · dead`. **El motor.** El mapa de acoplamiento
+  (imports, ciclos, hotspots), el grafo de símbolos (quién llama a quién, con su cobertura), la
   consulta puntual (`calls`: llamantes y llamados de un símbolo con fichero:línea, también como hook
-  de búsqueda). Las demás familias aterrizan sus hechos sobre estos nodos.
+  de búsqueda) y los candidatos a código muerto (`dead`: símbolos sin llamantes y módulos huérfanos,
+  proxies que se investigan, no veredictos). Las demás familias aterrizan sus hechos sobre estos nodos.
 - **Dónde petó y con qué estado** — `last · list · show · on · off · status`. La consola de errores:
   captura excepciones no capturadas y el estado alrededor, para no reproducir el fallo a mano. Cada
   captura se ancla a su nodo del grafo y `show` enseña sus llamantes.
-- **Qué le hizo cada cambio** — `check · tests`. Qué tocó un diff en los tests y en el acoplamiento
-  (`check`), y qué tests hay que correr por lo que cambió (`tests`: el cierre de llamantes desde los
-  símbolos del diff, con la suite entera como respuesta ante cualquier duda). `tests --run` es la
-  única parte de gb que ejecuta algo del proyecto observado, y por eso es opt-in explícito.
+- **Qué le hizo cada cambio** — `check · tests · delta`. Qué tocó un diff en los tests y en el
+  acoplamiento (`check`), qué tests hay que correr por lo que cambió (`tests`: el cierre de llamantes
+  desde los símbolos del diff, con la suite entera como respuesta ante cualquier duda) y qué errores
+  clásicos añadió (`delta`: informa, no bloquea). `tests --run` es la única parte de gb que ejecuta
+  algo del proyecto observado, y por eso es opt-in explícito.
+- **Quién toca qué, a la vez** — `who · sync`. El trabajo de agentes en paralelo: la presencia
+  derivada de los worktrees con sus cruces (`who`, y su canvas con `--html`), y lo que cambiaron los
+  demás que toca lo tuyo y aún no tienes (`sync`). Todo derivado del disco y de git; nadie declara nada.
 - **Qué le falta de base** — `floor`. El andamiaje mínimo que un proyecto necesita antes de construir.
 - **Qué se aprendió, cross-repo** — `memory`. La memoria durable entre repos y sesiones.
 
@@ -104,7 +109,7 @@ Todo determinista, cero modelos, cero dependencias más allá de la librería es
    Dos guardas hacen que esto no degrade en «soportamos N lenguajes»: cada uno tiene su **sonda de
    conformidad** en la suite —que cazó 5 promesas falsas el día que se abrió el catálogo— y
    estrechar la selección de tests exige una **licencia medida con rojos reales**, que hoy solo
-   tienen `js`, `ts`, `go`, `csharp`, `java`, `php` y `lua` — ocho contando Python. Un grafo de llamadas incompleto no cuesta ahorro: cuesta un verde falso.
+   tienen `js`, `ts`, `go`, `csharp`, `java`, `php`, `lua`, `rust` y `ruby` — diez contando Python. Un grafo de llamadas incompleto no cuesta ahorro: cuesta un verde falso.
 6. **Los hechos se guardan crudos.** Excepción, traza y estado se persisten tal cual se capturan.
    Interpretar es un paso posterior, separado y descartable.
 7. **Histórico local y append-only, fuera del repo observado.** El arnés nunca ensucia el proyecto que

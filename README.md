@@ -46,7 +46,7 @@ which is why it can be instant and cannot fail in expensive ways.
 orchestration. The graph here is a graph <b>of your code</b> — modules, symbols, call edges, parsed
 from the AST.</sub>
 
-<sub>v0.7.0 · 839 tests · 15.0k LOC source / 11.2k LOC tests · clean gate · ruff · Python ≥ 3.9 · zero runtime dependencies (<code>ast-grep</code> optional, only for non-Python graphs) · CLI output is Spanish by default — <code>GB_LANG=en</code> switches the console (capture notice, <code>gb show</code>/<code>last</code>, graph anchor) and the verifier (<code>gb tests</code> selection + checkpoint, <code>gb check</code>) to English; floor and map still Spanish, coming next</sub>
+<sub>v0.7.0 · 988 tests · 16.7k LOC source / 10.8k LOC tests · clean gate · ruff · Python ≥ 3.9 · zero runtime dependencies (<code>ast-grep</code> optional, only for non-Python graphs) · CLI output is Spanish by default — <code>GB_LANG=en</code> switches the console (capture notice, <code>gb show</code>/<code>last</code>, graph anchor) and the verifier (<code>gb tests</code> selection + checkpoint, <code>gb check</code>) to English; floor and map still Spanish, coming next</sub>
 
 ---
 
@@ -312,7 +312,7 @@ cause of over-engineering, and the cure costs one sentence.
 
 ## Command reference
 
-Twelve subcommands, and every one belongs to a family. A command that does not fit a family does not
+Seventeen subcommands, and every one belongs to a family. A command that does not fit a family does not
 ship — there is no "small exception", because small exceptions are exactly how a monster gets built.
 
 ### Where it crashed, and with what state
@@ -347,7 +347,7 @@ ship — there is no "small exception", because small exceptions are exactly how
 | `gb calls <symbol> --depth 2` | The wave: also who calls the callers |
 | `gb calls --hook` | PreToolUse mode: reads hook JSON from stdin, silent when there is nothing |
 
-Shared flags worth knowing: `--json` on every command for raw output. (The HTML canvas was retired
+Shared flags worth knowing: `--json` on every reporting command for raw output (`gb on`/`gb off` flip state and take none). (The HTML canvas was retired
 on 2026-08-13 after two tied A/Bs — and came back on 2026-08-14 as `gb who --html`, renderer only,
 writing the project's `mapa.html`; `gb who --watch --html` keeps it live by foreground polling. The
 self-managed watcher machinery, which was the measured culprit, stays retired — the amended
@@ -512,6 +512,8 @@ cycles, the fan-in, the test selection and the map. `A => B` writes one down by 
 app.web  =>  svc.payments     # declared: HTTP, subprocess, CLI, IPC — anything static analysis misses
 app.web -/-> app.db           # forbidden: A must not depend on B
 ENTRY = app.web, app.api      # a group, expandable in both forms above
+FUERA = app                   # reserved group: these exact modules are deliberately outside the
+                              # "no rule mentions them" warning — the decision prints, the nagging stops
 ```
 
 A declared edge is an edge like any other: it is injected **before** anything is computed, so it
@@ -588,8 +590,8 @@ mode this design avoids.
 
 Three layers, because tests alone only pin what you already knew how to check.
 
-**1. The suite — 797 tests, ~190 s.** Runs on every commit via the pre-commit hook, far under the
-600 s DORA threshold.
+**1. The suite — 988 tests, ~480 s (measured 2026-09-06).** Runs on every commit via the pre-commit
+hook, still under the 600 s DORA threshold — but no longer far under it.
 
 **2. The gate is verified by breaking it.** A gate degrades in silence: it keeps returning zero and
 stops looking at anything.
@@ -724,13 +726,16 @@ fact; "other frameworks do it" is not a reason).
 ## Development
 
 ```bash
-python -m pytest tests/ -q          # the suite — 797 tests, ~190 s
+python -m pytest tests/ -q          # the suite — 988 tests, ~480 s
 python -m ruff check src tests      # lint (catches defects, holds no style opinions)
 gb graph src --gate                 # the gate, clean
 ```
 
 The pre-commit ([.githooks/pre-commit](.githooks/pre-commit)) runs lint + suite + gate + `gb check
---staged` in < 10 s; hook it once with `git config core.hooksPath .githooks`. `git commit
+--staged` — ~8.5 min measured on 2026-09-06: the suite dominates and the gate's ast-grep sweep adds
+~11 s (was ~18 s before `lenguajes.analyze` learned to not re-derive an unchanged tree twice in one
+invocation), so rule 3's < 10 s commit budget is currently exceeded here, and that is a known open
+debt, not a rounding error. Hook it once with `git config core.hooksPath .githooks`. `git commit
 --no-verify` skips it — and that skip is a datum, not a rule.
 
 The console's layering rules live in [src/.gb-boundaries](src/.gb-boundaries): the core (capture,
