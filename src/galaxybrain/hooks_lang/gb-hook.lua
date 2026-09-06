@@ -162,7 +162,10 @@ local function escribe(mensaje, traceback, frames)
         exception = {
             type = 'LuaError',
             message = tostring(mensaje),
-            origin = 'message_handler',
+            -- `origin` dice DONDE afloro (enum del schema v2), no como se
+            -- capturo: `message_handler` era un metodo disfrazado de contexto
+            -- y el buzon lo apartaba como fuera-de-schema.
+            origin = 'main',
         },
         frames = frames,
         process = {

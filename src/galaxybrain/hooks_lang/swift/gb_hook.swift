@@ -161,12 +161,14 @@ private func installExceptionHandler() {
             "{\"schema\":2",
             "\"ts\":\"\(jsonEscape(iso8601Now()))\"",
             "\"lang\":\"swift\"",
-            "\"origin\":\"NSException\"",
+            "\"origin\":\"main\",\"capture_method\":\"hook\"",
             "\"project\":\(jsonString(project))",
             "\"error\":{\"type\":\"\(jsonEscape(name))\",\"message\":\"\(jsonEscape(reason))\"}",
-            "\"backtrace\":\(jsonStringArray(symbols))",
-            "}"
-        ].joined(separator: ",")
+            // El cierre va FUERA del join: como elemento, el separador le
+            // plantaba una coma delante ("...],}") y el registro entero era
+            // JSON invalido — cada captura de NSException nacia ilegible.
+            "\"backtrace\":\(jsonStringArray(symbols))"
+        ].joined(separator: ",") + "}"
 
         writeCrashRecord(record)
     }

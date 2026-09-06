@@ -265,7 +265,6 @@ def detect_go_crash(stderr: str) -> dict[str, Any] | None:
     if not goroutine_match:
         return None
 
-    goroutine_id = int(goroutine_match.group(1))
     panic_match = re.search(r"^panic:\s*(.+)$", stderr, re.MULTILINE)
     panic_message = panic_match.group(1).strip() if panic_match else "unknown panic"
 
@@ -296,7 +295,10 @@ def detect_go_crash(stderr: str) -> dict[str, Any] | None:
     return {
         "language": "go", "exc_type": tipo_de_mensaje(panic_message),
         "exc_message": panic_message,
-        "origin": f"goroutine-{goroutine_id}", "frames": frames,
+        # `origin` es el enum del schema v2, pelado: `goroutine-5` no esta en el
+        # enum y el buzon lo trataba como fuera-de-schema — perdiendo el contexto
+        # Y el numero a la vez. El numero sigue en `traceback`, que viaja crudo.
+        "origin": "goroutine", "frames": frames,
         "traceback": traceback_text,
     }
 
@@ -335,7 +337,9 @@ def detect_rust_crash(stderr: str) -> dict[str, Any] | None:
 
     return {
         "language": "rust", "exc_type": tipo_de_mensaje(message), "exc_message": message,
-        "origin": f"thread-{thread}", "frames": frames,
+        # Enum del schema v2: el nombre real del hilo no cabe en `origin` (esta
+        # en `traceback`, crudo); aqui solo se dice el CONTEXTO.
+        "origin": "main" if thread == "main" else "thread", "frames": frames,
         "traceback": stderr.strip(),
     }
 

@@ -401,3 +401,75 @@ def test_el_hook_de_js_avisa_en_stderr_al_capturar(tmp_path):
     callado = subprocess.run([node, guion], capture_output=True, text=True,
                              timeout=60, env=dict(entorno, GB_QUIET="1"))
     assert "capturado" not in callado.stderr and "captured" not in callado.stderr
+
+
+def test_sonda_todo_origin_emitido_esta_en_el_enum_del_schema():
+    """La sonda del criterio 2 del ADR 0012: `exception.origin` dice DONDE
+    afloró la excepción (el enum del schema v2), no cómo se capturó. Cada hook
+    lo confundió alguna vez (`message_handler`, `shutdown`, `NSException`,
+    `goroutine-5`), así que el enum se comprueba contra los FUENTES: un valor
+    nuevo fuera del enum se caza aquí, también en runtimes que esta máquina
+    no puede ejecutar."""
+    import re
+
+    import galaxybrain
+    from galaxybrain import buzon
+
+    base = os.path.join(os.path.dirname(galaxybrain.__file__), "hooks_lang")
+    sondas = {
+        "gb-hook.js": r"buildRecord\([^,]+,\s*'([^']+)'\)",
+        "gb-hook.lua": r"origin\s*=\s*'([^']+)'",
+        "gb-hook.php": r"\$origen\s*=\s*'([^']+)'",
+        "gb-hook.rb": r"origin:\s*'([^']+)'",
+        os.path.join("swift", "gb_hook.swift"): r'\\"origin\\":\\"(\w+)',
+        os.path.join("c", "gb_hook.c"): r'\\"origin\\":\\"(\w+)',
+    }
+    for rel, patron in sondas.items():
+        with open(os.path.join(base, rel), encoding="utf-8") as handle:
+            fuente = handle.read()
+        valores = re.findall(patron, fuente)
+        assert valores, "la sonda de %s no encontró NINGÚN origin: patrón roto" % rel
+        for v in valores:
+            assert v in buzon.ORIGENES, "%s emite origin %r fuera del enum" % (rel, v)
+
+    # El envolvente de Windows decide con un ternario; se fija el contrato entero.
+    with open(os.path.join(base, "c", "gb_run_win.c"), encoding="utf-8") as handle:
+        fuente = handle.read()
+    m = re.search(r'tid == tid_principal \? "(\w+)" : "(\w+)"', fuente)
+    assert m, "gb_run_win.c ya no decide el origin con el ternario esperado"
+    assert set(m.groups()) <= buzon.ORIGENES
+
+    # Y gb-run.py no puede volver a pegar ids al origin (goroutine-5 no es enum).
+    with open(os.path.join(base, "gb-run.py"), encoding="utf-8") as handle:
+        fuente = handle.read()
+    assert '"origin": f"' not in fuente, "gb-run.py fabrica origins dinámicos otra vez"
+    for v in re.findall(r'"origin": "(\w+)"', fuente):
+        assert v in buzon.ORIGENES, "gb-run.py emite origin %r fuera del enum" % v
+
+
+def test_el_envolvente_deriva_origins_del_enum_de_stderr_real():
+    """Funcional, no estática: un panic de Go y uno de Rust sintéticos pasan por
+    los parsers de verdad y el origin resultante es del enum — el número de la
+    goroutine sobrevive en `traceback`, que viaja crudo, no en `origin`."""
+    import importlib.util
+
+    import galaxybrain
+    from galaxybrain import buzon
+
+    ruta = os.path.join(os.path.dirname(galaxybrain.__file__), "hooks_lang", "gb-run.py")
+    spec = importlib.util.spec_from_file_location("gb_run_sonda", ruta)
+    gb_run = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(gb_run)
+
+    go = gb_run.detect_go_crash(
+        "panic: runtime error: index out of range [3] with length 2\n\n"
+        "goroutine 17 [running]:\nmain.explota(...)\n\t/proy/main.go:12 +0x1d\n"
+    )
+    assert go["origin"] in buzon.ORIGENES
+    assert "goroutine 17" in go["traceback"]
+
+    rust = gb_run.detect_rust_crash(
+        "thread 'worker-3' panicked at 'index out of bounds', src/main.rs:7:5\n"
+    )
+    assert rust["origin"] in buzon.ORIGENES
+    assert rust["origin"] == "thread"

@@ -86,7 +86,10 @@ $GLOBALS['gb_trace'] = (function () {
             $mensajeCrudo = $err['message'];
             $tipo    = $NOMBRES[$err['type']] ?? ('E_' . $err['type']);
             $mensaje = $mensajeCrudo;
-            $origen  = 'shutdown';
+            // `origin` es el enum del schema v2 y dice DONDE afloro, no como se
+            // capturo: `shutdown`/`uncaught_exception` eran metodos disfrazados
+            // de contexto. El COMO ya lo cuenta el tipo (E_ERROR vs la clase).
+            $origen  = 'main';
             $frames  = [];
 
             // Excepcion no capturada: PHP la convierte en E_ERROR con el texto
@@ -95,7 +98,6 @@ $GLOBALS['gb_trace'] = (function () {
                            $mensajeCrudo, $m)) {
                 $tipo    = $m[1];
                 $mensaje = $m[2];
-                $origen  = 'uncaught_exception';
                 $ficheroLanza = $m[3];
                 $lineaLanza   = (int) $m[4];
                 $traza        = $m[5];
