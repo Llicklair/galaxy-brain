@@ -72,20 +72,41 @@ compra por partes, y solo donde el runtime lo vende barato:
   pecado que mató a `store_universal`). Sonda y e2e en
   [tests/test_envolvente.py](tests/test_envolvente.py). El armado por perfil de shell queda como
   opt-in futuro, con permiso explícito: es tocar ficheros del usuario.
-- **Estado (locals)**: se coge donde el runtime lo regala — ruby (`TracePoint(:raise)` entrega el
-  binding) y php (los args de `getTrace()`) son los siguientes; lua ya trae parte. JS exige el
-  protocolo inspector: spike con criterio de aborto escrito (overhead armado ~0 y 3/3, o se descarta
-  por escrito). **JVM y C# quedan fuera**: sus locals cuestan JVMTI/ICorDebug, maquinaria de
-  depurador que no compra su coste. go/rust: techo estructural del stderr, declarado.
+- **Estado (locals)** (fase 2-3, resuelta el 6-sep-2026, lenguaje a lenguaje):
+  - **js/ts: HECHO y medido.** El inspector pausa en la excepción no capturada (frames vivos), 3/3
+    modos (síncrona, callback, promesa), cómputo puro +0 ms; cada throw CAPTURADO paga ~2x (~18 µs)
+    — declarado, con salida `GB_NO_JS_LOCALS=1`. La medición cazó de paso un bug de criterio 5 que
+    llevaba ahí desde el spike: TENER el listener de `unhandledRejection` hacía que la promesa sin
+    catch saliera 0 en vez de 1; ahora el monitor trae el origen en su segundo argumento.
+  - **lua: capturaba locals SIN redacción** — un `password` local viajaba en claro. Arreglado con la
+    misma criba por nombre; sonda de deriva en la suite.
+  - **ruby: escrito, PENDIENTE de medir.** `TracePoint(:raise)` aparca la referencia al binding
+    (coste ~0 por raise) y los locals se extraen solo al morir, redactados. Esta máquina no tiene
+    ruby: la regla de evidencia manda no contarlo como cubierto hasta el rojo real.
+  - **php: techo declarado.** Sus locals exigen `set_exception_handler` — MANEJO, el error medido
+    del ADR (borra el Fatal error, exit 255→0) — y los args de su traza son posicionales: sin
+    nombre no hay redacción por nombre. Se queda con lo que su traza ya imprime.
+  - **JVM y C# quedan fuera**: sus locals cuestan JVMTI/ICorDebug, maquinaria de depurador que no
+    compra su coste. go/rust: techo estructural del stderr, declarado.
+
+**Cierre del eje (6-sep-2026, decisión del owner):** la consola NO necesita ser universal — una
+consola por lenguaje, con lo que cada runtime da barato, está bien. Medir ruby queda sin urgencia y
+los techos de arriba dejan de ser deuda: son la forma final. El esfuerzo se movió a la
+**interconexión del grafo entre lenguajes** — las aristas de lanzamiento (`cruzadas`) con destino
+escrito y único entran al grafo con el rango de un import: ciclos, fan-in/out, fronteras y
+selección. Lo ambiguo o en variable sigue siendo candidata del mapa, nunca arista.
 - **Condición transversal**: sin redacción de secretos equivalente a la de Python, un lenguaje no
   captura locals. Un estado sin criba es peor que ningún estado.
 
 #### Lo único que se declara a mano: las aristas que el código no confiesa
 
 El grafo se deriva. La excepción, acotada y escrita: una dependencia que **ningún** analizador
-estático puede ver —HTTP, `subprocess`, CLI, IPC, el otro lado en un lenguaje que este repo no
-analiza— se declara en `.gb-boundaries` como `A => B` y entra como arista de primera clase (ciclos,
-fan-in/out, selección de tests, mapa), gobernada por las fronteras como cualquier otra.
+estático puede ver —HTTP, CLI con el comando en una variable, IPC, el otro lado en un lenguaje que
+este repo no analiza— se declara en `.gb-boundaries` como `A => B` y entra como arista de primera
+clase (ciclos, fan-in/out, selección de tests, mapa), gobernada por las fronteras como cualquier
+otra. Un `subprocess`/`spawn` con el destino ESCRITO ya no necesita declararse: desde el 6-sep-2026
+el grafo lo deriva solo (arista de lanzamiento, `cruzadas`); `=>` queda para lo que el código de
+verdad no confiesa.
 
 **Qué NO es esto:** no es declarar lo que el análisis ya deriva (eso es un grafo mantenido a mano,
 que es justo lo que la ADR 0001 mató: se desincroniza y miente); no es un peso, una etiqueta ni un
