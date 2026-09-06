@@ -24,6 +24,7 @@ símbolos homónimos salvo por el import que los trae. Todo eso **se cuenta y se
 declara**; no se adivina.
 """
 
+import copy
 import json
 import os
 import shutil
@@ -814,6 +815,29 @@ def _resuelve(especificador, fichero, raiz, modulos, modo):
 # --- el analisis ------------------------------------------------------------
 
 
+# Una plaza, no un diccionario: el caso que sangraba es UNA invocacion que analiza
+# el MISMO arbol dos veces (`gb graph` monta el grafo fusionado y luego los
+# simbolos: 150 subprocesos de ast-grep, 15 de los 20 s medidos el 6-sep-2026).
+# La clave lleva la firma completa del arbol (ruta, mtime_ns, tamano por fichero),
+# asi que el watch y los tests que SI cambian ficheros fallan la clave y re-derivan
+# solos; una plaza acota la memoria y basta para ese patron. Copia profunda en los
+# dos sentidos: los consumidores mutan el informe (not_covered, fusion) y un cache
+# que devuelve su unico original se envenena con el primero que escribe.
+_MEMO_ANALYZE = {"clave": None, "informe": None}
+
+
+def _firma_arbol(ficheros):
+    """(ruta, mtime_ns, tamano) de cada fichero soportado: cambia si algo cambia."""
+    filas = []
+    for fichero, _lang in ficheros:
+        try:
+            st = os.stat(fichero)
+            filas.append((fichero, st.st_mtime_ns, st.st_size))
+        except OSError:
+            filas.append((fichero, 0, -1))
+    return tuple(filas)
+
+
 def analyze(root):
     """El informe, con la MISMA forma que `symbols.analyze` de la vía Python.
 
@@ -841,6 +865,11 @@ def analyze(root):
     if not ruta_ag:
         informe["root_error"] = detalle
         return informe
+    # `clave_memo` y no `clave`: mas abajo el dedupe de simbolos rebinda `clave`
+    # y el memo guardaria la del ultimo match (paso el 6-sep, cache que nunca daba).
+    clave_memo = (root, ruta_ag, _firma_arbol(ficheros))
+    if _MEMO_ANALYZE["clave"] == clave_memo:
+        return copy.deepcopy(_MEMO_ANALYZE["informe"])
     informe["motor"] = detalle
     presentes = sorted({lang for _f, lang in ficheros})
     informe["lenguajes"] = presentes
@@ -1025,6 +1054,8 @@ def analyze(root):
         "reexports, carga dinamica y alias: invisibles al patron",
         "homonimos en modulos distintos: se cuentan aparte en vez de elegir uno",
     ] + carencias_de(presentes)
+    _MEMO_ANALYZE["clave"] = clave_memo
+    _MEMO_ANALYZE["informe"] = copy.deepcopy(informe)
     return informe
 
 
