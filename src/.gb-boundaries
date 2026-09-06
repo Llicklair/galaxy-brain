@@ -15,8 +15,37 @@ NUCLEO = galaxybrain.capture, galaxybrain.store, galaxybrain.saferepr,
          galaxybrain.graph, galaxybrain.config, galaxybrain.hooks,
          galaxybrain.changes, galaxybrain.floor, galaxybrain.companions,
          galaxybrain.symbols, galaxybrain.memory, galaxybrain.impacted,
-         galaxybrain.delta, galaxybrain.aislado, galaxybrain.actividad
+         galaxybrain.delta, galaxybrain.delta_multi, galaxybrain.aislado,
+         galaxybrain.actividad, galaxybrain.autoinstall, galaxybrain.bootstrap,
+         galaxybrain.buzon, galaxybrain.consola, galaxybrain.cruzadas,
+         galaxybrain.huerfanos, galaxybrain.idioma, galaxybrain.lenguajes
 
-PRESENTACION = galaxybrain.cli, galaxybrain.render
+# mapa y viz son salida (el canvas de `who --html`): se apoyan en el nucleo y
+# nadie del nucleo puede depender de ellos.
+PRESENTACION = galaxybrain.cli, galaxybrain.render, galaxybrain.mapa, galaxybrain.viz
+
+# Los hooks por lenguaje corren DENTRO del proceso observado (node, ruby, jvm,
+# .NET, C, swift, y gb-run.py como envolvente). Tienen que ser autocontenidos:
+# el proceso ajeno no tiene el paquete, y un import de galaxybrain ahi seria
+# una captura que muere al arrancar. Se declara para que el gate lo vigile.
+HOOKS_LENGUAJE = galaxybrain.hooks_lang.gb-run, galaxybrain.hooks_lang.gb-hook,
+                 galaxybrain.hooks_lang.c.gb_hook, galaxybrain.hooks_lang.c.gb_run_win,
+                 galaxybrain.hooks_lang.dotnet.GbHook.StartupHook,
+                 galaxybrain.hooks_lang.jvm.GbAgent, galaxybrain.hooks_lang.swift.gb_hook
 
 NUCLEO -/-> PRESENTACION
+HOOKS_LENGUAJE -/-> NUCLEO
+HOOKS_LENGUAJE -/-> PRESENTACION
+
+# Y nadie del paquete importa los hooks por lenguaje: se envian y se lanzan
+# como proceso; importarlos seria arrastrar su arranque al del CLI.
+NUCLEO -/-> HOOKS_LENGUAJE
+PRESENTACION -/-> HOOKS_LENGUAJE
+
+# Queda UN modulo sin regla a proposito: `galaxybrain`, el __init__ del paquete.
+# La frontera es de punto y "bajo galaxybrain" es todo el arbol, asi que meterlo
+# en un grupo convierte cualquier regla en una regla sobre todos (probado el
+# 6-sep-2026: en NUCLEO prohibia cli -> render; como origen de una regla contra
+# los hooks, cazaba una llamada swift -> java resuelta por NOMBRE, un falso
+# positivo del motor de llamadas entre lenguajes). Un modulo de una linea
+# (`__version__`) no compra una regla que miente.

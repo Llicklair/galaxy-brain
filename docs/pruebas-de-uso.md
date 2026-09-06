@@ -1837,3 +1837,20 @@ leídas 14 de 101, 0 de 10 en el tercer proyecto; el aviso "sin ninguna regla qu
 aviso lleva la línea a pegar, el anuncio de captura calla en efímeros, `graph --brief` para el hook y
 `PYTHONUTF8=1` en la plantilla. Lo que se remide en el próximo proyecto: veces que sale el aviso antes
 de actuar (objetivo ≤ 1) y tasa de lectura de anuncios (hoy 14 %).
+
+## 6-sep-2026 (cont.) — Los 19 modulos sin regla del propio gb, y un falso positivo del motor de llamadas
+
+Al agrupar los 19 (`NUCLEO` crece, `mapa`/`viz` a `PRESENTACION`, `HOOKS_LENGUAJE` nuevo con
+"no importan al paquete" y "nadie los importa"), dos hallazgos que el gate accionable hizo
+visibles en diez minutos:
+
+1. **El `__init__` del paquete no cabe en ningun grupo.** La frontera es de punto: "bajo
+   `galaxybrain`" es todo el arbol. En `NUCLEO` prohibia `cli -> render` (25 cruces, todos
+   falsos). Queda fuera a proposito y el fichero lo dice.
+2. **`galaxybrain -/-> HOOKS_LENGUAJE` cazo `hooks_lang.swift.gb_hook -> hooks_lang.jvm.GbAgent.detectProjectRoot`.**
+   Swift no llama a Java: los dos hooks tienen una funcion con el mismo nombre y el cruce por
+   LLAMADA la resolvio por nombre entre lenguajes. Es un falso positivo del motor de llamadas en
+   repos mixtos, y es de los que acaban en `--no-verify` (regla 9). Se sortea con reglas por capa
+   (`NUCLEO`/`PRESENTACION -/-> HOOKS_LENGUAJE`); el motor sigue con la deuda anotada aqui.
+
+Resultado: gate ok, 488 reglas expandidas, 1 de 36 sin regla (el `__init__`).
