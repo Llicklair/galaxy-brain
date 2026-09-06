@@ -33,6 +33,19 @@ module GBHook
   CRASHES_DIR  = ENV['GB_HOME'] || File.join(Dir.home, '.galaxy-brain')
   CRASHES_FILE = File.join(CRASHES_DIR, 'crashes.jsonl')
 
+  # La MISMA lista que config.REDACT_PATTERNS de Python (la sonda de la suite
+  # caza la deriva). Por NOMBRE, no por contenido: coste asimetrico.
+  REDACT = %w[passwd password secret token api_key apikey auth credential
+              private_key session cookie].freeze
+  REDACTADO = '<redactado>'
+
+  # El binding del PRIMER raise de la excepcion que acabe matando el proceso.
+  # `at_exit` llega con la pila desenrollada (backtrace = strings, sin estado);
+  # TracePoint(:raise) dispara EN el raise con el frame vivo. Ruby no sabe ahi
+  # si sera capturada, asi que se aparca la REFERENCIA (coste ~0 por raise) y
+  # los locals se extraen solo al morir, si la que muere es la aparcada.
+  ULTIMO_RAISE = { exc: nil, binding: nil }
+
   class << self
 
     # Walk up from dir looking for .git
@@ -94,10 +107,46 @@ module GBHook
       end
     end
 
+    def sensible?(nombre)
+      bajo = nombre.to_s.downcase
+      REDACT.any? { |patron| bajo.include?(patron) }
+    end
+
+    def repr_local(nombre, valor)
+      return REDACTADO if sensible?(nombre)
+      texto = begin; valor.inspect; rescue StandardError; '<inspect fallo>'; end
+      texto.length > 200 ? texto[0, 200] + '...' : texto
+    end
+
+    # Los locals del binding aparcado, redactados y acotados. Solo el frame que
+    # lanza — una pila de bindings cobraria en CADA raise, y el coste ~0 del
+    # aparcado es lo que hace defendible tener esto encendido por defecto.
+    def locals_de(binding_, tope)
+      nombres = binding_.local_variables
+      fuera = {}
+      nombres.first(tope).each do |nombre|
+        valor = binding_.local_variable_get(nombre)
+        fuera[nombre.to_s] = repr_local(nombre, valor)
+      end
+      fuera['...'] = '(mas variables, recortadas por GB_MAX_LOCALS)' if nombres.length > tope
+      fuera
+    rescue StandardError
+      nil
+    end
+
     # Build the schema-v2 crash record.
     def build_record(exception)
       cwd = Dir.pwd
       frames = parse_backtrace(exception.backtrace)
+      # Paridad con Python (6-sep-2026): el estado del frame que lanzo, si el
+      # que muere es el que TracePoint aparco. frames[0] es el sitio del raise
+      # en el backtrace de Ruby — el mismo frame que el binding.
+      if !frames.empty? && ULTIMO_RAISE[:exc].equal?(exception) && ULTIMO_RAISE[:binding]
+        tope = ENV['GB_MAX_LOCALS'].to_i
+        tope = 20 if tope <= 0
+        locales = locals_de(ULTIMO_RAISE[:binding], tope)
+        frames[0]['locals'] = locales if locales && !locales.empty?
+      end
       session_id = ENV['GB_SESSION_ID'] || 'unknown'
       ppid = begin; Process.ppid; rescue; nil; end
       {
@@ -145,6 +194,22 @@ module GBHook
       # Silent fail.
     end
 
+  end
+end
+
+# El aparcador: cada raise NUEVO guarda su binding; un re-raise de la misma
+# excepcion no lo pisa (el re-raise ocurre en el rescue, y sus locals no son
+# los que explican el fallo). Apagable: GB_NO_RUBY_LOCALS=1.
+unless %w[1 true yes on].include?(ENV['GB_NO_RUBY_LOCALS'].to_s.downcase)
+  begin
+    TracePoint.new(:raise) do |tp|
+      unless GBHook::ULTIMO_RAISE[:exc].equal?(tp.raised_exception)
+        GBHook::ULTIMO_RAISE[:exc] = tp.raised_exception
+        GBHook::ULTIMO_RAISE[:binding] = tp.binding
+      end
+    end.enable
+  rescue StandardError
+    # Sin TracePoint (embebido raro): hook sin estado, como antes.
   end
 end
 

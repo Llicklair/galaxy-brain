@@ -70,7 +70,8 @@ def _frame(bruto, lang):
         "is_library": bool(bruto.get("native")) or _es_libreria(fichero, lang),
         "source": fuente,
         # None y no {}: `render` distingue "no hay locales" de "no se
-        # capturaron". Ningun hook no-Python las da salvo lua.
+        # capturaron". Las dan lua y, desde el 6-sep-2026, js/ts por el
+        # inspector (pausa en excepcion no capturada, frames vivos).
         "locals": bruto.get("locals") or None,
     }
 

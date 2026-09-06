@@ -419,7 +419,9 @@ def test_sonda_todo_origin_emitido_esta_en_el_enum_del_schema():
 
     base = os.path.join(os.path.dirname(galaxybrain.__file__), "hooks_lang")
     sondas = {
-        "gb-hook.js": r"buildRecord\([^,]+,\s*'([^']+)'\)",
+        # El origin de js se decide en un ternario sobre el 2o argumento del
+        # monitor (asi murio el listener de unhandledRejection, 6-sep-2026).
+        "gb-hook.js": r"\?\s*'(\w+)'\s*:\s*'(\w+)'\)",
         "gb-hook.lua": r"origin\s*=\s*'([^']+)'",
         "gb-hook.php": r"\$origen\s*=\s*'([^']+)'",
         "gb-hook.rb": r"origin:\s*'([^']+)'",
@@ -429,8 +431,11 @@ def test_sonda_todo_origin_emitido_esta_en_el_enum_del_schema():
     for rel, patron in sondas.items():
         with open(os.path.join(base, rel), encoding="utf-8") as handle:
             fuente = handle.read()
-        valores = re.findall(patron, fuente)
-        assert valores, "la sonda de %s no encontró NINGÚN origin: patrón roto" % rel
+        crudos = re.findall(patron, fuente)
+        assert crudos, "la sonda de %s no encontró NINGÚN origin: patrón roto" % rel
+        valores = []
+        for v in crudos:
+            valores.extend(v if isinstance(v, tuple) else (v,))
         for v in valores:
             assert v in buzon.ORIGENES, "%s emite origin %r fuera del enum" % (rel, v)
 
@@ -475,3 +480,102 @@ def test_el_envolvente_deriva_origins_del_enum_de_stderr_real():
     )
     assert rust["origin"] in buzon.ORIGENES
     assert rust["origin"] == "thread"
+
+
+def _crash_node(tmp_path, guion, extra_env=None):
+    """Lanza node con el hook armado y GB_HOME aislado; devuelve (proc, registros)."""
+    import json
+    import shutil
+    import subprocess
+
+    import pytest
+
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node no esta en esta maquina")
+    hook = os.path.join(os.path.dirname(consola.__file__), "hooks_lang", "gb-hook.js")
+    gb_home = os.path.join(str(tmp_path), "gbhome")
+    fichero = os.path.join(str(tmp_path), "peta.js")
+    with open(fichero, "w", encoding="utf-8") as fh:
+        fh.write(guion)
+    entorno = dict(os.environ, NODE_OPTIONS="--require " + hook, GB_HOME=gb_home)
+    entorno.pop("GB_QUIET", None)
+    entorno.update(extra_env or {})
+    proc = subprocess.run([node, fichero], capture_output=True, text=True,
+                          timeout=60, env=entorno)
+    registros = []
+    ruta = os.path.join(gb_home, "crashes.jsonl")
+    if os.path.exists(ruta):
+        with open(ruta, encoding="utf-8") as fh:
+            registros = [json.loads(l) for l in fh if l.strip()]
+    return proc, registros
+
+
+def test_js_captura_locals_y_redacta_por_nombre(tmp_path):
+    """Paridad con Python (6-sep-2026): el inspector pausa en la excepcion no
+    capturada con los frames VIVOS, y los locals llegan al registro pasados
+    por la MISMA redaccion por nombre — un `password` local nunca toca disco."""
+    proc, registros = _crash_node(tmp_path, (
+        "function procesa(pedidos) {\n"
+        "  var total = 42;\n"
+        "  var password = 'hunter2';\n"
+        "  return pedidos[0].importe;\n"
+        "}\n"
+        "procesa([]);\n"
+    ))
+    assert proc.returncode == 1
+    assert len(registros) == 1
+    frame = registros[0]["frames"][0]
+    assert frame["function"] == "procesa"
+    assert frame["locals"]["total"] == "42"
+    assert frame["locals"]["password"] == "<redactado>"
+    assert "hunter2" not in str(registros[0])
+
+
+def test_js_la_promesa_sin_catch_muere_igual_que_a_pelo(tmp_path):
+    """La red contra el bug del 6-sep-2026: TENER un listener de
+    `unhandledRejection` hacia que Node diera la promesa por manejada y el
+    proceso saliera 0 en vez de 1 — el hook cambiaba como muere el programa
+    (criterio 5). Ahora el monitor trae el origen en su segundo argumento."""
+    guion = (
+        "async function falla() {\n"
+        "  var saldo = -3;\n"
+        "  throw new Error('promesa sin catch');\n"
+        "}\n"
+        "falla();\n"
+    )
+    proc, registros = _crash_node(tmp_path, guion)
+    assert proc.returncode == 1, "el hook cambio el exit code de la promesa"
+    assert len(registros) == 1
+    assert registros[0]["exception"]["origin"] == "promise"
+    assert registros[0]["frames"][0]["locals"]["saldo"] == "-3"
+
+
+def test_js_con_la_llave_echada_no_hay_locals(tmp_path):
+    """GB_NO_JS_LOCALS=1 es la salida para codigo que usa excepciones como
+    control de flujo (cada throw capturado paga ~2x con el inspector armado,
+    medido 6-sep-2026); la captura sigue, sin estado."""
+    proc, registros = _crash_node(tmp_path, "null.valor;\n",
+                                  extra_env={"GB_NO_JS_LOCALS": "1"})
+    assert proc.returncode == 1
+    assert len(registros) == 1
+    assert all(not f.get("locals") for f in registros[0]["frames"])
+
+
+def test_sonda_la_redaccion_de_los_hooks_no_deriva_de_python():
+    """La lista de config.REDACT_PATTERNS es la canonica; js, lua y ruby la
+    llevan copiada (son ficheros sin dependencias). Esta sonda caza la deriva:
+    un patron nuevo en Python que no llegue a los hooks es un secreto que
+    viaja en claro en esos lenguajes."""
+    from galaxybrain import config
+
+    base = os.path.join(os.path.dirname(consola.__file__), "hooks_lang")
+    for rel in ("gb-hook.js", "gb-hook.lua", "gb-hook.rb"):
+        with open(os.path.join(base, rel), encoding="utf-8") as fh:
+            fuente = fh.read()
+        assert "<redactado>" in fuente, "%s no usa el token de redaccion comun" % rel
+        # Frontera de palabra y no comillas: la lista %w[] de Ruby va sin ellas.
+        import re
+        for patron in config.REDACT_PATTERNS:
+            assert re.search(r"\b%s\b" % re.escape(patron), fuente), (
+                "%s no redacta %r — un secreto con ese nombre viaja en claro" % (rel, patron))

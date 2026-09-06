@@ -110,6 +110,30 @@ local function mkdir_p(path)
     else os.execute('mkdir -p "' .. path .. '" 2>/dev/null') end
 end
 
+-- ==================== redaccion ====================
+-- La MISMA lista que config.REDACT_PATTERNS de Python (la sonda de la suite
+-- caza la deriva). Por NOMBRE, no por contenido: un valor perdido cuesta menos
+-- que un token en disco. Hasta el 6-sep-2026 los locals de lua se volcaban
+-- crudos — un `password` local viajaba en claro al buzon.
+local REDACT = { 'passwd', 'password', 'secret', 'token', 'api_key', 'apikey',
+                 'auth', 'credential', 'private_key', 'session', 'cookie' }
+local REDACTADO = '<redactado>'
+
+local function es_sensible(nombre)
+    local bajo = tostring(nombre):lower()
+    for _, patron in ipairs(REDACT) do
+        if bajo:find(patron, 1, true) then return true end
+    end
+    return false
+end
+
+local function repr_local(nombre, valor)
+    if es_sensible(nombre) then return REDACTADO end
+    local texto = tostring(valor)
+    if #texto > 200 then texto = texto:sub(1, 200) .. '...' end
+    return texto
+end
+
 -- ==================== captura ====================
 local function frames_desde_pila(nivel)
     local frames = {}
@@ -126,7 +150,7 @@ local function frames_desde_pila(nivel)
             while true do
                 local nombre, valor = debug.getlocal(i, j)
                 if not nombre then break end
-                if nombre:sub(1, 1) ~= '(' then locales[nombre] = tostring(valor) end
+                if nombre:sub(1, 1) ~= '(' then locales[nombre] = repr_local(nombre, valor) end
                 j = j + 1
             end
             if next(locales) == nil then locales = nil end

@@ -40,8 +40,8 @@ var gbTrace = (function () {
     var os   = require('os');
 
     /* GB_HOME manda, como en el resto de gb: sin leerlo, un GB_HOME apuntado a
- * otro sitio dejaba estas capturas en el ~ real — escritas y perdidas. */
-var CRASHES_DIR  = process.env.GB_HOME || path.join(os.homedir(), '.galaxy-brain');
+     * otro sitio dejaba estas capturas en el ~ real — escritas y perdidas. */
+    var CRASHES_DIR  = process.env.GB_HOME || path.join(os.homedir(), '.galaxy-brain');
     var CRASHES_FILE = path.join(CRASHES_DIR, 'crashes.jsonl');
 
     // ---------------------------------------------------------------
@@ -153,7 +153,8 @@ var CRASHES_DIR  = process.env.GB_HOME || path.join(os.homedir(), '.galaxy-brain
         language: detectLanguage(frames),
         exception: {
           type:    (err && err.constructor && err.constructor.name) || typeof err,
-          message: (err && err.message) ? err.message : String(err),
+          // El mensaje puede llevar un secreto clave=valor (el S2 de Python).
+          message: redactarTexto((err && err.message) ? err.message : String(err)),
           origin:  origin
         },
         frames:   frames,
@@ -165,7 +166,7 @@ var CRASHES_DIR  = process.env.GB_HOME || path.join(os.homedir(), '.galaxy-brain
           pid:        process.pid,
           ppid:       ppid
         },
-        traceback:      rawStack,
+        traceback:      redactarTexto(rawStack),
         capture_method: 'hook'
       };
     }
@@ -196,6 +197,165 @@ var CRASHES_DIR  = process.env.GB_HOME || path.join(os.homedir(), '.galaxy-brain
     }
 
     // ---------------------------------------------------------------
+    // Locals por inspector — paridad con Python (medido 6-sep-2026)
+    // ---------------------------------------------------------------
+    // `uncaughtExceptionMonitor` llega con la pila YA desenrollada: ahi no hay
+    // locals que leer. El protocolo inspector si los da: V8 pausa en la
+    // excepcion que predice no-capturada (frames vivos), se leen los scopes y
+    // se aparcan; el monitor los fusiona en el registro un instante despues.
+    //
+    // Coste medido en esta maquina (spike 6-sep-2026, 3 tiradas): computo puro
+    // +0 ms; cada throw CAPTURADO paga ~2x (~18 µs extra). En un programa
+    // normal no se nota; en codigo que usa excepciones como control de flujo,
+    // si — por eso hay salida: GB_NO_JS_LOCALS=1 vuelve al hook sin estado.
+    // Sin resume a proposito: medido que el proceso muere igual (exit 1, traza
+    // intacta) y anadirlo seria codigo sin evidencia.
+
+    // La MISMA lista que config.REDACT_PATTERNS de Python — una sonda en la
+    // suite caza la deriva. Redaccion por NOMBRE, no por contenido: el mismo
+    // coste asimetrico (un valor perdido < un token en disco).
+    var REDACT = ['passwd', 'password', 'secret', 'token', 'api_key', 'apikey',
+                  'auth', 'credential', 'private_key', 'session', 'cookie'];
+    var REDACTADO = '<redactado>';
+
+    function esSensible(nombre) {
+      var bajo = String(nombre).toLowerCase();
+      for (var i = 0; i < REDACT.length; i++) {
+        if (bajo.indexOf(REDACT[i]) !== -1) return true;
+      }
+      return false;
+    }
+
+    // El S5/S2 de Python, replicado: un identificador sensible seguido de = o :
+    // y su valor, en TEXTO libre. Hace falta porque String(function) en JS
+    // vuelca el codigo fuente entero — un `var password = 'x'` dentro de una
+    // funcion aparcada como local viajaba en claro (cazado por el test e2e).
+    var RE_ASIGNACION = new RegExp(
+      "(\\b\\w*(?:" + REDACT.join('|') + ")\\w*\\b)(['\"]?\\s*[:=]\\s*)" +
+      "(\"[^\"]*\"|'[^']*'|[^\\s,)\\]}]+)", 'gi');
+
+    function redactarTexto(texto) {
+      try {
+        return String(texto).replace(RE_ASIGNACION, function (_m, a, b) {
+          return a + b + REDACTADO;
+        });
+      } catch (_) { return texto; }
+    }
+
+    function reprLocal(nombre, valor) {
+      if (esSensible(nombre)) return REDACTADO;
+      var texto = (valor === undefined) ? 'undefined' : String(valor);
+      if (texto.length > 200) {
+        texto = texto.slice(0, 200) + '...(+' + (texto.length - 200) + ' chars)';
+      }
+      return redactarTexto(texto);
+    }
+
+    var localsPendientes = null;   // frames del ultimo pause, del mas interno afuera
+
+    (function armarLocals() {
+      var quitar = String(process.env.GB_NO_JS_LOCALS || '').toLowerCase();
+      if (quitar === '1' || quitar === 'true' || quitar === 'yes' || quitar === 'on') return;
+      try {
+        var inspector = require('inspector');
+        var session = new inspector.Session();
+        session.connect();
+
+        // El inspector corre en el MISMO hilo: el callback de post llega antes
+        // de devolver el control (comprobado en el spike; si un dia no llega,
+        // res queda null y ese frame sale sin locals — degradacion, no fallo).
+        function postSync(method, params) {
+          var res = null;
+          session.post(method, params || {}, function (e, r) { res = r; });
+          return res;
+        }
+
+        // Lo que el frame de modulo CommonJS trae SIEMPRE y no dice nada del
+        // fallo — el equivalente del filtro de dunders de Python.
+        var RUIDO_MODULO = { exports: 1, require: 1, module: 1,
+                             __filename: 1, __dirname: 1 };
+        var maxLocals = parseInt(process.env.GB_MAX_LOCALS || '20', 10) || 20;
+
+        session.on('Debugger.paused', function (msg) {
+          try {
+            var fuera = [];
+            var callFrames = (msg.params && msg.params.callFrames) || [];
+            for (var i = 0; i < callFrames.length && i < 20; i++) {
+              var cf = callFrames[i];
+              // La misma regla que Python (capture_all or not is_library): los
+              // frames del runtime no llevan estado — sus locals son ruido de
+              // Module._compile, no del fallo del usuario.
+              if (cf.url && cf.url.indexOf('node:') === 0) {
+                fuera.push({ 'function': cf.functionName || '<anonymous>',
+                             line: cf.location ? cf.location.lineNumber + 1 : null,
+                             locals: null });
+                continue;
+              }
+              var scope = null;
+              for (var j = 0; j < (cf.scopeChain || []).length; j++) {
+                if (cf.scopeChain[j].type === 'local') { scope = cf.scopeChain[j]; break; }
+              }
+              var locals = null;
+              if (scope && scope.object && scope.object.objectId) {
+                var props = postSync('Runtime.getProperties',
+                  { objectId: scope.object.objectId, ownProperties: true });
+                if (props && props.result) {
+                  locals = {};
+                  var vistos = 0;
+                  for (var k = 0; k < props.result.length; k++) {
+                    var p = props.result[k];
+                    if (RUIDO_MODULO[p.name]) continue;
+                    if (vistos >= maxLocals) {
+                      locals['...'] = '(mas variables, recortadas por GB_MAX_LOCALS)';
+                      break;
+                    }
+                    var v = p.value;
+                    locals[p.name] = reprLocal(p.name,
+                      v ? (v.value !== undefined ? v.value : v.description) : undefined);
+                    vistos++;
+                  }
+                  if (vistos === 0 && !locals['...']) locals = null;
+                }
+              }
+              fuera.push({
+                // lineNumber del inspector es 0-based; Error.stack es 1-based.
+                'function': cf.functionName || '<anonymous>',
+                line: cf.location ? cf.location.lineNumber + 1 : null,
+                locals: locals
+              });
+            }
+            localsPendientes = fuera;
+          } catch (_) { /* sin locals; el registro sale igual */ }
+        });
+
+        postSync('Debugger.enable');
+        postSync('Debugger.setPauseOnExceptions', { state: 'uncaught' });
+      } catch (_) {
+        // Sin inspector (embebido, o alguien lo tiene tomado): hook sin estado,
+        // como antes del 6-sep. Nunca romper el programa observado.
+      }
+    })();
+
+    /**
+     * Fusiona los locals aparcados por el pause en los frames del registro.
+     * Ambas pilas van del frame mas interno hacia afuera; se casa por posicion
+     * verificando la linea (o el nombre) para no pegar estado al frame que no es.
+     */
+    function fusionarLocals(record) {
+      var pendientes = localsPendientes;
+      localsPendientes = null;   // un pause alimenta UN registro, nunca dos
+      if (!pendientes) return;
+      for (var i = 0; i < record.frames.length && i < pendientes.length; i++) {
+        var f = record.frames[i];
+        var p = pendientes[i];
+        if (!p.locals) continue;
+        if (f.line === p.line || f['function'] === p['function']) {
+          f.locals = p.locals;
+        }
+      }
+    }
+
+    // ---------------------------------------------------------------
     // Install handlers
     // ---------------------------------------------------------------
 
@@ -211,20 +371,22 @@ var CRASHES_DIR  = process.env.GB_HOME || path.join(os.homedir(), '.galaxy-brain
     //
     // Measured 3/3 across sync, thrown and async crashes — see
     // docs/CONSOLA-MULTILENGUAJE.md.
-    process.on('uncaughtExceptionMonitor', function gbUncaughtException(err) {
+    // TAMBIEN para las promesas, y no un listener de `unhandledRejection`:
+    // TENER ese listener hace que Node de la promesa por manejada y el proceso
+    // salga 0 en vez de 1 — medido el 6-sep-2026 (a pelo exit 1, con el
+    // listener exit 0). El mismo error del ADR 0012, "engancharse donde se
+    // maneja", que este hook ya pago una vez con uncaughtException. En modo
+    // por defecto (>= Node 15) la promesa sin catch pasa por el monitor con
+    // el origen en el SEGUNDO argumento, que es todo lo que se necesitaba.
+    // Limite declarado: con --unhandled-rejections=warn no hay muerte y no hay
+    // captura — se captura lo que mata al proceso.
+    process.on('uncaughtExceptionMonitor', function gbUncaughtException(err, origen) {
       try {
-        writeRecord(buildRecord(err, 'main'));
+        var record = buildRecord(
+          err, origen === 'unhandledRejection' ? 'promise' : 'main');
+        fusionarLocals(record);
+        writeRecord(record);
       } catch (_) { /* silent */ }
-    });
-
-    process.on('unhandledRejection', function gbUnhandledRejection(reason) {
-      try {
-        var err = (reason instanceof Error) ? reason : new Error(String(reason));
-        writeRecord(buildRecord(err, 'promise'));
-      } catch (_) { /* silent */ }
-      // Don't force exit — match Node.js default behavior:
-      // Node >= 15 terminates on unhandled rejection by default;
-      // Node < 15 only warns.  Either way, we let the runtime decide.
     });
 
   } catch (_) {
