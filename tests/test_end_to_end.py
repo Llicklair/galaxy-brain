@@ -85,18 +85,32 @@ def test_el_programa_observado_se_comporta_igual(gb_home, child_env):
     assert "ValueError: roto" in result.stderr
 
 
-def test_deja_una_sola_linea_de_aviso(gb_home, child_env):
-    result = run_child("raise ValueError('roto')\n", child_env)
+def test_deja_una_sola_linea_de_aviso(gb_home, child_env, tmp_path):
+    _path, result = run_script(tmp_path, "raise ValueError('roto')\n", child_env)
     avisos = [line for line in result.stderr.splitlines() if "galaxy-brain" in line]
     assert len(avisos) == 1
 
 
-def test_el_aviso_lleva_el_comando_exacto_con_el_id(gb_home, child_env):
+def test_una_captura_efimera_se_guarda_pero_no_avisa(gb_home, child_env):
+    """`python -c` y stdin no son ficheros del proyecto: `gb list` ya los
+    esconde como efimeros y el termometro los cuenta como exploracion, que
+    "esta bien no leer". El anuncio era la unica pieza sin ese filtro: en tres
+    proyectos, 1 de 27 anuncios efimeros se leyo (retro 6-sep-2026). Se guarda
+    igual (hechos crudos, regla 6) y `gb last` lo encuentra; solo calla."""
+    result = run_child("raise ValueError('roto')\n", child_env)
+
+    assert "ValueError: roto" in result.stderr
+    assert "galaxy-brain" not in result.stderr
+    entradas = store.read_index()
+    assert len(entradas) == 1 and store.is_ephemeral(entradas[0])
+
+
+def test_el_aviso_lleva_el_comando_exacto_con_el_id(gb_home, child_env, tmp_path):
     """El aviso es la unica pista que ve quien acaba de lanzar el programa — y
     con captura de stdout de por medio, a veces la unica que vera nunca. Por eso
     lleva el comando ENTERO, con el id dentro: copiar y pegar, sin ventana de
     tiempo ni riesgo de leer el fallo de antes."""
-    result = run_child("raise ValueError('roto')\n", child_env)
+    _path, result = run_script(tmp_path, "raise ValueError('roto')\n", child_env)
     aviso = next(line for line in result.stderr.splitlines() if "galaxy-brain" in line)
 
     assert "gb show " in aviso

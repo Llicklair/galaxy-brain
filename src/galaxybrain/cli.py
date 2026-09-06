@@ -1167,7 +1167,7 @@ def cmd_graph(args):
     if args.json:
         emit(json.dumps(report, ensure_ascii=False, indent=2))
     else:
-        emit(render.render_graph(report, _style(args)))
+        emit(render.render_graph(report, _style(args), brief=getattr(args, "brief", False)))
     if args.gate:
         return _graph_gate(report)
     # Una raiz que no existe es un error de uso, se pida gate o no: si devolviera 0
@@ -2443,6 +2443,8 @@ def build_parser():
     graph_p.add_argument("--json", action="store_true", help="salida cruda")
     graph_p.add_argument("--color", choices=["auto", "always", "never"], default="auto")
     graph_p.add_argument("--gate", action="store_true", help="codigo != 0 si hay ciclos (para pre-commit)")
+    graph_p.add_argument("--brief", action="store_true",
+                         help="una linea si el gate esta limpio (para hooks); el informe entero si no")
     graph_p.add_argument("--since", metavar="REF", help="comparar con esta ref git; --gate falla solo con ciclos/cruces NUEVOS")
     graph_p.add_argument("--boundaries", metavar="FICHERO", help="reglas de frontera (por defecto .gb-boundaries en la raiz)")
     graph_p.add_argument("--smells", action="store_true", help="proxies de sobreingenieria (ADVISORY, no bloquea)")

@@ -195,7 +195,13 @@ def _capture(exc_type, exc, tb, source, thread):
             return
         record = capture.build_record(exc_type, exc, tb, source=source, thread=thread)
         path = store.write(record)
-        if path is not None and not config.quiet():
+        # `python -c` y stdin se capturan igual (hechos crudos, regla 6) pero NO
+        # se anuncian: `gb list` ya los esconde como efimeros y el termometro
+        # los cuenta como exploracion, que "esta bien no leer". El anuncio era
+        # la unica pieza sin ese filtro, y el dato de tres proyectos fue 1 de 27
+        # anuncios efimeros leidos (retro 6-sep-2026): ruido pagado por linea.
+        if path is not None and not config.quiet() and not store.is_ephemeral(
+                {"where": store._headline_frame(record)}):
             _notice(record)
     except BaseException:  # noqa: BLE001 - jamas romper el programa observado
         pass

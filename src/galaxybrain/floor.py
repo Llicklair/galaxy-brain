@@ -435,8 +435,11 @@ def _plantilla_precommit(comando):
     )
     return """#!/bin/sh
 # Enganchado UNA vez con: git config core.hooksPath .githooks
+# UTF-8 en la salida de Python aunque la consola sea cp1252 (Windows): sin esto
+# los guiones y tildes del gate salen como basura en el log del commit.
+export PYTHONUTF8=1
 %s
-gb graph . --gate --since HEAD || exit 1
+gb graph . --gate --since HEAD --brief || exit 1
 gb check --staged --brief
 """ % tests
 

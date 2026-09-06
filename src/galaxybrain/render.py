@@ -454,9 +454,71 @@ def render_changes(report, style, brief=False):
     return "\n".join(lines)
 
 
-def render_graph(report, style):
-    """El mapa de acoplamiento: resumen, ciclos (el hecho que importa) y hotspots."""
+def gate_limpio(report):
+    """¿El gate no tiene NADA que decir? Solo hechos: sin error de raiz ni de
+    fronteras, sin ciclos (nuevos o viejos), sin cruces por import, llamada o
+    superficie, sin reglas malformadas ni sin casar. Los modulos sin regla NO
+    entran aqui: son la unica señal que pide una accion y por eso se imprimen
+    tambien en breve."""
+    return not (
+        report.get("root_error")
+        or report.get("boundaries_error")
+        or report.get("cycles")
+        or report.get("new_cycles")
+        or report.get("violations")
+        or report.get("call_violations")
+        or report.get("surface_violations")
+        or report.get("malformed_boundaries")
+        or report.get("unmatched_rules")
+        or report.get("boundaries_elsewhere")
+        or (report.get("since") is not None and report.get("baseline_ok") is False)
+        or not report.get("boundaries")
+    )
+
+
+def render_sin_regla(report, style):
+    """Los modulos que ninguna regla examina, con la accion exacta al lado.
+
+    INFORMA, no bloquea (regla 9): tener zonas sin declarar es normal en un repo
+    vivo. Lo que no es normal es AUTOMATIZAR sobre un verde ahi: "cero
+    violaciones" donde no hay reglas no es un aprobado, es no haber examen.
+    Se imprimio sin la accion durante meses y el dato fue 0/10: diez commits
+    con el mismo aviso y ningun modulo añadido (retro 6-sep-2026). Un aviso que
+    no dice QUE hacer es fondo; con la linea a pegar, es un hecho con coste cero
+    de decision. Propone, nunca escribe: el fichero lo firma quien lo tiene.
+    """
+    sin_regla = report.get("modulos_sin_regla") or []
+    if not sin_regla:
+        return []
+    return [
+        style(
+            "Sin ninguna regla que los mencione: %d de %d modulo(s) — %s"
+            % (len(sin_regla), report["modules"],
+               ", ".join(sin_regla[:5]) + (" ..." if len(sin_regla) > 5 else "")), DIM),
+        style("  para que el gate los examine, añadelos a un grupo de %s, p.ej.:"
+              % os.path.basename(report.get("boundaries_path") or "?"), DIM),
+        style("    GRUPO = ..., %s" % ", ".join(sin_regla[:5]), DIM),
+        style("  (`gb graph --proponer-fronteras` sugiere grupos a partir del grafo)", DIM),
+    ]
+
+
+def render_graph(report, style, brief=False):
+    """El mapa de acoplamiento: resumen, ciclos (el hecho que importa) y hotspots.
+
+    `brief` es para el hook: una linea cuando el gate esta limpio, mas los
+    modulos sin regla si los hay, porque es lo unico que pide una accion. En
+    cuanto hay algo que decir (ciclo, cruce, error) sale el informe entero:
+    resumir un fallo es esconderlo. Fan-in y fan-out se quedan en `gb graph`
+    sin --brief: en 13 commits seguidos no cambiaron ninguna decision (retro
+    6-sep-2026), y lo que informa por accion es ruido pagado (SCOPE).
+    """
     lines = []
+    if brief and gate_limpio(report):
+        lines.append(style(
+            "gate ok: %d modulos, %d aristas, 0 ciclos, sin cruces (%d regla(s))"
+            % (report["modules"], report["edges"], report["boundaries"]), DIM))
+        lines.extend(render_sin_regla(report, style))
+        return "\n".join(lines).rstrip()
     if report.get("root_error"):
         lines.append(style("ERROR: %s" % report["root_error"], RED))
         lines.append("")
@@ -604,15 +666,7 @@ def render_graph(report, style):
         elif report.get("surfaces"):
             lines.append(style("Superficie publica respetada (%d modulo(s) con puerta declarada)."
                                % report["surfaces"], DIM))
-        sin_regla = report.get("modulos_sin_regla") or []
-        if sin_regla:
-            # INFORMA, no bloquea (regla 9): tener zonas sin declarar es normal en un
-            # repo vivo. Lo que no es normal es AUTOMATIZAR sobre un verde ahi — "cero
-            # violaciones" donde no hay reglas no es un aprobado, es no haber examen.
-            lines.append(style(
-                "Sin ninguna regla que los mencione: %d de %d modulo(s) — %s"
-                % (len(sin_regla), report["modules"],
-                   ", ".join(sin_regla[:5]) + (" ..." if len(sin_regla) > 5 else "")), DIM))
+        lines.extend(render_sin_regla(report, style))
         for u in report.get("unmatched_rules", []):
             lines.append(
                 style("  AVISO: la regla `%s` no casa con ningun modulo (typo o raiz equivocada)." % u["rule"], YELLOW)

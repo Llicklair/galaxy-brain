@@ -475,3 +475,57 @@ def test_las_fronteras_de_un_subproyecto_anidado_no_son_asunto_nuestro(tmp_path)
     report = graph.analyze(root)
     assert report["boundaries_elsewhere"] is None
     assert cli._graph_gate(report) == 0
+
+
+def test_los_modulos_sin_regla_traen_la_linea_a_pegar(tmp_path):
+    """El aviso "sin ninguna regla que los mencione" salio en 10 commits seguidos
+    de un proyecto real y nadie añadio el modulo (retro 6-sep-2026): un aviso
+    sin la accion es fondo. Ahora lleva la linea exacta para el fichero y el
+    comando que propone grupos. Propone, no escribe (regla 9)."""
+    root = str(tmp_path)
+    _write(root, ".gb-boundaries", "pkg.a -/-> pkg.b\n")
+    _write(root, "pkg/__init__.py", "")
+    _write(root, "pkg/a.py", "")
+    _write(root, "pkg/b.py", "")
+    _write(root, "pkg/suelto.py", "")
+
+    salida = _plain(graph.analyze(root))
+    assert "Sin ninguna regla que los mencione" in salida
+    assert "GRUPO = ..., " in salida and "pkg.suelto" in salida
+    assert graph.BOUNDARIES_FILE in salida
+    assert "--proponer-fronteras" in salida
+
+
+def test_brief_es_una_linea_cuando_el_gate_esta_limpio(tmp_path):
+    """Para el hook: fan-in y fan-out en cada commit no cambiaron ninguna
+    decision en 13 commits (retro 6-sep-2026). Limpio = una linea; los modulos
+    sin regla se añaden porque son lo unico que pide una accion."""
+    root = str(tmp_path)
+    _write(root, ".gb-boundaries", "pkg.a -/-> pkg.b\n")
+    _write(root, "pkg/__init__.py", "")
+    _write(root, "pkg/a.py", "")
+    _write(root, "pkg/b.py", "")
+
+    salida = render.render_graph(graph.analyze(root), render.Style(False), brief=True)
+    lineas = salida.splitlines()
+    assert lineas[0].startswith("gate ok: ")
+    assert "fan-in" not in salida and "Sin ciclos de imports" not in salida
+    # `pkg` (el __init__) no lo menciona ninguna regla: sale el bloque
+    # accionable, y NADA mas.
+    assert lineas[1].startswith("Sin ninguna regla que los mencione") and len(lineas) == 5, lineas
+
+
+def test_brief_no_resume_un_fallo(tmp_path):
+    """Resumir un ciclo o un cruce es esconderlo: con algo que decir, --brief
+    imprime el informe entero, con el ciclo nombrado."""
+    root = str(tmp_path)
+    _write(root, ".gb-boundaries", "pkg.a -/-> pkg.b\n")
+    _write(root, "pkg/__init__.py", "")
+    _write(root, "pkg/a.py", "from pkg import b\n")
+    _write(root, "pkg/b.py", "from pkg import a\n")
+
+    salida = render.render_graph(graph.analyze(root), render.Style(False), brief=True)
+    assert "CICLOS de imports" in salida
+    assert "CRUCES de frontera prohibidos" in salida
+    assert not salida.startswith("gate ok")
+

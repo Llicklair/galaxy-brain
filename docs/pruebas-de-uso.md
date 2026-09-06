@@ -1827,3 +1827,13 @@ mismo criterio, sin asteriscos.
 
 Moraleja de inventario: la deuda escrita EN el codigo, con su comando al lado,
 se salda sola en cuanto cambia el entorno. La que no se escribe, no.
+
+## 6-sep-2026 — Tres proyectos reales, y lo que informa sigue sin cambiar nada
+
+Retro completa con los números en [retro-2026-09-06-tres-proyectos.md](retro-2026-09-06-tres-proyectos.md).
+Lo medido: 361 invocaciones en 7 días (gate 132, who 92, check 86; lo informativo, 16); capturas
+leídas 14 de 101, 0 de 10 en el tercer proyecto; el aviso "sin ninguna regla que los mencione" salió
+10 veces en 13 commits y nadie actuó. Confirma la ley del 13-ago con dos casos nuevos. Cambios: el
+aviso lleva la línea a pegar, el anuncio de captura calla en efímeros, `graph --brief` para el hook y
+`PYTHONUTF8=1` en la plantilla. Lo que se remide en el próximo proyecto: veces que sale el aviso antes
+de actuar (objetivo ≤ 1) y tasa de lectura de anuncios (hoy 14 %).
