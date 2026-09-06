@@ -37,8 +37,13 @@ a publicarse. Hoy no se publica nada.
   escrita). "Otros frameworks lo hacen" no es una razón.
 - **Escribir el criterio de terminado antes de empezar.** La causa número uno de sobreingeniería es no
   saber cuándo parar. La cura cuesta una frase y va escrita antes de la primera línea de código.
-- **Preguntar antes de maquinaria pesada.** Detección automática sí; loops, agentes, instalaciones, PRs
-  y gasto de cuota solo tras propuesta y sí explícito.
+- **Preguntar antes de maquinaria pesada.** Detección automática sí; loops, instalaciones, PRs
+  y gasto de cuota solo tras propuesta y sí explícito. **Los agentes son la excepción**
+  (decidido el 6-sep-2026): Claude elige cuándo lanzar uno o varios según la tarea —
+  exploración en paralelo, trabajo repartible por ficheros o módulos, demos sobre el mapa —
+  sin pedir permiso cada vez. A cambio: dice qué lanzó y para qué, los agentes trabajan en
+  worktrees o en lectura, y nada de lo suyo entra en main sin la misma verificación que
+  cualquier otro cambio.
 
 ## Hard rules (REJECT en revisión si se violan)
 
