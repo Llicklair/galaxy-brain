@@ -74,6 +74,68 @@ def test_selecciona_solo_los_tests_que_alcanzan_lo_tocado(repo):
     assert report["n_tests"] < report["total_tests"]
 
 
+def _con_kotlin(repo):
+    """Un vecino sin licencia en el arbol: kotlin es el ejemplo estable de
+    lenguaje sin `tia` (mismo que usa test_conformidad_lenguajes)."""
+    from galaxybrain import lenguajes
+
+    if not lenguajes.disponible()[0]:
+        pytest.skip("sin ast-grep en esta maquina")
+    (repo / "lib" / "Ayudante.kt").write_text(
+        "class Ayudante { fun ayuda(): Int { return 1 } }\n", encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "entra kotlin")
+
+
+def _grafo_fusionado(repo):
+    """El grafo como lo inyecta la CLI en produccion: el fusionado, que declara
+    `lenguajes`. Sin inyectarlo, analyze construye el de solo-Python y el veto
+    de licencia ni existe — que es exactamente lo que pasaba aqui."""
+    from galaxybrain import cli
+
+    return cli._analiza_simbolos(str(repo))
+
+
+def test_la_licencia_veta_por_lo_tocado_no_por_el_vecindario(repo):
+    """El propio gb, con sus hooks de C y Swift a bordo, corria la suite entera
+    hasta para un docstring de Python: la seleccion apagada en su propia casa
+    (medido el 8-sep-2026). Un fichero sin licencia PRESENTE pero no tocado ya
+    no apaga el ahorro — lo que no se toca no puede cambiar de comportamiento."""
+    _con_kotlin(repo)
+    _tocar(repo, "lib/nucleo.py", "return a + b", "return b + a")
+    _git(repo, "add", "-A")
+    report = impacted.analyze(str(repo), staged=True, grafo=_grafo_fusionado(repo))
+
+    assert "no esta medido" not in (report.get("motivo") or "")
+    assert report["todo"] is False
+    assert "tests/test_suma.py" in report["tests"]
+
+
+def test_tocar_el_fichero_sin_licencia_sigue_corriendo_todo(repo):
+    """La otra mitad del contrato: el veto no se fue, se afino. Tocar el .kt
+    corre todo con el culpable nombrado — su grafo de llamadas no esta medido
+    y estrechar ahi es arriesgar el verde falso de siempre."""
+    _con_kotlin(repo)
+    _tocar(repo, "lib/Ayudante.kt", "return 1", "return 2")
+    _git(repo, "add", "-A")
+    report = impacted.analyze(str(repo), staged=True, grafo=_grafo_fusionado(repo))
+
+    assert report["todo"] is True
+    assert "kotlin" in (report.get("motivo") or "")
+
+
+def test_borrar_el_fichero_sin_licencia_tambien_veta(repo):
+    """Un borrado no deja hunks en el lado nuevo del diff: si los tocados
+    salieran solo de ahi, borrar el .kt estrecharia en silencio. Salen de las
+    DOS cabeceras del diff crudo, y esta prueba lo fija."""
+    _con_kotlin(repo)
+    _git(repo, "rm", "-q", "lib/Ayudante.kt")
+    report = impacted.analyze(str(repo), staged=True, grafo=_grafo_fusionado(repo))
+
+    assert report["todo"] is True
+    assert "kotlin" in (report.get("motivo") or "")
+
+
 def test_el_mismo_veredicto_que_la_suite_entera(repo):
     """El criterio de terminado, ejecutado: misma respuesta, menos trabajo.
 

@@ -16,6 +16,7 @@ resuelve) devuelve TODO con su motivo escrito, en vez de una lista optimista.
 """
 
 import os
+import re
 
 from . import changes, symbols
 from .idioma import t
@@ -437,16 +438,8 @@ def analyze(root, rev_range=None, staged=False, worktree=False, skip=None,
         report["motivo"] = motivo
         return report
 
-    # Estrechar exige LICENCIA. Un grafo de llamadas incompleto no cuesta ahorro,
-    # cuesta un verde falso: si falta una arista, los tests que llegaban por ahi
-    # se caen de la seleccion y la suite reducida pasa con el arbol roto. Solo
-    # los lenguajes cuyo banco lo midio con rojos reales la tienen (ADR 0009,
-    # criterio de aborto 1); el resto corre entero y se dice por que.
-    sin_licencia = _sin_licencia_para_estrechar(grafo)
-    if sin_licencia:
-        return correr_todo(
-            t("%s: su grafo de llamadas no esta medido lo bastante completo como para "
-              "estrechar sin arriesgar un verde falso, asi que se corre todo") % sin_licencia)
+    # La licencia para estrechar se comprueba mas abajo, sobre lo que el diff
+    # TOCA — no aqui sobre lo que el arbol contiene (decidido el 8-sep-2026).
 
     if worktree:
         # Lo que hay escrito en disco y todavia no esta en el indice: el estado
@@ -470,6 +463,32 @@ def analyze(root, rev_range=None, staged=False, worktree=False, skip=None,
         return report
 
     rangos = changes._hunks_py(diff)
+
+    # Estrechar exige LICENCIA — pero por lo TOCADO, no por el vecindario
+    # (decidido el 8-sep-2026). Antes el veto era por presencia en el arbol:
+    # gb, con sus hooks de C y Swift a bordo, corria la suite entera hasta para
+    # un docstring de Python — la seleccion apagada en su propia casa. Un
+    # cambio que no toca .c no puede alterar el comportamiento de ningun .c, y
+    # la verificacion de esos artefactos vive en tests del lado licenciado,
+    # alcanzables por su grafo medido. Tocar un fichero sin licencia sigue
+    # corriendo todo, con el culpable nombrado — un grafo de llamadas
+    # incompleto no cuesta ahorro, cuesta un verde falso (ADR 0009, criterio de
+    # aborto 1). Los tocados salen del diff CRUDO, por las dos cabeceras: un
+    # fichero borrado no deja hunks en el lado nuevo y `rangos` no lo veria.
+    # Sin guard de "¿el informe declara lenguajes?": los tocados salen del DIFF
+    # y borrar el ULTIMO fichero sin licencia dejaria un arbol que ya no los
+    # declara — con guard, justo ese borrado estrechaba en silencio. En un repo
+    # de solo Python la lista sale vacia y esto no cuesta nada.
+    from . import lenguajes as tabla
+
+    tocados = set(re.findall(r"^(?:---|\+\+\+) [ab]/(.+?)\t?$", diff, re.M))
+    langs_tocados = sorted({
+        lang for lang in (tabla.lenguaje_de(f) for f in tocados) if lang})
+    sin_licencia = _sin_licencia_para_estrechar({"lenguajes": langs_tocados})
+    if sin_licencia:
+        return correr_todo(
+            t("%s: su grafo de llamadas no esta medido lo bastante completo como para "
+              "estrechar sin arriesgar un verde falso, asi que se corre todo") % sin_licencia)
 
     # Un fichero global tocado cambia la suite entera sin ser llamante de nada.
     for ruta in rangos:
