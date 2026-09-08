@@ -1760,6 +1760,13 @@ def cmd_who(args):
     if destino_html:
         sys.stderr.write("[gb who] mapa vivo en: %s (abrelo en el navegador; "
                          "se refresca solo)\n" % destino_html)
+        # La condicion mortal, dicha al nacer: el watch muere con esta terminal
+        # (o con la sesion del agente que lo lanzo) y el mapa queda como foto.
+        # Mordio dos veces el 6-sep — el canvas SI avisa cuando el escritor
+        # muere, pero el aviso llega tarde si nadie sabia que podia morir.
+        sys.stderr.write("[gb who] este watch vive atado a esta terminal: si la "
+                         "cierras, el mapa queda como foto (y la foto avisa su "
+                         "edad en pantalla)\n")
 
     def _foto_clave(f):
         # La foto sin sus edades: hace_seg avanza cada tick y regenerar el
