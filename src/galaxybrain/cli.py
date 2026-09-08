@@ -1831,27 +1831,50 @@ def cmd_dead(args):
     if not cuantos:
         emit("Sin candidatos a codigo muerto (con los limites de abajo).")
     else:
-        emit("%d candidato(s) — proxies, no veredictos:" % cuantos)
-        if report["modulos_huerfanos"]:
+        # La particion por MENCION textual (8-sep-2026): de 26 candidatos de la
+        # auditoria, ~19 estaban vivos por tabla, string o nivel de modulo. Un
+        # candidato mencionado se resume al final en vez de mezclarse con los
+        # limpios — el ruido con cara de hallazgo es lo que manda una limpieza
+        # a ignorarse, y ya paso una vez.
+        def _partir(fichas):
+            limpias = [f for f in fichas if not f.get("menciones")]
+            return limpias, len(fichas) - len(limpias)
+
+        mods, mods_m = _partir(report["modulos_huerfanos"])
+        simbolos, simbolos_m = _partir(report["sin_llamantes"])
+        solo_t, solo_t_m = _partir(report.get("solo_tests") or [])
+        mencionados = mods_m + simbolos_m + solo_t_m
+        emit("%d candidato(s) — %d limpio(s), %d con mencion textual (probablemente vivos):"
+             % (cuantos, cuantos - mencionados, mencionados))
+        if mods:
             emit("")
             emit("Modulos que nadie importa ni llama:")
-            for m in report["modulos_huerfanos"]:
+            for m in mods:
                 emit("  %s  (%s)" % (m["module"], m["file"]))
-        if report["sin_llamantes"]:
+        if simbolos:
             emit("")
             emit("Simbolos sin un solo llamante resuelto:")
-            for s in report["sin_llamantes"][:30]:
+            for s in simbolos[:30]:
                 emit("  %s:%s  %s  (%s)" % (s["file"], s["line"] or "?", s["qual"], s["kind"]))
-            if len(report["sin_llamantes"]) > 30:
-                emit("  ... y %d mas (--json para todos)" % (len(report["sin_llamantes"]) - 30))
-        if report.get("solo_tests"):
+            if len(simbolos) > 30:
+                emit("  ... y %d mas (--json para todos)" % (len(simbolos) - 30))
+        if solo_t:
             emit("")
             emit("Simbolos que SOLO los tests llaman (produccion sin uso real):")
-            for s in report["solo_tests"][:30]:
+            for s in solo_t[:30]:
                 emit("  %s:%s  %s  (%d test(s) lo mantienen vivo)"
                      % (s["file"], s["line"] or "?", s["qual"], s.get("tests", 0)))
-            if len(report["solo_tests"]) > 30:
-                emit("  ... y %d mas (--json para todos)" % (len(report["solo_tests"]) - 30))
+            if len(solo_t) > 30:
+                emit("  ... y %d mas (--json para todos)" % (len(solo_t) - 30))
+        if mencionados:
+            nombres = [f.get("qual") or f.get("module")
+                       for f in (report["modulos_huerfanos"] + report["sin_llamantes"]
+                                 + (report.get("solo_tests") or []))
+                       if f.get("menciones")]
+            emit("")
+            emit("Con MENCION textual en el arbol (tabla, string o nivel de modulo — "
+                 "el grafo no la ve, el texto si): %d" % mencionados)
+            emit("  %s" % ", ".join(nombres[:8]) + (" ..." if len(nombres) > 8 else ""))
     emit("")
     emit("Lo que esta tecnica NO puede ver:")
     for item in report["not_covered"]:

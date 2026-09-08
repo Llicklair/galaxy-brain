@@ -37,6 +37,58 @@ def _nombre_pelado(qual):
     return qual.rsplit(".", 1)[-1]
 
 
+#: Lineas que DEFINEN, no llaman: se saltan al recolectar nombres-llamados para
+#: que `def suma(` no cuente como una llamada a `suma` y lo demote todo.
+_LINEA_DE_DEF = re.compile(
+    r"\s*(?:def|class|function|fn|func|public|private|protected|static|void|module)\b")
+
+_LLAMADO = re.compile(r"\b(\w+)\s*\(")
+_CITADO = re.compile(r"""["']([^"']{1,80})["']""")
+
+_SALTA_DIRS = ("node_modules", "target", "build", "dist", "obj", "bin",
+               "__pycache__", "venv", ".venv")
+
+
+def _menciones_textuales(root, extensiones, tope_bytes=400_000):
+    """(llamados, citados): los nombres que el arbol MENCIONA, leidos del texto.
+
+    La auditoria del 6-sep lo midio de frente: de 26 candidatos de `gb dead`,
+    ~19 estaban vivos por causas que el grafo declara como techo — la llamada
+    dentro de una tabla (`"js": _lang(...)`), el import por string del .pth
+    (`exec("import galaxybrain.autoinstall")`), el fichero que un runtime
+    invoca por nombre ("gb-hook.js" entre comillas). Las tres dejan RASTRO
+    TEXTUAL, y ese rastro es un hecho leible — el mismo movimiento que
+    `_es_entry_point` con el guard de main. Un candidato mencionado se DEGRADA
+    (etiquetado, al final), no se esconde: esto afina el proxy, no lo convierte
+    en veredicto.
+    """
+    llamados, citados = set(), set()
+    for base, dirs, nombres in os.walk(root or ""):
+        dirs[:] = [d for d in dirs if not d.startswith(".") and d not in _SALTA_DIRS]
+        for nombre in nombres:
+            if os.path.splitext(nombre)[1].lower() not in extensiones:
+                continue
+            ruta = os.path.join(base, nombre)
+            try:
+                if os.path.getsize(ruta) > tope_bytes:
+                    continue
+                with open(ruta, encoding="utf-8", errors="replace") as fh:
+                    texto = fh.read()
+            except OSError:
+                continue
+            for linea in texto.splitlines():
+                if not _LINEA_DE_DEF.match(linea):
+                    llamados.update(_LLAMADO.findall(linea))
+                for literal in _CITADO.findall(linea):
+                    for trozo in re.split(r"[^\w.\-]+", literal):
+                        if not trozo:
+                            continue
+                        citados.add(trozo)
+                        citados.add(os.path.splitext(trozo)[0])
+                        citados.add(trozo.rsplit(".", 1)[-1])
+    return llamados, citados
+
+
 def analyze(informe, aristas_imports=None):
     """Candidatos a codigo muerto sobre un grafo ya derivado.
 
@@ -157,9 +209,30 @@ def analyze(informe, aristas_imports=None):
                 "module": mod, "file": nodo.get("file", ""),
             })
 
-    report["sin_llamantes"].sort(key=lambda s: (s["file"], s["line"] or 0))
-    report["solo_tests"].sort(key=lambda s: (s["file"], s["line"] or 0))
-    report["modulos_huerfanos"].sort(key=lambda m: m["module"])
+    # --- la mencion textual: el rastro que demote un candidato ---
+    extensiones = {os.path.splitext(n.get("file") or "")[1].lower()
+                   for n in nodos if n.get("file")}
+    extensiones.add(".py")
+    extensiones.discard("")
+    llamados, citados = _menciones_textuales(informe.get("root"), extensiones)
+    for ficha in report["sin_llamantes"] + report["solo_tests"]:
+        nombre = _nombre_pelado(ficha["qual"])
+        ficha["menciones"] = nombre in llamados or nombre in citados
+    for ficha in report["modulos_huerfanos"]:
+        nombre = _nombre_pelado(ficha["module"])
+        base = os.path.basename(ficha.get("file") or "")
+        ficha["menciones"] = (nombre in citados or base in citados
+                              or os.path.splitext(base)[0] in citados)
+    report["not_covered"].append(
+        "la mencion textual (nombre llamado o entre comillas en el arbol) "
+        "DEGRADA un candidato, no lo absuelve: es texto, no semantica")
+
+    report["sin_llamantes"].sort(key=lambda s: (s.get("menciones", False),
+                                                s["file"], s["line"] or 0))
+    report["solo_tests"].sort(key=lambda s: (s.get("menciones", False),
+                                             s["file"], s["line"] or 0))
+    report["modulos_huerfanos"].sort(key=lambda m: (m.get("menciones", False),
+                                                    m["module"]))
     return report
 
 
