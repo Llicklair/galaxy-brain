@@ -243,3 +243,61 @@ def test_gb_calls_nombra_a_los_llamantes_en_js(proyecto_js, capsys):
     assert codigo == 0
     assert "carrito.total" in salida
     assert "factura" in salida
+
+
+def _arbol_poliglota_para_lote(tmp_path):
+    ficheros = {
+        "tienda.js": "function suma(a, b) { return a + b; }\nsuma(1, 2);\n",
+        # ruby A PROPOSITO: sus patrones sin cuerpo (`def $NAME`) son los que
+        # obligaron a _SOLO_RUN — este arbol reproduce el caso que envenenaba.
+        "motor.rb": "def procesa\nend\nclass Caja\nend\n",
+        "caja.lua": "function abre()\nend\n",
+    }
+    for nombre, texto in ficheros.items():
+        (tmp_path / nombre).write_text(texto, encoding="utf-8")
+    return str(tmp_path)
+
+
+def test_sonda_el_lote_estructural_no_se_envenena(tmp_path):
+    """44 de 47 patrones viajan en UN proceso de scan (el gate paso de 10,7 a
+    5,8 s el 8-sep-2026). Un patron nuevo que el modo regla no trague — y que
+    no este en _SOLO_RUN — envenena el lote ENTERO: el scan muere sin decir
+    que regla fue y TODO cae al fallback lento, en silencio. Esta sonda hace
+    ese silencio visible."""
+    ruta, _detalle = lenguajes.disponible()
+    if not ruta:
+        pytest.skip("sin ast-grep en esta maquina")
+    root = _arbol_poliglota_para_lote(tmp_path)
+    presentes = sorted({lang for _f, lang in lenguajes._ficheros(root)})
+
+    lote = lenguajes._lote_estructural(ruta, presentes, root)
+    assert lote is not None, (
+        "el scan rechazo el lote entero: algun patron nuevo necesita _SOLO_RUN")
+    assert any(v for v in lote.values()), "el lote no caso NADA: patron roto"
+
+
+def test_sonda_el_lote_da_el_mismo_informe_que_el_fallback(tmp_path, monkeypatch):
+    """La asercion de oro del lote: `analyze` con prefetch y sin el producen el
+    MISMO informe. Si esto se mueve, el lote esta mal — nunca la sonda: los
+    patrones estan certificados por la matriz de variantes en modo run."""
+    ruta, _detalle = lenguajes.disponible()
+    if not ruta:
+        pytest.skip("sin ast-grep en esta maquina")
+    root = _arbol_poliglota_para_lote(tmp_path)
+
+    def _forma(informe):
+        return {
+            "nodes": sorted((n["qual"], n["kind"], n["file"], n["line"], n["end"])
+                            for n in informe["nodes"]),
+            "edges": sorted(map(tuple, informe["edges"])),
+            "calls": (informe["calls_total"], informe["calls_resolved"]),
+        }
+
+    lenguajes._MEMO_ANALYZE["clave"] = None
+    con_lote = _forma(lenguajes.analyze(root))
+
+    monkeypatch.setattr(lenguajes, "_lote_estructural", lambda *_a, **_k: None)
+    lenguajes._MEMO_ANALYZE["clave"] = None
+    sin_lote = _forma(lenguajes.analyze(root))
+
+    assert con_lote == sin_lote

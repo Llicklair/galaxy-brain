@@ -511,7 +511,109 @@ def disponible():
     return ruta, p.stdout.decode("utf-8", "replace").strip()
 
 
-def _corre(ruta, patron, lenguaje, raiz, selector=None):
+#: Patrones que el modo regla de ast-grep RECHAZA aunque `run` los trague: los
+#: snippets de ruby sin cuerpo (`def $NAME`) no dejan inferir un kind — medido
+#: el 8-sep-2026, 3 rechazos de 47. Van por `run` como siempre; UNO de estos
+#: colandose en el lote lo envenenaria ENTERO (el scan no dice que regla fallo
+#: y todo caeria al fallback lento). La sonda del lote vigila esa regresion.
+_SOLO_RUN = frozenset(("def $NAME", "class $NAME", "module $NAME"))
+
+
+def _regla_yaml(rid, lenguaje, patron, selector):
+    """Un patrón de la tabla como documento de regla para `scan`. Bloque
+    literal (`|-`) para que comillas y llaves del patrón no peleen con YAML."""
+    sangrado = "\n".join("      " + l for l in patron.splitlines())
+    if selector:
+        return ("id: %s\nlanguage: %s\nrule:\n  pattern:\n    context: |-\n%s\n"
+                "    selector: %s" % (rid, lenguaje, sangrado, selector))
+    return "id: %s\nlanguage: %s\nrule:\n  pattern: |-\n%s" % (
+        rid, lenguaje, "\n".join("    " + l for l in patron.splitlines()))
+
+
+def _lote_estructural(ruta, presentes, root):
+    """UN proceso de ast-grep para TODOS los patrones estructurales (símbolos y
+    llamadas) de todos los lenguajes presentes: {(lang_ag, patron, selector):
+    [matches]}, o None si el scan no pudo — y entonces todo cae a la vía de
+    siempre, un `run` por patrón, sin perder nada.
+
+    Por qué existe: el barrido eran ~75 arranques de proceso por pasada a
+    ~110 ms de arranque cada uno en Windows — 8 de los 10,7 s del gate eran
+    CPU arrancando procesos, no analizando (perfilado el 6-sep-2026, deuda de
+    la regla 2). `scan --inline-rules` emite la MISMA forma JSON que `run`
+    (metaVariables, range, file — verificado con ast-grep 0.45) más el ruleId
+    que ata cada match a su patrón.
+
+    Los IMPORTS no entran a propósito: sus patrones están certificados por la
+    matriz de variantes en modo `run` y el modo regla ni siquiera los parsea
+    (`from $SRC` con la metavariable en posición de string). Migrar el patrón
+    certificado a otro modo de parseo es exactamente donde un falso verde
+    vivió meses; se quedan donde se midieron.
+    """
+    trabajos = {}
+    docs = []
+    for lang in presentes:
+        cfg = LENGUAJES[lang]
+        # `or ()`: hay lenguajes con la familia entera a None (dart no tiene
+        # patron de llamada — carencia declarada) y el bucle consumidor ya lo
+        # guarda; el lote tiene que guardarlo igual.
+        entradas = [(e[1], e[2] if len(e) > 2 else None) for e in (cfg["simbolos"] or ())]
+        entradas += [(p, None) for p in (cfg["llamada"] or ())]
+        for patron, selector in entradas:
+            if patron in _SOLO_RUN:
+                continue
+            clave = (cfg["ag"], patron, selector)
+            if clave in trabajos:
+                continue
+            rid = "r%d" % len(trabajos)
+            trabajos[clave] = rid
+            docs.append(_regla_yaml(rid, cfg["ag"], patron, selector))
+    if not trabajos:
+        return {}
+    # Por FICHERO y no por --inline-rules, a proposito: en Windows ast-grep
+    # llega como shim .cmd de npm, y ese shim destroza un argumento con saltos
+    # de linea — a ast-grep le llegaba solo la primera linea del YAML y el lote
+    # entero moria con "missing field language" (medido el 8-sep-2026). Los
+    # argumentos de `run` sobreviven porque son de una linea.
+    import tempfile
+
+    try:
+        fd, tmp = tempfile.mkstemp(suffix=".yml", prefix="gb-lote-", text=True)
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write("\n---\n".join(docs))
+    except OSError:
+        return None
+    try:
+        p = subprocess.run(
+            [ruta, "scan", "--rule", tmp, "--json=compact", root],
+            capture_output=True, timeout=300,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    finally:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+    if p.returncode != 0:
+        # Una regla que el scan no traga envenena el lote entero y no dice
+        # cual: no se adivina, se vuelve a la via medida.
+        return None
+    try:
+        datos = json.loads(p.stdout.decode("utf-8", "replace").strip() or "[]")
+    except ValueError:
+        return None
+    if not isinstance(datos, list):
+        return None
+    por_rid = {}
+    for m in datos:
+        por_rid.setdefault(m.get("ruleId"), []).append(m)
+    # TODAS las claves presentes, con [] para las que no casaron nada: "sin
+    # matches" y "no estaba en el lote" no pueden confundirse, o cada patron
+    # sin resultados pagaria un proceso de respaldo que no compra nada.
+    return {clave: por_rid.get(rid, []) for clave, rid in trabajos.items()}
+
+
+def _corre(ruta, patron, lenguaje, raiz, selector=None, lote=None):
     """Una pasada de ast-grep, ya parseada. Lista vacía si algo falla: un patrón
     que no casa nada y un patrón mal escrito dan lo mismo aquí, y por eso los
     contadores del informe declaran cuánto se vio — no se infiere.
@@ -522,7 +624,15 @@ def _corre(ruta, patron, lenguaje, raiz, selector=None):
     método de C# no se puede expresar: suelto, ast-grep lo parsea como función
     local de nivel superior y el `$` de la metavariable produce nodos ERROR —
     que es por lo que C# entró en la tabla sin metodos y sin grafo de llamadas.
+
+    `lote` es el prefetch de `_lote_estructural`: si el patrón está ahí, ya no
+    hay proceso que arrancar. Si no está (imports, o un scan que fallo), la vía
+    de siempre.
     """
+    if lote is not None:
+        precalculado = lote.get((lenguaje, patron, selector))
+        if precalculado is not None:
+            return precalculado
     orden = [ruta, "run", "-p", patron, "-l", lenguaje, "--json=compact"]
     if selector:
         orden += ["--selector", selector]
@@ -902,6 +1012,9 @@ def analyze(root):
         })
 
     # --- simbolos ---
+    # El prefetch: un solo proceso para todo lo estructural. None = el scan no
+    # pudo y cada _corre de abajo arranca su proceso como siempre.
+    lote = _lote_estructural(ruta_ag, presentes, root)
     definidos = {}          # nombre pelado -> [qual, ...]
     por_modulo = {}         # qual -> modulo que lo define (para llamadas cualificadas)
     vistos = set()
@@ -912,7 +1025,7 @@ def analyze(root):
             # necesitan las gramaticas que no parsean el nodo suelto.
             kind, patron = entrada_pat[0], entrada_pat[1]
             selector = entrada_pat[2] if len(entrada_pat) > 2 else None
-            for m in _corre(ruta_ag, patron, cfg["ag"], root, selector):
+            for m in _corre(ruta_ag, patron, cfg["ag"], root, selector, lote=lote):
                 nombre = _meta(m, "NAME")
                 fichero = os.path.abspath(os.path.join(root, m.get("file", "")))
                 entrada = por_fichero.get(fichero)
@@ -986,7 +1099,7 @@ def analyze(root):
         vistas = set()
         candidatas = []
         for patron in cfg["llamada"]:
-            for m in _corre(ruta_ag, patron, cfg["ag"], root):
+            for m in _corre(ruta_ag, patron, cfg["ag"], root, lote=lote):
                 clave = (m.get("file"), _linea(m), _meta(m, "A"), _meta(m, "FN"))
                 if clave in vistas:
                     continue
