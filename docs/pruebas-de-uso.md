@@ -10,6 +10,34 @@ mismo detalle que los positivos, o más.
 
 ---
 
+## 2026-09-08 · El lote de ast-grep, el veto por lo tocado y el banco del lanzamiento
+
+**Qué se probó (tres medidas del mismo día, las dos primeras sobre este repo):**
+
+1. **El barrido estructural en UN proceso.** 44 de 47 patrones (símbolos y llamadas) viajan en un
+   solo `ast-grep scan --rule` de 0,18 s en vez de 44 arranques a ~110 ms. **Gate: 10,7 s → 5,8 s —
+   dentro del presupuesto de la regla 2 por primera vez desde que se mide. La suite entera: 384 s →
+   299 s.** Red: los 167 tests de conformidad/variantes sin cambiar ni una aserción, más la sonda de
+   oro (analyze con lote y con fallback dan el MISMO informe). Dos minas desactivadas por el camino:
+   el shim `.cmd` de npm destroza argumentos con saltos de línea (las reglas van por fichero), y los
+   patrones ruby sin cuerpo (`def $NAME`) no dan kind en modo regla — `_SOLO_RUN`, 3 de 47.
+2. **La licencia TIA veta por lo TOCADO, no por el vecindario.** gb lleva hooks de C y Swift a bordo
+   y el veto por-árbol corría la suite entera hasta para un docstring de Python. Tras el cambio:
+   `gb tests --worktree` con un toque Python **estrecha a 158 de 898 tests (18%) en este repo** — la
+   selección encendida en su propia casa por primera vez. Tocar o BORRAR un fichero sin licencia
+   sigue corriendo todo con el culpable nombrado (los tocados salen de las dos cabeceras del diff
+   crudo: un borrado no deja hunks en el lado nuevo).
+3. **El banco del lanzamiento** ([bancos/banco_lanzamiento.py](../bancos/banco_lanzamiento.py)),
+   verdad de campo para las aristas entre lenguajes: árbol políglota con 4 lanzamientos escritos
+   formando ciclo trilingüe (py→js→rb→py), 1 comando en variable y 1 basename ambiguo. Resultado:
+   **4/4 aristas halladas, 0 inventadas, el ciclo visto y el gate en rojo por él. CUMPLE.**
+
+**Consecuencia:** la deuda de latencia de la regla 2 queda saldada (el resto del coste del gate es
+la vía de imports en `run`, certificada y a propósito); la selección vuelve a comprar ahorro en
+repos mixtos; y las aristas de lanzamiento pasan de "tests sintéticos" a medidas contra verdad de
+campo. Pendiente que este mismo día deja escrito: el badge del README (988) volvió a quedarse corto
+(1.009 reales) — se remide en release.
+
 ## 2026-08-14 · El mapa muerto que se leía como vivo — el dato que el A/B del canvas no miraba
 
 **Lo observado, en uso real:** el recorte del 13-ago se llevó el canvas, pero `mapa.html` quedó en
