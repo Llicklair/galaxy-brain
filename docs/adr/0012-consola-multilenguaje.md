@@ -156,6 +156,14 @@ Un lenguaje se considera «cubierto» cuando:
 1. **Si el fallback stderr no distingue tipo de excepción del mensaje en ≥ 2 lenguajes**, se recorta a los lenguajes con hook nativo. Un `gb last` que dice «algo petó» sin decir qué es peor que no tener consola.
 2. **Si mantener los hooks de 3+ lenguajes genera más bugs que los que captura**, se congela en los que funcionen y el resto queda en fallback-only.
 3. **Si `gb on` tarda > 1 s** en configurar las variables, se paraleliza o se acepta la lista explícita.
+4. **El reloj de caducidad del uso** (añadido el 8-sep-2026, a raíz de la observación del owner:
+   «parece que la consola no es muy útil»). Esta consola está medida en que CAPTURA, no en que se
+   usa — y la regla del abandono manda que decida el termómetro, no nadie: **si el 6-oct-2026 el
+   histórico no registra ni una captura no-Python LEÍDA en uso real** (`gb show`/`last` sobre un
+   registro con `language != python`), la consola multilenguaje se congela — los hooks salen del
+   despliegue por defecto y quedan como opt-in explícito, el envolvente stderr se queda (lo usa el
+   armado en cadena). Congelar no es borrar: el día que un repo mixto los pida, están medidos y
+   listos. Lo que no puede pasar es mantener maquinaria que el termómetro dice que nadie lee.
 
 ## Lo que NO cambia
 
