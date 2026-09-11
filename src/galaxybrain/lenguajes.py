@@ -421,13 +421,39 @@ LENGUAJES = {
 #: Lo que NO se declara soportado aunque `ast-grep` lo acepte: sin patrones
 #: medidos, incluirlo seria prometer un grafo que no existe.
 #:
-#: `cpp` estuvo aqui dentro un dia y se SACO (9-ago). Ninguno de los cinco
-#: patrones probados extrae una definicion —ni siquiera `class $NAME { $$$ };`—
-#: asi que solo producia nodos de modulo, sin simbolos ni imports: cero valor. Y
-#: era peor que ausente, porque al figurar su extension como "leida" el aviso de
-#: frontera dejaba de saltar y el usuario recibia un grafo vacio sin que nadie le
-#: dijera por que. Fuera de la tabla, gb dice "veo C++ y no lo leo", que es la
-#: verdad. Vuelve el dia que alguien mida patrones que funcionen.
+#: `cpp` estuvo aqui dentro un dia y se SACO (9-ago). Sigue fuera, pero el MOTIVO
+#: que decia esta nota era falso y se corrige (remedido el 11-sep-2026 con
+#: ast-grep 0.45.2): no es que ningun patron extraiga nada. `class $NAME { $$$ };`
+#: con selector `class_specifier` saca la clase con su tramo entero,
+#: `#include "$SRC"` deja la arista de modulo e ignora `<vector>`, y
+#: `$RET $NAME($$$) { $$$ }` con selector `function_declarator` saca las 6
+#: funciones de 6 — metodo, definicion cualificada y plantilla incluidas.
+#:
+#: Lo que lo deja fuera es mas fino, y es de la TECNICA de patron+selector, no del
+#: lenguaje. En C++ un cuerpo `{ $$$ }` es ambiguo con la inicializacion por
+#: llaves, asi que el patron entero parsea como declaracion y NUNCA casa un
+#: `function_definition` (probadas 5 formas de cuerpo: las que si parsean como
+#: definicion —`{ $$$; }`, `{ $$$ $LAST; }`, `{ $$$ return $X; }`— casan 0 de 6
+#: sobre codigo multilinea real). Queda `function_declarator`, y arrastra dos
+#: defectos MEDIDOS que ningun `carencias` arregla:
+#:   1. el tramo acaba en la FIRMA, no en la funcion: `1-1` y `4-4` donde C da
+#:      `1-3` y `4-7`. Como `_envuelve` atribuye cada llamada por tramo, el origen
+#:      de la arista cae al modulo en vez de a la funcion — `gb calls` se queda
+#:      sin llamantes, que es el producto del motor.
+#:   2. casa tambien el PROTOTIPO, y en C++ toda cabecera los tiene: `suma`
+#:      definido en `util.hpp` y en `a.cpp` son dos candidatos, asi que las 3
+#:      llamadas del corpus murieron en `nombre-ambiguo`. En C no pasa porque su
+#:      patron si parsea como `function_definition` y el prototipo no casa.
+#:
+#: Se midio la salida: una regla COMPUESTA (`kind: function_definition` + `has`
+#: sobre el declarador) arregla las dos — 6 de 6 con tramo entero y sin
+#: prototipos. Pero eso ya no es "una entrada en la tabla": pide que el motor
+#: acepte reglas y no solo patron+selector, y `run -p` no sabe expresarlas, con lo
+#: que el camino de respaldo divergiria del lote. Es decision de arquitectura, no
+#: de catalogo. Hasta entonces, fuera de la tabla gb dice "veo C++ y no lo leo",
+#: que sigue siendo la verdad — y entrar con el tramo roto seria peor que ausente:
+#: el aviso de frontera dejaria de saltar y el usuario veria un grafo mutilado sin
+#: que nadie le dijera por que.
 SIN_SOPORTE = ("html", "css", "json", "yaml", "bash", "haskell", "nix", "solidity", "cpp")
 
 #: Directorios que nunca son código del proyecto, en ningún lenguaje.
