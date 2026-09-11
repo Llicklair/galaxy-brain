@@ -8,7 +8,7 @@ version = "0.7.0"
 description = "Cuando algo peta, te dice donde y con que estado, sin que tengas que reproducirlo a mano."
 readme = "README.md"
 requires-python = ">=3.9"
-license = { text = "MIT" }
+license = { text = "Apache-2.0" }
 authors = [{ name = "Marcos Recio" }]
 keywords = ["debugging", "exceptions", "traceback", "post-mortem"]
 
