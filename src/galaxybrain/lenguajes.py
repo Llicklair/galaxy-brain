@@ -1130,6 +1130,25 @@ def analyze(root):
                 if clave in vistas:
                     continue
                 vistas.add(clave)
+                # La CABECERA de la definicion no es una llamada. En Elixir
+                # `def suma(a, b)` es un nodo `call` de verdad, asi que
+                # `$FN($$$)` casaba el propio `def` y gb emitia `a.suma ->
+                # a.suma`: una arista INVENTADA, que es peor que una ausente
+                # (ADR 0008). Medido el 11-sep-2026 sobre un modulo con dos
+                # funciones: 3 aristas CALLS de las que 2 eran auto-aristas del
+                # encabezado. La sonda de conformidad no lo vio porque solo
+                # exige "alguna arista" y una auto-arista la satisface.
+                #
+                # Se descarta por POSICION, no por lenguaje: mismo fichero,
+                # misma linea y mismo nombre que una definicion ya extraida es
+                # el encabezado de esa definicion. El precio va declarado en
+                # `carencias`: una recursion escrita en la MISMA linea que su
+                # def (`def f(x), do: f(x - 1)`) se pierde — y ya se perdia,
+                # porque la deduplicacion de arriba deja un solo match para esa
+                # linea y ese nombre.
+                fichero_m = os.path.abspath(os.path.join(root, m.get("file", "")))
+                if (fichero_m, _linea(m), _meta(m, "FN")) in vistos:
+                    continue
                 candidatas.append(m)
         for m in candidatas:
             llamado = (_meta(m, "FN") or "").strip()

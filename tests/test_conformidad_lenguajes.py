@@ -184,6 +184,26 @@ def test_resuelve_la_llamada_interna_si_la_promete(tmp_path, lang):
 
 @necesita_astgrep
 @pytest.mark.parametrize("lang", sorted(FUENTES))
+def test_ninguna_llamada_es_el_encabezado_de_su_propia_definicion(tmp_path, lang):
+    """Una AUTO-ARISTA en el fuente de conformidad es siempre falsa: `total`
+    llama a `suma` y nadie se llama a si mismo.
+
+    Existe porque la sonda de arriba solo exige "alguna arista", y una arista
+    inventada la satisface igual que una real. Elixir vivio asi: `def suma(a, b)`
+    es un nodo `call` de verdad en su gramatica, el patron `$FN($$$)` casaba el
+    propio `def` y gb emitia `a.suma -> a.suma`. De 3 aristas CALLS, 2 eran del
+    encabezado (medido el 11-sep-2026) y la sonda seguia en verde.
+
+    Una arista inventada es peor que una ausente (ADR 0008): la ausente se ve en
+    el contador de techo, la inventada se lee como un hecho.
+    """
+    informe = lenguajes.analyze(_proyecto(tmp_path, lang))
+    propias = [e for e in informe["edges"] if e[2] == "CALLS" and e[0] == e[1]]
+    assert not propias, "%s fabrica auto-aristas: %s" % (lang, propias)
+
+
+@necesita_astgrep
+@pytest.mark.parametrize("lang", sorted(FUENTES))
 def test_lo_que_no_puede_se_dice_en_el_informe(tmp_path, lang):
     """Una carencia que no llega al usuario no sirve de nada: se comprueba que
     viaja en `not_covered`, que es lo que se imprime."""
