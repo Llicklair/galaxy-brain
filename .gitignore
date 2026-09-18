@@ -56,3 +56,8 @@ experimento/
 # Entorno local y notas de voz: son de esta maquina, no del repo.
 .venv/
 .voz/
+
+# Salida de compilacion del hook de dotnet (dotnet build la regenera; el
+# instalador la produce en cada maquina). Sin esto `obj/` ensucia git status.
+src/galaxybrain/hooks_lang/dotnet/GbHook/obj/
+src/galaxybrain/hooks_lang/dotnet/GbHook/bin/
