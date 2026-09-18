@@ -516,9 +516,18 @@ def criterio_ejecutable(root):
 def correr_criterio(root, comando=None, timeout=1800):
     """Ejecuta el criterio y devuelve (paso, detalle). `None` si no hay criterio.
 
-    Es el unico sitio de gb donde se ejecuta algo que el usuario escribio, y por
-    eso lo pide explicitamente quien lo llama: el camino por defecto no ejecuta
-    nada de nadie.
+    Es el unico sitio de gb donde se ejecuta un comando que viene ESCRITO EN EL
+    REPO ANALIZADO: `criterio_ejecutable` lo saca de un bloque ```gb:terminado
+    de SCOPE/README/ARCHITECTURE/CLAUDE/AGENTS.md, y aqui va a `shell=True`. En
+    tu propio repo eso lo escribiste tu; en un repo ajeno lo escribio su autor,
+    que es la diferencia que importa — y por eso lo pide explicitamente quien
+    llama: el camino por defecto no ejecuta nada de nadie.
+
+    Hoy NADA de `src/galaxybrain/` llama aqui (solo `bucle/escalera.py`, que no
+    viaja en el wheel) — pero esta funcion SI se instala con el paquete. El dia
+    que algo de la CLI la llame, gb pasa a ejecutar comandos controlados por el
+    repo que analiza: ese es el disparador de re-auditoria, y esta escrito aqui
+    para que se lea antes de anadir el llamante.
     """
     if comando is None:
         comando, _fuente = criterio_ejecutable(root)
