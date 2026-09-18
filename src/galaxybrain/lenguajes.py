@@ -408,7 +408,14 @@ LENGUAJES = {
          ("class", "class $NAME { $$$ }"),
          ("method", "class A { $RET $NAME($$$) { $$$ } }", "method_declaration")),
         ("import '$SRC';",),
-        llamada=None, resolucion="ruta",
+        # "ruta-local" y no "ruta": en Dart el import relativo se escribe SIN
+        # `./` (`import 'a.dart';` es el fichero de al lado), y exigir el punto
+        # inicial dejaba a dart con CERO aristas de modulo sobre codigo
+        # idiomatico — medido el 11-sep-2026: `'a.dart'` daba 0 y `'./a.dart'`
+        # daba 1. No abre la puerta a aristas falsas porque lo externo en Dart
+        # lleva esquema (`package:`, `dart:`) y no resuelve contra ningun
+        # fichero del arbol.
+        llamada=None, resolucion="ruta-local",
         sufijos_test=("_test",), dirs_test=("test", "tests"),
         # Se probaron seis formas, incluida una literal (`suma($$$)`) y dos con
         # selector: ninguna casa. La gramatica de dart en ast-grep 0.45 no expone
@@ -882,7 +889,32 @@ def _por_cualificado(llamado, definidos, por_modulo):
     posibles = definidos.get(nombre)
     if not posibles:
         return None
-    return [q for q in posibles if por_modulo.get(q, "").split(".")[-1] == prefijo]
+    exactos = [q for q in posibles if por_modulo.get(q, "").split(".")[-1] == prefijo]
+    if exactos:
+        return exactos
+    # El prefijo puede ser el PAQUETE y no el fichero. En Go un paquete es un
+    # DIRECTORIO: `nucleo/a.go` da el modulo `nucleo.a`, y la llamada normal
+    # entre paquetes se escribe `nucleo.Suma(x)` — el prefijo casa con el
+    # directorio, nunca con el ultimo segmento, asi que la regla estricta la
+    # dejaba sin resolver (medido el 11-sep-2026: el import SI salia y la
+    # llamada NO, con lo que el grafo decia que b depende de nucleo sin poder
+    # decir en que). Es el mismo criterio que usan los imports para lo mismo
+    # (`_resuelve`, modo paquete): se acepta el prefijo como segmento del
+    # camino del modulo, y si sale mas de un candidato quien llama lo cuenta
+    # como `nombre-ambiguo` y no inventa ninguna arista.
+    por_paquete = [q for q in posibles if prefijo in por_modulo.get(q, "").split(".")]
+    if por_paquete:
+        return por_paquete
+    # Ultimo recurso, sin distinguir mayusculas — el MISMO que ya hacen los
+    # imports (`_resuelve`, modo paquete) y por la misma razon: en Elixir el
+    # modulo es `A` y su fichero `a.ex`, asi que `A.suma(x)` nunca casaba contra
+    # el modulo `a` y la unica llamada entre modulos de Elixir se contaba como
+    # `atributo-de-variable`. Que las dos vias resuelvan igual no es simetria
+    # cosmetica: un import que sale y una llamada que no deja un grafo que dice
+    # "b depende de a" sin poder decir en que.
+    bajo = prefijo.lower()
+    return [q for q in posibles
+            if bajo in [p.lower() for p in por_modulo.get(q, "").split(".")]]
 
 
 def _resuelve(especificador, fichero, raiz, modulos, modo):
@@ -944,6 +976,16 @@ def _resuelve(especificador, fichero, raiz, modulos, modo):
             sufijo = [m for k, v in bajas.items() if k.endswith("." + cand) for m in v]
             if len(sufijo) == 1:
                 return sufijo[0]
+        # El ultimo segmento puede ser un SIMBOLO y no un modulo. Kotlin importa
+        # funciones de nivel superior (`import nucleo.suma`), que es su forma
+        # idiomatica, y ahi `suma` no es ningun fichero: el especificador entero
+        # no casaba con nada y kotlin se quedaba sin arista de modulo mientras
+        # `gb symbols` SI veia la llamada cruzar (medido el 11-sep-2026). Se
+        # reintenta sin el ultimo segmento, y como la vuelta pasa por las mismas
+        # reglas de arriba, sigue exigiendo que haya EXACTAMENTE un modulo que
+        # case: no se inventa destino, se deja de perder el que existe.
+        if len(partes) >= 2:
+            return _resuelve(".".join(partes[:-1]), fichero, raiz, modulos, modo)
         return None
     return None
 
