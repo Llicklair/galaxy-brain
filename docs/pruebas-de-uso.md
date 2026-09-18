@@ -1882,3 +1882,52 @@ visibles en diez minutos:
    (`NUCLEO`/`PRESENTACION -/-> HOOKS_LENGUAJE`); el motor sigue con la deuda anotada aqui.
 
 Resultado: gate ok, 488 reglas expandidas, 1 de 36 sin regla (el `__init__`).
+
+## 11-sep-2026 — Cinco perdidas del grafo sobre codigo idiomatico que la sonda no veia
+
+Se escribio un fichero "normal" por lenguaje (no el ejemplar de conformidad) y se miro que arista
+faltaba. La sonda de conformidad exige "alguna arista" y "alguna llamada", y las cinco pasaban por
+debajo de ese liston:
+
+1. **dart: 0 aristas de modulo.** El import relativo idiomatico es `import 'a.dart';` sin `./`; la
+   resolucion `ruta` exigia el punto y `'./a.dart'` daba 1 mientras `'a.dart'` daba 0. Pasa a
+   `ruta-local`; lo externo lleva esquema (`package:`, `dart:`) y no resuelve contra nada.
+2. **go: el import salia y la llamada no.** El paquete es un directorio (`nucleo/a.go` es el modulo
+   `nucleo.a`) y la llamada entre paquetes es `nucleo.Suma(x)`: el prefijo casaba con el
+   directorio y nunca con el ultimo segmento. El grafo decia "b depende de nucleo" sin poder decir
+   en que.
+3. **elixir: `A.suma(x)` contado como `atributo-de-variable`.** El modulo es `A` y su fichero
+   `a.ex`. Ultimo recurso sin mayusculas, el mismo que ya hacian los imports.
+4. **kotlin: sin arista de modulo con la llamada visible.** `import nucleo.suma` importa un
+   simbolo, no un fichero, y `gb symbols` veia la llamada cruzar mientras el grafo de modulos no.
+   Se reintenta sin el ultimo segmento, exigiendo un unico modulo.
+5. **elixir: 2 de 3 aristas CALLS eran auto-aristas.** `def suma(a, b)` es un nodo `call` en su
+   gramatica y `$FN($$$)` casaba el propio encabezado: `a.suma -> a.suma`. Una arista inventada
+   (ADR 0008), y la sonda en verde porque una auto-arista tambien es "alguna arista". Se descarta
+   por posicion (mismo fichero, linea y nombre que una definicion) y la matriz gana la sonda
+   "ninguna auto-arista".
+
+Consecuencia de metodo: la sonda por ejemplar certifica la forma que alguien penso; lo que dice
+algo es escribir el codigo como lo escribe el lenguaje y contar lo que falta. Commits del 18-sep
+(`43b8d3d`, `f80d4af`).
+
+## 18-sep-2026 — El falso positivo swift→java del 6-sep, cerrado por sus dos mitades
+
+Caso mixto minimo: `hooks_lang/swift/gb_hook.swift` con `private func detectProjectRoot()` y
+`hooks_lang/jvm/GbAgent.java` con la suya. Medido sobre HEAD: el grafo NO veia el `private func`
+(swift extraia 2 funciones de 12 en el hook real: sus patrones solo casaban `func` pelado), asi que
+la unica `detectProjectRoot` del arbol era la de java y la llamada suelta de swift resolvia contra
+ella. El cruce no era del gate: era del motor, y de dos sitios a la vez.
+
+- **Modificadores en swift.** La gramatica de ast-grep 0.45 rechaza `$MOD func` ("Cannot parse
+  query"), `$$$ func` y el contextual dentro de un struct — el truco que salvo a java no sirve. Van
+  literales en `_MODIFICADORES_SWIFT` (10 formas × con/sin `-> Tipo`), un solo proceso de scan los
+  corre todos, y la sonda de conformidad recorre la misma lista. Lo que no esta (`mutating`, `class
+  func`, `@objc`, tres seguidos) queda declarado en `carencias`.
+- **Familia antes que nombre.** Una llamada suelta solo resuelve contra definiciones de su familia
+  (js/ts/tsx; java/kotlin/scala; el resto, la suya). Y entre homonimos de la misma familia se
+  prefiere el del propio modulo del llamante: ambito lexico, un hecho.
+
+Sobre `hooks_lang/` real: llamadas resueltas 52 → 70, ambiguas 32 → 23, aristas entre lenguajes
+1 → 0. Las reglas por capa del 6-sep siguen (sobran, pero no estorban). Lo que queda abierto de
+aquel dia: ruby en consola sigue "escrito, pendiente de medir" por falta de ruby en esta maquina.
