@@ -118,3 +118,36 @@ def test_un_repo_solo_de_python_no_paga_nada(tmp_path, monkeypatch):
     monkeypatch.setattr(lenguajes, "analyze", lambda *a, **k: llamadas.append(1))
     cli._analiza_simbolos(str(tmp_path))
     assert llamadas == []
+
+
+def _swift_y_java(root):
+    """Dos hooks, uno por lenguaje, con una funcion del MISMO nombre en cada uno:
+    el caso real de `hooks_lang/` en este repo (libreta del 6-sep-2026)."""
+    _escribe(root, "hooks_lang/swift/gb_hook.swift",
+             "import Foundation\n\n"
+             "private func detectProjectRoot() -> String {\n    return \"/\"\n}\n\n"
+             "func armar() {\n    let raiz = detectProjectRoot()\n    print(raiz)\n}\n")
+    _escribe(root, "hooks_lang/jvm/GbAgent.java",
+             "public class GbAgent {\n"
+             "    static String detectProjectRoot() {\n        return \"/\";\n    }\n\n"
+             "    public static void premain(String args) {\n"
+             "        String raiz = detectProjectRoot();\n        System.out.println(raiz);\n"
+             "    }\n}\n")
+    return str(root)
+
+
+@necesita_astgrep
+def test_una_llamada_suelta_no_cruza_de_lenguaje(tmp_path):
+    """El gate del 6-sep cazo `swift.gb_hook -> jvm.GbAgent.detectProjectRoot`:
+    Swift no llama a Java. La causa tenia dos mitades — `private func` era
+    invisible para los patrones de swift, asi que la unica definicion del arbol
+    era la de java, y la llamada suelta se resolvia por nombre sin mirar el
+    lenguaje. Aqui se exige que las dos mitades sigan cerradas: cada llamada
+    resuelve dentro de su lenguaje, y ninguna se pierde por el camino."""
+    informe = lenguajes.analyze(_swift_y_java(tmp_path))
+    llamadas = sorted((o, d) for o, d, tipo in informe["edges"] if tipo == "CALLS")
+    assert llamadas == [
+        ("hooks_lang.jvm.GbAgent.premain", "hooks_lang.jvm.GbAgent.detectProjectRoot"),
+        ("hooks_lang.swift.gb_hook.armar", "hooks_lang.swift.gb_hook.detectProjectRoot"),
+    ]
+    assert "nombre-ambiguo" not in informe["unresolved"]

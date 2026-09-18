@@ -171,6 +171,26 @@ MISMO_PAQUETE = ("dos ficheros del mismo paquete se usan SIN import en %s, asi q
                  "arista de modulo: 0 aristas aqui NO significa 0 acoplamiento. Las llamadas "
                  "entre ellos si se ven — `gb symbols` las cuenta, y el gate las comprueba")
 
+# Las formas de `func` que swift extrae, en el orden en que se miden en codigo
+# real: sin modificador, visibilidad sola, `static`/`override`, y los dos
+# pares con visibilidad. Va fuera de la tabla para que la sonda de conformidad
+# recorra la MISMA lista que el motor.
+_MODIFICADORES_SWIFT = ("", "private ", "public ", "fileprivate ", "internal ", "open ",
+                        "static ", "override ", "private static ", "public static ")
+
+# Una llamada SUELTA (`f()`) solo puede resolver contra una definicion de su
+# propia familia: js/ts/tsx se importan entre si y java/kotlin/scala comparten
+# la JVM; nadie mas llama a otro lenguaje por nombre pelado. Sin este filtro
+# una `detectProjectRoot()` de swift resolvia contra la de java (libreta del
+# 6-sep-2026): una arista inventada entre lenguajes, la peor (ADR 0008).
+_FAMILIAS = {"js": "js", "ts": "js", "tsx": "js",
+             "java": "jvm", "kotlin": "jvm", "scala": "jvm"}
+
+
+def _familia(lang):
+    return _FAMILIAS.get(lang, lang)
+
+
 LENGUAJES = {
     "js": _lang(
         "js", (".js", ".mjs", ".cjs", ".jsx"),
@@ -282,10 +302,18 @@ LENGUAJES = {
     ),
     "swift": _lang(
         "swift", (".swift",),
-        (("function", "func $NAME($$$) -> $RET { $$$ }"),
-         ("function", "func $NAME($$$) { $$$ }"),
-         ("class", "class $NAME { $$$ }"),
-         ("class", "struct $NAME { $$$ }")),
+        # Los modificadores van LITERALES porque la gramatica de swift en
+        # ast-grep 0.45 rechaza `$MOD func` como patron (medido el 18-sep-2026:
+        # "Cannot parse query"; tampoco `$$$ func`, ni el contextual dentro de
+        # un struct). Sin ellos `private func` era invisible y la unica
+        # `detectProjectRoot` del arbol era la de java, asi que la llamada
+        # suelta de swift cruzaba a JVM (libreta del 6-sep). Un proceso de
+        # scan corre todos los patrones a la vez, asi que la lista no cuesta
+        # tiempo; lo que no esta en ella se declara en `carencias`.
+        tuple(("function", "%sfunc $NAME($$$)%s { $$$ }" % (mod, ret))
+              for mod in _MODIFICADORES_SWIFT for ret in (" -> $RET", ""))
+        + (("class", "class $NAME { $$$ }"),
+           ("class", "struct $NAME { $$$ }")),
         # Sin patron de metodo a proposito: en Swift `func` suelto ya caza los de
         # dentro de un struct o una clase, y anadir el contextual solo metia un
         # patron que la deduplicacion descartaba siempre — lo caza su sonda.
@@ -293,7 +321,10 @@ LENGUAJES = {
         resolucion="paquete",
         sufijos_test=("Test", "Tests"), dirs_test=("test", "tests"),
         carencias=("`import` en Swift nombra un MODULO del sistema o del paquete, no un "
-                   "fichero: solo deja arista si coincide con un modulo del propio arbol",),
+                   "fichero: solo deja arista si coincide con un modulo del propio arbol",
+                   "un `func` con un modificador fuera de la lista (`mutating`, `class func`, "
+                   "`@objc`, tres modificadores seguidos) no se extrae: la gramatica no "
+                   "admite un comodin de modificador y la lista es la medida",),
     ),
     "ruby": _lang(
         # `class $NAME\n $$$\nend` daba ERROR de patron, asi que las clases de
@@ -917,6 +948,12 @@ def _por_cualificado(llamado, definidos, por_modulo):
             if bajo in [p.lower() for p in por_modulo.get(q, "").split(".")]]
 
 
+def _misma_familia(candidatos, lang, lengua_de):
+    """Deja solo los candidatos que un fichero de `lang` puede llamar por nombre."""
+    mia = _familia(lang)
+    return [q for q in candidatos if _familia(lengua_de.get(q, lang)) == mia]
+
+
 def _resuelve(especificador, fichero, raiz, modulos, modo):
     """El módulo interno al que apunta un import, o None si es externo.
 
@@ -1085,6 +1122,7 @@ def analyze(root):
     lote = _lote_estructural(ruta_ag, presentes, root)
     definidos = {}          # nombre pelado -> [qual, ...]
     por_modulo = {}         # qual -> modulo que lo define (para llamadas cualificadas)
+    lengua_de = {}          # qual -> lenguaje del fichero que lo define
     vistos = set()
     for lang in presentes:
         cfg = LENGUAJES[lang]
@@ -1115,6 +1153,7 @@ def analyze(root):
                 informe["edges"].append([modulo, qual, "DEFINES"])
                 definidos.setdefault(nombre, []).append(qual)
                 por_modulo[qual] = modulo
+                lengua_de[qual] = lang
 
     # --- imports ---
     aristas = set()
@@ -1220,6 +1259,8 @@ def analyze(root):
                 # con varias, no hay arista — el prefijo puede ser una variable
                 # (`obj.metodo()`) y adivinar seria inventarsela (ADR 0008).
                 candidatos = _por_cualificado(llamado, definidos, por_modulo)
+                if candidatos:
+                    candidatos = _misma_familia(candidatos, lang, lengua_de)
                 if not candidatos:
                     # None: no era una llamada cualificada tratable.
                     # []:   lo parecia y no caso con ningun simbolo real — el
@@ -1236,10 +1277,19 @@ def analyze(root):
                 origen = _envuelve(os.path.relpath(fichero, root), _linea(m), entrada[0])
                 informe["edges"].append([origen, candidatos[0], "CALLS"])
                 continue
-            candidatos = definidos.get(llamado)
+            candidatos = _misma_familia(definidos.get(llamado) or [], lang, lengua_de)
             if not candidatos:
                 sin_resolver["nombre-desconocido"] = sin_resolver.get("nombre-desconocido", 0) + 1
                 continue
+            if len(candidatos) > 1:
+                # Homonimos en modulos distintos, y uno de ellos es el PROPIO
+                # modulo del llamante: `f()` en el fichero que define `f` es
+                # ese `f` en todos los lenguajes de la tabla — el ambito lexico
+                # es un hecho, no una adivinanza. Con dos homonimos en otros
+                # modulos sigue siendo ambiguo y no se elige.
+                propios = [q for q in candidatos if por_modulo.get(q) == entrada[0]]
+                if len(propios) == 1:
+                    candidatos = propios
             if len(candidatos) > 1:
                 sin_resolver["nombre-ambiguo"] = sin_resolver.get("nombre-ambiguo", 0) + 1
                 continue

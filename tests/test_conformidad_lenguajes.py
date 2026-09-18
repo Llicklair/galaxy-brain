@@ -487,3 +487,22 @@ def test_un_import_de_terceros_no_fabrica_arista(tmp_path):
         fh.write('import React from "react";\nexport function x() { return 1; }\n')
 
     assert not [e for e in lenguajes.analyze(root)["edges"] if e[2] == "IMPORTS"]
+
+
+@necesita_astgrep
+def test_swift_extrae_cada_forma_de_func_de_su_lista(tmp_path):
+    """Matriz, no ejemplar (regla 3): cada modificador de `_MODIFICADORES_SWIFT`
+    se prueba en sus dos formas (con y sin `-> Tipo`). Existe porque durante
+    meses solo se probaba `func` pelado, y `private func` — la forma mas comun
+    en un fichero real — era invisible: la sonda certificaba una cobertura que
+    el hook swift de este mismo repo no tenia."""
+    lineas = []
+    esperados = set()
+    for i, mod in enumerate(lenguajes._MODIFICADORES_SWIFT):
+        lineas.append("%sfunc con%d(x: Int) -> Int { return x }" % (mod, i))
+        lineas.append("%sfunc sin%d(x: Int) { print(x) }" % (mod, i))
+        esperados.update(("a.con%d" % i, "a.sin%d" % i))
+    (tmp_path / "a.swift").write_text("\n\n".join(lineas) + "\n", encoding="utf-8")
+    informe = lenguajes.analyze(str(tmp_path))
+    vistos = {n["qual"] for n in informe["nodes"] if n["kind"] == "function"}
+    assert esperados <= vistos, "swift no ve: %s" % sorted(esperados - vistos)
