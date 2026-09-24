@@ -2810,7 +2810,28 @@ def _refresca_mapa_estigmergia():
         pass
 
 
+def _utf8_si_tuberia():
+    """Por tuberia, UTF-8 — no el codepage de la consola.
+
+    En Windows un proceso con la salida redirigida escribe en cp1252: el `—`
+    sale como 0x97 y quien lee UTF-8 (el hook SessionStart, un `| python`)
+    ve `�` o revienta con UnicodeDecodeError (auditoria del 24-sep-2026; el mapa
+    de sesion ya llegaba mutilado). Una terminal se deja en su codificacion,
+    y PYTHONIOENCODING, si alguien lo puso, manda.
+    """
+    if os.environ.get("PYTHONIOENCODING"):
+        return
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            if (not stream.isatty()
+                    and (stream.encoding or "").lower().replace("-", "") != "utf8"):
+                stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError, OSError):
+            pass
+
+
 def main(argv=None):
+    _utf8_si_tuberia()
     parser = build_parser()
     args = parser.parse_args(argv)
     if not getattr(args, "func", None):
