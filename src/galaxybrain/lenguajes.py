@@ -24,6 +24,7 @@ símbolos homónimos salvo por el import que los trae. Todo eso **se cuenta y se
 declara**; no se adivina.
 """
 
+import collections
 import copy
 import json
 import os
@@ -2348,6 +2349,16 @@ def analyze(root):
     _dueno_y_herencia(informe, cabeceras, definidos, por_modulo, lengua_de)
 
     # --- imports ---
+    # Un import solo resuelve contra modulos de SU familia de lenguajes: `use
+    # crate::APP;` en Rust casaba (sin mayusculas) con `src/App.jsx` y salian
+    # aristas Rust -> JSX inventadas (pot-desktop, 24-sep-2026). Lo que cruza de
+    # lenguaje es otra cosa (lanzamientos, FFI) y va por su propio camino.
+    de_familia = {}
+    for nombre_mod, ruta_mod in modulos.items():
+        entrada_mod = por_fichero.get(os.path.abspath(ruta_mod))
+        fam = _familia(entrada_mod[1]) if entrada_mod else None
+        de_familia.setdefault(fam, {})[nombre_mod] = ruta_mod
+    de_familia = collections.defaultdict(dict, de_familia)
     aristas = set()
     # {fichero: {nombre}} que el fichero trae de FUERA del arbol por import
     # explicito (Scala): ahi `f()` es ese `f`, no un homonimo del proyecto.
@@ -2384,7 +2395,7 @@ def analyze(root):
                 # llega entero y se despliega aqui, uno por nombre.
                 for nombre, local in (_scala_nombres(especificador) if lang == "scala"
                                       else ((especificador, None),)):
-                    destino = _resuelve(nombre, fichero, root, modulos,
+                    destino = _resuelve(nombre, fichero, root, de_familia[_familia(lang)],
                                         modo or cfg["resolucion"])
                     if destino and destino != entrada[0]:
                         aristas.add((entrada[0], destino))
