@@ -211,6 +211,182 @@ REPOS = [
                       "main.java.com.squareup.javapoet.JavaFile.writeToPath"]],
         "ciclos": 0,
     },
+    {'nombre': 'colormath',
+     'lenguaje': 'kotlin',
+     'url': 'https://github.com/ajalt/colormath',
+     'sha': '2d650498a975452fcd002d7352dd36c79e32061a',
+     'simbolos': ['colormath.src.commonMain.kotlin.com.github.ajalt.colormath.calculate.Contrast.wcagLuminance',
+                  'colormath.src.commonMain.kotlin.com.github.ajalt.colormath.model.LAB.LABColorSpaces',
+                  'colormath.src.commonMain.kotlin.com.github.ajalt.colormath.model.LAB.LAB',
+                  'colormath.src.commonMain.kotlin.com.github.ajalt.colormath.model.LAB.LABColorSpace',
+                  'colormath.src.commonMain.kotlin.com.github.ajalt.colormath.internal.ColorSpaceUtils.doCreate'],
+     'aristas': [['colormath.src.commonMain.kotlin.com.github.ajalt.colormath.model.JzAzBz',
+                  'colormath.src.commonMain.kotlin.com.github.ajalt.colormath.calculate.Difference'],
+                 ['scripts.benchmarks.src.jmh.kotlin.com.github.ajalt.colormath.benchmark.ColorBenchmarks',
+                  'colormath.src.commonMain.kotlin.com.github.ajalt.colormath.transform.Interpolate']],
+     'no_aristas': [['extensions.colormath-ext-android-color.src.androidMain.kotlin.com.github.ajalt.colormath.extensions.android.color.ColorExtensions',
+                     'colormath.src.commonMain.kotlin.com.github.ajalt.colormath.ColorSpace'],
+                    ['extensions.colormath-ext-jetpack-compose.src.commonMain.kotlin.com.github.ajalt.colormath.extensions.android.composecolor.ComposeColorExtensions',
+                     'colormath.src.commonMain.kotlin.com.github.ajalt.colormath.ColorSpace'],
+                    ['scripts.benchmarks.src.jmh.kotlin.com.github.ajalt.colormath.benchmark.ColorBenchmarks',
+                     'colormath.src.commonMain.kotlin.com.github.ajalt.colormath.transform.Transform']],
+     'llamadas': [['colormath.src.commonMain.kotlin.com.github.ajalt.colormath.calculate.Contrast.wcagContrastRatio',
+                   'colormath.src.commonMain.kotlin.com.github.ajalt.colormath.calculate.Contrast.wcagLuminance'],
+                  ['colormath.src.commonMain.kotlin.com.github.ajalt.colormath.model.LAB.create',
+                   'colormath.src.commonMain.kotlin.com.github.ajalt.colormath.internal.ColorSpaceUtils.doCreate']],
+     'ciclos': 0},
+    {
+        "nombre": "scala-xml", "lenguaje": "scala",
+        "url": "https://github.com/scala/scala-xml",
+        "sha": "8329863472f6a2f04939974d88d1540c357d5062",
+        # trait, case class anidada con extends, `final def ...: Unit = {` en
+        # varias lineas, `private def` y trait generico: ninguno se veia
+        "simbolos": ["shared.src.main.scala.scala.xml.parsing.MarkupParser.MarkupParser",
+                     "shared.src.main.scala.scala.xml.dtd.ContentModel.ElemName",
+                     "shared.src.main.scala.scala.xml.XML.write",
+                     "shared.src.main.scala.scala.xml.Utility.combineAdjacentTextNodes",
+                     "shared.src.main.scala.scala.xml.factory.XMLLoader.XMLLoader"],
+        # absoluto (XMLTest.scala:9), agrupado `dtd.{DocType, PublicID}` (:8) y
+        # relativo por `package scala / xml / parsing` apilados
+        # (NoBindingFactoryAdapter.scala:13-18, `import factory.NodeFactory`)
+        "aristas": [["jvm.src.test.scala.scala.xml.XMLTest",
+                     "shared.src.main.scala.scala.xml.parsing.ConstructingParser"],
+                    ["jvm.src.test.scala.scala.xml.XMLTest",
+                     "shared.src.main.scala.scala.xml.dtd.DocType"],
+                    ["shared.src.main.scala.scala.xml.parsing.NoBindingFactoryAdapter",
+                     "shared.src.main.scala.scala.xml.factory.NodeFactory"]],
+        # por sufijo sin mayusculas: `org.xml.sax.*` caia en XML.scala,
+        # `util.Properties` en el Properties.scala de test y `scala.xml.dtd._`
+        # (paquete de 7 ficheros) en dtd/DTD.scala
+        "no_aristas": [["shared.src.main.scala.scala.xml.include.sax.XIncludeFilter",
+                        "shared.src.main.scala.scala.xml.XML"],
+                       ["jvm.src.test.scala-2.x.scala.xml.CompilerErrors",
+                        "shared.src.test.scala.scala.xml.Properties"],
+                       ["shared.src.main.scala.scala.xml.parsing.MarkupParser",
+                        "shared.src.main.scala.scala.xml.dtd.DTD"]],
+        # XML.scala:130 `Utility.serialize(...)`, Utility.scala:213
+        "llamadas": [["shared.src.main.scala.scala.xml.XML.write",
+                      "shared.src.main.scala.scala.xml.Utility.serialize"],
+                     ["shared.src.main.scala.scala.xml.Utility.serialize",
+                      "shared.src.main.scala.scala.xml.Utility.serializeImpl"]],
+        # sin ciclos de import: los acoples reales van por el mismo paquete
+        # (`scala.xml`), que no deja arista (MISMO_PAQUETE)
+        "ciclos": 0,
+    },
+    {
+        "nombre": "swift-argument-parser", "lenguaje": "swift",
+        "url": "https://github.com/apple/swift-argument-parser",
+        "sha": "cdc5f0c6e836de848699ae11f6480f2d99ac5ef1",
+        # protocolo, struct generica con `: Protocolo`, `func` generica, `static func`
+        "simbolos": ["Sources.ArgumentParser.Parsable Types.ParsableCommand.ParsableCommand",
+                     "Sources.ArgumentParser.Parsable Types.ParsableCommand.main",
+                     "Sources.ArgumentParser.Parsable Properties.Argument.Argument",
+                     "Sources.ArgumentParser.Parsing.ArgumentDecoder.container",
+                     "Sources.ArgumentParserToolInfo.ToolInfo.ToolInfoV0"],
+        # `ArgumentParserToolInfo` es un target de UN fichero: `internal import` y
+        # `import` dejan arista. Los de varios ficheros (ArgumentParser) no: MISMO_PAQUETE
+        "aristas": [["Sources.ArgumentParser.Usage.DumpHelpGenerator",
+                     "Sources.ArgumentParserToolInfo.ToolInfo"],
+                    ["Tools.generate-manual.GenerateManual", "Sources.ArgumentParserToolInfo.ToolInfo"]],
+        # `import Foundation` caia en Utilities/Foundation.swift (las 22 aristas del grafo)
+        "no_aristas": [["Tests.ArgumentParserUnitTests.ExitCodeTests",
+                        "Sources.ArgumentParser.Utilities.Foundation"],
+                       ["Tools.generate-manual.GenerateManual",
+                        "Sources.ArgumentParser.Utilities.Foundation"]],
+        "llamadas": [["Sources.ArgumentParser.Parsable Types.ParsableCommand.main",
+                      "Sources.ArgumentParser.Parsable Types.ParsableCommand.parseAsRoot"],
+                     ["Sources.ArgumentParser.Parsable Types.ParsableCommand.parseAsRoot",
+                      "Sources.ArgumentParser.Parsing.CommandParser.CommandParser"]],
+        # SwiftPM prohibe ciclos entre targets, y dentro de un target no hay import
+        "ciclos": 0,
+    },
+    {
+        "nombre": "jason", "lenguaje": "elixir",
+        "url": "https://github.com/michalmuskala/jason",
+        "sha": "4ede42858eb19f80ec9e863aab52df466eab8608",
+        # `defmodule Jason.Decoder` (con punto), el anidado `Unescape`, `def` con
+        # guarda (decoder.ex:48) y `defmacro` (codegen.ex:21, helpers.ex:32)
+        "simbolos": ["lib.decoder.Decoder", "lib.decoder.Unescape", "lib.decoder.parse",
+                     "lib.codegen.bytecase", "lib.helpers.json_map"],
+        # `DecodeError` se declara en decoder.ex, no en un fichero con su nombre
+        "aristas": [["lib.jason", "lib.decoder"], ["lib.decoder", "lib.codegen"],
+                    ["test.decode_test", "lib.decoder"]],
+        # `alias Jason.{DecodeError, Codegen}` caia, quitando un segmento, en jason.ex
+        "no_aristas": [["lib.decoder", "lib.jason"], ["lib.codegen", "lib.jason"],
+                       ["lib.helpers", "lib.jason"]],
+        "llamadas": [["lib.jason.decode", "lib.decoder.parse"],
+                     ["lib.helpers.json_map", "lib.codegen.build_kv_iodata"]],
+        # REAL: Codegen y Encode se nombran y llaman en los dos sentidos
+        # (codegen.ex:107 Encode.key, encode.ex:288 Codegen.jump_table); el SCC
+        # suma Encoder (Encode -> Encoder.encode) y Helpers (`require
+        # Jason.Helpers` en el quote de __deriving__, encoder.ex:88)
+        "ciclos": 1,
+    },
+    {
+        "nombre": "petitparser", "lenguaje": "dart",
+        "url": "https://github.com/petitparser/dart-petitparser",
+        "sha": "33c6956b9ee5236be23556998f46e515d52685c7",
+        # `abstract class Parser<R>`, metodo `=>`, `sealed class`, extension y
+        # getter: ninguno era simbolo con los patrones (10 clases de 194)
+        "simbolos": ["lib.src.core.parser.Parser", "lib.src.core.parser.parse",
+                     "lib.src.core.result.Result", "lib.src.matcher.accept.AcceptParser",
+                     "lib.src.core.token.line", "lib.src.parser.character.char.char"],
+        # un `export` de barril, el `package:` propio (pubspec `name: petitparser`)
+        # y un `import ... as`: los tres se perdian (147 de 646 aristas)
+        "aristas": [["lib.core", "lib.src.core.parser"],
+                    ["test.debug_test", "lib.petitparser"],
+                    ["test.parser_combinator_test", "test.generated.sequence_test"]],
+        # sin no_aristas: sus externos (meta, collection, test) no tienen
+        # homonimo local; `package:` ajeno y `part of` van en test_dart_imports.py.
+        # Sin llamadas: dart no las extrae (carencia declarada en la tabla).
+        # REALES: Dart admite imports ciclicos. SCC de 11 en core/ (parser ->
+        # context -> token -> ... -> parser), y a pares reference<->resolve,
+        # greedy<->lazy, linter<->internal/linter_rules,
+        # optimize<->internal/optimize_rules, predicate/{character,
+        # single_character, unicode_character} y matcher/pattern/* (4).
+        "ciclos": 7,
+    },
+    {
+        "nombre": "libyaml", "lenguaje": "c",
+        "url": "https://github.com/yaml/libyaml",
+        "sha": "90a56d4500aa1a1798514c5cb55c3ad4cb095f94",
+        # `static int\nf(...)` (emitter/loader/parser/scanner casi enteros) y
+        # `YAML_DECLARE(int)\nf(...)`; el patron de antes solo veia 90 de 228
+        "simbolos": ["parser.yaml_parser_parse", "api.yaml_parser_initialize",
+                     "emitter.yaml_emitter_emit_stream_start",
+                     "loader.yaml_parser_load_document", "tests.run-dumper.compare_nodes"],
+        # `#include "yaml_private.h"` junto al fichero y `"../src/yaml_private.h"`;
+        # `<yaml.h>` va por -Iinclude y no deja arista (carencia declarada)
+        "aristas": [["api", "yaml_private"], ["tests.run-emitter-test-suite", "yaml_private"]],
+        # `return f(...)` (parser.c:249) e `if (!f(...))` entre ficheros
+        # (loader.c:99, declarada en yaml.h, definida en parser.c)
+        "llamadas": [["parser.yaml_parser_state_machine", "parser.yaml_parser_parse_stream_start"],
+                     ["loader.yaml_parser_load", "parser.yaml_parser_parse"]],
+        # los .c solo incluyen yaml_private.h, que no incluye a ninguno
+        "ciclos": 0,
+    },
+    {
+        "nombre": "react-hot-toast", "lenguaje": "tsx+ts",
+        "url": "https://github.com/timolins/react-hot-toast",
+        "sha": "e725d38e0faec05f7b8fb10644b616ef978d2f4d",
+        # componentes como `const X: React.FC<P> = (...) =>`, `React.memo(...)`,
+        # arrow con tipo de retorno y const sin exportar: ninguno era simbolo
+        "simbolos": ["components.toaster.Toaster", "components.toast-bar.ToastBar",
+                     "components.toaster.getPositionStyle", "components.toaster.ToastWrapper",
+                     "core.use-toaster.useToaster"],
+        # ts -> tsx (el barril src/index.ts, que se llamaba "" y desaparecia),
+        # tsx -> ts, y el `from '../src'` de los tests
+        "aristas": [["index", "components.toaster"], ["components.toaster", "core.use-toaster"],
+                    ["test.toast.test", "index"]],
+        # headless/index.ts y src/index.ts acaban los dos en `index`; headless
+        # solo importa ../core/*. Esta arista fabricaria el ciclo index<->headless
+        "no_aristas": [["headless", "index"]],
+        # `<ToastBar .../>` es una llamada (JSX); useToaster es un hook de un .ts
+        "llamadas": [["components.toaster.Toaster", "components.toast-bar.ToastBar"],
+                     ["components.toaster.Toaster", "core.use-toaster.useToaster"]],
+        # index -> headless -> core/*; components -> core. core no sube nunca.
+        "ciclos": 0,
+    },
 ]
 
 

@@ -20,6 +20,13 @@
   "modulos": 96,
   "simbolos": 259
  },
+ "colormath": {
+  "aristas": 227,
+  "ciclos": 0,
+  "llamadas": 3057,
+  "modulos": 106,
+  "simbolos": 912
+ },
  "container": {
   "aristas": 293,
   "ciclos": 1,
@@ -28,10 +35,10 @@
   "simbolos": 593
  },
  "express": {
-  "aristas": 56,
+  "aristas": 153,
   "ciclos": 0,
   "llamadas": 434,
-  "modulos": 140,
+  "modulos": 141,
   "simbolos": 227
  },
  "import-linter": {
@@ -40,6 +47,13 @@
   "llamadas": 674,
   "modulos": 114,
   "simbolos": 713
+ },
+ "jason": {
+  "aristas": 25,
+  "ciclos": 1,
+  "llamadas": 556,
+  "modulos": 24,
+  "simbolos": 358
  },
  "javapoet": {
   "aristas": 18,
@@ -61,6 +75,41 @@
   "llamadas": 806,
   "modulos": 87,
   "simbolos": 428
+ },
+ "libyaml": {
+  "aristas": 9,
+  "ciclos": 0,
+  "llamadas": 1067,
+  "modulos": 24,
+  "simbolos": 228
+ },
+ "petitparser": {
+  "aristas": 646,
+  "ciclos": 7,
+  "llamadas": 0,
+  "modulos": 152,
+  "simbolos": 844
+ },
+ "react-hot-toast": {
+  "aristas": 45,
+  "ciclos": 0,
+  "llamadas": 112,
+  "modulos": 30,
+  "simbolos": 37
+ },
+ "scala-xml": {
+  "aristas": 32,
+  "ciclos": 0,
+  "llamadas": 1268,
+  "modulos": 112,
+  "simbolos": 1261
+ },
+ "swift-argument-parser": {
+  "aristas": 28,
+  "ciclos": 0,
+  "llamadas": 1006,
+  "modulos": 170,
+  "simbolos": 1752
  },
  "tach": {
   "aristas": 210,
