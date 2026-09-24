@@ -152,6 +152,11 @@ _JS_CARENCIAS = (
     "exigen seguir la variable — por eso tocar un metodo corre todos los tests",
 )
 
+#: `new X(...)` construye una X: es una llamada a la clase, y sin ella quien usa
+#: una subclase no la "llamaba" y la herencia no tenia por donde subir en la
+#: seleccion (24-sep-2026). JS, TS, Java y C#; `$FN` es el nombre del tipo.
+_NEW = "new $FN($$$)"
+
 #: `$FN($$$)` casa cualquier invocación; decidir cuáles se pueden resolver es
 #: trabajo de después, con nombres. Casi todos los lenguajes lo comparten.
 LLAMADA = ("$FN($$$)",)
@@ -370,9 +375,12 @@ LENGUAJES = {
          ("function", "export async function $NAME($$$) { $$$ }"),
          ("function", "async function $NAME($$$) { $$$ }"),
          ("class", "export class $NAME { $$$ }"),
-         ("class", "class $NAME { $$$ }"))
+         ("class", "class $NAME { $$$ }"),
+         # con `extends`/`implements`/genericos: `class Sub extends Base {` no
+         # casaba el patron de arriba y la subclase no era simbolo (24-sep-2026)
+         ("class", "class $NAME $$$ { $$$ }"))
         + _JS_PROPIEDADES + _metodos_js(("",)),
-        _JS_IMPORTS,
+        _JS_IMPORTS, llamada=LLAMADA + (_NEW,),
         globales=_JS_GLOBALES, resolucion="ruta", tia=True,
         sufijos_test=(".test", ".spec"), dirs_test=("test", "tests", "__tests__", "spec"),
         carencias=_JS_CARENCIAS,
@@ -389,9 +397,12 @@ LENGUAJES = {
          ("function", "export const $NAME = ($$$) => { $$$ }"),
          ("function", "export async function $NAME($$$): $RET { $$$ }"),
          ("class", "export class $NAME { $$$ }"),
-         ("class", "class $NAME { $$$ }"))
+         ("class", "class $NAME { $$$ }"),
+         # con `extends`/`implements`/genericos: `class Sub extends Base {` no
+         # casaba el patron de arriba y la subclase no era simbolo (24-sep-2026)
+         ("class", "class $NAME $$$ { $$$ }"))
         + _JS_PROPIEDADES + _metodos_js(("", ": $RET")),
-        _JS_IMPORTS,
+        _JS_IMPORTS, llamada=LLAMADA + (_NEW,),
         globales=_JS_GLOBALES, resolucion="ruta", tia=True,
         sufijos_test=(".test", ".spec"), dirs_test=("test", "tests", "__tests__", "spec"),
         carencias=_JS_CARENCIAS,
@@ -411,7 +422,7 @@ LENGUAJES = {
          ("function", _TSX_ENVUELTOS),
          ("class", "class $NAME $$$ { $$$ }"))
         + _JS_PROPIEDADES + _metodos_js(("", ": $RET")),
-        _JS_IMPORTS, llamada=LLAMADA + (_TSX_JSX,),
+        _JS_IMPORTS, llamada=LLAMADA + (_TSX_JSX, _NEW),
         globales=_JS_GLOBALES, resolucion="ruta",
         sufijos_test=(".test", ".spec"), dirs_test=("test", "tests", "__tests__"),
     ),
@@ -475,7 +486,7 @@ LENGUAJES = {
         # `import static` y `import pkg.*` no casan con `import $SRC;`: la
         # dependencia de `import static com.x.Util.checkNotNull` se perdia.
         ("import $SRC;", "import static $SRC;", "import $SRC.*;", "import static $SRC.*;"),
-        llamada=("$FN($$$)", "$A.$FN($$$)"),
+        llamada=("$FN($$$)", "$A.$FN($$$)", _NEW),
         tia=True, resolucion="paquete",
         sufijos_test=("Test", "Tests"), dirs_test=("test", "tests"),
         carencias=(MISMO_PAQUETE % "Java",),
@@ -692,6 +703,7 @@ LENGUAJES = {
              {"has": {"field": "body", "any": [{"kind": "block"},
                                                {"kind": "arrow_expression_clause"}]}}]}))),
         ("using $SRC;", "using static $SRC;", "using $A = $SRC;"),
+        llamada=LLAMADA + (_NEW,),
         resolucion="paquete", tia=True,
         sufijos_test=("Test", "Tests"), dirs_test=("test", "tests"),
         carencias=(MISMO_PAQUETE % "C#",),
@@ -1319,6 +1331,89 @@ def _por_cualificado(llamado, definidos, por_modulo):
     bajo = prefijo.lower()
     return [q for q in posibles
             if bajo in [p.lower() for p in por_modulo.get(q, "").split(".")]]
+
+
+_CLAVES_HERENCIA = ("extends", "implements", "with", "where")
+
+
+def _bases_de(cabecera, lang):
+    """Los nombres de las BASES que escribe la cabecera de una clase.
+
+    Sintaxis, no semantica: `extends`/`implements`/`with` (Java, TS, JS, PHP,
+    Dart, Scala), `:` (Kotlin, C#, Swift), `<` (Ruby). Antes se quitan los
+    genericos y los parentesis (`class A(val x: Int) : B()` en Kotlin). Solo el
+    ultimo segmento de un nombre cualificado: se resuelve por nombre de clase.
+    """
+    h = cabecera.split("{", 1)[0]
+    if lang == "ruby":
+        m = re.search(r"\bclass\s+[\w:]+\s*<\s*([\w:.]+)", h.split("\n", 1)[0])
+        return [m.group(1)] if m else []
+    previo = None
+    while previo != h:
+        previo = h
+        h = re.sub(r"<[^<>]*>", "", h)
+        h = re.sub(r"\([^()]*\)", "", h)
+    kw = re.search(r"\b(extends|implements|with)\b", h)
+    if kw:
+        cola = h[kw.start():]
+    elif ":" in h and lang in ("kotlin", "csharp", "swift"):
+        cola = h.split(":", 1)[1]
+    else:
+        return []
+    cola = re.split(r"\bwhere\b", cola)[0]
+    return [n for n in re.findall(r"[A-Za-z_][\w.$]*", cola) if n not in _CLAVES_HERENCIA]
+
+
+def _dueno_y_herencia(informe, cabeceras, definidos, por_modulo, lengua_de):
+    """`owner` de cada metodo y aristas EXTENDS, con los hechos del arbol.
+
+    Solo Python los tenia, y con ellos la seleccion sube de un metodo de la
+    base a quien usa la subclase (`impacted._enlaza_herencia`). Aqui: el dueño
+    es la clase MAS PEQUEÑA que contiene al metodo en su fichero; una base es
+    arista solo si casa con UNA clase del arbol de la misma familia (la del
+    propio modulo primero). Una base de fuera (`extends Exception`) o ambigua no
+    inventa nada: se cuenta en `unresolved["base-sin-resolver"]`.
+    """
+    nodos = informe["nodes"]
+    clases_por_fichero = {}
+    es_clase = set()
+    for n in nodos:
+        if n["kind"] == "class" and n.get("end"):
+            clases_por_fichero.setdefault(n["file"], []).append(n)
+            es_clase.add(n["qual"])
+    for n in nodos:
+        if n["kind"] not in ("method", "function") or n.get("owner"):
+            continue
+        dentro = [c for c in clases_por_fichero.get(n["file"], ())
+                  if c["line"] <= n["line"] <= c["end"] and c["qual"] != n["qual"]]
+        if dentro:
+            n["owner"] = min(dentro, key=lambda c: c["end"] - c["line"])["qual"]
+            # En Kotlin, Swift, Scala o Ruby la regla es `fun`/`func`/`def` sin
+            # distinguir: dentro de una clase ES un metodo (como en Python).
+            n["kind"] = "method"
+    sin = 0
+    for qual, cabecera in cabeceras.items():
+        lang = lengua_de.get(qual)
+        for escrita in _bases_de(cabecera, lang):
+            partes = [p for p in re.split(r"[.:]+", escrita) if p]
+            if not partes:
+                continue
+            base = partes[-1]
+            candidatos = [q for q in definidos.get(base, ()) if q in es_clase and q != qual]
+            candidatos = _misma_familia(candidatos, lang, lengua_de)
+            propios = [q for q in candidatos if por_modulo.get(q) == por_modulo.get(qual)]
+            # Una base CUALIFICADA (`Addressable::URI`, `a.b.C`) dice que no es
+            # la del propio modulo: en addressable, preferir la local casaba
+            # `CustomURIClass < Addressable::URI` con el `Fake::URI` del spec,
+            # una arista inventada (24-sep-2026). Entonces solo vale si es unica.
+            if len(propios) == 1 and len(partes) == 1:
+                candidatos = propios
+            if len(candidatos) != 1:
+                sin += 1
+                continue
+            informe["edges"].append([qual, candidatos[0], "EXTENDS"])
+    if sin:
+        informe.setdefault("unresolved", {})["base-sin-resolver"] = sin
 
 
 def _misma_familia(candidatos, lang, lengua_de):
@@ -2165,6 +2260,7 @@ def analyze(root):
     por_modulo = {}         # qual -> modulo que lo define (para llamadas cualificadas)
     lengua_de = {}          # qual -> lenguaje del fichero que lo define
     dueno_de = {}           # qual -> objeto al que se asigno (`app` en `app.use = ...`)
+    cabeceras = {}          # qual de clase -> su texto, para leer sus bases
     defs_ex = []            # los `defmodule` de Elixir, para `_declarados_elixir`
     vistos = set()
     for lang in presentes:
@@ -2222,6 +2318,10 @@ def analyze(root):
                     definidos[nombre].append(qual)
                 por_modulo[qual] = modulo
                 lengua_de[qual] = lang
+                if kind == "class" and qual not in cabeceras:
+                    cabeceras[qual] = (m.get("text") or "")[:800]
+
+    _dueno_y_herencia(informe, cabeceras, definidos, por_modulo, lengua_de)
 
     # --- imports ---
     aristas = set()
@@ -2464,7 +2564,7 @@ def analyze(root):
             origen = _envuelve(os.path.relpath(fichero, root), _linea(m), entrada[0])
             informe["edges"].append([origen, candidatos[0], "CALLS"])
 
-    informe["unresolved"] = sin_resolver
+    informe["unresolved"] = {**(informe.get("unresolved") or {}), **sin_resolver}
     informe["not_covered"] = [
         "llamadas sobre variables (`obj.metodo()`): exigen inferencia de tipos. Se cuentan, "
         "no se adivinan — una arista inventada es peor que una arista ausente",
