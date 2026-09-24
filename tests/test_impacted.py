@@ -638,3 +638,40 @@ def test_un_metodo_js_sin_llamantes_visibles_no_estrecha(tmp_path):
     report = impacted.analyze(str(root), worktree=True, grafo=lenguajes.analyze(str(root)))
     assert report["todo"] is True, report["motivo"]
     assert "configurar" in report["motivo"]
+
+
+def test_un_metodo_js_con_llamantes_parciales_tampoco_estrecha(tmp_path):
+    """CONTRATO, no rojo reproducido: con `this.set()` resuelto, `set` ya tiene
+    un llamante (`configurar`), pero `new App().set()` desde un test sigue sin
+    verse. Hoy ningun test llega a un metodo por llamada resuelta, asi que la
+    cadena `this` aun no estrecha nada; el dia que `obj.x()` se resuelva a
+    medias, esta guarda es la que impide estrechar sobre llamantes parciales."""
+    from galaxybrain import lenguajes
+
+    if not lenguajes.binario():
+        pytest.skip("ast-grep no instalado; la capa multilenguaje es opcional")
+    root = tmp_path / "app"
+    (root / "lib").mkdir(parents=True)
+    (root / "test").mkdir()
+    (root / "lib" / "app.js").write_text(
+        "class App {\n"
+        "  set(v) {\n"
+        "    return v;\n"
+        "  }\n"
+        "  configurar() {\n"
+        "    return this.set(1);\n"
+        "  }\n"
+        "}\n"
+        "module.exports = { App };\n", encoding="utf-8")
+    (root / "test" / "set.test.js").write_text(
+        "const { App } = require('../lib/app');\n"
+        "test('set', () => { new App().set(2); });\n", encoding="utf-8")
+    for args in (("init", "-q"), ("config", "user.email", "t@t.t"), ("config", "user.name", "t"),
+                 ("add", "-A"), ("commit", "-qm", "base")):
+        _git(root, *args)
+    _tocar(root, "lib/app.js", "return v;", "return v + 1;")
+
+    grafo = lenguajes.analyze(str(root))
+    assert any(d.endswith(".set") for _, d, tipo in grafo["edges"] if tipo == "CALLS")
+    report = impacted.analyze(str(root), worktree=True, grafo=grafo)
+    assert report["todo"] is True, report["motivo"]

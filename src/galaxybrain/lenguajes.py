@@ -85,10 +85,11 @@ _JS_IMPORTS = (
 #: sobre express el 24-sep-2026: `app.use = function use(...)`, `res.send = ...`
 #: y compañía (52 en lib/) no eran simbolos, y gb no veia ni un metodo de la
 #: libreria ni quien los llama. El nombre es la PROPIEDAD (`use`), no la funcion.
+#: Son `method`: pertenecen a un objeto, y la seleccion los trata como tales.
 _JS_PROPIEDADES = (
-    ("function", "$OBJ.$NAME = function $F($$$) { $$$ }"),
-    ("function", "$OBJ.$NAME = function ($$$) { $$$ }"),
-    ("function", "$OBJ.$NAME = ($$$) => { $$$ }"),
+    ("method", "$OBJ.$NAME = function $F($$$) { $$$ }"),
+    ("method", "$OBJ.$NAME = function ($$$) { $$$ }"),
+    ("method", "$OBJ.$NAME = ($$$) => { $$$ }"),
 )
 
 
@@ -109,6 +110,9 @@ _JS_CARENCIAS = (
     "los generadores de clase (`*gen() {}`) y los metodos con nombre calculado "
     "(`[clave]() {}`) no son simbolos; tampoco las asignaciones dinamicas "
     "(`app[metodo] = function`), que no tienen nombre escrito",
+    "de las llamadas a metodo se resuelve `this.x()` por ambito (la clase, o el "
+    "objeto al que se asigno la funcion); `obj.x()` y `new C().x()` no, porque "
+    "exigen seguir la variable — por eso tocar un metodo corre todos los tests",
 )
 
 #: `$FN($$$)` casa cualquier invocación; decidir cuáles se pueden resolver es
@@ -1182,6 +1186,7 @@ def analyze(root):
     definidos = {}          # nombre pelado -> [qual, ...]
     por_modulo = {}         # qual -> modulo que lo define (para llamadas cualificadas)
     lengua_de = {}          # qual -> lenguaje del fichero que lo define
+    dueno_de = {}           # qual -> objeto al que se asigno (`app` en `app.use = ...`)
     vistos = set()
     for lang in presentes:
         cfg = LENGUAJES[lang]
@@ -1209,6 +1214,10 @@ def analyze(root):
                     "file": rel, "line": linea, "end": _fin(m), "sig": "",
                     "test": de_test.get(rel, False),
                 })
+                if _meta(m, "OBJ"):
+                    # `app.handle = function`: el objeto al que se asigna, para
+                    # resolver `this.set()` dentro contra `app.set` (ver abajo).
+                    dueno_de[qual] = _meta(m, "OBJ").strip()
                 informe["edges"].append([modulo, qual, "DEFINES"])
                 definidos.setdefault(nombre, []).append(qual)
                 por_modulo[qual] = modulo
@@ -1253,6 +1262,37 @@ def analyze(root):
     def _envuelve(rel, linea, modulo):
         dentro = [t for t in tramos.get(rel, []) if t[0] <= linea <= t[1]]
         return min(dentro, key=lambda t: t[1] - t[0])[2] if dentro else modulo
+
+    por_fichero_nodos = {}
+    for n in informe["nodes"]:
+        if n["kind"] != "module" and n.get("end"):
+            por_fichero_nodos.setdefault(n["file"], []).append(n)
+
+    def _this_metodo(rel, linea, nombre):
+        """A quien apunta `this.nombre()` en JS/TS, por AMBITO LEXICO — un hecho,
+        no una inferencia de tipos. Dentro de un metodo de clase: el metodo
+        `nombre` de ESA clase (mismo fichero, dentro de su tramo). Dentro de
+        `app.handle = function`: la propiedad `nombre` asignada al mismo `app`
+        en el mismo modulo (el patron de express). Si no, nada: se cuenta."""
+        propios = por_fichero_nodos.get(rel, [])
+        envolventes = sorted((n for n in propios if n["line"] <= linea <= n["end"]),
+                             key=lambda n: n["end"] - n["line"])
+        for n in envolventes:
+            if n["qual"] in dueno_de:
+                obj, mod = dueno_de[n["qual"]], por_modulo.get(n["qual"])
+                return [q for q, o in dueno_de.items() if o == obj
+                        and por_modulo.get(q) == mod and q.rsplit(".", 1)[-1] == nombre]
+            if n["kind"] == "method":
+                clases = [c for c in propios if c["kind"] == "class"
+                          and c["line"] <= n["line"] <= c["end"]]
+                if not clases:
+                    return []
+                c = min(clases, key=lambda c: c["end"] - c["line"])
+                return [x["qual"] for x in propios if x["kind"] == "method"
+                        and x["qual"] not in dueno_de
+                        and x["qual"].rsplit(".", 1)[-1] == nombre
+                        and c["line"] <= x["line"] <= c["end"]]
+        return []
 
     sin_resolver = {}
     for lang in presentes:
@@ -1309,6 +1349,17 @@ def analyze(root):
                 informe["calls_builtin"] += 1
                 continue
             informe["calls_candidates"] += 1
+            if (lang in ("js", "ts", "tsx") and llamado.startswith("this.")
+                    and llamado.count(".") == 1):
+                rel = os.path.relpath(fichero, root)
+                candidatos = sorted(set(_this_metodo(rel, _linea(m), llamado[5:])))
+                if len(candidatos) != 1:
+                    sin_resolver["this-sin-dueno"] = sin_resolver.get("this-sin-dueno", 0) + 1
+                    continue
+                informe["calls_resolved"] += 1
+                origen = _envuelve(rel, _linea(m), entrada[0])
+                informe["edges"].append([origen, candidatos[0], "CALLS"])
+                continue
             if not llamado.isidentifier():
                 # Llamada CUALIFICADA (`paquete.Funcion()`): en Go, Java, C#,
                 # Kotlin y Scala es la forma normal de llamar a otro modulo, asi

@@ -592,9 +592,19 @@ def analyze(root, rev_range=None, staged=False, worktree=False, skip=None,
     # a esos dejaria fuera los del metodo: falso verde. Se abrio el 24-sep-2026
     # al hacer simbolos los metodos de JS/TS — antes sus lineas caian en la
     # clase, que si tenia llamantes.
-    ciegos = sorted(q for q in semillas
-                    if (nodes.get(q) or {}).get("kind") == "method"
-                    and not llamantes.get(q) and not _es_test(q, nodes.get(q, {}), nodes))
+    #
+    # Fuera de Python, ni con llamantes: el grafo de JS/TS ve `this.set()` pero
+    # no `app.set()` ni `new App().set()`, asi que sus llamantes son PARCIALES y
+    # estrechar a ellos pierde a los que llaman por el objeto. Hasta que
+    # `obj.metodo()` se resuelva, tocar un metodo ahi corre todo; las funciones
+    # sueltas, que es lo que mide el banco, siguen estrechando.
+    def _ciego(q):
+        n = nodes.get(q) or {}
+        if n.get("kind") != "method" or _es_test(q, n, nodes):
+            return False
+        return not llamantes.get(q) or not (n.get("file") or "").endswith(".py")
+
+    ciegos = sorted(q for q in semillas if _ciego(q))
     if ciegos:
         return correr_todo(
             t("%s: metodo sin llamantes en el grafo (llamada que no se ve): todo")
