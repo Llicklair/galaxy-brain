@@ -818,12 +818,35 @@ def scaffold(root):
             hechos.append({"path": "core.hooksPath", "action": "ya-enganchado"})
         elif actual:
             hechos.append({"path": "core.hooksPath", "action": "respetado: %s" % actual})
+        elif _hooks_propios(root, graph_mod):
+            # Enganchar `.githooks` APAGA en silencio lo que ya vive en
+            # .git/hooks (auditoria del 24-sep-2026): se respeta y se dice.
+            hechos.append({
+                "path": "core.hooksPath",
+                "action": "respetado: ya hay hooks en .git/hooks (%s); "
+                          "enganchar .githooks los apagaria — combinalos a mano"
+                          % ", ".join(_hooks_propios(root, graph_mod)),
+            })
         elif graph_mod._git(root, "config", "core.hooksPath", ".githooks") is not None:
             hechos.append({"path": "core.hooksPath", "action": "enganchado"})
         else:
             hechos.append({"path": "core.hooksPath", "action": "no-pude"})
 
     return hechos
+
+
+def _hooks_propios(root, graph_mod):
+    """Los hooks activos de `.git/hooks` (los `.sample` no cuentan)."""
+    ruta = (graph_mod._git(root, "rev-parse", "--git-path", "hooks") or "").strip()
+    if not ruta:
+        return []
+    ruta = ruta if os.path.isabs(ruta) else os.path.join(root, ruta)
+    try:
+        nombres = os.listdir(ruta)
+    except OSError:
+        return []
+    return sorted(n for n in nombres
+                  if not n.endswith(".sample") and os.path.isfile(os.path.join(ruta, n)))
 
 
 def pending_sections(root):

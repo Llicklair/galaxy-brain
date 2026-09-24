@@ -146,6 +146,19 @@ def test_init_engancha_el_precommit_solo(tmp_path):
     assert hechos["core.hooksPath"] == "ya-enganchado"
 
 
+def test_init_no_apaga_los_hooks_de_git_hooks(tmp_path):
+    """Auditoria del 24-sep-2026: con un pre-commit propio en .git/hooks,
+    `--init` enganchaba .githooks y el viejo dejaba de correr sin aviso."""
+    root = _repo(tmp_path)
+    with open(os.path.join(root, ".git", "hooks", "pre-commit"), "w") as fh:
+        fh.write("#!/bin/sh\nexit 0\n")
+    hechos = {h["path"]: h["action"] for h in floor.scaffold(root)}
+    assert hechos["core.hooksPath"].startswith("respetado: ya hay hooks en .git/hooks (pre-commit)")
+    salida = subprocess.run(["git", "config", "core.hooksPath"], cwd=root,
+                            capture_output=True, text=True)
+    assert salida.stdout.strip() == ""
+
+
 def test_init_respeta_un_hookspath_ajeno(tmp_path):
     """Nunca pisar: si el proyecto ya enruta sus hooks a otro sitio, gb no se
     lo roba — lo dice, y la pista manual queda solo para este caso."""
