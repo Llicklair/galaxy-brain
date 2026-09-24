@@ -108,8 +108,7 @@ def analyze(informe, aristas_imports=None):
             "entry points externos (scripts de pyproject, cron, CI): invisibles "
             "para un grafo estatico",
             "imports perezosos (dentro de una funcion): no dejan arista de "
-            "import — un modulo que solo se importa asi sale como huerfano "
-            "(medido en este repo: actividad, autoinstall)",
+            "import — un modulo que solo se importa asi sale como huerfano",
         ],
     }
     if informe.get("root_error"):

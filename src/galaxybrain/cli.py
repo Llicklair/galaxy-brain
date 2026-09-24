@@ -1852,7 +1852,11 @@ def cmd_dead(args):
     # El grafo de imports pone el "nadie lo importa"; sin el, la parte de
     # modulos se declara no cubierta en vez de adivinarse.
     try:
-        _nodos, aristas_imports, _err = graph.build_graph(root, graph.DEFAULT_SKIP)
+        # Con el MISMO constructor que `graph`: el de Python solo leia .py y,
+        # en express, `application`/`request`/`response` (cargados con
+        # `require`) salian como modulos huerfanos (auditoria del 24-sep-2026).
+        _nodos, aristas_imports, _err = (_constructor_de_grafo(root) or graph.build_graph)(
+            root, graph.DEFAULT_SKIP, False, set())
     except Exception:
         aristas_imports = None
     report = huerfanos.analyze(informe, aristas_imports)

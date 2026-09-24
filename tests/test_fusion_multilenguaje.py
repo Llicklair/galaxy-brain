@@ -243,3 +243,21 @@ def test_check_calcula_la_onda_de_un_cambio_en_typescript(tmp_path):
                              informe_simbolos=cli._analiza_simbolos(root))
     assert any("fetchUsers" in (o.get("symbol") or o.get("qual") or str(o)) for o in report["onda"]), \
         report["onda"]
+
+
+@necesita_astgrep
+def test_dead_no_da_por_huerfano_un_modulo_js_importado(tmp_path, capsys):
+    """Auditoria del 24-sep-2026: `dead` sacaba el "nadie lo importa" del grafo
+    de Python, asi que en express `application`/`request`/`response` (cargados
+    con `require`) salian como modulos huerfanos."""
+    import json
+
+    root = str(tmp_path / "js")
+    # como `application` en express: se carga con require y se mezcla, sin una
+    # sola llamada resuelta que la salve por otra via
+    _escribe(root, "app.js", "const util = require('./util');\nObject.assign(exports, util);\n")
+    _escribe(root, "util.js", "function ayuda() { return 1; }\nmodule.exports = { ayuda };\n")
+    cli.main(["dead", root, "--json"])
+    informe = json.loads(capsys.readouterr().out)
+    assert "util" not in [m.get("module") or m.get("qual") or m for m in informe["modulos_huerfanos"]], \
+        informe["modulos_huerfanos"]
