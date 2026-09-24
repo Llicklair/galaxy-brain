@@ -409,10 +409,22 @@ LENGUAJES = {
         carencias=(MISMO_PAQUETE % "Java",),
     ),
     "kotlin": _lang(
+        # Por KIND, como Java. Los patrones (`fun $NAME($$$) { $$$ }`) solo
+        # cazaban la forma de bloque sin nada delante: en colormath (banco de
+        # repos reales, 24-sep-2026) quedaban fuera los cuerpos de expresion
+        # (`fun f() = ...`), las funciones de extension (`fun Color.toSRGB()`),
+        # `override`/`private`/genericos, y todo `data class`, `sealed class`,
+        # `object` e `interface` — 10 185 lineas daban 191 simbolos. La
+        # gramatica de kotlin no tiene campos (`name`/`body`), asi que el nombre
+        # es el hijo DIRECTO de su kind y el cuerpo, un `function_body`.
         "kotlin", (".kt", ".kts"),
-        (("function", "fun $NAME($$$): $RET { $$$ }"),
-         ("function", "fun $NAME($$$) { $$$ }"),
-         ("class", "class $NAME { $$$ }")),
+        (("function", _Regla({"all": [{"kind": "function_declaration"},
+                                      {"has": {"kind": "simple_identifier", "pattern": "$NAME"}},
+                                      {"has": {"kind": "function_body"}}]})),
+         ("class", _Regla({"all": [{"kind": "class_declaration"},
+                                   {"has": {"kind": "type_identifier", "pattern": "$NAME"}}]})),
+         ("class", _Regla({"all": [{"kind": "object_declaration"},
+                                   {"has": {"kind": "type_identifier", "pattern": "$NAME"}}]}))),
         ("import $SRC",),
         llamada=("$FN($$$)", "$A.$FN($$$)"),
         resolucion="paquete",
@@ -1411,6 +1423,62 @@ def _java_interno(partes, modulos):
     return hijos[0] if len(hijos) == 1 else None
 
 
+#: Una declaracion de NIVEL SUPERIOR de Kotlin: en columna 0, con sus
+#: modificadores/anotaciones delante y, si es de extension, su receptor
+#: (`fun Color.toSRGB()`, `val <T> List<T>.x`). Lo que va sangrado no es de
+#: nivel superior y no se importa por el nombre del paquete.
+_KT_DECLARACION = re.compile(
+    r"^(?:[@\w][\w.@()\",= ]*\s)?(?:fun|val|var|class|interface|object|typealias)\s+"
+    r"(?:<[^>\n]*>\s*)?(?:[\w.<>?,* ]+\.)?`?(\w+)`?", re.M)
+_KT_DECLARA = {}            # ruta -> (mtime_ns, {nombres de nivel superior})
+
+
+def _kotlin_declara(modulo, nombre, raiz):
+    """¿El fichero del modulo declara `nombre` en su nivel superior?"""
+    base = modulo.split(".")
+    for pre in ((), ("src",)):
+        for ext in (".kt", ".kts"):
+            ruta = os.path.join(raiz, *pre, *base) + ext
+            try:
+                mt = os.stat(ruta).st_mtime_ns
+            except OSError:
+                continue
+            memo = _KT_DECLARA.get(ruta)
+            if memo is None or memo[0] != mt:
+                with open(ruta, encoding="utf-8", errors="replace") as f:
+                    memo = (mt, set(_KT_DECLARACION.findall(f.read())))
+                _KT_DECLARA[ruta] = memo
+            return nombre in memo[1]
+    return False
+
+
+def _kotlin_interno(partes, raiz, modulos):
+    """El modulo al que apunta un import de Kotlin, o None si es externo.
+
+    Como en Java el import es un nombre CUALIFICADO entero, y los atajos de
+    `_resuelve` inventaban lo mismo: `android.graphics.Color` y
+    `androidx.compose.ui.graphics.Color` caian en el `Color.kt` propio, y
+    `org.jetbrains.skia.ColorSpace` en `ColorSpace.kt` (colormath, banco de
+    repos reales, 24-sep-2026). Pero Kotlin importa ademas lo que Java no:
+    funciones, propiedades y objetos de NIVEL SUPERIOR, en un fichero cuyo nombre
+    no dice nada (`import ...internal.doCreate` vive en `ColorSpaceUtils.kt`;
+    `import ...model.LABColorSpaces.LAB50`, en `LAB.kt`). Si el nombre entero no
+    es un fichero, se busca en el paquete el fichero que DECLARA ese nombre, y
+    solo vale si es exactamente uno.
+    """
+    hit = _java_interno(partes, modulos)
+    if hit:
+        return hit
+    for fin in range(len(partes), 1, -1):
+        paquete, nombre = partes[:fin - 1], partes[fin - 1]
+        n = len(paquete)
+        candidatos = [m for m in modulos if m.split(".")[-n - 1:-1] == paquete]
+        declaran = [m for m in candidatos if _kotlin_declara(m, nombre, raiz)]
+        if declaran:
+            return declaran[0] if len(declaran) == 1 else None
+    return None
+
+
 def _resuelve(especificador, fichero, raiz, modulos, modo):
     """El módulo interno al que apunta un import, o None si es externo.
 
@@ -1493,6 +1561,8 @@ def _resuelve(especificador, fichero, raiz, modulos, modo):
             return None
         if fichero.endswith(".java"):
             return _java_interno(partes, modulos)
+        if fichero.endswith((".kt", ".kts")):
+            return _kotlin_interno([p.strip("`") for p in partes], raiz, modulos)
         for i in range(len(partes)):
             cand = ".".join(partes[i:])
             if cand in modulos:
