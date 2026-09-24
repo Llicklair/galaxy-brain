@@ -570,8 +570,16 @@ def render_graph(report, style, brief=False):
             BOLD,
         )
     )
-    if report.get("errors"):
-        lines.append(style("  %d fichero(s) no parsearon (ver --json)" % len(report["errors"]), DIM))
+    errores = dict(report.get("errors") or {})
+    # La clave vacia no es un fichero: es el motor entero que no corrio (sin
+    # ast-grep). Contarla como "1 fichero no parseo" escondia la causa real en
+    # el CI, donde el gate salia 1 sin decir por que (24-sep-2026).
+    del_motor = errores.pop("", None)
+    if del_motor:
+        lines.append(style("  motor multilenguaje sin correr: %s — lo que no es Python "
+                           "queda sin examinar" % del_motor, YELLOW))
+    if errores:
+        lines.append(style("  %d fichero(s) no parsearon (ver --json)" % len(errores), DIM))
     # Decir SIEMPRE lo que se dejo fuera: reducir cobertura en silencio convierte
     # un "sin ciclos" en una mentira comoda.
     skipped = report.get("skipped_nested") or []
