@@ -1493,6 +1493,35 @@ def _firma_de(texto, nombre):
     return ""
 
 
+_IMPL_RUST = re.compile(
+    r"^[ \t]*(?:unsafe\s+)?impl(?:\s*<[^{]*?>)?\s+(?:([\w:]+)(?:\s*<[^{]*?>)?\s+for\s+)?([\w:]+)[^{\n]*\{",
+    re.M)
+
+
+def _impls_rust(texto):
+    """[(linea_ini, linea_fin, tipo, trait o None)] de los bloques `impl` de un
+    fichero Rust. El `impl` no es un nodo de clase: sin esto los metodos de
+    `impl X {}` no tenian dueño y `impl Trait for X` no era herencia."""
+    bloques = []
+    for m in _IMPL_RUST.finditer(texto):
+        nivel, fin = 0, None
+        for k in range(m.end() - 1, len(texto)):
+            c = texto[k]
+            if c == "{":
+                nivel += 1
+            elif c == "}":
+                nivel -= 1
+                if nivel == 0:
+                    fin = k
+                    break
+        if fin is None:
+            continue
+        trait = m.group(1).split("::")[-1] if m.group(1) else None
+        bloques.append((texto.count("\n", 0, m.start()) + 1, texto.count("\n", 0, fin) + 1,
+                        m.group(2).split("::")[-1], trait))
+    return bloques
+
+
 _CLAVES_HERENCIA = ("extends", "implements", "with", "where")
 
 
@@ -1524,7 +1553,58 @@ def _bases_de(cabecera, lang):
     return [n for n in re.findall(r"[A-Za-z_][\w.$]*", cola) if n not in _CLAVES_HERENCIA]
 
 
-def _dueno_y_herencia(informe, cabeceras, definidos, por_modulo, lengua_de):
+def _impl_rust(root, nodos, definidos, es_clase, por_modulo, lengua_de, informe):
+    """Dueño de los metodos de `impl X {}` y EXTENDS de `impl Trait for X`.
+
+    El tipo y el trait se resuelven como cualquier base: una sola clase
+    (struct/enum/trait) de la familia con ese nombre, la del propio modulo
+    primero. Un trait de fuera (`impl Display for X`) no inventa nada: se
+    cuenta. Devuelve cuantos no se resolvieron."""
+    def resuelve(nombre, junto_a):
+        candidatos = _misma_familia([q for q in definidos.get(nombre, ()) if q in es_clase],
+                                    "rust", lengua_de)
+        propios = [q for q in candidatos if por_modulo.get(q) == por_modulo.get(junto_a)]
+        if len(propios) == 1:
+            return propios[0]
+        return candidatos[0] if len(candidatos) == 1 else None
+
+    sin = 0
+    por_fichero = {}
+    for n in nodos:
+        if (n.get("file") or "").endswith(".rs"):
+            por_fichero.setdefault(n["file"], []).append(n)
+    for rel, propios in por_fichero.items():
+        try:
+            with open(os.path.join(root, rel), encoding="utf-8", errors="replace") as fh:
+                bloques = _impls_rust(fh.read())
+        except OSError:
+            continue
+        if not bloques:
+            continue
+        referencia = propios[0]["qual"]
+        for n in propios:
+            if n["kind"] not in ("function", "method") or n.get("owner"):
+                continue
+            dentro = [b for b in bloques if b[0] <= n["line"] <= b[1]]
+            if not dentro:
+                continue
+            dueno = resuelve(min(dentro, key=lambda b: b[1] - b[0])[2], n["qual"])
+            if dueno:
+                n["owner"], n["kind"] = dueno, "method"
+        for _ini, _fin, tipo, trait in bloques:
+            if not trait:
+                continue
+            sub, base = resuelve(tipo, referencia), resuelve(trait, referencia)
+            if sub and base and sub != base:
+                arista = [sub, base, "EXTENDS"]
+                if arista not in informe["edges"]:
+                    informe["edges"].append(arista)
+            else:
+                sin += 1
+    return sin
+
+
+def _dueno_y_herencia(root, informe, cabeceras, definidos, por_modulo, lengua_de):
     """`owner` de cada metodo y aristas EXTENDS, con los hechos del arbol.
 
     Solo Python los tenia, y con ellos la seleccion sube de un metodo de la
@@ -1551,7 +1631,7 @@ def _dueno_y_herencia(informe, cabeceras, definidos, por_modulo, lengua_de):
             # En Kotlin, Swift, Scala o Ruby la regla es `fun`/`func`/`def` sin
             # distinguir: dentro de una clase ES un metodo (como en Python).
             n["kind"] = "method"
-    sin = 0
+    sin = _impl_rust(root, nodos, definidos, es_clase, por_modulo, lengua_de, informe)
     for qual, cabecera in cabeceras.items():
         lang = lengua_de.get(qual)
         for escrita in _bases_de(cabecera, lang):
@@ -2482,7 +2562,7 @@ def analyze(root):
                 if kind == "class" and qual not in cabeceras:
                     cabeceras[qual] = (m.get("text") or "")[:800]
 
-    _dueno_y_herencia(informe, cabeceras, definidos, por_modulo, lengua_de)
+    _dueno_y_herencia(root, informe, cabeceras, definidos, por_modulo, lengua_de)
 
     # --- imports ---
     # Un import solo resuelve contra modulos de SU familia de lenguajes: `use

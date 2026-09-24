@@ -79,3 +79,22 @@ def test_una_base_cualificada_no_elige_la_homonima_local(tmp_path):
     informe = lenguajes.analyze(raiz)
     extends = [(o, d) for o, d, t in informe["edges"] if t == "EXTENDS"]
     assert not any(d.endswith("uri_spec.URI") for _o, d in extends), extends
+
+
+def test_rust_impl_da_dueno_y_el_trait_es_herencia(tmp_path):
+    """El `impl` no es un nodo de clase: sin tratarlo, los metodos de `impl X {}`
+    no tenian dueño y `impl Trait for X` no era herencia. Un trait de fuera
+    (`Display`) no inventa arista."""
+    informe = _informe(tmp_path, "a.rs",
+                       "pub trait Forma {\n    fn area(&self) -> f64;\n}\n"
+                       "pub struct Cuadrado { l: f64 }\n"
+                       "impl Cuadrado {\n    pub fn nuevo(l: f64) -> Self { Cuadrado { l } }\n}\n"
+                       "impl Forma for Cuadrado {\n    fn area(&self) -> f64 { self.l * self.l }\n}\n"
+                       "impl std::fmt::Display for Cuadrado {\n"
+                       "    fn fmt(&self, f: &mut Formatter) -> Result { Ok(()) }\n}\n"
+                       "fn suelta() {}\n")
+    duenos = {n["qual"]: n.get("owner") for n in informe["nodes"] if n["kind"] in ("method", "function")}
+    assert duenos == {"a.nuevo": "a.Cuadrado", "a.area": "a.Cuadrado", "a.fmt": "a.Cuadrado",
+                      "a.suelta": None}, duenos
+    extends = {(o, d) for o, d, t in informe["edges"] if t == "EXTENDS"}
+    assert extends == {("a.Cuadrado", "a.Forma")}, extends
