@@ -27,6 +27,7 @@ declara**; no se adivina.
 import copy
 import json
 import os
+import re
 import shutil
 import subprocess
 
@@ -992,6 +993,32 @@ def _misma_familia(candidatos, lang, lengua_de):
     return [q for q in candidatos if _familia(lengua_de.get(q, lang)) == mia]
 
 
+_GO_MOD = {}
+
+
+def _go_modulo(fichero, raiz):
+    """El `module` del go.mod que gobierna `fichero` (subiendo hasta `raiz`), o
+    None si no hay: entonces se resuelve como siempre."""
+    carpeta = os.path.dirname(os.path.abspath(fichero))
+    tope = os.path.abspath(raiz)
+    while True:
+        if carpeta in _GO_MOD:
+            return _GO_MOD[carpeta]
+        gomod = os.path.join(carpeta, "go.mod")
+        if os.path.isfile(gomod):
+            try:
+                with open(gomod, encoding="utf-8", errors="replace") as fh:
+                    m = re.search(r"^module\s+(\S+)", fh.read(), re.M)
+            except OSError:
+                m = None
+            _GO_MOD[carpeta] = m.group(1).strip('"') if m else None
+            return _GO_MOD[carpeta]
+        padre = os.path.dirname(carpeta)
+        if carpeta == tope or padre == carpeta:
+            return None
+        carpeta = padre
+
+
 def _rust_interno(primero, modulos):
     """¿El primer segmento de un `use` de Rust nombra algo de ESTE crate?
 
@@ -1038,6 +1065,21 @@ def _resuelve(especificador, fichero, raiz, modulos, modo):
         # los modulos reales. Sin coincidencia, no hay arista.
         limpio = especificador.strip('"\'').replace("::", ".").replace("/", ".")
         partes = [p for p in limpio.split(".") if p]
+        if fichero.endswith(".go"):
+            # Go tiene la regla EXACTA en go.mod: es interno lo que empieza por
+            # el `module` declarado; lo demas es stdlib o de terceros. Sin esto,
+            # `import "time"` y `"database/sql/driver"` casaban con `time.go` y
+            # `sql.go` del propio paquete — en google/uuid las 6 aristas del
+            # grafo eran inventadas (banco de repos reales, 24-sep-2026).
+            modulo_go = _go_modulo(fichero, raiz)
+            if modulo_go is not None:
+                ruta_imp = especificador.strip('"\'`')
+                if ruta_imp != modulo_go and not ruta_imp.startswith(modulo_go + "/"):
+                    return None
+                resto = ruta_imp[len(modulo_go):].strip("/")
+                if not resto:
+                    return None
+                partes = [p for p in resto.replace("/", ".").split(".") if p]
         if fichero.endswith(".rs") and partes and not _rust_interno(partes[0], modulos):
             # En Rust el PRIMER segmento decide: `crate`/`self`/`super` o un
             # modulo del propio crate es interno; cualquier otro es un crate
