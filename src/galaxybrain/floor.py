@@ -107,30 +107,49 @@ def _dotnet(root):
     return None
 
 
+def detect_test_commands(root):
+    """Todos los comandos de tests declarados, uno por ecosistema, en orden de
+    preferencia: [(comando, fuente), ...].
+
+    Un repo mixto tiene mas de una suite: tach (Rust + Python) declara `cargo
+    test` y pytest, y quedarse con el primero escondia la de Python — medido
+    comparando el suelo de repos parecidos el 24-sep-2026. `make test` solo
+    entra si no hay nada mas: suele envolver a los otros.
+    """
+    encontrados = []
+    if _exists(root, "package.json"):
+        content = _read(root, "package.json")
+        if re.search(r'"scripts"\s*:\s*\{[^}]*"test"\s*:', content, re.DOTALL):
+            encontrados.append(("npm test", "package.json"))
+    for fichero, comando in TOOLCHAINS:
+        if _exists(root, fichero):
+            encontrados.append((comando, fichero))
+            break
+    proyecto = _dotnet(root)
+    if proyecto:
+        encontrados.append(("dotnet test", proyecto))
+    if "[tool.pytest" in _read(root, "pyproject.toml"):
+        encontrados.append(("pytest -q", "pyproject.toml"))
+    else:
+        for name in ("pytest.ini", "tox.ini", "setup.cfg"):
+            if "pytest" in _read(root, name):
+                encontrados.append(("pytest -q", name))
+                break
+    if (not encontrados and _exists(root, "Makefile")
+            and re.search(r"^test:", _read(root, "Makefile"), re.MULTILINE)):
+        encontrados.append(("make test", "Makefile"))
+    return encontrados
+
+
 def detect_test_command(root):
     """El comando de tests del proyecto, leido de su configuracion.
 
     Devuelve (comando, fuente) o (None, None). Se detecta, nunca se asume: un repo
     Go no corre pytest, y cablear un comando seria un bug (hard rule 6).
     """
-    if _exists(root, "package.json"):
-        content = _read(root, "package.json")
-        if re.search(r'"scripts"\s*:\s*\{[^}]*"test"\s*:', content, re.DOTALL):
-            return "npm test", "package.json"
-    for fichero, comando in TOOLCHAINS:
-        if _exists(root, fichero):
-            return comando, fichero
-    proyecto = _dotnet(root)
-    if proyecto:
-        return "dotnet test", proyecto
-    pyproject = _read(root, "pyproject.toml")
-    if "[tool.pytest" in pyproject:
-        return "pytest -q", "pyproject.toml"
-    for name in ("pytest.ini", "tox.ini", "setup.cfg"):
-        if "pytest" in _read(root, name):
-            return "pytest -q", name
-    if _exists(root, "Makefile") and re.search(r"^test:", _read(root, "Makefile"), re.MULTILINE):
-        return "make test", "Makefile"
+    encontrados = detect_test_commands(root)
+    if encontrados:
+        return encontrados[0]
     # Ultimo recurso honesto: hay carpeta de tests pero nada que diga como correrlos.
     for folder in ("tests", "test", "spec"):
         if os.path.isdir(os.path.join(root, folder)):
@@ -187,6 +206,58 @@ def detect_gates(root):
                     found[kind] = "pyproject.toml/setup.cfg (%s)" % marker.strip("[")
                     break
     return found
+
+
+#: Invariantes escritos con OTRA herramienta: cuentan igual (regla 7, se delega
+#: por referencia). Medido el 24-sep-2026: el suelo de import-linter y de tach
+#: decia "falta" con sus contratos declarados delante. (fichero, marcador, quien).
+INVARIANTES_EXTERNOS = (
+    (".importlinter", None, "import-linter"),
+    ("setup.cfg", "[importlinter", "import-linter"),
+    ("pyproject.toml", "[tool.importlinter", "import-linter"),
+    ("tach.toml", None, "tach"),
+)
+
+
+def detect_invariantes_externos(root):
+    """[(fichero, herramienta)] de los contratos de arquitectura ajenos a gb."""
+    hallados = []
+    for fichero, marcador, quien in INVARIANTES_EXTERNOS:
+        if not _exists(root, fichero):
+            continue
+        if marcador is None or marcador in _read(root, fichero):
+            if all(q != quien for _f, q in hallados):
+                hallados.append((fichero, quien))
+    return hallados
+
+
+def inventario_boundaries(root, max_depth=2):
+    """Todos los `.gb-boundaries` hasta `max_depth`: [(ruta, reglas, aristas)].
+
+    `detect_boundaries` da el que MANDA desde `root` (la raiz gana), que es lo
+    que carga la gate analizando desde ahi. Pero el suelo pregunta otra cosa —si
+    los invariantes estan escritos— y un repo puede tener en la raiz solo aristas
+    declaradas y las prohibiciones en `src/`, donde las carga `gb graph src`.
+    Medido sobre el propio gb el 24-sep-2026: decia "sin .gb-boundaries" con dos.
+    """
+    from . import graph
+
+    hallados = []
+    for actual, dirs, files in os.walk(root):
+        rel = os.path.relpath(actual, root)
+        depth = 0 if rel == "." else rel.count(os.sep) + 1
+        if depth >= max_depth:
+            dirs[:] = []
+        dirs[:] = sorted(d for d in dirs if d not in graph.DEFAULT_SKIP and not d.startswith("."))
+        if graph.BOUNDARIES_FILE in files:
+            path = os.path.join(actual, graph.BOUNDARIES_FILE)
+            info = graph.load_boundaries(root, path)
+            hallados.append((
+                os.path.relpath(path, root).replace("\\", "/"),
+                len(info["rules"]),
+                len(info["declared_edges"]),
+            ))
+    return hallados
 
 
 def detect_boundaries(root, max_depth=2):
@@ -834,6 +905,11 @@ def analyze(root, run_tests=False, constructor=None):
             "cuanto tarda el ciclo de feedback: detectar el comando no dice si es rapido, "
             "y es justo lo que mide el nivel 1 (--time lo cronometra)"
         )
+    otras = detect_test_commands(root)[1:]
+    if command is not None and otras:
+        report["levels"][-1]["detail"] += " · tambien: " + ", ".join(
+            "`%s` (%s)" % par for par in otras
+        )
 
     # 2 — gates deterministas.
     gates = detect_gates(root)
@@ -886,14 +962,37 @@ def analyze(root, run_tests=False, constructor=None):
         )
 
     # 4 — invariantes escritos.
-    bounds_path, rules = detect_boundaries(root)
-    report["levels"].append(
-        _level("invariantes", "Los invariantes escritos", "ok" if rules else "falta",
-               "%d regla(s) en %s" % (rules, bounds_path) if rules
-               else "sin .gb-boundaries: las reglas que no estan escritas se rompen, "
-                    "y quien las rompe no se entera",
-               source=bounds_path)
-    )
+    bounds_path, _rules = detect_boundaries(root)
+    ficheros = inventario_boundaries(root)
+    con_reglas = [(ruta, n) for ruta, n, _aristas in ficheros if n]
+    externos = detect_invariantes_externos(root)
+    if con_reglas or externos:
+        partes = ["%d regla(s) en %s" % (n, ruta) for ruta, n in con_reglas]
+        partes += ["contratos en %s (%s)" % par for par in externos]
+        detalle = "; ".join(partes)
+        if con_reglas and bounds_path and all(r != bounds_path for r, _n in con_reglas):
+            # La que manda desde aqui no prohibe nada: la gate las carga
+            # analizando desde la carpeta de las reglas, no desde la raiz.
+            detalle += " (desde la raiz manda %s, sin prohibiciones: la gate va con `gb graph %s`)" % (
+                bounds_path, os.path.dirname(con_reglas[0][0]) or ".")
+        nivel = _level("invariantes", "Los invariantes escritos", "ok", detalle,
+                       source=con_reglas[0][0] if con_reglas else externos[0][0])
+    elif ficheros:
+        ruta, _n, aristas = ficheros[0]
+        nivel = _level(
+            "invariantes", "Los invariantes escritos", "falta",
+            "%s existe pero no prohibe nada (%d arista(s) declarada(s) `=>`, 0 reglas "
+            "`-/->`): las fronteras que no estan escritas se rompen sin que nadie se entere"
+            % (ruta, aristas),
+            source=ruta,
+        )
+    else:
+        nivel = _level(
+            "invariantes", "Los invariantes escritos", "falta",
+            "sin .gb-boundaries: las reglas que no estan escritas se rompen, "
+            "y quien las rompe no se entera",
+        )
+    report["levels"].append(nivel)
 
     # 5 — el porque de lo decidido.
     adr_dir, adr_count = detect_adrs(root)

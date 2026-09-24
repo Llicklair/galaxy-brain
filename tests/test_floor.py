@@ -108,6 +108,56 @@ def test_encuentra_gb_boundaries_bajo_src(tmp_path):
     assert reglas == 1
 
 
+def test_raiz_solo_con_aristas_no_esconde_las_reglas_de_src(tmp_path):
+    """El propio gb, 24-sep-2026: la raiz solo declara aristas `=>`, las
+    prohibiciones viven en src/, y el suelo decia 'sin .gb-boundaries'."""
+    root = str(tmp_path)
+    _write(root, ".gb-boundaries", "tests.test_a => bucle.a\n")
+    _write(root, "src/.gb-boundaries", "app.core  -/->  app.web\n")
+
+    nivel = _nivel(floor.analyze(root), "invariantes")
+    assert nivel["status"] == "ok"
+    assert "1 regla(s) en src/.gb-boundaries" in nivel["detail"]
+    assert "sin .gb-boundaries" not in nivel["detail"]
+
+
+def test_fichero_sin_prohibiciones_no_se_llama_ausente(tmp_path):
+    root = str(tmp_path)
+    _write(root, ".gb-boundaries", "tests.test_a => bucle.a\n")
+
+    nivel = _nivel(floor.analyze(root), "invariantes")
+    assert nivel["status"] == "falta"
+    assert "existe pero no prohibe nada" in nivel["detail"]
+
+
+def test_contratos_de_import_linter_y_tach_cuentan(tmp_path):
+    """Regla 7: lo que ya declara otra herramienta no se manda a reescribir.
+    Medido sobre los clones de import-linter y tach el 24-sep-2026."""
+    linter = str(tmp_path / "linter")
+    _write(linter, ".importlinter", "[importlinter]\nroot_package = x\n")
+    assert _nivel(floor.analyze(linter), "invariantes")["status"] == "ok"
+
+    inline = str(tmp_path / "inline")
+    _write(inline, "pyproject.toml", "[tool.importlinter]\nroot_package = 'x'\n")
+    assert "import-linter" in _nivel(floor.analyze(inline), "invariantes")["detail"]
+
+    tach = str(tmp_path / "tach")
+    _write(tach, "tach.toml", "layers = ['ui', 'core']\n")
+    assert "tach" in _nivel(floor.analyze(tach), "invariantes")["detail"]
+
+
+def test_repo_mixto_declara_las_dos_suites(tmp_path):
+    """tach (Rust + Python): `cargo test` sigue siendo el principal —el contrato
+    de detect_test_command no cambia— pero la suite de pytest no se esconde."""
+    root = str(tmp_path)
+    _write(root, "Cargo.toml", "[package]\nname = 'x'\n")
+    _write(root, "pyproject.toml", "[tool.pytest.ini_options]\n")
+
+    assert floor.detect_test_command(root) == ("cargo test", "Cargo.toml")
+    nivel = _nivel(floor.analyze(root), "feedback")
+    assert "`pytest -q` (pyproject.toml)" in nivel["detail"]
+
+
 def test_sin_adr_es_parcial_no_falta(tmp_path):
     """Solo se puede afirmar que no hay ADR en las rutas convencionales. Las
     decisiones pueden vivir en otros documentos, y esto no las distingue de prosa."""
