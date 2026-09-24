@@ -85,6 +85,8 @@ _TABLA = {
     "la raiz no existe o no es un directorio: %s":
         "the root does not exist or is not a directory: %s",
     "el diff esta vacio: nada que correr": "the diff is empty: nothing to run",
+    "no pude leer el diff de '%s' (¿rango valido?)":
+        "could not read the diff of '%s' (valid range?)",
     "no se pudo leer el diff (¿sin git, o rango invalido?): todo":
         "could not read the diff (no git, or invalid range?): everything runs",
     "%s tocado: cambia la suite entera, se corre todo":

@@ -469,6 +469,14 @@ def analyze(root, rev_range=None, staged=False, worktree=False, skip=None,
         diff = changes._git_output(root, "diff", "--unified=0", "--cached")
     elif rev_range:
         diff = changes._git_output(root, "diff", "--unified=0", rev_range)
+        if diff is None:
+            # Un rango ESCRITO que git no entiende es un error de uso, como en
+            # `check` y `delta`: correr todo con exit 0 escondia la errata
+            # (auditoria del 24-sep-2026). El "ante la duda, todo" sigue para
+            # el rango por defecto, que falla legitimamente en un primer commit
+            # o un clon superficial.
+            report["range_error"] = t("no pude leer el diff de '%s' (¿rango valido?)") % rev_range
+            return report
     else:
         rev_range = "HEAD~1..HEAD"
         report["range"] = rev_range

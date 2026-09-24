@@ -374,6 +374,17 @@ def test_worktree_ve_lo_que_no_esta_en_el_indice(repo):
     assert worktree["todo"] is False
 
 
+def test_un_rango_escrito_invalido_es_error_de_uso(repo):
+    """Auditoria del 24-sep-2026: `gb tests nopeREF..HEAD` corria la suite
+    entera con exit 0 y range_error nulo; check y delta ya daban error."""
+    from galaxybrain import cli
+
+    report = impacted.analyze(str(repo), "nopeREF..HEAD")
+    assert report["range_error"]
+    assert report["tests"] == []
+    assert cli.main(["tests", "nopeREF..HEAD", str(repo), "--color", "never"]) == 1
+
+
 def test_una_raiz_que_no_existe_es_error_de_uso(tmp_path):
     report = impacted.analyze(str(tmp_path / "no-existe"))
     assert report["range_error"]
