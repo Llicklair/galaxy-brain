@@ -116,14 +116,14 @@ MECANISMOS = {
     },
     "go": {
         "via": "fallback-stderr",
-        "arranque": "envolvente: gb run <programa>",
+        "arranque": "envolvente: python gb-run.py go run <programa>",
         "env": None,
         "marca": None,
         "techo": "el tipo sale del mensaje en 6 de 9 formas de panic; un panic en hilo secundario deja exit 0 y cero registros",
     },
     "rust": {
         "via": "fallback-stderr",
-        "arranque": "envolvente: gb run <programa>",
+        "arranque": "envolvente: python gb-run.py cargo run",
         "env": None,
         "marca": None,
         "techo": "igual que go, y set_hook exigiria tocar tu codigo",

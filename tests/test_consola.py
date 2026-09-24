@@ -234,6 +234,18 @@ def test_go_y_rust_se_despliegan_con_su_envolvente(tmp_path):
         assert fichas[lang]["ruta"] in fichas[lang]["exporta"]
 
 
+def test_todo_envolvente_nombra_un_fichero_que_gb_trae():
+    """`gb status` recomendaba `gb run <programa>` para go y rust, y ese
+    subcomando no existe (24-sep-2026): la instruccion de arranque es lo unico
+    que el usuario copia, asi que tiene que nombrar el envolvente real."""
+    from galaxybrain import consola
+
+    for lang, ficha in consola.MECANISMOS.items():
+        arranque = ficha["arranque"]
+        if arranque.startswith("envolvente:"):
+            assert "gb-run.py" in arranque or "gb-run.exe" in arranque, (lang, arranque)
+
+
 def test_swift_se_empaqueta_pero_sigue_declarandose_sin_medir():
     """Que compile no es que funcione. Ponerlo en `hook-nativo` porque gb ya
     trae su fuente seria dar por verificado lo que solo está construido, y esa
