@@ -61,6 +61,114 @@ _NOMBRE_PY = re.compile(r"#\[(?:pyo3|pyclass|pyfunction)\([^\]]*\bname\s*=\s*\"(
 _FROM_IMPORT = re.compile(r"^[ \t]*from\s+([\w.]+)\s+import\s+(\([^)]*\)|[^\n#]+)", re.M)
 
 
+def _registro_pyo3(textos_rust):
+    """({modulo_py: {ident: (ruta, fichero)}}, {(modulo_py, nombre_py): (fichero_rs, ident)}).
+
+    Lo que cada `#[pymodule]` registra (`wrap_pyfunction!(f)`, `add_class::<T>`)
+    y con que nombre lo ve Python (`#[pyo3(name=..)]`/`#[pyclass(name=..)]`).
+    El registro desempata homonimos: sin ruta, la definicion del fichero del
+    pymodule (`sync_project` vive en lib.rs y en sync.rs; envuelve la de
+    lib.rs); con ruta (`config::ProjectConfig`), la del modulo que nombra.
+    Solo lee texto: lo usan el grafo de simbolos y el de modulos.
+    """
+    registrados = {}
+    for rel, t in textos_rust.items():
+        for m in _PYMODULE.finditer(t):
+            atributos, nombre = m.group(1), m.group(2)
+            cambiado = re.search(r"name\s*=\s*\"(\w+)\"", atributos)
+            cuerpo = t[m.end():t.find("\n}", m.end()) if "\n}" in t[m.end():] else len(t)]
+            destino = registrados.setdefault(cambiado.group(1) if cambiado else nombre, {})
+            for a, b in _REGISTRA.findall(cuerpo):
+                ruta = (a or b).split("::")
+                destino[ruta[-1]] = (ruta[:-1], rel)
+    if not registrados:
+        return {}, {}
+    definiciones = {}
+    for rel, t in textos_rust.items():
+        lineas = t.split("\n")
+        for i, linea in enumerate(lineas):
+            m = _DEF_RUST.match(linea)
+            if not m:
+                continue
+            cambiado = _NOMBRE_PY.search("\n".join(lineas[max(0, i - 4):i]))
+            definiciones.setdefault(m.group(1), []).append(
+                (rel, cambiado.group(1) if cambiado else m.group(1)))
+    visibles = {}
+    for modulo_py, idents in registrados.items():
+        for ident, (ruta, fichero_mod) in idents.items():
+            candidatos = definiciones.get(ident, [])
+            if len(candidatos) > 1 and not ruta:
+                candidatos = [c for c in candidatos if c[0] == fichero_mod] or candidatos
+            elif len(candidatos) > 1:
+                candidatos = [c for c in candidatos
+                              if all(p in re.split(r"[/.\\]", c[0]) for p in ruta)] or candidatos
+            if len(candidatos) == 1:
+                visibles[(modulo_py, candidatos[0][1])] = (candidatos[0][0], ident)
+    return registrados, visibles
+
+
+def _usos_pyo3(texto, registrados, visibles):
+    """([(posicion, (fichero_rs, ident))], [nombres sin destino]) de un fichero
+    Python: `from ...M import A as B` (y los usos de B) y `from ... import M`
+    + `M.x`."""
+    locales, de_modulo, sin = {}, set(), []
+    for m in _FROM_IMPORT.finditer(texto):
+        ultimo = m.group(1).rsplit(".", 1)[-1]
+        for trozo in m.group(2).strip("() \n").split(","):
+            partes = trozo.split(" as ")
+            nombre, local = partes[0].strip(), partes[-1].strip()
+            if not nombre:
+                continue
+            if ultimo in registrados:
+                destino = visibles.get((ultimo, nombre))
+                if destino:
+                    locales[local] = destino
+                else:
+                    sin.append(nombre)
+            elif nombre in registrados:
+                de_modulo.add((local, nombre))
+    usos = []
+    for local, destino in locales.items():
+        usos += [(mm.start(), destino) for mm in re.finditer(r"\b%s\b" % re.escape(local), texto)]
+    for local, modulo_py in de_modulo:
+        for mm in re.finditer(r"\b%s\.(\w+)" % re.escape(local), texto):
+            destino = visibles.get((modulo_py, mm.group(1)))
+            if destino:
+                usos.append((mm.start(), destino))
+            else:
+                sin.append(mm.group(1))
+    return usos, sin
+
+
+def _lee(ruta):
+    try:
+        with open(ruta, encoding="utf-8", errors="replace") as fh:
+            return fh.read()
+    except OSError:
+        return ""
+
+
+def modulos_pyo3(ficheros_py, ficheros_rs, nombre_py, nombre_rs):
+    """{(modulo_python, modulo_rust)}: la dependencia de MODULO que crea pyo3,
+    para el grafo de `graph` y del gate (ciclos, fronteras). Solo lee ficheros:
+    el informe de simbolos encareceria el gate."""
+    if not ficheros_py or not ficheros_rs:
+        return set()
+    registrados, visibles = _registro_pyo3({f: _lee(f) for f in ficheros_rs})
+    if not registrados:
+        return set()
+    pares = set()
+    for ruta in ficheros_py:
+        texto = _lee(ruta)
+        if not any(m in texto for m in registrados):
+            continue
+        for _pos, (rs, _ident) in _usos_pyo3(texto, registrados, visibles)[0]:
+            a, b = nombre_py(ruta), nombre_rs(rs)
+            if a and b and a != b:
+                pares.add((a, b))
+    return pares
+
+
 def enlaza_pyo3(root, informe):
     """Python -> Rust por pyo3, con los dos lados escritos (24-sep-2026).
 
@@ -81,58 +189,14 @@ def enlaza_pyo3(root, informe):
     python = [f for f in por_fichero if f.endswith(".py")]
     if not rust or not python:
         return
-    textos = {}
-    for rel in rust + python:
-        try:
-            with open(os.path.join(root, rel), encoding="utf-8", errors="replace") as fh:
-                textos[rel] = fh.read()
-        except OSError:
-            textos[rel] = ""
-
-    # Rust: que registra cada pymodule, y con que nombre lo ve Python.
-    registrados = {}                       # modulo_py -> {ident_rust}
-    for rel in rust:
-        t = textos[rel]
-        for m in _PYMODULE.finditer(t):
-            atributos, nombre = m.group(1), m.group(2)
-            cambiado = re.search(r"name\s*=\s*\"(\w+)\"", atributos)
-            cuerpo = t[m.end():t.find("\n}", m.end()) if "\n}" in t[m.end():] else len(t)]
-            destino = registrados.setdefault(cambiado.group(1) if cambiado else nombre, {})
-            for a, b in _REGISTRA.findall(cuerpo):
-                ruta = (a or b).split("::")
-                destino[ruta[-1]] = (ruta[:-1], rel)
+    registrados, visibles = _registro_pyo3({rel: _lee(os.path.join(root, rel)) for rel in rust})
     if not registrados:
         return
-    definiciones = {}                      # ident -> [(fichero, nombre_py, qual)]
-    for rel in rust:
-        lineas = textos[rel].split("\n")
-        quals = {n["qual"].rsplit(".", 1)[-1]: n["qual"] for n in por_fichero[rel]
-                 if n.get("kind") != "module"}
-        for i, linea in enumerate(lineas):
-            m = _DEF_RUST.match(linea)
-            if not m or m.group(1) not in quals:
-                continue
-            cambiado = _NOMBRE_PY.search("\n".join(lineas[max(0, i - 4):i]))
-            definiciones.setdefault(m.group(1), []).append(
-                (rel, cambiado.group(1) if cambiado else m.group(1), quals[m.group(1)]))
-    visibles = {}                          # (modulo_py, nombre_py) -> qual rust
-    for modulo_py, idents in registrados.items():
-        for ident, (ruta, fichero_mod) in idents.items():
-            candidatos = definiciones.get(ident, [])
-            # El registro dice CUAL: sin ruta, la del fichero del pymodule
-            # (`sync_project` vive en lib.rs y en sync.rs; envuelve la de lib.rs);
-            # con ruta (`config::ProjectConfig`), la del modulo que nombra.
-            if len(candidatos) > 1 and not ruta:
-                candidatos = [c for c in candidatos if c[0] == fichero_mod] or candidatos
-            elif len(candidatos) > 1:
-                candidatos = [c for c in candidatos
-                              if all(p in c[2].split(".") for p in ruta)] or candidatos
-            if len(candidatos) == 1:
-                visibles[(modulo_py, candidatos[0][1])] = candidatos[0][2]
-
+    qual_de = {(rel, n["qual"].rsplit(".", 1)[-1]): n["qual"]
+               for rel in rust for n in por_fichero[rel] if n.get("kind") != "module"}
     modulo_de = {n["qual"]: n.get("module") for n in nodos}
     aristas = {tuple(e) for e in informe.get("edges") or []}
-    sin, sin_nombres = 0, set()
+    sin_nombres = []
 
     def arista(e):
         if e not in aristas:
@@ -140,45 +204,20 @@ def enlaza_pyo3(root, informe):
             informe["edges"].append(list(e))
 
     for rel in python:
-        t = textos[rel]
+        t = _lee(os.path.join(root, rel))
         if not any(m in t for m in registrados):
             continue
         propios = por_fichero[rel]
         modulo = next((n["qual"] for n in propios if n.get("kind") == "module"), None)
         if not modulo:
             continue
-        locales = {}                      # nombre local -> qual rust
-        de_modulo = set()                 # alias locales del modulo pyo3 entero
-        for m in _FROM_IMPORT.finditer(t):
-            origen, nombres = m.group(1), m.group(2).strip("() \n")
-            ultimo = origen.rsplit(".", 1)[-1]
-            for trozo in nombres.split(","):
-                partes = trozo.split(" as ")
-                nombre = partes[0].strip()
-                local = partes[-1].strip()
-                if not nombre:
-                    continue
-                if ultimo in registrados:
-                    destino = visibles.get((ultimo, nombre))
-                    if destino:
-                        locales[local] = destino
-                    else:
-                        sin += 1
-                        sin_nombres.add(nombre)
-                elif nombre in registrados:
-                    de_modulo.add((local, nombre))
-        usos = []
-        for local, destino in locales.items():
-            usos += [(mm.start(), destino) for mm in re.finditer(r"\b%s\b" % re.escape(local), t)]
-        for local, modulo_py in de_modulo:
-            for mm in re.finditer(r"\b%s\.(\w+)" % re.escape(local), t):
-                destino = visibles.get((modulo_py, mm.group(1)))
-                if destino:
-                    usos.append((mm.start(), destino))
-                else:
-                    sin += 1
-                    sin_nombres.add(mm.group(1))
-        for pos, destino in usos:
+        usos, sin = _usos_pyo3(t, registrados, visibles)
+        sin_nombres += sin
+        for pos, (rs, ident) in usos:
+            destino = qual_de.get((rs, ident))
+            if not destino:
+                sin_nombres.append(ident)
+                continue
             linea = t.count("\n", 0, pos) + 1
             dentro = [n for n in propios if n.get("kind") != "module" and n.get("line")
                       and n.get("end") and n["line"] <= linea <= n["end"]]
@@ -187,9 +226,9 @@ def enlaza_pyo3(root, informe):
                 arista((origen, destino, "CALLS"))
             if modulo_de.get(destino):
                 arista((modulo, modulo_de[destino], "IMPORTS"))
-    if sin:
-        informe.setdefault("unresolved", {})["pyo3-sin-destino"] = sin
-        informe["pyo3_sin_destino"] = sorted(sin_nombres)
+    if sin_nombres:
+        informe.setdefault("unresolved", {})["pyo3-sin-destino"] = len(sin_nombres)
+        informe["pyo3_sin_destino"] = sorted(set(sin_nombres))
 
 
 #: Con que empieza una linea que es comentario, por extension. Solo la linea

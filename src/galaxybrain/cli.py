@@ -1253,6 +1253,19 @@ def _constructor_fusionado(raiz, *args, **kwargs):
         fusion_edges.setdefault(_q(origen), set()).update(_q(d) for d in destinos)
     fusion_errors = dict(errors or {})
     fusion_errors.update(otros_errors or {})
+    # pyo3 (Python -> Rust) tambien en el grafo de MODULOS: con el de simbolos
+    # solo, la dependencia no contaba para ciclos ni fronteras del gate
+    # (24-sep-2026). Tauri y Electron ya llegan por las IMPORTS de su motor.
+    from . import cruzadas
+
+    rust = [r for r, lang in lenguajes._ficheros(raiz) if lang == "rust"]
+    if rust:
+        python = list(graph._iter_py_files(raiz, graph.DEFAULT_SKIP))
+        for origen, destino in cruzadas.modulos_pyo3(
+                python, rust, lambda p: graph.module_name(p, raiz),
+                lambda p: _q(lenguajes.module_name(p, raiz))):
+            if origen in fusion_nodes and destino in fusion_nodes:
+                fusion_edges.setdefault(origen, set()).add(destino)
     return fusion_nodes, fusion_edges, fusion_errors
 
 

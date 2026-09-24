@@ -55,3 +55,12 @@ def test_python_llama_a_lo_que_registra_el_pymodule(tmp_path):
     assert ("pkg.cli.sincro", "sync.sync_project") not in llamadas
     importa = {(o, d) for o, d, t in informe["edges"] if t == "IMPORTS"}
     assert ("pkg.cli", "lib") in importa, importa
+
+
+def test_pyo3_entra_en_el_grafo_de_modulos(tmp_path):
+    """Para ciclos y fronteras del gate hace falta la arista de MODULO, que
+    sale del constructor de `graph`, no del informe de simbolos."""
+    test_python_llama_a_lo_que_registra_el_pymodule(tmp_path)
+    raiz = str(tmp_path / "proy")
+    _nodos, aristas, _err = cli._constructor_fusionado(raiz)
+    assert "lib" in aristas.get("pkg.cli", set()), aristas.get("pkg.cli")
