@@ -675,3 +675,27 @@ def test_un_metodo_js_con_llamantes_parciales_tampoco_estrecha(tmp_path):
     assert any(d.endswith(".set") for _, d, tipo in grafo["edges"] if tipo == "CALLS")
     report = impacted.analyze(str(root), worktree=True, grafo=grafo)
     assert report["todo"] is True, report["motivo"]
+
+
+def test_run_en_un_repo_mixto_corre_tambien_pytest(repo, monkeypatch):
+    """Falso verde de la auditoria del 24-sep-2026: con `package.json` y pytest,
+    `--run` elegia UN comando (npm va antes) y la seleccion de Python no corria:
+    `suma` rota, exit 0. Ahora corren todos los runners que tocan."""
+    import shutil
+
+    from galaxybrain import cli
+
+    if not shutil.which("npm"):
+        pytest.skip("sin npm: el caso necesita un runner JS declarado e instalado")
+    (repo / "package.json").write_text(
+        '{"name": "x", "scripts": {"test": "node -e \\"process.exit(0)\\""}}\n', encoding="utf-8")
+    (repo / "pyproject.toml").write_text("[tool.pytest.ini_options]\n", encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "mixto")
+    _tocar(repo, "lib/nucleo.py", "return a + b", "return a - b")
+
+    # desde DENTRO del repo: `tests [rango] [ruta]` tomaria la ruta por rango y
+    # correria la suite de gb entera desde un test de gb (paso el 24-sep).
+    monkeypatch.chdir(repo)
+    rc = cli.main(["tests", "--worktree", "--run", "--color", "never"])
+    assert rc not in (0, 3), "la suite de Python rota tiene que salir en rojo, no %s" % rc

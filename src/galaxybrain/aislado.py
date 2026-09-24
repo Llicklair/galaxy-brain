@@ -200,17 +200,9 @@ def verifica(root, ficheros, staged=False, traza=None):
             informe["veredicto"] = 1 if ausentes else 0
             return informe
 
-        cmd, shell, sin_runner = _comando_de_tests(root, presentes, decir)
-        if cmd is None:
-            informe["motivo"] = sin_runner
-            informe["veredicto"] = SIN_VEREDICTO
-            return informe
-        decir("$ %s" % (cmd if shell else " ".join(cmd[1:])))
-        try:
-            informe["exit_code"] = subprocess.call(cmd, cwd=cwd, shell=shell)
-        except OSError as error:
-            informe["motivo"] = t("no se pudo lanzar pytest: %s") % error
-            informe["exit_code"] = 1
+        informe["exit_code"], motivo = corre_tests(root, presentes, cwd, decir)
+        if motivo:
+            informe["motivo"] = motivo
 
         # Un fichero de test que no viaja deja la verificacion incompleta, y una
         # verificacion incompleta NO se reporta como verde por mucho que lo que si
@@ -233,42 +225,60 @@ def verifica(root, ficheros, staged=False, traza=None):
 SIN_VEREDICTO = 3
 
 
-def _comando_de_tests(root, ficheros, decir):
-    """(cmd, shell, motivo). El runner que declara el PROYECTO, no pytest.
+def corre_tests(root, ficheros, cwd, decir):
+    """Corre la seleccion con TODOS los runners que tocan: (exit, motivo).
 
-    El checkpoint nació cableado a `python -m pytest`, así que sobre un repo
-    JS, Go o PHP verificaba con la herramienta equivocada. Es la misma
-    suposición de Python que ya se corrigió en `gb tests --run` el 9-ago; esto
-    solo trae la lección aquí, incluida su parte incómoda: si el runner no
-    acepta ficheros sueltos se corre la suite ENTERA y se dice, porque
-    inventarse el ahorro es peor que gastar el tiempo.
-
-    `cmd` es None cuando no hay veredicto posible, y entonces `motivo` lo dice.
+    Un repo mixto tiene varias suites. Con UN comando (el primero detectado,
+    `npm test` antes que pytest) la seleccion de Python se perdia entera y el
+    exit salia verde con el `.py` roto — un falso verde (auditoria del
+    24-sep-2026). Ahora: los `.py` elegidos van a pytest; si la seleccion toca
+    otro lenguaje, cada runner no-pytest declarado corre ENTERO (no aceptan
+    ficheros sueltos de forma portable); ficheros de un lenguaje sin runner
+    declarado o sin instalar -> sin veredicto. El agregado: cualquier rojo
+    gana; si no, "no se pudo comprobar" gana al verde.
     """
     import shutil as _shutil
 
     from . import floor
 
     ficheros = list(ficheros)
-    comando, fuente = floor.detect_test_command(root)
-    if not comando:
-        # Sin comando declarado, la extensión de lo que hay que correr decide.
-        # Si son `.py`, pytest con casi total seguridad: exigir configuración a
-        # un repo Python que hoy funciona sin ella sería una regresión gratis
-        # (lo dijeron 9 tests de esta misma suite al intentarlo). Si NO son
-        # `.py`, no hay nada que suponer y se dice.
-        if ficheros and all(f.endswith(".py") for f in ficheros):
-            return [sys.executable, "-m", "pytest"] + ficheros, False, ""
-        return None, False, ("no se que comando corre los tests de este proyecto (%s)"
-                             % (fuente or "sin configuracion que lo declare"))
-    if comando.split()[0] in ("pytest", "python", sys.executable):
-        return [sys.executable, "-m", "pytest"] + ficheros, False, ""
-    binario = comando.split()[0]
-    if not _shutil.which(binario):
-        return None, False, ("`%s` es el runner de este proyecto (%s) y no esta instalado"
-                             % (binario, fuente))
-    decir("(la seleccion no se puede pasar a `%s`: se corre la suite entera)" % binario)
-    return comando, True, ""
+    py = [f for f in ficheros if f.endswith(".py")]
+    otros = [f for f in ficheros if not f.endswith(".py")]
+    declarados = floor.detect_test_commands(root)
+    ajenos = [(c, f) for c, f in declarados if c.split()[0] not in ("pytest", "python", sys.executable)]
+
+    plan, motivos = [], []
+    if py:
+        plan.append(([sys.executable, "-m", "pytest"] + py, False))
+    if otros:
+        if not ajenos:
+            motivos.append("no se que comando corre los tests de %s (%s)"
+                           % (", ".join(sorted({os.path.splitext(f)[1] or f for f in otros})),
+                              "sin configuracion que lo declare"))
+        for comando, fuente in ajenos:
+            binario = comando.split()[0]
+            if not _shutil.which(binario):
+                motivos.append("`%s` es el runner de este proyecto (%s) y no esta instalado"
+                               % (binario, fuente))
+                continue
+            decir("(la seleccion no se puede pasar a `%s`: se corre la suite entera)" % binario)
+            plan.append((comando, True))
+
+    rojo = 0
+    for cmd, shell in plan:
+        decir("$ %s" % (cmd if shell else " ".join(cmd[1:])))
+        try:
+            rc = subprocess.call(cmd, cwd=cwd, shell=shell)
+        except OSError as error:
+            motivos.append("no se pudo lanzar `%s`: %s" % (cmd if shell else cmd[0], error))
+            rc = 1
+        if rc not in (0, SIN_VEREDICTO) and not rojo:
+            rojo = rc
+    if rojo:
+        return rojo, "; ".join(motivos)
+    if motivos:
+        return SIN_VEREDICTO, "; ".join(motivos)
+    return 0, ""
 
 
 def converge(root, traza=None):
@@ -478,17 +488,9 @@ def _union(raiz, base, activos, decir, impacted, incompletas=()):
         if not ficheros:
             salida["veredicto"] = 0
             return salida
-        cmd, shell, sin_runner = _comando_de_tests(arbol, ficheros, decir)
-        if cmd is None:
-            salida["motivo"] = sin_runner
-            salida["veredicto"] = SIN_VEREDICTO
-            return salida
-        decir("$ %s" % (cmd if shell else " ".join(cmd[1:])))
-        try:
-            salida["exit_code"] = subprocess.call(cmd, cwd=arbol, shell=shell)
-        except OSError as error:
-            salida["motivo"] = t("no se pudo lanzar pytest: %s") % error
-            salida["exit_code"] = 1
+        salida["exit_code"], motivo = corre_tests(arbol, ficheros, arbol, decir)
+        if motivo:
+            salida["motivo"] = motivo
         salida["veredicto"] = salida["exit_code"]
         return salida
     finally:

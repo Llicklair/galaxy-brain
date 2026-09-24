@@ -2019,7 +2019,6 @@ def cmd_tests(args):
     el que sale sin escribir banderas, y lanzar una suite es gasto que se pide
     aparte. Con `--run` el exit code es el de pytest — ahí sí es un oráculo.
     """
-    import subprocess
 
     from . import impacted
 
@@ -2055,53 +2054,17 @@ def cmd_tests(args):
         return _corre_aislado(root, ficheros, staged=args.staged)
 
     # El runner sale de lo que el PROYECTO declara, no de lo que este arnes esta
-    # escrito en Python. Estaba cableado a pytest: sobre un repo JS corria pytest
-    # contra ficheros .js, fallaba siempre, y el veredicto "los tests estan en
-    # rojo" era MENTIRA — en 16 de los 17 lenguajes que el grafo ya lee. Cazado
-    # en la primera tirada real fuera de este repo (9-ago), y es la sexta vez
-    # esta semana que una suposicion de Python se queda atras.
-    import shutil
+    # escrito en Python (9-ago: pytest contra ficheros .js, "rojo" MENTIRA). Y
+    # en un repo mixto son TODOS los runners, no el primero: con `npm test`
+    # delante de pytest la seleccion de Python se perdia y el exit salia verde
+    # (24-sep). Sin veredicto posible (runner sin declarar o sin instalar): 3.
+    from . import aislado
 
-    from . import floor
-
-    comando, fuente = floor.detect_test_command(root)
-    if not comando:
-        emit("")
-        emit("no se que comando corre los tests de este proyecto (%s): no ejecuto nada."
-             % (fuente or "sin configuracion que lo declare"))
-        emit("declaralo en su AGENTS.md o en la config de su ecosistema.")
-        return 3        # ni verde ni rojo: NO SE PUDO COMPROBAR
-
-    # `-p no:cacheprovider` no: cambiar el entorno de la suite del usuario para
-    # que nuestro atajo quede mas limpio es exactamente lo que un arnes no hace.
-    if comando.split()[0] in ("pytest", "python", sys.executable):
-        cmd = [sys.executable, "-m", "pytest"] + ficheros
-        shell = False
-    else:
-        # Un runner que no sea pytest no acepta una lista de ficheros sueltos de
-        # forma portable (`go test` toma paquetes, `cargo test` no toma ninguno),
-        # asi que se corre ENTERO y se dice. Estrechar sin poder hacerlo seria
-        # inventarse el ahorro; correr de mas es seguro y honesto.
-        binario = comando.split()[0]
-        if not shutil.which(binario):
-            # El runtime NO esta instalado. Eso no es un test en rojo: es que no
-            # se pudo comprobar. Meterlo en el mismo saco daria el falso rojo que
-            # esta tirada destapo — `swift test` sin Swift instalado leyendose
-            # como "los tests fallan".
-            emit("")
-            emit("`%s` es el runner de este proyecto (%s) y no esta instalado: "
-                 "no ejecuto nada." % (binario, fuente))
-            return 3
-        cmd, shell = comando, True
-        emit("")
-        emit("(la seleccion no se puede pasar a `%s`: se corre la suite entera)" % binario)
     emit("")
-    emit("$ %s" % (comando if shell else " ".join(cmd[1:])))
-    try:
-        return subprocess.call(cmd, cwd=root, shell=shell)
-    except OSError as error:
-        emit("no se pudo lanzar `%s`: %s" % (comando, error))
-        return 3
+    rc, motivo = aislado.corre_tests(root, ficheros, root, emit)
+    if motivo:
+        emit(motivo + ": no hay veredicto para esa parte.")
+    return rc
 
 
 def _corre_union(root):
