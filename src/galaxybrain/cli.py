@@ -2427,7 +2427,8 @@ def cmd_status(args):
 def build_parser():
     parser = argparse.ArgumentParser(
         prog="gb",
-        description="Cuando algo peta, te dice donde y con que estado.",
+        description="Cuando agentes escriben codigo, dice la verdad: que se rompe solo, "
+                    "que se rompe junto, que tests lo prueban y con que estado murio.",
     )
     parser.add_argument("--version", action="version", version="galaxy-brain %s" % __version__)
     subparsers = parser.add_subparsers(dest="command")
@@ -2603,7 +2604,7 @@ def build_parser():
     )
     calls_p.add_argument(
         "simbolo", nargs="?", default="",
-        help="nombre pelado o cualificado (p.ej. save o galaxybrain.store.save)",
+        help="nombre pelado o cualificado (p.ej. write o galaxybrain.store.write)",
     )
     calls_p.add_argument("path", nargs="?", default=".", help="raiz del proyecto (por defecto .)")
     calls_p.add_argument(
