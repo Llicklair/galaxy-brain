@@ -76,9 +76,14 @@ def verify(executable=None):
     """
     environment = dict(os.environ)
     environment.pop("GB_DISABLE", None)
+    # Ademas del si/no, QUIEN tiene el hook si no es gb: en el Python del
+    # sistema de Ubuntu, su sitecustomize.py pone el de apport DESPUES de los
+    # .pth y pisa el nuestro (medido en CI, 24-sep-2026). Sin nombrarlo, el
+    # mensaje culpaba a la instalacion del paquete, que estaba bien.
     probe = (
-        "import sys; "
-        "sys.stdout.write('1' if getattr(sys.excepthook, '_galaxy_brain_hook', False) else '0')"
+        "import sys; h = sys.excepthook; "
+        "sys.stdout.write('1' if getattr(h, '_galaxy_brain_hook', False) else "
+        "'0 ' + str(getattr(h, '__module__', '') or getattr(getattr(h, 'func', None), '__module__', '')))"
     )
     try:
         result = subprocess.run(
@@ -92,7 +97,8 @@ def verify(executable=None):
     except (OSError, subprocess.SubprocessError) as error:
         return False, "no se pudo comprobar (%s)" % error
 
-    installed = (result.stdout or "").strip() == "1"
+    salida = (result.stdout or "").strip()
+    installed = salida == "1"
     if installed:
         # El hook esta puesto: la señal autoritativa es stdout, no stderr. Un
         # stderr ajeno en el arranque (otro .pth, un DeprecationWarning de otra
@@ -103,6 +109,14 @@ def verify(executable=None):
     noise = (result.stderr or "").strip()
     if noise and (PTH_NAME in noise or ".pth" in noise or "galaxybrain" in noise):
         return False, "el .pth rompe el arranque de Python: %s" % noise.splitlines()[0]
+    ajeno = salida[2:].strip() if salida.startswith("0 ") else ""
+    if ajeno and ajeno not in ("sys", "builtins"):
+        return False, (
+            "otro hook pisa el de gb al arrancar: sys.excepthook es de `%s` (en Ubuntu, "
+            "el sitecustomize del Python del sistema instala apport despues de los .pth). "
+            "En este interprete la captura no puede quedar puesta; en un venv si "
+            "(python3 -m venv .venv)" % ajeno
+        )
     return False, (
         "el hook no quedo instalado — ¿esta el paquete instalado en este "
         "interprete? (pip install -e .)"
