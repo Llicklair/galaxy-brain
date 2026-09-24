@@ -16,6 +16,7 @@ de test: cada uno es un binario propio y `cargo test --test x` corre solo ese.
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -43,6 +44,19 @@ MODULOS = {
         "use crate::factura::emitir;\n\n"
         "pub fn linea(xs: &[f64]) -> String { format!(\"TOTAL {:.2}\", emitir(xs)) }\n",
     "texto.rs": "pub fn mayus(s: &str) -> String { s.to_uppercase() }\n",
+    # 24-sep-2026: las formas que los patrones literales no veian (generico +
+    # `where`) y un metodo de `impl` que llama a codigo del banco. El test de
+    # `Precio` llega a `iva` por `valor.con_iva()`, una llamada a metodo sobre
+    # un valor que el grafo NO resuelve: si la seleccion lo deja fuera al
+    # romper `iva`, es un falso verde y el banco tiene que verlo.
+    "escala.rs":
+        "use crate::iva::iva;\n\n"
+        "pub struct Precio { base: f64 }\n\n"
+        "impl Precio {\n"
+        "    pub fn nuevo(base: f64) -> Self { Precio { base } }\n"
+        "    pub fn con_iva(&self) -> f64 { escala(self.base, 1.0 + iva()) }\n"
+        "}\n\n"
+        "pub fn escala<T>(x: T, f: f64) -> f64 where T: Into<f64> { x.into() * f }\n",
 }
 
 #: (fichero de test, import, expresion) — se usa `use` + llamada PELADA porque es
@@ -67,6 +81,8 @@ _CASOS = {
     "factura.rs": ("use bench::factura::emitir;", "emitir(&[10.0])"),
     "informe.rs": ("use bench::informe::linea;", "linea(&[10.0])"),
     "texto.rs": ("use bench::texto::mayus;", 'mayus("a")'),
+    "escala.rs": ("use bench::escala::escala;", "escala(10.0, 2.0)"),
+    "precio.rs": ("use bench::escala::Precio;", "Precio::nuevo(10.0).con_iva()"),
 }
 
 # Lo UNICO que cambia entre los dos estilos es si la llamada esta dentro del
@@ -128,7 +144,8 @@ def limpia():
 def rompe(modulo, funcion):
     ruta = os.path.join(RAIZ, "src", modulo)
     src = open(ruta, encoding="utf-8").read()
-    i = src.index("pub fn %s(" % funcion)
+    # `pub fn escala<T>(`: el generico va entre el nombre y el parentesis
+    i = re.search(r"pub fn %s\b" % re.escape(funcion), src).start()
     j = src.index("{", i) + 1
     open(ruta, "w", encoding="utf-8", newline="").write(
         src[:j] + ' panic!("ESTRES"); ' + src[j:])
@@ -166,7 +183,8 @@ print("-" * 84)
 
 OBJETIVOS = [("iva.rs", "iva"), ("carrito.rs", "subtotal"), ("carrito.rs", "total"),
              ("descuento.rs", "con_descuento"), ("factura.rs", "emitir"),
-             ("informe.rs", "linea"), ("texto.rs", "mayus")]
+             ("informe.rs", "linea"), ("texto.rs", "mayus"),
+             ("escala.rs", "escala"), ("escala.rs", "con_iva")]
 
 falsos = ahorro = con_fuga = medidas = 0
 for modulo, funcion in OBJETIVOS:
