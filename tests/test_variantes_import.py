@@ -34,6 +34,7 @@ DESTINO = {
     "php": ("a.php", "<?php\nfunction suma($a, $b) { return $a + $b; }\n"),
     "lua": ("a.lua", "function suma(a, b) return a + b end\n"),
     "c": ("a.h", "int suma(int a, int b) { return a + b; }\n"),
+    "dart": ("a.dart", "int suma(int a, int b) => a + b;\n"),
 }
 
 #: La extension del fichero importador cuando NO es la del destino (en C se
@@ -79,6 +80,14 @@ VARIANTES = {
     ("lua", "sin-parentesis-dobles"): 'local a = require "a"\nfunction total(x) return suma(x, 1) end\n',
     # --- C: la cabecera del proyecto (los <> son del sistema, no del repo) --
     ("c", "include-comillas"): '#include "a.h"\nint total(int x) { return suma(x, 1); }\n',
+    # --- Dart: solo casaba el import desnudo con simples ------------------
+    # (petitparser, 24-sep-2026: 147 de 646 aristas perdidas)
+    ("dart", "simples"): "import 'a.dart';\n",
+    ("dart", "dobles"): 'import "a.dart";\n',
+    ("dart", "con-alias"): "import 'a.dart' as a;\n",
+    ("dart", "show"): "import 'a.dart' show suma;\n",
+    ("dart", "barril-export"): "export 'a.dart';\n",
+    ("dart", "part"): "part 'a.dart';\n",
 }
 
 #: Variantes que NO se exigen todavia, con su motivo. Vacio hoy: lo que

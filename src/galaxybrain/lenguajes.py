@@ -677,25 +677,79 @@ LENGUAJES = {
     ),
     "dart": _lang(
         "dart", (".dart",),
-        (("function", "$RET $NAME($$$) { $$$ }"),
-         ("function", "$RET $NAME($$$) => $$$;"),
-         ("class", "class $NAME { $$$ }"),
-         ("method", "class A { $RET $NAME($$$) { $$$ } }", "method_declaration")),
-        ("import '$SRC';",),
+        # REGLAS por kind y no patrones (repos reales, 24-sep-2026): sobre
+        # petitparser (7,8k lineas de lib/) salian 10 clases de mas de 100 —
+        # `class $NAME { $$$ }` no casa `abstract class P<R> extends B`, ni
+        # mixin, ni extension, ni enum — y 13 metodos: ni getters, ni `=>`,
+        # ni `static`, ni constructores con cuerpo.
+        (("function", _Regla({"all": [
+            {"kind": "function_declaration"},
+            {"has": {"field": "signature", "has": {"field": "name", "pattern": "$NAME"}}},
+            {"has": {"field": "body", "pattern": "$CUERPO"}}]})),
+         ("class", _Regla({"all": [
+             {"any": [{"kind": k} for k in ("class_declaration", "mixin_declaration",
+                                            "extension_declaration", "enum_declaration",
+                                            "extension_type_declaration")]},
+             {"has": {"field": "name", "pattern": "$NAME"}}]})),
+         # metodo, getter, setter; con cuerpo (`{}` o `=>`): el abstracto es
+         # un `declaration` sin cuerpo y no se promete, como en Java
+         ("method", _Regla({"all": [
+             {"kind": "method_declaration"},
+             {"has": {"field": "signature", "has": {
+                 "any": [{"kind": k} for k in ("function_signature", "getter_signature",
+                                               "setter_signature")],
+                 "has": {"field": "name", "pattern": "$NAME"}}}},
+             {"has": {"field": "body", "pattern": "$CUERPO"}}]})),
+         # constructor NOMBRADO con cuerpo (`factory P.of(..) => ..`,
+         # `P.named() { .. }`): el nombre es el identificador que sigue al
+         # punto (`nthChild` no lo alcanza: medido, 0 casos). El constructor
+         # sin nombre se llama como la clase y ya es la clase.
+         ("method", _Regla({"all": [
+             {"kind": "method_declaration"},
+             {"has": {"field": "signature", "has": {
+                 "any": [{"kind": "constructor_signature"},
+                         {"kind": "factory_constructor_signature"}],
+                 "has": {"kind": "identifier", "pattern": "$NAME",
+                         "follows": {"pattern": "."}}}}},
+             {"has": {"field": "body", "pattern": "$CUERPO"}}]}))),
+        # El literal de `import`, `export` y `part` —con `as`/`show`/`hide`
+        # detras o sin ellos, comillas simples o dobles—. `import '$SRC';` solo
+        # casaba la forma desnuda con comillas simples: en petitparser se
+        # perdian los 92 `export` de sus barriles y todo `import ... as x`.
+        # `part of` NO: es la vuelta del mismo `part`, y contarla fabricaria un
+        # ciclo de dos ficheros que son una sola biblioteca.
+        (_Regla({"all": [
+            {"kind": "string_literal"}, {"pattern": "$SRC"},
+            {"inside": {"kind": "uri", "inside": {"any": [{"kind": "configurable_uri"},
+                                                          {"kind": "part_directive"}]}}}]}),),
         # "ruta-local" y no "ruta": en Dart el import relativo se escribe SIN
         # `./` (`import 'a.dart';` es el fichero de al lado), y exigir el punto
         # inicial dejaba a dart con CERO aristas de modulo sobre codigo
         # idiomatico — medido el 11-sep-2026: `'a.dart'` daba 0 y `'./a.dart'`
-        # daba 1. No abre la puerta a aristas falsas porque lo externo en Dart
-        # lleva esquema (`package:`, `dart:`) y no resuelve contra ningun
-        # fichero del arbol.
+        # daba 1. Lo que lleva esquema lo decide `_dart_modulo`: `dart:` es el
+        # SDK y `package:x/` es interno solo si un pubspec.yaml del arbol se
+        # llama `x`.
         llamada=None, resolucion="ruta-local",
         sufijos_test=("_test",), dirs_test=("test", "tests"),
-        # Se probaron seis formas, incluida una literal (`suma($$$)`) y dos con
-        # selector: ninguna casa. La gramatica de dart en ast-grep 0.45 no expone
-        # la invocacion. Sin llamadas no hay `gb calls` ni seleccion de tests.
-        carencias=("las LLAMADAS no se extraen con ningun patron probado (6 formas, "
-                   "9-ago): hay simbolos y modulos, no hay grafo de llamadas",),
+        # Remedido el 24-sep-2026 (ast-grep 0.45.2): el arbol SI expone la
+        # invocacion (`call_expression` con su campo `function`); lo que no
+        # casaba el 9-ago eran los PATRONES, porque `f(x)` suelto no parsea
+        # como llamada en dart. Una regla por kind saca 6119 llamadas en
+        # petitparser y resuelve 2951. NO se enciende porque inventa: un
+        # parametro de tipo funcion (`predicate(parser)` con `Predicate<Parser>?
+        # predicate`) resolvia contra la funcion `predicate` de otro modulo —
+        # 7 aristas asi en su lib/, leidas una a una—, y una arista de LLAMADA
+        # que cruza una frontera BLOQUEA el gate: seria bloquear sobre algo que
+        # no es un hecho. Propuesta medida, fuera de esta tabla: solo `f()`.
+        carencias=("las LLAMADAS no se extraen: el arbol las tiene, pero sin ambito "
+                   "lexico un parametro de tipo funcion (`predicate(x)`) se confunde con la "
+                   "funcion homonima de otro modulo. Hay simbolos y modulos, no grafo de "
+                   "llamadas",
+                   "`class X;` (clase sin cuerpo, Dart 3.10) no la parsea la gramatica de "
+                   "ast-grep 0.45: esa clase no es simbolo",
+                   "`part of` no deja arista (es la misma biblioteca que su `part`); el "
+                   "import CONDICIONAL (`if (dart.library.io) 'b.dart'`) solo deja la del "
+                   "primero",),
     ),
 }
 
@@ -1207,6 +1261,63 @@ def _misma_familia(candidatos, lang, lengua_de):
 
 
 _GO_MOD = {}
+_PUBSPEC = {}
+
+
+def _pubspec_nombre(carpeta):
+    """El `name:` del pubspec.yaml de `carpeta`, o None. Cacheado por carpeta
+    y mtime: el watch re-lee solo si el fichero cambia."""
+    ruta = os.path.join(carpeta, "pubspec.yaml")
+    try:
+        firma = (ruta, os.path.getmtime(ruta))
+    except OSError:
+        return None
+    if firma not in _PUBSPEC:
+        try:
+            with open(ruta, encoding="utf-8", errors="replace") as fh:
+                m = re.search(r"^name:\s*['\"]?([\w.]+)", fh.read(), re.M)
+        except OSError:
+            m = None
+        _PUBSPEC[firma] = m.group(1) if m else None
+    return _PUBSPEC[firma]
+
+
+def _dart_modulo(especificador, fichero, raiz, modulos):
+    """El modulo interno de un `import`/`export`/`part` de Dart, o None.
+
+    La regla EXACTA, como go.mod en Go: `dart:x` es el SDK; `package:x/r.dart`
+    es `<paquete x>/lib/r.dart`, y el paquete `x` es el que DECLARA un
+    pubspec.yaml con `name: x` — si ninguno del arbol lo declara, es de pub y
+    no hay arista. Lo que no lleva esquema es una ruta relativa al fichero.
+
+    El `package:` PROPIO es la forma idiomatica de los tests y de los ejemplos
+    (`import 'package:petitparser/petitparser.dart'`) y de mucho `lib/`; con la
+    resolucion por ruta no dejaba NINGUNA arista — en petitparser 54 de 646
+    (banco de repos reales, 24-sep-2026). Un pubspec por paquete, asi que un
+    monorepo (o un `example/` con su pubspec) resuelve cada nombre al suyo.
+    """
+    if especificador.startswith("package:"):
+        nombre, _, resto = especificador[len("package:"):].partition("/")
+        if not resto:
+            return None
+        cola = os.path.normcase(os.path.join("lib", *resto.split("/")))
+        candidatos = []
+        for modulo, ruta in modulos.items():
+            ruta = os.path.abspath(ruta)
+            if not os.path.normcase(ruta).endswith(os.sep + cola):
+                continue
+            paquete = ruta[:len(ruta) - len(cola)].rstrip("\\/")
+            if _pubspec_nombre(paquete) == nombre:
+                candidatos.append(modulo)
+        return candidatos[0] if len(candidatos) == 1 else None
+    if ":" in especificador or especificador.startswith("/"):
+        return None          # `dart:`, `file:`, `http:`... o absoluta: no es del arbol
+    destino = os.path.normpath(os.path.join(os.path.dirname(fichero), especificador))
+    modulo = module_name(destino, raiz)
+    if modulo in modulos and (os.path.normcase(os.path.abspath(modulos[modulo]))
+                              == os.path.normcase(destino)):
+        return modulo
+    return None
 
 #: Un `use` de PHP: `[function|const ]Nombre\De\Clase[ as Alias]`. Sin `/` ni
 #: `.`, que es lo que distingue un nombre de clase de la ruta de un `require`.
@@ -1787,6 +1898,8 @@ def _resuelve(especificador, fichero, raiz, modulos, modo):
         # sufijo: `use Psr\Container\ContainerInterface` casaba asi con el
         # `Container.php` propio — el bug de Rust y Go, en PHP.
         return _php_psr4(especificador, fichero, raiz, modulos)
+    if fichero.endswith(".dart"):
+        return _dart_modulo(especificador, fichero, raiz, modulos)
     if modo in ("ruta", "ruta-local"):
         # "ruta" exige el punto inicial porque en JS/TS un especificador pelado
         # es un PAQUETE (`react`), no un fichero. "ruta-local" no lo exige porque
