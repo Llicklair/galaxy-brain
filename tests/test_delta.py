@@ -72,6 +72,20 @@ def test_un_error_que_se_traga_recien_anadido_si_sale(repo):
     assert "Exception" in report["silencios"][0]["what"]
 
 
+def test_la_version_de_git_con_bom_no_inventa_deuda_nueva(repo):
+    """La version de antes sale de `git show` sin quitar el BOM: no parseaba,
+    se quedaba sin hechos y la deuda que YA estaba se contaba como nueva
+    (auditoria del 24-sep-2026). Del disco ya se leia con utf-8-sig."""
+    ruta = repo / "lib.py"
+    ruta.write_text("def vieja():\n    try:\n        pass\n    except Exception:\n"
+                    "        pass\n", encoding="utf-8-sig")
+    _git(repo, "commit", "-qam", "bom")
+    ruta.write_text("def vieja():\n    try:\n        pass\n    except Exception:\n"
+                    "        pass\n\n\nX = 1\n", encoding="utf-8-sig")
+    report = delta.analyze(str(repo), worktree=True)
+    assert report["silencios"] == []
+
+
 def test_desplazar_codigo_no_inventa_senales(repo):
     """El falso positivo que mata la herramienta.
 

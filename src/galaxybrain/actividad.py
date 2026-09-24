@@ -232,7 +232,9 @@ def enlaces_nacientes(root, informe_simbolos):
         if os.path.normcase(mod) in modulos:
             continue  # ya es nodo: eso es "toca", no "enlaza"
         try:
-            with open(fichero, encoding="utf-8", errors="replace") as fh:
+            # utf-8-sig: con BOM, `utf-8` deja un BOM que ast.parse lee como
+            # sintaxis rota (auditoria del 24-sep-2026); el resto del motor ya lo quita.
+            with open(fichero, encoding="utf-8-sig", errors="replace") as fh:
                 arbol = ast.parse(fh.read())
         except (OSError, SyntaxError):
             continue
@@ -362,7 +364,9 @@ def cambios_de(analisis, ficheros, informe_simbolos):
         if not qual_canon:
             continue
         try:
-            with open(fichero, encoding="utf-8", errors="replace") as fh:
+            # utf-8-sig: con BOM, `utf-8` deja un BOM que ast.parse lee como
+            # sintaxis rota (auditoria del 24-sep-2026); el resto del motor ya lo quita.
+            with open(fichero, encoding="utf-8-sig", errors="replace") as fh:
                 arbol = ast.parse(fh.read())
         except OSError:
             continue

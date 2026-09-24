@@ -116,7 +116,7 @@ class _Visitante(ast.NodeVisitor):
 def _hechos(texto):
     """Los hechos de un texto fuente. Si no parsea, no hay hechos (no es un error)."""
     try:
-        arbol = ast.parse(texto)
+        arbol = ast.parse(texto.lstrip(chr(0xFEFF)))  # con BOM no parseaba: ciego
     except (SyntaxError, ValueError, RecursionError, MemoryError):
         return None
     visitante = _Visitante()

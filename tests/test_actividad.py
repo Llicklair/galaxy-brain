@@ -382,6 +382,19 @@ def test_el_fichero_a_medio_escribir_se_dice_ilegible(proyecto):
     assert "ilegible" in cambio and "lib.nucleo" in cambio
 
 
+def test_un_bom_no_es_sintaxis_rota(proyecto):
+    """Auditoria del 24-sep-2026: un fichero con BOM (Python lo ejecuta) salia
+    como 'ilegible ... linea 1' y el cambio real de firma se perdia."""
+    informe = symbols.analyze(str(proyecto))
+    rama = _rama(proyecto, "rama_a")
+    (rama / "lib" / "nucleo.py").write_text(
+        "def suma(a, b, extra=0):\n    return a + b\n", encoding="utf-8-sig")
+
+    cambios = actividad.instantanea(str(proyecto), informe)["agentes"][0]["cambios"]
+    assert not any("ilegible" in c for c in cambios), cambios
+    assert any("lib.nucleo.suma" in c for c in cambios), cambios
+
+
 def test_tocar_solo_el_cuerpo_no_inventa_hechos_de_firma(proyecto):
     informe = symbols.analyze(str(proyecto))
     rama = _rama(proyecto, "rama_a")
