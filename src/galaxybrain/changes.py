@@ -33,16 +33,27 @@ from .graph import _git as _git_output
 TEST_FILE = re.compile(
     r"(^|[\\/])(tests?|__tests__|spec)([\\/]|$)"
     r"|\.(test|spec)\.[jt]sx?$"
-    r"|(^|[\\/])test_[^\\/]+\.py$"
-    r"|_test\.(py|go|rb)$",
+    r"|(^|[\\/])test_[^\\/]+\.(py|c|lua)$"
+    r"|_test\.(py|go|rb|dart|exs|c|cpp)$"
+    r"|_spec\.(rb|lua)$"
+    # JUnit/xUnit/XCTest/PHPUnit/ScalaTest: la clase de test lleva el sufijo
+    # (auditoria del 24-sep-2026: fuera de py/js/go/rb, check no veia tests).
+    # Sensible a mayusculas A PROPOSITO: `SumaTest.java` si, `Contest.cs` no.
+    r"|(?-i:(Tests?|Spec|IT))\.(java|kt|kts|scala|cs|swift|php)$",
     re.IGNORECASE,
 )
 
 TEST_DEF = [
     re.compile(r"^\s*def\s+test_\w+"),  # pytest
-    re.compile(r"^\s*(it|test)\s*\("),  # jest/vitest/mocha
+    re.compile(r"^\s*(it|test)\s*\("),  # jest/vitest/mocha/dart/busted
     re.compile(r"^\s*func\s+Test\w+"),  # go
     re.compile(r"^\s*(it|specify|scenario)\s+['\"]"),  # rspec
+    re.compile(r"^\s*@(Test|ParameterizedTest|RepeatedTest)\b"),  # junit, kotlin, swift testing
+    re.compile(r"^\s*\[(Fact|Theory|Test|TestMethod|TestCase)\b"),  # xunit/nunit/mstest
+    re.compile(r"^\s*#\[(tokio::)?test\]"),  # rust
+    re.compile(r"^\s*func\s+test\w*\s*\("),  # xctest
+    re.compile(r"^\s*(public\s+)?function\s+test\w*\s*\("),  # phpunit
+    re.compile(r"^\s*test\s+\""),  # exunit
 ]
 
 ASSERTION = [
@@ -51,6 +62,13 @@ ASSERTION = [
     re.compile(r"\bassert(Equal|True|False|In|Is|Raises|AlmostEqual|Greater|Less|Regex)\w*\s*\("),
     re.compile(r"^\s*\w*\.?(should|must)\b"),
     re.compile(r"\bt\.(is|deepEqual|truthy|falsy|throws)\("),
+    re.compile(r"\bassert(That|Not\w*|Null|Throws|Same|Contains|Count|Instance\w*|Array\w*)\s*\("),
+    re.compile(r"\b(debug_)?assert(_eq|_ne)?!\s*\("),  # rust
+    re.compile(r"\bXCTAssert\w*\s*\("),  # xctest
+    re.compile(r"\bAssert\.\w+\s*\("),  # xunit/nunit/junit4
+    re.compile(r"^\s*refute\b"),  # exunit
+    re.compile(r"\bt\.(Error|Errorf|Fatal|Fatalf|Fail)\w*\s*\("),  # go
+    re.compile(r"\b[A-Z_]*ASSERT\w*\s*\("),  # c (CU_ASSERT, TEST_ASSERT...)
 ]
 
 # Anclados a principio de linea. Un decorador de verdad SIEMPRE va ahi (modulo
@@ -65,6 +83,14 @@ SKIP_ADDED = [
     re.compile(r"^\s*(it|test|describe)\.(skip|todo|failing)\s*\("),
     re.compile(r"^\s*x(it|test|describe)\s*\("),
     re.compile(r"^\s*pytest\.skip\s*\("),
+    re.compile(r"^\s*@(Disabled|Ignore)\b"),  # junit
+    re.compile(r"^\s*\[(Fact|Theory)\s*\(\s*Skip\s*="),  # xunit
+    re.compile(r"^\s*\[Ignore\b"),  # nunit/mstest
+    re.compile(r"^\s*#\[ignore\]"),  # rust
+    re.compile(r"\bmarkTestSkipped\s*\("),  # phpunit
+    re.compile(r"\bthrow\s+XCTSkip\b"),  # xctest
+    re.compile(r"^\s*@tag\s+:skip\b"),  # exunit
+    re.compile(r"\bt\.Skip\w*\s*\("),  # go
 ]
 
 WEAKENER = [
