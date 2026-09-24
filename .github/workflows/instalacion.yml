@@ -1,0 +1,94 @@
+# La instalacion, medida donde la trae un usuario: macOS, Windows y Linux, en un
+# venv (local) y en el Python del sistema (global). No corre la suite: instala
+# con el instalador de verdad, provoca una excepcion real y exige su captura en
+# disco; luego `gb off` y exige que la siguiente NO se capture.
+#
+# Pedido el 24-sep-2026 ("que la instalacion en global y local funcione en
+# windows y en mac"). Mac no se puede probar en la maquina de desarrollo, asi
+# que se prueba aqui. El global de mac usa el python3 de Homebrew a proposito:
+# es el que rechaza `pip install` por PEP 668, el caso que instala.sh resuelve.
+name: instalacion
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - instala.sh
+      - instala.ps1
+      - pyproject.toml
+      - src/galaxybrain/bootstrap.py
+      - src/galaxybrain/autoinstall.py
+      - .github/workflows/instalacion.yml
+  workflow_dispatch:
+
+jobs:
+  instala:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-latest, modo: local }
+          - { os: macos-latest, modo: global }
+          - { os: windows-latest, modo: local }
+          - { os: windows-latest, modo: global }
+          - { os: ubuntu-latest, modo: local }
+          - { os: ubuntu-latest, modo: global }
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash
+    env:
+      GB_HOME: ${{ github.workspace }}/../gb-home
+    steps:
+      - uses: actions/checkout@v4
+
+      # Windows: el Python del runner ES el global (no hay venv de por medio).
+      - uses: actions/setup-python@v5
+        if: runner.os == 'Windows'
+        with:
+          python-version: "3.12"
+
+      - name: elegir interprete
+        run: |
+          if [ "${{ matrix.modo }}" = "local" ]; then
+            base=python3; command -v python3 >/dev/null || base=python
+            "$base" -m venv "$RUNNER_TEMP/v"
+            if [ -x "$RUNNER_TEMP/v/bin/python" ]; then py="$RUNNER_TEMP/v/bin/python"
+            else py="$RUNNER_TEMP/v/Scripts/python.exe"; fi
+          elif [ "$RUNNER_OS" = "macOS" ]; then
+            py="$(brew --prefix)/bin/python3"
+            [ -x "$py" ] || { brew install python; py="$(brew --prefix)/bin/python3"; }
+          elif [ "$RUNNER_OS" = "Linux" ]; then
+            py=/usr/bin/python3
+          else
+            py=python
+          fi
+          echo "PY=$py" >> "$GITHUB_ENV"
+          "$py" -c "import sys; print(sys.executable, sys.version)"
+
+      - name: instalar (sh)
+        if: runner.os != 'Windows'
+        run: PYTHON="$PY" sh ./instala.sh
+
+      - name: instalar (ps1)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if ("${{ matrix.modo }}" -eq "local") { & "$env:RUNNER_TEMP\v\Scripts\Activate.ps1" }
+          ./instala.ps1
+
+      - name: una excepcion real se captura
+        run: |
+          cd "$RUNNER_TEMP"
+          "$PY" -c "raise ValueError('prueba-de-instalacion')" || true
+          grep -rl "prueba-de-instalacion" "$GB_HOME/errors"
+
+      - name: gb off la apaga
+        run: |
+          "$PY" -m galaxybrain.cli off
+          cd "$RUNNER_TEMP"
+          "$PY" -c "raise ValueError('tras-apagar')" || true
+          if grep -rl "tras-apagar" "$GB_HOME/errors"; then
+            echo "gb off no apago la captura"; exit 1
+          fi
