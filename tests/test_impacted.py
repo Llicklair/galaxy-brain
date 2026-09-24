@@ -699,3 +699,32 @@ def test_run_en_un_repo_mixto_corre_tambien_pytest(repo, monkeypatch):
     monkeypatch.chdir(repo)
     rc = cli.main(["tests", "--worktree", "--run", "--color", "never"])
     assert rc not in (0, 3), "la suite de Python rota tiene que salir en rojo, no %s" % rc
+
+
+def test_un_test_js_que_lanza_un_proceso_es_opaco(tmp_path):
+    """Auditoria del 24-sep-2026: las marcas de "lanza un proceso" eran solo
+    de Python. Un test JS con `spawnSync("python", ...)` ejercita codigo sin
+    dejar arista y la seleccion lo dejaba fuera. Ahora usa la misma tabla de
+    lanzadores por extension que `cruzadas`."""
+    (tmp_path / "test").mkdir()
+    (tmp_path / "test" / "cli.test.js").write_text(
+        "const { spawnSync } = require('child_process');\n"
+        "test('cli', () => { spawnSync('python', ['-m', 'app']); });\n", encoding="utf-8")
+    (tmp_path / "test" / "suma.test.js").write_text(
+        "test('suma', () => { expect(1 + 1).toBe(2); });\n", encoding="utf-8")
+    opacos = impacted._ficheros_opacos(str(tmp_path), ["test/cli.test.js", "test/suma.test.js"])
+    assert opacos == {"test/cli.test.js"}
+
+
+@pytest.mark.parametrize("fichero", ["jest.config.js", "go.mod", "package.json",
+                                     "vitest.setup.ts", "Cargo.toml"])
+def test_la_config_de_otro_ecosistema_corre_todo(repo, fichero):
+    """Solo los ficheros de pytest cambiaban la suite entera; tocar la config
+    del runner JS o el manifiesto de Go estrechaba como si nada."""
+    (repo / fichero).write_text("x\n", encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "config")
+    (repo / fichero).write_text("y\n", encoding="utf-8")
+    _tocar(repo, "lib/nucleo.py", "return a + b", "return b + a")
+    report = impacted.analyze(str(repo), worktree=True)
+    assert report["todo"] is True and fichero in report["motivo"], report["motivo"]

@@ -24,7 +24,21 @@ from .idioma import t
 #: Ficheros que cambian el comportamiento de la suite entera sin aparecer como
 #: llamantes de nada: pytest los carga por convención, no por una llamada que el
 #: AST pueda ver. Tocarlos obliga a correr todo.
-FICHEROS_GLOBALES = ("conftest.py", "pytest.ini", "tox.ini", "setup.cfg", "pyproject.toml")
+FICHEROS_GLOBALES = ("conftest.py", "pytest.ini", "tox.ini", "setup.cfg", "pyproject.toml",
+                     # y los de cada ecosistema: su runner, su manifiesto, su
+                     # arranque de tests. Solo Python hacia que tocar
+                     # `jest.config.js` o `go.mod` estrechara (auditoria 24-sep).
+                     "package.json", "tsconfig.json", "go.mod", "Cargo.toml",
+                     "pom.xml", "build.gradle", "build.gradle.kts", "settings.gradle",
+                     "settings.gradle.kts", "build.sbt", "Gemfile", ".rspec",
+                     "spec_helper.rb", "rails_helper.rb", "composer.json", "phpunit.xml",
+                     "phpunit.xml.dist", "mix.exs", "test_helper.exs", "pubspec.yaml",
+                     "Package.swift", "CMakeLists.txt", ".busted", "Directory.Build.props")
+
+#: Prefijos de configuracion de runner con extension variable (`jest.config.ts`,
+#: `vitest.setup.mjs`...).
+PREFIJOS_GLOBALES = ("jest.config.", "jest.setup.", "vitest.config.", "vitest.setup.",
+                     "vitest.workspace.", "babel.config.", "karma.conf.", ".mocharc")
 
 #: Un test que lanza un SUBPROCESO ejercita el código sin dejar ninguna arista de
 #: llamada que seguir: para el AST, `subprocess.run([sys.executable, ...])` es una
@@ -306,9 +320,24 @@ def _ficheros_opacos(root, ficheros):
             # Si no se puede leer, se asume opaco: la duda se resuelve corriéndolo.
             opacos.add(rel)
             continue
-        if any(marca in texto for marca in MARCAS_OPACAS):
+        ext = os.path.splitext(rel)[1]
+        if ext == ".py":
+            if any(marca in texto for marca in MARCAS_OPACAS):
+                opacos.add(rel)
+        elif _lanza(ext, texto):
+            # Fuera de Python, la misma tabla de `cruzadas` (sintaxis de "aqui
+            # se lanza un proceso" por extension). Solo con MARCAS_OPACAS, un
+            # test JS con `spawnSync("python", ...)` no era opaco y la
+            # seleccion lo dejaba fuera (auditoria del 24-sep-2026).
             opacos.add(rel)
     return opacos
+
+
+def _lanza(ext, texto):
+    from . import cruzadas
+
+    patrones = cruzadas.LANZADORES.get(ext) or ()
+    return any(re.search(p, texto) for p in patrones)
 
 
 def ficheros_opacos(root, nodes, llamantes, todos):
@@ -522,13 +551,15 @@ def analyze(root, rev_range=None, staged=False, worktree=False, skip=None,
               "estrechar sin arriesgar un verde falso, asi que se corre todo") % sin_licencia)
 
     # Un fichero global tocado cambia la suite entera sin ser llamante de nada.
-    for ruta in rangos:
+    # Sobre TODO lo tocado, no solo sobre `rangos` (que es solo codigo fuente):
+    # `package.json` o `go.mod` no tienen hunks de fuente y nunca llegaban aqui.
+    for ruta in sorted(set(rangos) | tocados):
         base = os.path.basename(ruta)
-        if base in FICHEROS_GLOBALES:
+        if base in FICHEROS_GLOBALES or base.startswith(PREFIJOS_GLOBALES):
             return correr_todo(t("%s tocado: cambia la suite entera, se corre todo") % base)
 
     if not rangos:
-        return correr_todo(t("el diff no toca ningun .py que el grafo vea: todo"))
+        return correr_todo(t("el diff no toca ningun fichero fuente que el grafo vea: todo"))
 
     # Una referencia colgante interna (`from M import y` con `y` desaparecido)
     # no deja arista: la cadena de llamantes no puede subir por ahi y los tests

@@ -93,8 +93,8 @@ _TABLA = {
         "could not read the diff (no git, or invalid range?): everything runs",
     "%s tocado: cambia la suite entera, se corre todo":
         "%s touched: it changes the whole suite, everything runs",
-    "el diff no toca ningun .py que el grafo vea: todo":
-        "the diff touches no .py the graph can see: everything runs",
+    "el diff no toca ningun fichero fuente que el grafo vea: todo":
+        "the diff touches no source file the graph can see: everything runs",
     "%s: su grafo de llamadas no esta medido lo bastante completo como para "
     "estrechar sin arriesgar un verde falso, asi que se corre todo":
         "%s: its call graph is not measured complete enough to narrow without "

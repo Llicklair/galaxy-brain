@@ -30,9 +30,15 @@ import re
 #: semantica: por eso acierta siempre y no depende de resolver nombres.
 LANZADORES = {
     ".js": (r"\bspawnSync\s*\(", r"\bspawn\s*\(", r"\bexecFile\s*\(", r"\bexecSync\s*\("),
-    ".mjs": (r"\bspawnSync\s*\(", r"\bspawn\s*\(", r"\bexecFile\s*\("),
-    ".ts": (r"\bspawnSync\s*\(", r"\bspawn\s*\(", r"\bexecFile\s*\("),
-    ".tsx": (r"\bspawnSync\s*\(", r"\bspawn\s*\("),
+    ".mjs": (r"\bspawnSync\s*\(", r"\bspawn\s*\(", r"\bexecFile\s*\(", r"\bexecSync\s*\("),
+    ".cjs": (r"\bspawnSync\s*\(", r"\bspawn\s*\(", r"\bexecFile\s*\(", r"\bexecSync\s*\("),
+    ".jsx": (r"\bspawnSync\s*\(", r"\bspawn\s*\(", r"\bexecFile\s*\(", r"\bexecSync\s*\("),
+    ".ts": (r"\bspawnSync\s*\(", r"\bspawn\s*\(", r"\bexecFile\s*\(", r"\bexecSync\s*\("),
+    ".tsx": (r"\bspawnSync\s*\(", r"\bspawn\s*\(", r"\bexecFile\s*\(", r"\bexecSync\s*\("),
+    ".kts": (r"\bProcessBuilder\s*\(",),
+    ".swift": (r"\bProcess\s*\(\s*\)", r"\.executableURL\b", r"\blaunchPath\b"),
+    ".ex": (r"\bSystem\.cmd\s*\(", r"\bPort\.open\s*\("),
+    ".exs": (r"\bSystem\.cmd\s*\(", r"\bPort\.open\s*\("),
     ".py": (r"\bsubprocess\.(?:run|Popen|call|check_output|check_call)\s*\(", r"\bos\.system\s*\("),
     ".rb": (r"\bsystem\s*\(", r"\bProcess\.spawn\b", r"\bIO\.popen\b"),
     ".php": (r"\bpassthru\s*\(", r"\bshell_exec\s*\(", r"\bproc_open\s*\(", r"\bexec\s*\("),
