@@ -562,7 +562,8 @@ def test_signals(files):
     return flags
 
 
-def analyze(root, rev_range=None, skip=None, include_nested=False, staged=False):
+def analyze(root, rev_range=None, skip=None, include_nested=False, staged=False,
+            constructor=None):
     """El informe de un cambio: qué le hizo a los tests y al acoplamiento.
 
     Con `staged=True` mira lo que está en el índice en vez de un rango de commits.
@@ -642,6 +643,11 @@ def analyze(root, rev_range=None, skip=None, include_nested=False, staged=False)
             since=base,
             skip=skip or graph.DEFAULT_SKIP,
             include_nested=include_nested,
+            # El extractor de la CLI (los dos motores en un repo mixto). Sin el,
+            # un ciclo nuevo entre ficheros JS pasaba `check` con "sin
+            # acoplamiento nuevo" mientras `graph --gate` lo bloqueaba
+            # (auditoria del 24-sep-2026).
+            constructor=constructor,
         )
         if coupling.get("baseline_ok"):
             report["coupling"] = {

@@ -95,6 +95,33 @@ def test_un_ciclo_solo_de_typescript_bloquea_el_gate(tmp_path):
     assert "web.cliente" in edges.get("web.app", set())
 
 
+@necesita_astgrep
+def test_check_ve_el_ciclo_nuevo_de_typescript(tmp_path):
+    """Auditoria del 24-sep-2026: `graph --gate --since` bloqueaba el ciclo y
+    `check` decia "sin acoplamiento nuevo" sobre el MISMO commit — llamaba al
+    grafo sin el extractor de los dos motores."""
+    import subprocess
+
+    from galaxybrain import changes
+
+    root = _mixto(tmp_path)
+
+    def git(*args):
+        subprocess.run(["git", *args], cwd=root, check=True, capture_output=True)
+
+    git("init", "-q")
+    git("-c", "user.email=t@t", "-c", "user.name=t", "add", "-A")
+    git("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "base")
+    _escribe(root, "web/cliente.ts", "import { render } from './app';\n\n"
+                                     "export function fetchUsers() {\n  return render();\n}\n")
+    git("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qam", "ciclo")
+
+    report = changes.analyze(root, "HEAD~1..HEAD",
+                             constructor=cli._constructor_de_grafo(root))
+    pares = report["coupling"]["new_pairs"]
+    assert any({"web.app", "web.cliente"} <= set(p) for p in pares), pares
+
+
 def test_sin_el_binario_el_informe_de_python_sigue_entero_y_lo_dice(tmp_path, monkeypatch):
     """`ast-grep` es opcional por diseno (SCOPE). Que falte no puede tumbar un
     informe de Python bueno — pero callarlo repetiria el fallo que esto mato."""

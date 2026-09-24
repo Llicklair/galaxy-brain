@@ -1937,7 +1937,8 @@ def cmd_check(args):
     from . import changes
 
     root = os.path.abspath(args.path or ".")
-    report = changes.analyze(root, args.range, staged=args.staged)
+    report = changes.analyze(root, args.range, staged=args.staged,
+                             constructor=_constructor_de_grafo(root))
     if args.json:
         emit(json.dumps(report, ensure_ascii=False, indent=2))
     else:
