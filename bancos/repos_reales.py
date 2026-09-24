@@ -86,6 +86,7 @@ REPOS = [
         # '../index.js'`, que cierra el ciclo con el barril. Es solo de tipos (se
         # borra al compilar); si eso debe contar es una decision abierta, no un
         # fallo del motor. Si cambia, este numero lo dice.
+        "herencias": [["source.errors.ResponseSizeError.ResponseSizeError", "source.errors.KyError.KyError"]],
         "ciclos": 1,
     },
     {
@@ -135,6 +136,7 @@ REPOS = [
         "llamadas": [["MediatR.Mediator.Publish", "MediatR.Mediator.PublishNotification"],
                      ["MediatR.MicrosoftExtensionsDI.MediatRServiceCollectionExtensions.AddMediatR",
                       "MediatR.Registration.ServiceRegistrar.AddRequiredServices"]],
+        "herencias": [["test.MediatR.DependencyInjectionTests.Providers.LightInjectServiceProviderFixture.LightInjectServiceProviderFixture", "test.MediatR.DependencyInjectionTests.Abstractions.BaseServiceProviderFixture.BaseServiceProviderFixture"]],
         "ciclos": 0,
     },
     {
@@ -152,6 +154,9 @@ REPOS = [
         "no_aristas": [["lib.addressable.idna.native", "lib.addressable.idna"]],
         "llamadas": [["lib.addressable.idna.pure.to_ascii", "lib.addressable.idna.pure.punycode_encode"],
                      ["lib.addressable.template.expand", "lib.addressable.template.normalize_keys"]],
+        # `CustomURIClass < Addressable::URI` caia en el `Fake::URI` del spec al
+        # preferir la clase local: una base cualificada no es la local
+        "no_herencias": [["spec.addressable.uri_spec.CustomURIClass", "spec.addressable.uri_spec.URI"]],
         "ciclos": 0,
     },
     {
@@ -170,6 +175,7 @@ REPOS = [
         "llamadas": [["Container.get", "Container.resolve"],
                      ["Exception.NotFoundException.forAlias", "Definition.Definition.normaliseAlias"]],
         # REAL: ReflectionContainer <-> Argument\ArgumentReflectorTrait (use en los dos sentidos)
+        "herencias": [["Argument.LiteralArgument.LiteralArgument", "Argument.LiteralArgumentInterface.LiteralArgumentInterface"]],
         "ciclos": 1,
     },
     {
@@ -194,6 +200,7 @@ REPOS = [
                       "main.java.org.jsoup.select.Collector.collect"]],
         # REALES: Java admite ciclos de import. Un SCC de 28 modulos, TestServer<->netty
         # y HtmlTreeBuilder<->HtmlTreeBuilderState (static imports en los dos sentidos)
+        "herencias": [["main.java.org.jsoup.nodes.Element.Element", "main.java.org.jsoup.nodes.Node.Node"]],
         "ciclos": 3,
     },
     {
@@ -209,6 +216,7 @@ REPOS = [
                        ["test.java.com.squareup.javapoet.TypesTest", "main.java.com.squareup.javapoet.Util"]],
         "llamadas": [["main.java.com.squareup.javapoet.JavaFile.writeTo",
                       "main.java.com.squareup.javapoet.JavaFile.writeToPath"]],
+        "herencias": [["main.java.com.squareup.javapoet.WildcardTypeName.WildcardTypeName", "main.java.com.squareup.javapoet.TypeName.TypeName"]],
         "ciclos": 0,
     },
     {'nombre': 'colormath',
@@ -234,7 +242,8 @@ REPOS = [
                    'colormath.src.commonMain.kotlin.com.github.ajalt.colormath.calculate.Contrast.wcagLuminance'],
                   ['colormath.src.commonMain.kotlin.com.github.ajalt.colormath.model.LAB.create',
                    'colormath.src.commonMain.kotlin.com.github.ajalt.colormath.internal.ColorSpaceUtils.doCreate']],
-     'ciclos': 0},
+     "herencias": [["colormath.src.commonMain.kotlin.com.github.ajalt.colormath.model.RGB.LinearTransferFunctions", "colormath.src.commonMain.kotlin.com.github.ajalt.colormath.model.RGB.TransferFunctions"]],
+        'ciclos': 0},
     {
         "nombre": "scala-xml", "lenguaje": "scala",
         "url": "https://github.com/scala/scala-xml",
@@ -271,6 +280,7 @@ REPOS = [
                       "shared.src.main.scala.scala.xml.Utility.serializeImpl"]],
         # sin ciclos de import: los acoples reales van por el mismo paquete
         # (`scala.xml`), que no deja arista (MISMO_PAQUETE)
+        "herencias": [["shared.src.main.scala.scala.xml.include.UnavailableResourceException.UnavailableResourceException", "shared.src.main.scala.scala.xml.include.XIncludeException.XIncludeException"]],
         "ciclos": 0,
     },
     {
@@ -298,6 +308,7 @@ REPOS = [
                      ["Sources.ArgumentParser.Parsable Types.ParsableCommand.parseAsRoot",
                       "Sources.ArgumentParser.Parsing.CommandParser.CommandParser"]],
         # SwiftPM prohibe ciclos entre targets, y dentro de un target no hay import
+        "herencias": [["Tests.ArgumentParserUnitTests.UsageGenerationTests.J", "Sources.ArgumentParser.Parsable Types.ParsableArguments.ParsableArguments"]],
         "ciclos": 0,
     },
     {
@@ -344,6 +355,7 @@ REPOS = [
         # greedy<->lazy, linter<->internal/linter_rules,
         # optimize<->internal/optimize_rules, predicate/{character,
         # single_character, unicode_character} y matcher/pattern/* (4).
+        "herencias": [["lib.src.parser.combinator.optional.OptionalParser", "lib.src.parser.combinator.delegate.DelegateParser"]],
         "ciclos": 7,
     },
     {
@@ -420,6 +432,7 @@ def mide(repo):
     g, s = _gb("graph", ruta), _gb("symbols", ruta)
     aristas = {tuple(e) for e in g.get("edge_list") or []}
     llamadas = {(o, d) for o, d, t in s.get("edges") or [] if t == "CALLS"}
+    herencias = {(o, d) for o, d, t in s.get("edges") or [] if t == "EXTENDS"}
     quals = {n["qual"] for n in s.get("nodes") or []}
     fallos = []
     for q in repo.get("simbolos", []):
@@ -434,6 +447,12 @@ def mide(repo):
     for o, d in repo.get("llamadas", []):
         if (o, d) not in llamadas:
             fallos.append("falta la llamada %s -> %s" % (o, d))
+    for o, d in repo.get("herencias", []):
+        if (o, d) not in herencias:
+            fallos.append("falta la herencia %s -> %s" % (o, d))
+    for o, d in repo.get("no_herencias", []):
+        if (o, d) in herencias:
+            fallos.append("herencia INVENTADA %s -> %s" % (o, d))
     ciclos = len(g.get("cycles") or [])
     if "ciclos" in repo and ciclos != repo["ciclos"]:
         fallos.append("%d ciclo(s), se esperaban %d" % (ciclos, repo["ciclos"]))
