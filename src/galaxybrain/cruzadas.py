@@ -54,6 +54,144 @@ LANZADORES = {
     ".dart": (r"\bProcess\.(?:run|start|runSync)\s*\(",),
 }
 
+_PYMODULE = re.compile(r"#\[pymodule(?:\([^)]*\))?\][^\n]*\n((?:\s*#\[[^\n]*\n)*)\s*(?:pub(?:\([^)]*\))?\s+)?fn\s+(\w+)")
+_REGISTRA = re.compile(r"wrap_pyfunction!\(\s*([\w:]+)|add_class::<\s*([\w:]+)\s*>")
+_DEF_RUST = re.compile(r"^\s*(?:pub(?:\([^)]*\))?\s+)?(?:async\s+)?(?:fn|struct|enum)\s+(\w+)")
+_NOMBRE_PY = re.compile(r"#\[(?:pyo3|pyclass|pyfunction)\([^\]]*\bname\s*=\s*\"(\w+)\"")
+_FROM_IMPORT = re.compile(r"^[ \t]*from\s+([\w.]+)\s+import\s+(\([^)]*\)|[^\n#]+)", re.M)
+
+
+def enlaza_pyo3(root, informe):
+    """Python -> Rust por pyo3, con los dos lados escritos (24-sep-2026).
+
+    Medido sobre tach y watchfiles: 44 de 45 usos se resuelven por nombre
+    literal, y gb no veia ninguno. Lado Rust: lo que un `#[pymodule] fn M`
+    registra (`wrap_pyfunction!(f)`, `add_class::<T>`), con su nombre visible
+    en Python si lo cambia `#[pyo3(name=..)]`/`#[pyclass(name=..)]`. Lado
+    Python: `from ...M import A as B` y `from ... import M` + `M.x`. Cada USO
+    da CALLS desde el simbolo Python que lo contiene; el import, la dependencia
+    de modulo. Solo destino unico: lo demas se cuenta, no se adivina.
+    """
+    nodos = informe.get("nodes") or []
+    por_fichero = {}
+    for n in nodos:
+        if n.get("file"):
+            por_fichero.setdefault(n["file"].replace("\\", "/"), []).append(n)
+    rust = [f for f in por_fichero if f.endswith(".rs")]
+    python = [f for f in por_fichero if f.endswith(".py")]
+    if not rust or not python:
+        return
+    textos = {}
+    for rel in rust + python:
+        try:
+            with open(os.path.join(root, rel), encoding="utf-8", errors="replace") as fh:
+                textos[rel] = fh.read()
+        except OSError:
+            textos[rel] = ""
+
+    # Rust: que registra cada pymodule, y con que nombre lo ve Python.
+    registrados = {}                       # modulo_py -> {ident_rust}
+    for rel in rust:
+        t = textos[rel]
+        for m in _PYMODULE.finditer(t):
+            atributos, nombre = m.group(1), m.group(2)
+            cambiado = re.search(r"name\s*=\s*\"(\w+)\"", atributos)
+            cuerpo = t[m.end():t.find("\n}", m.end()) if "\n}" in t[m.end():] else len(t)]
+            destino = registrados.setdefault(cambiado.group(1) if cambiado else nombre, {})
+            for a, b in _REGISTRA.findall(cuerpo):
+                ruta = (a or b).split("::")
+                destino[ruta[-1]] = (ruta[:-1], rel)
+    if not registrados:
+        return
+    definiciones = {}                      # ident -> [(fichero, nombre_py, qual)]
+    for rel in rust:
+        lineas = textos[rel].split("\n")
+        quals = {n["qual"].rsplit(".", 1)[-1]: n["qual"] for n in por_fichero[rel]
+                 if n.get("kind") != "module"}
+        for i, linea in enumerate(lineas):
+            m = _DEF_RUST.match(linea)
+            if not m or m.group(1) not in quals:
+                continue
+            cambiado = _NOMBRE_PY.search("\n".join(lineas[max(0, i - 4):i]))
+            definiciones.setdefault(m.group(1), []).append(
+                (rel, cambiado.group(1) if cambiado else m.group(1), quals[m.group(1)]))
+    visibles = {}                          # (modulo_py, nombre_py) -> qual rust
+    for modulo_py, idents in registrados.items():
+        for ident, (ruta, fichero_mod) in idents.items():
+            candidatos = definiciones.get(ident, [])
+            # El registro dice CUAL: sin ruta, la del fichero del pymodule
+            # (`sync_project` vive en lib.rs y en sync.rs; envuelve la de lib.rs);
+            # con ruta (`config::ProjectConfig`), la del modulo que nombra.
+            if len(candidatos) > 1 and not ruta:
+                candidatos = [c for c in candidatos if c[0] == fichero_mod] or candidatos
+            elif len(candidatos) > 1:
+                candidatos = [c for c in candidatos
+                              if all(p in c[2].split(".") for p in ruta)] or candidatos
+            if len(candidatos) == 1:
+                visibles[(modulo_py, candidatos[0][1])] = candidatos[0][2]
+
+    modulo_de = {n["qual"]: n.get("module") for n in nodos}
+    aristas = {tuple(e) for e in informe.get("edges") or []}
+    sin, sin_nombres = 0, set()
+
+    def arista(e):
+        if e not in aristas:
+            aristas.add(e)
+            informe["edges"].append(list(e))
+
+    for rel in python:
+        t = textos[rel]
+        if not any(m in t for m in registrados):
+            continue
+        propios = por_fichero[rel]
+        modulo = next((n["qual"] for n in propios if n.get("kind") == "module"), None)
+        if not modulo:
+            continue
+        locales = {}                      # nombre local -> qual rust
+        de_modulo = set()                 # alias locales del modulo pyo3 entero
+        for m in _FROM_IMPORT.finditer(t):
+            origen, nombres = m.group(1), m.group(2).strip("() \n")
+            ultimo = origen.rsplit(".", 1)[-1]
+            for trozo in nombres.split(","):
+                partes = trozo.split(" as ")
+                nombre = partes[0].strip()
+                local = partes[-1].strip()
+                if not nombre:
+                    continue
+                if ultimo in registrados:
+                    destino = visibles.get((ultimo, nombre))
+                    if destino:
+                        locales[local] = destino
+                    else:
+                        sin += 1
+                        sin_nombres.add(nombre)
+                elif nombre in registrados:
+                    de_modulo.add((local, nombre))
+        usos = []
+        for local, destino in locales.items():
+            usos += [(mm.start(), destino) for mm in re.finditer(r"\b%s\b" % re.escape(local), t)]
+        for local, modulo_py in de_modulo:
+            for mm in re.finditer(r"\b%s\.(\w+)" % re.escape(local), t):
+                destino = visibles.get((modulo_py, mm.group(1)))
+                if destino:
+                    usos.append((mm.start(), destino))
+                else:
+                    sin += 1
+                    sin_nombres.add(mm.group(1))
+        for pos, destino in usos:
+            linea = t.count("\n", 0, pos) + 1
+            dentro = [n for n in propios if n.get("kind") != "module" and n.get("line")
+                      and n.get("end") and n["line"] <= linea <= n["end"]]
+            origen = min(dentro, key=lambda n: n["end"] - n["line"])["qual"] if dentro else modulo
+            if origen != destino:
+                arista((origen, destino, "CALLS"))
+            if modulo_de.get(destino):
+                arista((modulo, modulo_de[destino], "IMPORTS"))
+    if sin:
+        informe.setdefault("unresolved", {})["pyo3-sin-destino"] = sin
+        informe["pyo3_sin_destino"] = sorted(sin_nombres)
+
+
 #: Con que empieza una linea que es comentario, por extension. Solo la linea
 #: entera (tras el sangrado): distinguir un comentario a final de linea
 #: exigiria un lexer por lenguaje, y el caso medido era el otro — `impacted.py`

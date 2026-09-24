@@ -1359,8 +1359,13 @@ def _analiza_simbolos(root, since=None):
     informe = symbols.analyze(root, since=since)
     hay_otros = lenguajes.hay_codigo(root)
     if informe.get("nodes"):
-        return informe if not hay_otros else _fusiona_grafos(
-            informe, lenguajes.analyze(root), since=since)
+        if not hay_otros:
+            return informe
+        from . import cruzadas
+
+        fusion = _fusiona_grafos(informe, lenguajes.analyze(root), since=since)
+        cruzadas.enlaza_pyo3(root, fusion)   # Python -> Rust por pyo3 (24-sep-2026)
+        return fusion
     if not hay_otros:
         return informe
     informe = lenguajes.analyze(root)

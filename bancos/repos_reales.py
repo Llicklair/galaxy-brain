@@ -63,6 +63,8 @@ REPOS = [
         # crates externos que casaban con modulos propios por sufijo
         "no_aristas": [["filesystem", "resolvers.glob"], ["interrupt", "commands.sync"],
                        ["processors.ignore_directive", "commands.sync"]],
+        # pyo3: python/tach/check_external.py:3 importa la #[pyfunction] de src/lib.rs:210
+        "llamadas": [["python.tach.check_external", "lib.check_external_dependencies"]],
         "ciclos": 0,
     },
     {
