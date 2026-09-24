@@ -78,6 +78,12 @@ jobs:
           if ("${{ matrix.modo }}" -eq "local") { & "$env:RUNNER_TEMP\v\Scripts\Activate.ps1" }
           ./instala.ps1
 
+      - name: diagnostico (solo si algo fallo)
+        if: failure()
+        run: |
+          "$PY" -c "import sys, site, sysconfig; print('excepthook:', sys.excepthook, getattr(sys.excepthook, '__module__', None)); print('purelib:', sysconfig.get_paths()['purelib']); print('usersite:', site.ENABLE_USER_SITE, site.getusersitepackages()); print('sitecustomize:', getattr(sys.modules.get('sitecustomize'), '__file__', None))" || true
+          find / -name galaxybrain.pth 2>/dev/null | head || true
+
       - name: una excepcion real se captura
         run: |
           cd "$RUNNER_TEMP"
