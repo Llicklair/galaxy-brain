@@ -98,8 +98,11 @@ Todo determinista, cero modelos, cero dependencias más allá de la librería es
    un techo escrito. Una consola que ralentiza el programa se apaga el primer día. (Medido: 6,4 ms de
    arranque, cero mientras el programa corre — ver [README.md](README.md).)
 5. **Un runtime, un tipo de fallo — y dos motores de grafo, no uno genérico.** Ejecución local, y la
-   consola captura **un solo tipo de fallo**: excepciones no capturadas, en Python, porque
-   `sys.excepthook` no tiene equivalente portable. El **grafo** sí lee más: Python con `ast` de la
+   consola captura **un solo tipo de fallo**: excepciones no capturadas. Desde el
+   [ADR 0012](docs/adr/0012-consola-multilenguaje.md) (6-sep-2026) no solo en Python: en cada
+   lenguaje con un gancho que **observa sin manejar** —mismo exit code, misma traza— (js/ts, JVM,
+   csharp, ruby, php, lua, c), más el envolvente stderr para go y rust; `gb status` declara el
+   mecanismo y su techo por lenguaje. El **grafo** lee: Python con `ast` de la
    stdlib, y otros 16 lenguajes con `ast-grep` **por referencia** — binario externo detectado y
    verificado, cero dependencias nuevas ([ADR 0009](docs/adr/0009-multilenguaje-por-referencia.md)).
    Dos motores que conviven; añadir un lenguaje es una entrada en una tabla de datos, y si hiciera

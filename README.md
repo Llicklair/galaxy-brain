@@ -19,13 +19,21 @@ a model.
 integrated by reference: JS, TS, TSX, Go, Rust, Java, Kotlin, Swift, Ruby, PHP, Lua, Scala, Elixir,
 C#, C and Dart. Every one has a conformance probe in the suite, so "supported" is a claim you can
 re-verify, not a list of intentions — and what a language *can't* do is printed in its own output
-rather than hidden. The **error console** is Python-only and says so: `sys.excepthook` has no
-portable equivalent.
+rather than hidden. The **error console** is multi-language too, but only where a runtime offers a
+hook that *observes without handling* — same exit code, same trace
+([ADR 0012](docs/adr/0012-consola-multilenguaje.md)): Python, JS/TS (locals included, through the
+inspector), the JVM, C#, Ruby, PHP, Lua and C natively; Go and Rust through a stderr wrapper
+(`gb-run.py`). Python arms itself with `gb on`; the rest need one variable in the shell that
+launches them (`NODE_OPTIONS`, `JAVA_TOOL_OPTIONS`…), which `gb on --lenguajes` prints — gb cannot
+export it for you. `gb status` says, per language, whether it is armed and what it cannot see.
 
 **In a mixed repo, both engines run.** Python is parsed with the stdlib `ast`, the other 16 through
 `ast-grep`, and in a repo that has both, the two graphs are **merged into one** — a Python backend
 and a TypeScript frontend are in the same picture, and a cycle among TypeScript files blocks the
-gate exactly like a Python one. What is *not* done is invent edges **between** language families: a
+gate exactly like a Python one. Edges **between** language families exist only where the source
+names both ends literally: a Tauri `invoke("cmd")` to its `#[tauri::command]`, an Electron
+`ipcRenderer.invoke("channel")` to its `ipcMain.handle("channel")`, a Python `import` of a pyo3
+`#[pymodule]`, and a test that launches another program. What is *not* done is guess the rest: a
 `fetch("/users")` cannot be tied to a Flask view without resolving the runtime, so the report says
 so in `not_covered` instead of faking a link. Name collisions keep Python's name and suffix the
 other (`web/app.py` stays `web.app`, `web/app.ts` becomes `web.app:ts`). `ast-grep` remains
@@ -46,7 +54,7 @@ which is why it can be instant and cannot fail in expensive ways.
 orchestration. The graph here is a graph <b>of your code</b> — modules, symbols, call edges, parsed
 from the AST.</sub>
 
-<sub>v0.7.0 · 988 tests · 16.7k LOC source / 10.8k LOC tests · clean gate · ruff · Python ≥ 3.9 · zero runtime dependencies (<code>ast-grep</code> optional, only for non-Python graphs) · CLI output is Spanish by default — <code>GB_LANG=en</code> switches the console (capture notice, <code>gb show</code>/<code>last</code>, graph anchor) and the verifier (<code>gb tests</code> selection + checkpoint, <code>gb check</code>) to English; floor and map still Spanish, coming next</sub>
+<sub>v0.7.0 · 1159 tests · 19.3k LOC source / 13.2k LOC tests · clean gate · ruff · Python ≥ 3.9 · zero runtime dependencies (<code>ast-grep</code> optional, only for non-Python graphs) · CLI output is Spanish by default — <code>GB_LANG=en</code> switches the console (capture notice, <code>gb show</code>/<code>last</code>, graph anchor) and the verifier (<code>gb tests</code> selection + checkpoint, <code>gb check</code>) to English; floor and map still Spanish, coming next</sub>
 
 ---
 
@@ -147,11 +155,15 @@ declared yourself.
 - **Not a server, not an MCP server.** [SCOPE.md](SCOPE.md) has the reasoning, including the one
   condition that would reopen the MCP question.
 - **Not multi-language everywhere.** The *graph* reads 17 languages and so does the **gate** — import
-  cycles and declared boundaries hold in any of them. The *error console* is Python-only. Narrowing
-  test selection is licensed per language — Python, `js`, `ts`, `go`, `c#`, `java`, `php`, `lua`,
-  `rust` and `ruby` today, each earned with a bench of real failures. The rest have not failed a
-  measurement: they have no bench yet, so `gb tests` runs the whole suite and says why. A call graph
-  with holes doesn't cost you savings; it costs you a false green.
+  cycles and declared boundaries hold in any of them, and a bank of 18 real open-source repos across
+  the 17 languages pins symbols, edges, calls and inheritance against code nobody wrote for gb. The
+  *error console* captures where the runtime has an observing hook (see above); Dart and Swift do
+  not yet. Narrowing test selection is licensed per language — Python, `js`, `ts`, `go`, `c#`,
+  `java`, `php`, `lua`, `rust` and `ruby` today, each earned with a bench of real failures. The rest
+  have not failed a measurement: they have no bench yet, so `gb tests` runs the whole suite and says
+  why. A call graph with holes doesn't cost you savings; it costs you a false green — so when the
+  caller chain dies on a method the graph cannot see being called (`value.method()` outside Python),
+  `gb tests` runs everything instead of narrowing.
 
 ### The two halves
 
@@ -590,7 +602,7 @@ mode this design avoids.
 
 Three layers, because tests alone only pin what you already knew how to check.
 
-**1. The suite — 988 tests, ~480 s (measured 2026-09-06).** Runs on every commit via the pre-commit
+**1. The suite — 1159 tests, ~480 s (measured 2026-09-24).** Runs on every commit via the pre-commit
 hook, still under the 600 s DORA threshold — but no longer far under it.
 
 **2. The gate is verified by breaking it.** A gate degrades in silence: it keeps returning zero and
@@ -675,8 +687,8 @@ upload it nowhere.**
 
 - **Uncaught exceptions only.** An `except: pass` that swallows the failure is invisible here — and
   rightly so: a handled exception is, by definition, one its author decided was not a failure.
-- **Failing tests are not covered.** pytest catches the exception, so no hook ever sees it. Use
-  `pytest -l`.
+- **Failing tests are not covered.** pytest (and jest, vitest…) catches the exception, so no hook
+  ever sees it. Use `pytest -l`.
 - **Main thread, `threading` threads, and finalizers** (`__del__`, weakrefs, GC). **`asyncio` with
   stray tasks** nobody awaits stays out, as does `multiprocessing`; if the exception propagates out
   of `asyncio.run()`, it is captured.
@@ -687,10 +699,12 @@ upload it nowhere.**
   `<Type: repr() failed with X>` and does not take the rest of the frame down with it.
 - **Non-Python deaths** — a segfault, an OOM kill, a `kill -9` — raise no exception, so no hook
   ever sees them.
-- **Python only, local only.** No CI, no UI, no server, no MCP server (see [SCOPE.md](SCOPE.md) for
+- **Local only.** Code running in a browser is out of reach of the console. No CI, no UI, no
+  server, no MCP server (see [SCOPE.md](SCOPE.md) for
   why, and for the single condition that would reopen it).
 - **Call edges are inferred.** `object.method()` needs type inference; unresolved calls are
-  declared, not guessed.
+  declared, not guessed. Python resolves more of them than the other 16 languages, which is why
+  test selection saves less there (46–62% on the JS, C# and Rust benches) — safely, not falsely.
 - **Adoption is the one thing not measured.** Latency, overhead, recall and coverage all have
   numbers behind them. Whether people keep using it does not — and by rule 10, if you stop, that
   gets investigated, never blocked with a hook that forces you back.
@@ -707,7 +721,9 @@ review rather than argued about. The load-bearing ones:
    whose only output is a verdict is misplaced — anything that only says *no* is a tax.
 3. **Latency budget, non-negotiable.** < 1 s per edit, < 10 s per commit.
 4. **Overhead on the observed process measured, not estimated.**
-5. **One language, one runtime.** Python, local, one failure type.
+5. **One runtime, one failure type — multi-language in both halves.** Local execution, uncaught
+   exceptions only; a language joins the graph with its conformance probe, and the console only
+   through a hook that observes without handling.
 6. **Facts stored raw.** Exception, trace and state persist exactly as captured.
 7. **History local, append-only, outside the observed repo.**
 8. **AI only after the fact, explicit and optional.**
@@ -726,7 +742,7 @@ fact; "other frameworks do it" is not a reason).
 ## Development
 
 ```bash
-python -m pytest tests/ -q          # the suite — 988 tests, ~480 s
+python -m pytest tests/ -q          # the suite — 1159 tests, ~480 s
 python -m ruff check src tests      # lint (catches defects, holds no style opinions)
 gb graph src --gate                 # the gate, clean
 ```
