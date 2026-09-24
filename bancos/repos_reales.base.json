@@ -1,0 +1,37 @@
+{
+ "express": {
+  "aristas": 56,
+  "ciclos": 0,
+  "llamadas": 434,
+  "modulos": 140,
+  "simbolos": 227
+ },
+ "import-linter": {
+  "aristas": 171,
+  "ciclos": 0,
+  "llamadas": 674,
+  "modulos": 114,
+  "simbolos": 713
+ },
+ "ky": {
+  "aristas": 152,
+  "ciclos": 1,
+  "llamadas": 787,
+  "modulos": 87,
+  "simbolos": 428
+ },
+ "tach": {
+  "aristas": 210,
+  "ciclos": 0,
+  "llamadas": 482,
+  "modulos": 209,
+  "simbolos": 927
+ },
+ "uuid": {
+  "aristas": 0,
+  "ciclos": 0,
+  "llamadas": 182,
+  "modulos": 23,
+  "simbolos": 122
+ }
+}
