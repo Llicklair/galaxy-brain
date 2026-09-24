@@ -85,6 +85,10 @@ _TABLA = {
     "la raiz no existe o no es un directorio: %s":
         "the root does not exist or is not a directory: %s",
     "el diff esta vacio: nada que correr": "the diff is empty: nothing to run",
+    "%s: la cadena llega a un metodo sin llamantes (llamada sobre un valor "
+    "que no se resuelve): todo":
+        "%s: the chain reaches a method with no callers (a call on a value it "
+        "cannot resolve): everything runs",
     "%s: metodo sin llamantes en el grafo (llamada que no se ve): todo":
         "%s: method with no callers in the graph (a call it cannot see): everything runs",
     "no pude leer el diff de '%s' (¿rango valido?)":

@@ -294,13 +294,20 @@ def _enlaza_pasados_como_valor(nodes, llamantes, nombrado_en):
                     llamantes.setdefault(qual, set()).add(vecino)
 
 
-def tests_que_alcanzan(nodes, llamantes, semillas, max_depth=8):
+def tests_que_alcanzan(nodes, llamantes, semillas, max_depth=8, callejones=None):
     """Cierre transitivo de llamantes desde `semillas` hasta los tests.
 
     `max_depth` no es una optimización: es el tope que impide que un ciclo de
     llamadas convierta esto en un bucle infinito. Si se agota con frontera
     pendiente lo decimos, porque una selección truncada en silencio es
     exactamente el falso verde que este módulo existe para evitar.
+
+    `callejones` (lista, opcional) recoge los METODOS fuera de Python a los que
+    la subida llega y que no tienen ni un llamante: ahi la cadena no termina,
+    se CORTA — `valor.metodo()` no se resuelve fuera de Python y los tests que
+    llegan por ahi quedan fuera. Medido con rojos reales en bench_rust
+    (24-sep-2026): rompiendo `iva`, el test de `Precio::nuevo(..).con_iva()` se
+    ponia rojo y no se elegia.
     """
     vistos = set()
     frontera = set(semillas)
@@ -313,10 +320,15 @@ def tests_que_alcanzan(nodes, llamantes, semillas, max_depth=8):
                 if origen in vistos:
                     continue
                 vistos.add(origen)
-                if _es_test(origen, nodes.get(origen, {}), nodes):
+                nodo = nodes.get(origen, {})
+                if _es_test(origen, nodo, nodes):
                     tests.add(origen)
                 else:
                     siguiente.add(origen)
+                    if (callejones is not None and nodo.get("kind") == "method"
+                            and not llamantes.get(origen)
+                            and not (nodo.get("file") or "").endswith(".py")):
+                        callejones.append(origen)
         frontera = siguiente
         if not frontera:
             break
@@ -651,9 +663,14 @@ def analyze(root, rev_range=None, staged=False, worktree=False, skip=None,
     _enlaza_herencia(nodes, llamantes, grafo["edges"])
     _enlaza_pasados_como_valor(nodes, llamantes, grafo.get("nombrado_como_valor_en"))
     _enlaza_cruces(root, nodes, llamantes)
-    tests, truncado = tests_que_alcanzan(nodes, llamantes, semillas)
+    callejones = []
+    tests, truncado = tests_que_alcanzan(nodes, llamantes, semillas, callejones=callejones)
     if truncado:
         return correr_todo(t("el cierre de llamantes no termino (¿ciclo de llamadas?): todo"))
+    if callejones:
+        return correr_todo(
+            t("%s: la cadena llega a un metodo sin llamantes (llamada sobre un valor "
+              "que no se resuelve): todo") % ", ".join(sorted(callejones)[:3]))
 
     # Un símbolo de test tocado directamente entra él mismo en la selección.
     for qual in semillas:
