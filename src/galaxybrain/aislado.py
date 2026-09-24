@@ -117,9 +117,19 @@ def _tiene_cambios(ruta):
         if not linea.startswith("??"):
             continue
         rel = linea[3:].strip().strip('"')
-        if rel.endswith(".py") and not any(p in rel for p in RUIDO):
+        if _es_codigo(rel) and not any(p in rel for p in RUIDO):
             return True
     return False
+
+
+def _es_codigo(rel):
+    """¿Un fichero de codigo de alguno de los 17 lenguajes? Solo `.py` hacia
+    que una rama cuyo trabajo entero era un `.ts` nuevo desapareciera del
+    informe de `--union` (auditoria del 24-sep-2026)."""
+    from . import lenguajes
+
+    ext = os.path.splitext(rel)[1]
+    return ext == ".py" or ext in lenguajes.POR_EXTENSION
 
 
 def verifica(root, ficheros, staged=False, traza=None):

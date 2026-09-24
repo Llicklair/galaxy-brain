@@ -503,3 +503,23 @@ def test_un_repo_js_no_se_verifica_con_pytest(tmp_path, monkeypatch):
     orden = lanzados[0] if isinstance(lanzados[0], str) else " ".join(lanzados[0])
     assert "pytest" not in orden, "sigue cableado a pytest: %r" % orden
     assert "npm" in orden or "jest" in orden, orden
+
+
+def test_una_rama_con_solo_un_ts_nuevo_tiene_cambios(tmp_path):
+    """`--union` descartaba la rama cuyo trabajo entero era un fichero nuevo
+    que no es .py (auditoria del 24-sep-2026): `_tiene_cambios` solo miraba
+    `.py`. Los caches siguen sin contar."""
+    raiz = tmp_path / "rama"
+    raiz.mkdir()
+    for args in (["init", "-q"], ["config", "user.email", "t@t"], ["config", "user.name", "t"]):
+        subprocess.run(["git", *args], cwd=raiz, check=True, capture_output=True)
+    (raiz / "README.md").write_text("x\n", encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=raiz, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-qm", "base"], cwd=raiz, check=True, capture_output=True)
+
+    (raiz / "node_modules").mkdir()
+    (raiz / "node_modules" / "x.js").write_text("1\n", encoding="utf-8")
+    assert aislado._tiene_cambios(str(raiz)) is False, "el ruido no es trabajo"
+
+    (raiz / "nuevo.ts").write_text("export const x = 1;\n", encoding="utf-8")
+    assert aislado._tiene_cambios(str(raiz)) is True
