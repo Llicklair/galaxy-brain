@@ -224,3 +224,22 @@ def test_un_ciclo_ts_nuevo_sigue_bloqueando(tmp_path):
                                      "export function fetchUsers() {\n  return render();\n}\n")
     git("commit", "-qam", "cierra el ciclo")
     assert cli.main(["graph", root, "--gate", "--since", "HEAD~1"]) == 1
+
+
+@necesita_astgrep
+def test_check_calcula_la_onda_de_un_cambio_en_typescript(tmp_path):
+    """Auditoria del 24-sep-2026: la onda de `check` (simbolos tocados y sus
+    llamantes) salia del motor de Python y un cambio en un .ts la dejaba vacia."""
+    root = _mixto(tmp_path)
+    git = _repo_git(root)
+    git("add", "-A")
+    git("commit", "-qm", "base")
+    _escribe(root, "web/cliente.ts", "export function fetchUsers() {\n  return [1];\n}\n")
+    git("commit", "-qam", "toca ts")
+
+    from galaxybrain import changes
+
+    report = changes.analyze(root, "HEAD~1..HEAD", constructor=cli._constructor_de_grafo(root),
+                             informe_simbolos=cli._analiza_simbolos(root))
+    assert any("fetchUsers" in (o.get("symbol") or o.get("qual") or str(o)) for o in report["onda"]), \
+        report["onda"]

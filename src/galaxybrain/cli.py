@@ -817,7 +817,7 @@ def _ancla_grafo(record):
         return None
     if rel.startswith(".."):
         return None  # el frame vive fuera del proyecto: no es nodo de este grafo
-    report = symbols.analyze(proyecto)
+    report = _analiza_simbolos(proyecto)   # un crash en Java tambien tiene nodo
     if report.get("root_error"):
         return None
     nodo = symbols.en_linea(report, rel, frame["line"])
@@ -1948,7 +1948,8 @@ def cmd_check(args):
 
     root = os.path.abspath(args.path or ".")
     report = changes.analyze(root, args.range, staged=args.staged,
-                             constructor=_constructor_de_grafo(root))
+                             constructor=_constructor_de_grafo(root),
+                             informe_simbolos=_analiza_simbolos(root))
     if args.json:
         emit(json.dumps(report, ensure_ascii=False, indent=2))
     else:
@@ -1980,13 +1981,12 @@ def _aviso_sync(root):
     """
     from . import actividad, aislado
     from . import graph as graph_mod
-    from . import symbols as symbols_mod
 
     try:
         toplevel = (graph_mod._git(root, "rev-parse", "--show-toplevel") or "").strip()
         if not toplevel or len(aislado._worktrees(toplevel)) < 2:
             return None
-        salida = actividad.deuda(root, symbols_mod.analyze(root))
+        salida = actividad.deuda(root, _analiza_simbolos(root))
         pendientes = salida.get("deuda") or []
         if not pendientes:
             return None
@@ -2005,10 +2005,9 @@ def _aviso_sync(root):
 
 def cmd_sync(args):
     from . import actividad
-    from . import symbols as symbols_mod
 
     root = os.path.abspath(args.path or ".")
-    informe = symbols_mod.analyze(root)
+    informe = _analiza_simbolos(root)
     salida = actividad.deuda(root, informe)
     if args.json:
         emit(json.dumps(salida, ensure_ascii=False, indent=2))

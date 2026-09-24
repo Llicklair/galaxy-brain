@@ -563,7 +563,7 @@ def test_signals(files):
 
 
 def analyze(root, rev_range=None, skip=None, include_nested=False, staged=False,
-            constructor=None):
+            constructor=None, informe_simbolos=None):
     """El informe de un cambio: qué le hizo a los tests y al acoplamiento.
 
     Con `staged=True` mira lo que está en el índice en vez de un rango de commits.
@@ -622,7 +622,9 @@ def analyze(root, rev_range=None, skip=None, include_nested=False, staged=False,
     base = "HEAD" if staged else (rev_range.split("..")[0] or None)
 
     from . import symbols as _sym
-    _informe = _sym.analyze(root)
+    # El informe de la CLI (los dos motores): con el de Python solo, la onda
+    # de un cambio en un .ts o un .go salia vacia (auditoria del 24-sep-2026).
+    _informe = informe_simbolos if informe_simbolos is not None else _sym.analyze(root)
 
     report["onda"] = _onda_del_diff(root, diff, informe=_informe)
     if report["onda"]:
