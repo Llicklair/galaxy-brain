@@ -8,6 +8,8 @@ que si esta, y que declare lo que no puede saber.
 
 import os
 
+import pytest
+
 from galaxybrain import cli, floor
 
 
@@ -502,3 +504,25 @@ def test_una_mencion_de_pasada_no_cuenta_como_criterio(tmp_path):
     root = str(tmp_path)
     _write(root, "README.md", "Aqui hablamos del criterio de terminado alguna vez, de pasada.\n")
     assert "no encuentro ninguno" in _nivel(floor.analyze(root), "terminado")["detail"]
+
+
+@pytest.mark.parametrize("config,tipo", [(".eslintrc.yml", "lint"), ("phpstan.neon", "lint"),
+                                         (".luacheckrc", "lint"), ("checkstyle.xml", "lint"),
+                                         ("analysis_options.yaml", "lint"),
+                                         (".php-cs-fixer.php", "formato"), (".scalafmt.conf", "formato")])
+def test_las_gates_de_otros_ecosistemas_cuentan(tmp_path, config, tipo):
+    """Banco de repos reales (24-sep-2026): 7 de 18 decian "falta" con su
+    config delante (express, container, busted, javapoet, petitparser...)."""
+    _write(str(tmp_path), config, "x\n")
+    assert floor.detect_gates(str(tmp_path)).get(tipo) == config
+
+
+def test_un_lenguaje_tipado_tiene_tipos_por_su_compilador(tmp_path):
+    """"Sin config de tipos" sobre jsoup o google/uuid era falso: en Java o Go
+    el comprobador de tipos es el compilador."""
+    root = str(tmp_path)
+    _write(root, "src/A.java", "public class A { int x() { return 1; } }\n")
+    assert "java" in floor.detect_gates(root).get("tipos", "")
+    solo_py = str(tmp_path / "py")
+    _write(solo_py, "a.py", "x = 1\n")
+    assert "tipos" not in floor.detect_gates(solo_py)

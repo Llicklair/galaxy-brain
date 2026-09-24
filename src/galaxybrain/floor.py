@@ -159,13 +159,31 @@ def detect_test_command(root):
 
 #: Configuraciones que declaran una gate determinista. Se mira el fichero, no se
 #: ejecuta nada: la presencia de la config es el hecho.
+#: Medido sobre los 18 repos del banco de repos reales (24-sep-2026): con solo
+#: las configs de Python/JS/Go, 7 decian "falta" teniendo la suya delante
+#: (`.eslintrc.yml`, `phpstan.neon`, `.luacheckrc`, `checkstyle.xml`,
+#: `analysis_options.yaml`...). El criterio de `floor` es 0 avisos falsos.
 GATE_CONFIGS = {
     "lint": ["ruff.toml", ".ruff.toml", ".flake8", ".pylintrc", ".eslintrc",
-             ".eslintrc.json", ".eslintrc.js", "eslint.config.js", "eslint.config.mjs",
-             "biome.json", ".golangci.yml", ".golangci.yaml"],
+             ".eslintrc.json", ".eslintrc.js", ".eslintrc.cjs", ".eslintrc.yml", ".eslintrc.yaml",
+             "eslint.config.js", "eslint.config.mjs", "eslint.config.cjs", "eslint.config.ts",
+             "biome.json", "biome.jsonc", ".golangci.yml", ".golangci.yaml", ".golangci.toml",
+             ".rubocop.yml", "phpstan.neon", "phpstan.neon.dist", "psalm.xml",
+             "clippy.toml", ".clippy.toml", "detekt.yml", ".swiftlint.yml", ".credo.exs",
+             "analysis_options.yaml", ".clang-tidy", "checkstyle.xml", ".luacheckrc",
+             ".scalafix.conf"],
     "tipos": ["mypy.ini", ".mypy.ini", "pyrightconfig.json", "pyrefly.toml", "tsconfig.json"],
-    "formato": [".prettierrc", ".prettierrc.json", "prettier.config.js", ".editorconfig", "rustfmt.toml"],
+    "formato": [".prettierrc", ".prettierrc.json", ".prettierrc.yml", ".prettierrc.yaml",
+                ".prettierrc.js", ".prettierrc.cjs", "prettier.config.js", "prettier.config.mjs",
+                "prettier.config.cjs", ".editorconfig", "rustfmt.toml", ".rustfmt.toml",
+                ".scalafmt.conf", ".clang-format", ".swiftformat", ".stylua.toml", "stylua.toml",
+                ".php-cs-fixer.php", ".php-cs-fixer.dist.php", ".formatter.exs", "dprint.json"],
 }
+
+#: Lenguajes cuyo compilador YA comprueba tipos: en ellos no hace falta una
+#: config aparte, y decir "sin tipos" sobre jsoup o google/uuid era falso.
+TIPADO_POR_COMPILADOR = ("java", "kotlin", "scala", "csharp", "swift", "go", "rust",
+                         "dart", "c")
 
 GATE_INLINE = {
     "lint": ["[tool.ruff", "[flake8]", "[tool.pylint"],
@@ -205,6 +223,16 @@ def detect_gates(root):
                 if marker in inline_sources:
                     found[kind] = "pyproject.toml/setup.cfg (%s)" % marker.strip("[")
                     break
+    if "tipos" not in found:
+        from . import lenguajes
+
+        try:
+            presentes = {lang for _r, lang in lenguajes._ficheros(root)}
+        except Exception:   # noqa: BLE001 - sin tabla no se afirma nada
+            presentes = set()
+        tipados = sorted(presentes & set(TIPADO_POR_COMPILADOR))
+        if tipados:
+            found["tipos"] = "el compilador (%s)" % ", ".join(tipados)
     return found
 
 
