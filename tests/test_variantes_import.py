@@ -180,3 +180,59 @@ def test_rust_un_crate_externo_no_cae_en_un_modulo_propio(tmp_path):
     assert any(o.endswith("lib") and d.endswith("config") for o, d in aristas), \
         "se perdio `use config::X` desde la raiz del crate"
     assert any(o.endswith("glob") and d.endswith("config") for o, d in aristas), aristas
+
+
+@necesita_astgrep
+def test_java_un_import_externo_no_cae_en_una_clase_propia(tmp_path):
+    """Banco de repos reales, 24-sep-2026. Un import de Java es un nombre
+    cualificado ENTERO, y los atajos por sufijo lo casaban con clases propias:
+    `java.util.List` -> `Util.java` (javapoet, 17 de 32 aristas falsas),
+    `org.w3c.dom.Element` -> `nodes/Element.java` y `java.util.regex.Pattern`
+    -> `helper/Regex.java` (jsoup). Y la otra mitad: `import static` y
+    `import pkg.*` no casaban con ningun patron y su dependencia se perdia."""
+    raiz = os.path.join(str(tmp_path), "jv")
+    ficheros = {
+        "src/com/app/Util.java": "package com.app;\npublic class Util { static void f() { } }\n",
+        "src/com/app/nodes/Element.java": "package com.app.nodes;\npublic class Element { }\n",
+        "src/com/app/helper/Regex.java": "package com.app.helper;\npublic class Regex { }\n",
+        "src/com/app/W3C.java": ("package com.app;\nimport java.util.List;\n"
+                                 "import org.w3c.dom.Element;\nimport java.util.regex.Pattern;\n"
+                                 "public class W3C { }\n"),
+        "src/com/app/Usa.java": ("package com.app;\nimport static com.app.Util.f;\n"
+                                 "import com.app.nodes.*;\npublic class Usa { }\n"),
+    }
+    for rel, fuente in ficheros.items():
+        ruta = os.path.join(raiz, *rel.split("/"))
+        os.makedirs(os.path.dirname(ruta), exist_ok=True)
+        with open(ruta, "w", encoding="utf-8") as fh:
+            fh.write(fuente)
+    aristas = {(e[0], e[1]) for e in lenguajes.analyze(raiz)["edges"] if e[2] == "IMPORTS"}
+
+    assert not [d for o, d in aristas if o.endswith("W3C")], aristas
+    assert any(o.endswith("Usa") and d.endswith("app.Util") for o, d in aristas), \
+        "se perdio `import static`: %s" % aristas
+    assert any(o.endswith("Usa") and d.endswith("nodes.Element") for o, d in aristas), \
+        "se perdio `import pkg.*` de un paquete de un solo modulo: %s" % aristas
+
+
+@necesita_astgrep
+def test_java_ve_los_metodos_y_tipos_de_cualquier_forma(tmp_path):
+    """javapoet: 225 de 816 metodos y 56 de 87 tipos no eran simbolos porque
+    el patron exigia una forma. Por KIND salen todos los que tienen cuerpo."""
+    raiz = os.path.join(str(tmp_path), "formas")
+    os.makedirs(raiz)
+    with open(os.path.join(raiz, "P.java"), "w", encoding="utf-8") as fh:
+        fh.write("package p;\npublic final class P extends Object implements Runnable {\n"
+                 "  void sinMod() { }\n"
+                 "  public void conThrows() throws Exception { }\n"
+                 "  static <T> T generico(T t) { return t; }\n"
+                 "  public void run() { }\n"
+                 "  static class Anidada { }\n"
+                 "  private enum Tipo { A }\n"
+                 "  interface Iface { void abstracto(); default void pordefecto() { } }\n"
+                 "}\n")
+    quals = {n["qual"] for n in lenguajes.analyze(raiz)["nodes"]}
+    for nombre in ("P", "sinMod", "conThrows", "generico", "run", "Anidada", "Tipo",
+                   "Iface", "pordefecto"):
+        assert "P." + nombre in quals, (nombre, sorted(quals))
+    assert "P.abstracto" not in quals, "un metodo sin cuerpo no tiene codigo que llamar"

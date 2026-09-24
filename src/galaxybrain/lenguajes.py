@@ -191,6 +191,19 @@ class _Regla(str):
         return super().__new__(cls, json.dumps(regla, sort_keys=True))
 
 
+def _regla_con_cuerpo(kind):
+    """Un simbolo por KIND del arbol: el nodo `kind` con su nombre en `$NAME`.
+
+    Exige CUERPO, como exigian los patrones (`{ $$$ }`): un metodo abstracto o
+    de interfaz no tiene codigo que llamar, y como simbolo atraia llamadas
+    ajenas por nombre — `fail()` de `org.junit.Assert` caia en el `void fail()
+    throws R;` de una interfaz de test de javapoet.
+    """
+    return _Regla({"all": [{"kind": kind},
+                           {"has": {"field": "name", "pattern": "$NAME"}},
+                           {"has": {"field": "body", "pattern": "$CUERPO"}}]})
+
+
 def _lang(ag, extensiones, simbolos, imports=(), llamada=LLAMADA, globales=_COMUNES,
           resolucion=None, sufijos_test=(), dirs_test=("test", "tests"), carencias=(),
           tia=False):
@@ -369,11 +382,22 @@ LENGUAJES = {
         # modificadores de una vez (`public static`, `private`, ...). Los tres
         # patrones sueltos que habia antes solo cubrian los que alguien habia
         # pensado, y `public static int f()` se les escapaba.
+        #
+        # Y aun asi no bastaba: un patron exige la FORMA entera, y en javapoet
+        # (banco de repos reales, 24-sep-2026) se escapaban 225 de 816 metodos
+        # — 199 por `throws`, el resto genericos (`static <T> T f()`) y sin
+        # modificador — y 56 de 87 tipos (`extends`/`implements`, `final class`,
+        # `static class` anidada, interfaces, enums). Por KIND no hay forma que
+        # olvidar: cada nodo del arbol con su campo `name`.
         "java", (".java",),
-        (("class", "public class $NAME { $$$ }"),
-         ("class", "class $NAME { $$$ }"),
-         ("method", "class A { $MOD $RET $NAME($$$) { $$$ } }", "method_declaration")),
-        ("import $SRC;",),
+        (("class", _regla_con_cuerpo("class_declaration")),
+         ("class", _regla_con_cuerpo("interface_declaration")),
+         ("class", _regla_con_cuerpo("enum_declaration")),
+         ("class", _regla_con_cuerpo("record_declaration")),
+         ("method", _regla_con_cuerpo("method_declaration"))),
+        # `import static` y `import pkg.*` no casan con `import $SRC;`: la
+        # dependencia de `import static com.x.Util.checkNotNull` se perdia.
+        ("import $SRC;", "import static $SRC;", "import $SRC.*;", "import static $SRC.*;"),
         llamada=("$FN($$$)", "$A.$FN($$$)"),
         tia=True, resolucion="paquete",
         sufijos_test=("Test", "Tests"), dirs_test=("test", "tests"),
@@ -1295,6 +1319,34 @@ def _resuelve_cs(especificador, modulos):
     return candidatos[0] if len(candidatos) == 1 else None
 
 
+def _java_interno(partes, modulos):
+    """El modulo al que apunta un import de Java, o None si es externo.
+
+    Un import de Java es un nombre CUALIFICADO ENTERO (`org.jsoup.nodes.Element`),
+    asi que solo es interno si un modulo termina en ese nombre, segmento a
+    segmento y con sus mayusculas. Los atajos de `_resuelve` (sufijo suelto,
+    sin mayusculas, quitar el ultimo segmento y volver a probar) inventaban
+    aristas: `java.util.List` -> `java.util` -> `Util.java` en javapoet (17 de
+    32 aristas falsas), `org.w3c.dom.Element` -> `nodes/Element.java` y
+    `java.util.regex.Pattern` -> `helper/Regex.java` en jsoup (banco de repos
+    reales, 24-sep-2026).
+
+    Se prueba el nombre entero y luego quitando segmentos por la derecha, que
+    es lo que pide `import static a.b.C.metodo` o una clase anidada
+    `a.b.C.Interna` -> `a.b.C`; nunca por debajo de dos segmentos (un tipo en
+    un paquete). `import a.b.*` nombra el paquete: vale si tiene un solo modulo.
+    """
+    for fin in range(len(partes), 1, -1):
+        nombre = ".".join(partes[:fin])
+        hits = [m for m in modulos if m == nombre or m.endswith("." + nombre)]
+        if hits:
+            return hits[0] if len(hits) == 1 else None
+    paquete = "." + ".".join(partes) + "."
+    hijos = [m for m in modulos if paquete in "." + m
+             and "." not in ("." + m).split(paquete, 1)[1]]
+    return hijos[0] if len(hijos) == 1 else None
+
+
 def _resuelve(especificador, fichero, raiz, modulos, modo):
     """El módulo interno al que apunta un import, o None si es externo.
 
@@ -1373,6 +1425,8 @@ def _resuelve(especificador, fichero, raiz, modulos, modo):
             # fabricaba un ciclo `filesystem <-> resolvers.glob` que el gate
             # bloquearia — medido sobre tach el 24-sep-2026.
             return None
+        if fichero.endswith(".java"):
+            return _java_interno(partes, modulos)
         for i in range(len(partes)):
             cand = ".".join(partes[i:])
             if cand in modulos:
@@ -1558,7 +1612,11 @@ def analyze(root):
                     # resolver `this.set()` dentro contra `app.set` (ver abajo).
                     dueno_de[qual] = _meta(m, "OBJ").strip()
                 informe["edges"].append([modulo, qual, "DEFINES"])
-                definidos.setdefault(nombre, []).append(qual)
+                # Una SOBRECARGA (Java, C#, Kotlin) da el mismo qual dos veces, y
+                # con el repetido la llamada salia `nombre-ambiguo` entre un
+                # simbolo y el mismo: `writeTo -> writeToPath` en javapoet.
+                if qual not in definidos.setdefault(nombre, []):
+                    definidos[nombre].append(qual)
                 por_modulo[qual] = modulo
                 lengua_de[qual] = lang
 
