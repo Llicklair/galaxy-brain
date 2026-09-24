@@ -708,6 +708,9 @@ upload it nowhere.**
   `<Type: repr() failed with X>` and does not take the rest of the frame down with it.
 - **Non-Python deaths** — a segfault, an OOM kill, a `kill -9` — raise no exception, so no hook
   ever sees them.
+- **Not in Ubuntu's system Python.** Its `sitecustomize.py` installs apport's excepthook *after*
+  every `.pth`, replacing gb's; `gb on` names it and refuses instead of pretending. Use a venv
+  there, where apport is not visible. macOS and Windows, venv or global, are covered.
 - **Local only.** Code running in a browser is out of reach of the console. No CI, no UI, no
   server, no MCP server (see [SCOPE.md](SCOPE.md) for
   why, and for the single condition that would reopen it).
