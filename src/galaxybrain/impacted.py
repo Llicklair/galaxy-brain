@@ -586,6 +586,20 @@ def analyze(root, rev_range=None, staged=False, worktree=False, skip=None,
         return correr_todo(
             t("ningun test alcanza lo que cambiaste — eso es el dato, no un ahorro: todo"))
 
+    # Un METODO tocado que nadie llama en el grafo no es "codigo sin tests": es
+    # una llamada que el grafo no ve (`this.set()`, `new App().set()` en JS no
+    # se resuelven). Si otro simbolo del mismo diff SI alcanza tests, estrechar
+    # a esos dejaria fuera los del metodo: falso verde. Se abrio el 24-sep-2026
+    # al hacer simbolos los metodos de JS/TS — antes sus lineas caian en la
+    # clase, que si tenia llamantes.
+    ciegos = sorted(q for q in semillas
+                    if (nodes.get(q) or {}).get("kind") == "method"
+                    and not llamantes.get(q) and not _es_test(q, nodes.get(q, {}), nodes))
+    if ciegos:
+        return correr_todo(
+            t("%s: metodo sin llamantes en el grafo (llamada que no se ve): todo")
+            % ", ".join(ciegos[:3]))
+
     alcanzados = _ficheros_de(nodes, tests)
     # Los opacos van siempre: ejercitan el codigo sin dejar arista que seguir.
     opacos = sorted(ficheros_opacos(root, nodes, llamantes, todos) - set(alcanzados))

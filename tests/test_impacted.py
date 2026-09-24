@@ -594,3 +594,47 @@ def test_el_import_interno_roto_devuelve_todo_con_su_motivo(repo):
                         "-p", "no:cacheprovider", *report["tests"]],
                        cwd=str(repo), capture_output=True, text=True)
     assert r.returncode != 0, r.stdout
+
+
+def test_un_metodo_js_sin_llamantes_visibles_no_estrecha(tmp_path):
+    """Falso verde abierto al hacer simbolos los metodos de JS (24-sep-2026) y
+    cerrado en el mismo cambio: `configurar` (metodo) llega a su test por
+    `new App().configurar()`, que el grafo no resuelve; `formato` (funcion)
+    si alcanza el suyo. Tocar los dos a la vez estrechaba al test de `formato`
+    y dejaba fuera el rojo de `configurar`."""
+    from galaxybrain import lenguajes
+
+    if not lenguajes.binario():
+        pytest.skip("ast-grep no instalado; la capa multilenguaje es opcional")
+    root = tmp_path / "app"
+    (root / "lib").mkdir(parents=True)
+    (root / "test").mkdir()
+    (root / "lib" / "app.js").write_text(
+        "class App {\n"
+        "  configurar() {\n"
+        "    return 1;\n"
+        "  }\n"
+        "}\n"
+        "function formato(x) {\n"
+        "  return String(x);\n"
+        "}\n"
+        "module.exports = { App, formato };\n", encoding="utf-8")
+    (root / "test" / "app.test.js").write_text(
+        "const { App } = require('../lib/app');\n"
+        "test('configura', () => { new App().configurar(); });\n", encoding="utf-8")
+    (root / "test" / "formato.test.js").write_text(
+        "const { formato } = require('../lib/app');\n"
+        "test('formato', () => { formato(1); });\n", encoding="utf-8")
+    _git(root, "init", "-q")
+    _git(root, "config", "user.email", "t@t.t")
+    _git(root, "config", "user.name", "t")
+    _git(root, "add", "-A")
+    _git(root, "commit", "-qm", "base")
+    texto = (root / "lib" / "app.js").read_text(encoding="utf-8")
+    (root / "lib" / "app.js").write_text(
+        texto.replace("return 1;", "return 2;").replace("String(x)", "String(x) + ''"),
+        encoding="utf-8")
+
+    report = impacted.analyze(str(root), worktree=True, grafo=lenguajes.analyze(str(root)))
+    assert report["todo"] is True, report["motivo"]
+    assert "configurar" in report["motivo"]

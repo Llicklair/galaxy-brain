@@ -81,6 +81,36 @@ _JS_IMPORTS = (
     'export { $$$ } from "$SRC"',
 )
 
+#: Las definiciones que no son `function nombre`: la mitad del JS real. Medido
+#: sobre express el 24-sep-2026: `app.use = function use(...)`, `res.send = ...`
+#: y compañía (52 en lib/) no eran simbolos, y gb no veia ni un metodo de la
+#: libreria ni quien los llama. El nombre es la PROPIEDAD (`use`), no la funcion.
+_JS_PROPIEDADES = (
+    ("function", "$OBJ.$NAME = function $F($$$) { $$$ }"),
+    ("function", "$OBJ.$NAME = function ($$$) { $$$ }"),
+    ("function", "$OBJ.$NAME = ($$$) => { $$$ }"),
+)
+
+
+def _metodos_js(retornos):
+    """Los metodos de clase, un patron por modificador: la gramatica no deja una
+    metavariable en la posicion del modificador, asi que `static`, `async`,
+    `get`/`set` y los de visibilidad de TS son patrones aparte (medido: el plano
+    no casa ninguno de ellos). Van todos en el mismo `scan` por lotes."""
+    modificadores = ("", "static ", "async ", "static async ", "get ", "set ",
+                     "private ", "public ", "protected ", "private static ",
+                     "private async ", "public static ", "public async ",
+                     "protected static ", "protected async ")
+    return tuple(("method", "class A { %s$NAME($$$)%s { $$$ } }" % (m, r), "method_definition")
+                 for m in modificadores for r in retornos)
+
+
+_JS_CARENCIAS = (
+    "los generadores de clase (`*gen() {}`) y los metodos con nombre calculado "
+    "(`[clave]() {}`) no son simbolos; tampoco las asignaciones dinamicas "
+    "(`app[metodo] = function`), que no tienen nombre escrito",
+)
+
 #: `$FN($$$)` casa cualquier invocación; decidir cuáles se pueden resolver es
 #: trabajo de después, con nombres. Casi todos los lenguajes lo comparten.
 LLAMADA = ("$FN($$$)",)
@@ -202,10 +232,12 @@ LENGUAJES = {
          ("function", "export async function $NAME($$$) { $$$ }"),
          ("function", "async function $NAME($$$) { $$$ }"),
          ("class", "export class $NAME { $$$ }"),
-         ("class", "class $NAME { $$$ }")),
+         ("class", "class $NAME { $$$ }"))
+        + _JS_PROPIEDADES + _metodos_js(("",)),
         _JS_IMPORTS,
         globales=_JS_GLOBALES, resolucion="ruta", tia=True,
         sufijos_test=(".test", ".spec"), dirs_test=("test", "tests", "__tests__", "spec"),
+        carencias=_JS_CARENCIAS,
     ),
     "ts": _lang(
         # El `: $RET` NO es opcional en TS: sin el, `export function f(): number`
@@ -219,10 +251,12 @@ LENGUAJES = {
          ("function", "export const $NAME = ($$$) => { $$$ }"),
          ("function", "export async function $NAME($$$): $RET { $$$ }"),
          ("class", "export class $NAME { $$$ }"),
-         ("class", "class $NAME { $$$ }")),
+         ("class", "class $NAME { $$$ }"))
+        + _JS_PROPIEDADES + _metodos_js(("", ": $RET")),
         _JS_IMPORTS,
         globales=_JS_GLOBALES, resolucion="ruta", tia=True,
         sufijos_test=(".test", ".spec"), dirs_test=("test", "tests", "__tests__", "spec"),
+        carencias=_JS_CARENCIAS,
     ),
     "tsx": _lang(
         "tsx", (".tsx",),
