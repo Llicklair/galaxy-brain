@@ -390,10 +390,27 @@ def _firma_rompe_llamadas(vieja, nueva):
         cuerpo = (firma or "").strip()
         if cuerpo.startswith("(") and cuerpo.endswith(")"):
             cuerpo = cuerpo[1:-1]
-        return [p.strip() for p in cuerpo.split(",") if p.strip()]
+        # Solo las comas de NIVEL SUPERIOR: `Map<String, Integer> m` es un
+        # parametro, no dos (firmas de Java/C#/TS/Kotlin, 24-sep-2026).
+        trozos, nivel, actual = [], 0, ""
+        for c in cuerpo:
+            if c in "(<[{":
+                nivel += 1
+            elif c in ")>]}":
+                nivel -= 1
+            if c == "," and nivel == 0:
+                trozos.append(actual)
+                actual = ""
+            else:
+                actual += c
+        trozos.append(actual)
+        return [p.strip() for p in trozos if p.strip()]
 
     viejos, nuevos = _params(vieja), _params(nueva)
-    if any(p.startswith("*") for p in viejos + nuevos):
+    # Variadicos de cualquier lenguaje (`*args`, `...rest`, `String... xs`,
+    # `params int[]`, `&block`): no se razonan barato, no se acusa.
+    if any(p.startswith(("*", "&")) or "..." in p or p.startswith("params ")
+           for p in viejos + nuevos):
         return False
     nombre = lambda p: p.split("=")[0].split(":")[0].strip()  # noqa: E731
     v_nombres = {nombre(p) for p in viejos}
@@ -401,6 +418,40 @@ def _firma_rompe_llamadas(vieja, nueva):
         if nombre(p) not in v_nombres and "=" not in p:
             return True                      # obligatorio nuevo: las viejas se quedan cortas
     return any(nombre(p) not in {nombre(q) for q in nuevos} for p in viejos)
+
+
+def _firmas_viejas_otros(root, rangos, base_ref):
+    """{qual: firma} de la version de `base_ref` de los ficheros NO Python
+    tocados. Se escriben en un temporal con su MISMA ruta relativa y pasan por el
+    motor multilenguaje: los quals salen iguales que en el arbol de hoy. Solo
+    los ficheros del diff: es barato. Sin esto la señal de firma cambiada solo
+    existia en Python (auditoria del 24-sep-2026)."""
+    import shutil
+    import tempfile
+
+    from . import lenguajes
+
+    otros = [r for r in rangos
+             if not r.endswith(".py") and os.path.splitext(r)[1] in lenguajes.POR_EXTENSION]
+    if not otros or not lenguajes.binario():
+        return {}
+    tmp = tempfile.mkdtemp(prefix="gb-firmas-")
+    try:
+        for ruta in otros:
+            texto = _git_output(root, "show", "%s:%s" % (base_ref, ruta))
+            if not texto:
+                continue
+            destino = os.path.join(tmp, *ruta.split("/"))
+            os.makedirs(os.path.dirname(destino), exist_ok=True)
+            with open(destino, "w", encoding="utf-8") as fh:
+                fh.write(texto)
+        viejo = lenguajes.analyze(tmp)
+        return {n["qual"]: n.get("sig") or "" for n in viejo.get("nodes", [])
+                if n.get("kind") in ("function", "method") and n.get("sig")}
+    except Exception:   # noqa: BLE001 - sin firmas viejas no hay señal, no un fallo
+        return {}
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
 
 
 def _firmas_cambiadas_sin_llamantes(root, diff, base_ref, informe):
@@ -457,6 +508,7 @@ def _firmas_cambiadas_sin_llamantes(root, diff, base_ref, informe):
         es_pkg = os.path.basename(ruta_diff) == "__init__.py"
         old_info = symbols._scan_module(mod, tree, es_pkg)
         firmas_viejas.update(old_info["sigs"])
+    firmas_viejas.update(_firmas_viejas_otros(root, rangos, base_ref))
 
     if not firmas_viejas:
         return []

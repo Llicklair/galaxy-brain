@@ -1333,6 +1333,29 @@ def _por_cualificado(llamado, definidos, por_modulo):
             if bajo in [p.lower() for p in por_modulo.get(q, "").split(".")]]
 
 
+def _firma_de(texto, nombre):
+    """Los parametros tal como se escriben: el primer parentesis equilibrado que
+    sigue al nombre, con el espacio normalizado. "" si no hay (Ruby sin
+    parentesis, una clase). Sintaxis, no semantica: basta para comparar la
+    firma vieja con la nueva, que es para lo que existe (`check`)."""
+    i = texto.find(nombre)
+    if i < 0:
+        return ""
+    j = texto.find("(", i + len(nombre))
+    if j < 0 or "{" in texto[i:j] or "\n" in texto[i + len(nombre):j].strip("\n "):
+        return ""
+    nivel = 0
+    for k in range(j, min(len(texto), j + 2000)):
+        c = texto[k]
+        if c in "([":
+            nivel += 1
+        elif c in ")]":
+            nivel -= 1
+            if nivel == 0:
+                return re.sub(r"\s+", " ", texto[j:k + 1])
+    return ""
+
+
 _CLAVES_HERENCIA = ("extends", "implements", "with", "where")
 
 
@@ -2303,7 +2326,8 @@ def analyze(root):
                 rel = os.path.relpath(fichero, root)
                 informe["nodes"].append({
                     "qual": qual, "kind": kind, "module": modulo, "doc": "",
-                    "file": rel, "line": linea, "end": _fin(m), "sig": "",
+                    "file": rel, "line": linea, "end": _fin(m),
+                    "sig": _firma_de(m.get("text") or "", nombre) if kind in ("function", "method") else "",
                     "test": de_test.get(rel, False),
                 })
                 if _meta(m, "OBJ"):
