@@ -954,6 +954,23 @@ def _misma_familia(candidatos, lang, lengua_de):
     return [q for q in candidatos if _familia(lengua_de.get(q, lang)) == mia]
 
 
+def _rust_interno(primero, modulos):
+    """¿El primer segmento de un `use` de Rust nombra algo de ESTE crate?
+
+    Lo son `crate`/`self`/`super` y los modulos de PRIMER NIVEL de un crate: los
+    que cuelgan del directorio de su `lib.rs`/`main.rs`. Casar por sufijo en
+    cualquier profundidad no vale: el crate `glob` (muy usado) volveria a caer en
+    `resolvers.glob`.
+    """
+    if primero in ("crate", "self", "super"):
+        return True
+    raices = {m.rsplit(".", 1)[0] if "." in m else "" for m in modulos
+              if m.rsplit(".", 1)[-1] in ("lib", "main")}
+    return any((raiz + "." if raiz else "") + primero in modulos
+               or any(m.startswith((raiz + "." if raiz else "") + primero + ".") for m in modulos)
+               for raiz in raices)
+
+
 def _resuelve(especificador, fichero, raiz, modulos, modo):
     """El módulo interno al que apunta un import, o None si es externo.
 
@@ -983,6 +1000,14 @@ def _resuelve(especificador, fichero, raiz, modulos, modo):
         # los modulos reales. Sin coincidencia, no hay arista.
         limpio = especificador.strip('"\'').replace("::", ".").replace("/", ".")
         partes = [p for p in limpio.split(".") if p]
+        if fichero.endswith(".rs") and partes and not _rust_interno(partes[0], modulos):
+            # En Rust el PRIMER segmento decide: `crate`/`self`/`super` o un
+            # modulo del propio crate es interno; cualquier otro es un crate
+            # externo (`std`, `serde`, `globset`). Sin esto, el sufijo sin
+            # mayusculas casaba `use globset::Glob` con `resolvers.glob` y
+            # fabricaba un ciclo `filesystem <-> resolvers.glob` que el gate
+            # bloquearia — medido sobre tach el 24-sep-2026.
+            return None
         for i in range(len(partes)):
             cand = ".".join(partes[i:])
             if cand in modulos:

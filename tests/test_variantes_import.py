@@ -147,3 +147,36 @@ def test_el_gate_bloquea_en_un_repo_que_no_es_python(tmp_path):
     assert informe["modules"] == 2, informe["modules"]
     assert informe["cycles"], "el ciclo de imports de JS no se ve"
     assert informe["violations"], "el cruce de frontera declarado no se ve"
+
+
+@necesita_astgrep
+def test_rust_un_crate_externo_no_cae_en_un_modulo_propio(tmp_path):
+    """tach, 24-sep-2026: `use globset::Glob` casaba (sin mayusculas, por
+    sufijo) con `resolvers/glob.rs` y fabricaba un ciclo que el gate bloquearia;
+    `std::sync` y `once_cell::sync` caian en `commands/sync.rs`. En Rust el
+    primer segmento decide: crate/self/super o un modulo de primer nivel del
+    crate es interno; lo demas es un crate externo."""
+    raiz = os.path.join(str(tmp_path), "crate")
+    ficheros = {
+        "src/lib.rs": "mod config;\nmod resolvers;\nmod commands;\nuse config::Ajustes;\n",
+        "src/config.rs": "pub struct Ajustes { pub x: i32 }\n",
+        "src/resolvers/mod.rs": "pub mod glob;\n",
+        "src/resolvers/glob.rs": "use crate::config::Ajustes;\npub fn casa() {}\n",
+        "src/commands/mod.rs": "pub mod sync;\n",
+        "src/commands/sync.rs": "use super::super::config::Ajustes;\npub fn sincroniza() {}\n",
+        "src/walker.rs": ("use globset::Glob;\nuse glob::Pattern;\nuse std::sync::Arc;\n"
+                          "use once_cell::sync::Lazy;\nuse crate::config::Ajustes;\npub fn anda() {}\n"),
+    }
+    for rel, fuente in ficheros.items():
+        ruta = os.path.join(raiz, *rel.split("/"))
+        os.makedirs(os.path.dirname(ruta), exist_ok=True)
+        with open(ruta, "w", encoding="utf-8") as fh:
+            fh.write(fuente)
+    aristas = {(e[0], e[1]) for e in lenguajes.analyze(raiz)["edges"] if e[2] == "IMPORTS"}
+    desde_walker = {d for o, d in aristas if o.endswith("walker")}
+
+    assert not any(d.endswith(("glob", "sync")) for d in desde_walker), desde_walker
+    assert any(d.endswith("config") for d in desde_walker), "se perdio `use crate::config`"
+    assert any(o.endswith("lib") and d.endswith("config") for o, d in aristas), \
+        "se perdio `use config::X` desde la raiz del crate"
+    assert any(o.endswith("glob") and d.endswith("config") for o, d in aristas), aristas
