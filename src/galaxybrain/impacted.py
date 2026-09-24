@@ -58,6 +58,11 @@ MARCAS_OPACAS = ("subprocess", "Popen", "runpy", "os.system", "os.spawn",
 MARCAS_PROPIO_INTERPRETE = ("sys.executable", "-m galaxybrain")
 
 
+#: Ficheros cuyos metodos tienen llamantes PARCIALES: se resuelve `this.x()` y
+#: no `obj.x()`. Tocar un metodo ahi corre todo, tenga llamantes o no.
+_LLAMANTES_PARCIALES = (".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx", ".php")
+
+
 def _sin_licencia_para_estrechar(grafo):
     """Los lenguajes del informe que NO pueden estrechar la seleccion, o "".
 
@@ -598,11 +603,17 @@ def analyze(root, rev_range=None, staged=False, worktree=False, skip=None,
     # estrechar a ellos pierde a los que llaman por el objeto. Hasta que
     # `obj.metodo()` se resuelva, tocar un metodo ahi corre todo; las funciones
     # sueltas, que es lo que mide el banco, siguen estrechando.
+    #
+    # Solo donde los llamantes son parciales POR DISEÑO de hoy: JS/TS y PHP
+    # resuelven `this.x()`/`$this->x()` pero no `obj.x()`. Java, C#, Ruby o Lua
+    # ya tenian sus metodos como simbolos cuando se les midio la licencia; la
+    # guarda amplia les quito el ahorro entero (bench_csharp 24-sep-2026: 7/7
+    # cayeron a todo, 0% — sin comprar ningun verde).
     def _ciego(q):
         n = nodes.get(q) or {}
         if n.get("kind") != "method" or _es_test(q, n, nodes):
             return False
-        return not llamantes.get(q) or not (n.get("file") or "").endswith(".py")
+        return not llamantes.get(q) or (n.get("file") or "").endswith(_LLAMANTES_PARCIALES)
 
     ciegos = sorted(q for q in semillas if _ciego(q))
     if ciegos:

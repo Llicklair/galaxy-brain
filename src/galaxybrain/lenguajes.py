@@ -140,6 +140,21 @@ LLAMADA_RUST = ("$FN($$$)", "$M!($FN($$$), $$$)", "$M!($FN($$$))",
                 "$M!($ARG, $FN($$$))")
 
 
+class _Regla(str):
+    """Una REGLA de ast-grep (kind + relaciones) donde la tabla pone un patron.
+
+    Un patron casa los modificadores exactos que escribe; una gramatica con
+    muchos (C#: `public static async override ...`) necesita una combinacion por
+    forma. La regla dice "este kind, con este nombre" y casa todas. Es un `str`
+    (su JSON, que tambien es YAML valido y cabe en UNA linea) para que viaje
+    por la tabla, el lote y las claves de cache sin tocar a quien la lee; el
+    motor la reconoce por su tipo y la corre con `scan` en vez de `run`.
+    """
+
+    def __new__(cls, regla):
+        return super().__new__(cls, json.dumps(regla, sort_keys=True))
+
+
 def _lang(ag, extensiones, simbolos, imports=(), llamada=LLAMADA, globales=_COMUNES,
           resolucion=None, sufijos_test=(), dirs_test=("test", "tests"), carencias=(),
           tia=False):
@@ -451,14 +466,27 @@ LENGUAJES = {
         # ast-grep parsea `public $RET $NAME(...)` como funcion local de nivel
         # superior y el `$` produce nodos ERROR — por eso los 5 patrones probados
         # a ciegas el 8-ago dieron cero, y por eso C# entro sin grafo de llamadas.
+        #
+        # Y aun asi un patron casa los modificadores EXACTOS: sobre MediatR
+        # (banco de repos reales, 24-sep-2026) faltaban `Mediator`, `IMediator`,
+        # `ServiceRegistrar`, `Unit`... y los metodos genericos (`Send<T>`),
+        # `=> expr`, `override`, `async`, `internal`, `private static`. De 51
+        # tipos se veian 2. Por eso C# va por REGLA de kind: cualquier modificador,
+        # base, genericos o cuerpo `=>`. Con cuerpo obligatorio, como en los demas
+        # lenguajes: un `abstract` o un miembro de interfaz no es una definicion.
         "csharp", (".cs",),
-        (("class", "class $NAME { $$$ }"),
-         ("class", "public class $NAME { $$$ }"),
-         ("method", "class A { public $RET $NAME($$$) { $$$ } }", "method_declaration"),
-         ("method", "class A { private $RET $NAME($$$) { $$$ } }", "method_declaration"),
-         ("method", "class A { protected $RET $NAME($$$) { $$$ } }", "method_declaration"),
-         ("method", "class A { public static $RET $NAME($$$) { $$$ } }", "method_declaration")),
-        ("using $SRC;",),
+        (("class", _Regla({"all": [
+            {"any": [{"kind": k} for k in ("class_declaration", "struct_declaration",
+                                           "interface_declaration", "record_declaration",
+                                           "enum_declaration")]},
+            {"has": {"field": "name", "pattern": "$NAME"}}]})),
+         ("method", _Regla({"all": [
+             {"kind": "method_declaration"},
+             {"has": {"field": "name", "pattern": "$NAME"}},
+             {"has": {"field": "returns", "pattern": "$RET"}},
+             {"has": {"field": "body", "any": [{"kind": "block"},
+                                               {"kind": "arrow_expression_clause"}]}}]}))),
+        ("using $SRC;", "using static $SRC;", "using $A = $SRC;"),
         resolucion="paquete", tia=True,
         sufijos_test=("Test", "Tests"), dirs_test=("test", "tests"),
         carencias=(MISMO_PAQUETE % "C#",),
@@ -632,6 +660,9 @@ _SOLO_RUN = frozenset(("def $NAME", "class $NAME", "module $NAME"))
 def _regla_yaml(rid, lenguaje, patron, selector):
     """Un patrón de la tabla como documento de regla para `scan`. Bloque
     literal (`|-`) para que comillas y llaves del patrón no peleen con YAML."""
+    if isinstance(patron, _Regla):
+        return '{"id": %s, "language": %s, "rule": %s}' % (
+            json.dumps(rid), json.dumps(lenguaje), patron)
     sangrado = "\n".join("      " + l for l in patron.splitlines())
     if selector:
         return ("id: %s\nlanguage: %s\nrule:\n  pattern:\n    context: |-\n%s\n"
@@ -744,7 +775,11 @@ def _corre(ruta, patron, lenguaje, raiz, selector=None, lote=None):
         if precalculado is not None:
             return precalculado
     orden = [ruta, "run", "-p", patron, "-l", lenguaje, "--json=compact"]
-    if selector:
+    if isinstance(patron, _Regla):
+        # una linea de JSON: el shim .cmd de Windows solo rompe los saltos
+        orden = [ruta, "scan", "--inline-rules", _regla_yaml("r", lenguaje, patron, None),
+                 "--json=compact"]
+    elif selector:
         orden += ["--selector", selector]
     try:
         p = subprocess.run(
@@ -1102,6 +1137,51 @@ def _rust_interno(primero, modulos):
                for raiz in raices)
 
 
+_NS_CS = {"modulos": None, "mapa": {}}
+_RE_NAMESPACE = re.compile(r"^\s*namespace\s+([A-Za-z_][\w.]*)", re.M)
+
+
+def _namespaces_cs(modulos):
+    """{namespace: [modulo, ...]} de los .cs del arbol: lo que el proyecto
+    DECLARA. Una plaza, atada a la identidad de `modulos` (uno por analyze)."""
+    if _NS_CS["modulos"] is not modulos:
+        mapa = {}
+        for nombre, ruta in modulos.items():
+            if not ruta.endswith(".cs"):
+                continue
+            try:
+                with open(ruta, encoding="utf-8-sig", errors="replace") as fh:
+                    declarados = set(_RE_NAMESPACE.findall(fh.read()))
+            except OSError:
+                continue
+            for ns in declarados:
+                mapa.setdefault(ns, []).append(nombre)
+        _NS_CS["modulos"], _NS_CS["mapa"] = modulos, mapa
+    return _NS_CS["mapa"]
+
+
+def _resuelve_cs(especificador, modulos):
+    """`using X.Y;` nombra un NAMESPACE, no un fichero: es interno solo si algun
+    fichero del arbol lo declara, y apunta a ESE fichero si es uno solo (con
+    varios no hay destino unico: la carencia MISMO_PAQUETE). `using static` y el
+    alias nombran un TIPO: su namespace declarado y el fichero con su nombre.
+
+    Sin esto el sufijo sin mayusculas casaba por el ultimo segmento: en MediatR
+    `global using MediatR.DependencyInjectionTests.Contracts.Requests;` (una
+    carpeta de 6 ficheros) caia en `samples/.../ExceptionHandler/Requests.cs`
+    de OTRO proyecto, y `...Contracts.Responses` (un solo fichero, `Pong.cs`)
+    no dejaba arista porque el prefijo exigia el namespace desde la raiz del
+    repo (banco de repos reales, 24-sep-2026). Misma clase que Go y Rust.
+    """
+    mapa = _namespaces_cs(modulos)
+    declarados = mapa.get(especificador)
+    if declarados:
+        return declarados[0] if len(declarados) == 1 else None
+    padre, _, tipo = especificador.rpartition(".")
+    candidatos = [m for m in mapa.get(padre, ()) if m.rsplit(".", 1)[-1] == tipo]
+    return candidatos[0] if len(candidatos) == 1 else None
+
+
 def _resuelve(especificador, fichero, raiz, modulos, modo):
     """El módulo interno al que apunta un import, o None si es externo.
 
@@ -1131,6 +1211,8 @@ def _resuelve(especificador, fichero, raiz, modulos, modo):
     if modo == "paquete":
         # `app/util`, `app.util`, `crate::app::util` -> se casa por SUFIJO contra
         # los modulos reales. Sin coincidencia, no hay arista.
+        if fichero.endswith(".cs"):
+            return _resuelve_cs(especificador.strip(), modulos)
         limpio = especificador.strip('"\'').replace("::", ".").replace("/", ".")
         partes = [p for p in limpio.split(".") if p]
         if fichero.endswith(".go"):
