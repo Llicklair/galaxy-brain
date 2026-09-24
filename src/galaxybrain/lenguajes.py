@@ -662,18 +662,45 @@ LENGUAJES = {
     ),
     "c": _lang(
         "c", (".c", ".h"),
-        (("function", "$RET $NAME($$$) { $$$ }"),),
+        # Una REGLA y no el patron `$RET $NAME($$$) { $$$ }`: el patron solo casa
+        # un tipo de retorno de UN nodo, y se dejaba fuera `static int f(...)`,
+        # `char *f(...)`, `inline static ...` y la definicion K&R. En libyaml
+        # (banco de repos reales, 24-sep-2026) gb veia 90 funciones de ~228:
+        # emitter.c daba 1 de 47, porque casi todo lo interno de una libreria C
+        # es `static`. El nombre es el identificador del `function_declarator`,
+        # directo o bajo punteros/parentesis (`int (*f(int))(int)`).
+        (("function", _Regla({"all": [
+            {"kind": "function_definition"},
+            {"has": {"field": "declarator", "any": [
+                {"kind": "function_declarator",
+                 "has": {"field": "declarator", "kind": "identifier", "pattern": "$NAME"}},
+                {"has": {"stopBy": "end", "kind": "function_declarator",
+                         "has": {"field": "declarator", "kind": "identifier",
+                                 "pattern": "$NAME"}}}]}}]})),),
         # Solo la forma LOCAL: `#include <stdio.h>` es una cabecera del sistema y
         # su arista no diria nada del acoplamiento propio.
         ('#include "$SRC"',),
         # En C una llamada suelta es una SENTENCIA, no una expresion, asi que
-        # `$FN($$$)` a secas no casa nada — de ahi que el lenguaje entrara sin
-        # aristas de llamada. Las dos formas comunes si casan (medido 9-ago).
-        llamada=("$FN($$$);", "$T $V = $FN($$$);"),
+        # `$FN($$$)` a secas no casa nada (medido 9-ago). Los patrones de
+        # sentencia (`$FN($$$);`, `$T $V = $FN($$$);`) dejaban fuera
+        # `return f(x);` e `if (!f(x))`, que es COMO se encadena C: en libyaml
+        # la maquina de estados entera (`return yaml_parser_parse_stream_start
+        # (...)`) no tenia ni un llamante (banco de repos reales, 24-sep-2026).
+        # La regla casa el nodo `call_expression` donde este, anidado o no. Solo
+        # con un identificador como funcion: `p->handler(x)` es un puntero a
+        # funcion y su destino no es un hecho lexico.
+        llamada=(_Regla({"kind": "call_expression",
+                         "has": {"field": "function", "kind": "identifier",
+                                 "pattern": "$FN"}}),),
         resolucion="ruta-local",
         sufijos_test=("_test",), dirs_test=("test", "tests"),
-        carencias=("solo se ven las llamadas en sentencia y en asignacion; una anidada "
-                   "en otra expresion (`f(g(x))`) no deja arista para `g`",),
+        carencias=("`#include` solo se resuelve junto al fichero: `<yaml.h>` o un "
+                   "`\"x.h\"` que el compilador encuentra por `-I` no dejan arista "
+                   "(ausente, nunca inventada)",
+                   "el preprocesador no se ejecuta: una llamada escrita dentro de una "
+                   "macro (`PUSH(...)`) no deja arista, y una macro que el parser no "
+                   "entiende puede ocultar la funcion que la sigue (libyaml: "
+                   "`yaml_parser_scan`)"),
     ),
     "dart": _lang(
         "dart", (".dart",),

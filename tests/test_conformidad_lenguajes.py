@@ -122,11 +122,11 @@ FUENTES = {
     "csharp": ("A.cs", "class A {\n"
                        "  public int suma(int a, int b) { return a + b; }\n"
                        "  public int total(int x) { return suma(x, 1); }\n}\n"),
-    # En C la llamada va en SENTENCIA o en asignacion, que son las dos formas que
-    # el motor ve; `return suma(x, 1);` anida la llamada dentro del return y no
-    # deja arista — esta declarado en sus carencias.
-    "c": ("a.c", "int suma(int a, int b) { return a + b; }\n\n"
-                 "int total(int x) {\n    int r = suma(x, 1);\n    return r;\n}\n"),
+    # `static` y la llamada DENTRO del return: las dos formas que el patron de
+    # antes no veia y que son como se escribe una libreria C (libyaml, banco de
+    # repos reales, 24-sep-2026; detalle en test_c_real.py).
+    "c": ("a.c", "static int suma(int a, int b) { return a + b; }\n\n"
+                 "int total(int x) { return suma(x, 1); }\n"),
     "dart": ("a.dart", "int suma(int a, int b) { return a + b; }\n\n"
                        "int total(int x) { return suma(x, 1); }\n"),
 }
