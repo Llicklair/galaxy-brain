@@ -32,7 +32,9 @@ jobs:
           - { os: windows-latest, modo: local }
           - { os: windows-latest, modo: global }
           - { os: ubuntu-latest, modo: local }
-          - { os: ubuntu-latest, modo: global }
+          # Limite declarado, no escondido: el sitecustomize de Ubuntu pone el
+          # hook de apport despues de los .pth. Se exige que `gb on` lo NOMBRE.
+          - { os: ubuntu-latest, modo: global, limite: apport }
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     defaults:
@@ -68,8 +70,17 @@ jobs:
           "$py" -c "import sys; print(sys.executable, sys.version)"
 
       - name: instalar (sh)
-        if: runner.os != 'Windows'
+        if: runner.os != 'Windows' && !matrix.limite
         run: PYTHON="$PY" sh ./instala.sh
+
+      - name: el limite se declara (apport)
+        if: matrix.limite == 'apport'
+        run: |
+          if PYTHON="$PY" sh ./instala.sh > salida.txt 2>&1; then
+            cat salida.txt; echo "se esperaba el limite de apport y la instalacion paso"; exit 1
+          fi
+          cat salida.txt
+          grep -q "apport" salida.txt
 
       - name: instalar (ps1)
         if: runner.os == 'Windows'
@@ -85,12 +96,14 @@ jobs:
           find / -name galaxybrain.pth 2>/dev/null | head || true
 
       - name: una excepcion real se captura
+        if: "!matrix.limite"
         run: |
           cd "$RUNNER_TEMP"
           "$PY" -c "raise ValueError('prueba-de-instalacion')" || true
           grep -rl "prueba-de-instalacion" "$GB_HOME/errors"
 
       - name: gb off la apaga
+        if: "!matrix.limite"
         run: |
           "$PY" -m galaxybrain.cli off
           cd "$RUNNER_TEMP"
