@@ -212,6 +212,34 @@ def _regla_con_nombre(kind):
                            {"has": {"field": "name", "pattern": "$NAME"}}]})
 
 
+#: El componente ENVUELTO: `const X = React.memo((p) => ...)`,
+#: `forwardRef<El, P>(function X(p, ref) {...})`, `memo(forwardRef(...))`. El
+#: nombre es la variable; el envoltorio se nombra EXACTO (memo/forwardRef, con
+#: o sin `React.`) porque `const $NAME = $W(($$$) => ...)` tambien casaria
+#: `const store = create((set) => ...)`, que no es un componente ni se llama por
+#: ese nombre. Regla y no patron: el generico, el `: React.FC<P>` y el
+#: anidamiento son cada uno un patron aparte (medido con ast-grep 0.45).
+_TSX_ENVUELTOS = _Regla({"all": [
+    {"kind": "variable_declarator"},
+    {"has": {"field": "name", "pattern": "$NAME"}},
+    {"has": {"field": "value", "kind": "call_expression", "all": [
+        {"has": {"field": "function", "regex": r"^(React\.)?(memo|forwardRef)$"}},
+        {"has": {"field": "arguments", "stopBy": "end",
+                 "any": [{"kind": "arrow_function"}, {"kind": "function_expression"}]}},
+    ]}},
+]})
+
+#: `<Button/>` y `<Card>...</Card>` SON llamadas: React invoca el componente al
+#: renderizar, y sin esto un componente no tenia NI UN llamante (`gb calls
+#: ToastBar` vacio en react-hot-toast, que lo renderiza desde Toaster). Solo con
+#: mayuscula: en JSX la minuscula es un elemento del DOM (`<div>`), por
+#: definicion del lenguaje, y contarlo inflaria los no resueltos.
+_TSX_JSX = _Regla({"all": [
+    {"any": [{"kind": "jsx_self_closing_element"}, {"kind": "jsx_opening_element"}]},
+    {"has": {"field": "name", "pattern": "$FN", "regex": r"^[A-Z]"}},
+]})
+
+
 def _lang(ag, extensiones, simbolos, imports=(), llamada=LLAMADA, globales=_COMUNES,
           resolucion=None, sufijos_test=(), dirs_test=("test", "tests"), carencias=(),
           tia=False):
@@ -369,13 +397,21 @@ LENGUAJES = {
         carencias=_JS_CARENCIAS,
     ),
     "tsx": _lang(
+        # Medido sobre react-hot-toast el 24-sep-2026: de 9 componentes y
+        # helpers de src/components/*.tsx salia CERO simbolos. Un componente
+        # React casi nunca es `export function X`: es `const X: React.FC<P> =
+        # (...) => {`, `const X = React.memo((...) => ...)` o una arrow con tipo
+        # de retorno — formas que ninguno de los patrones de antes casaba.
         "tsx", (".tsx",),
-        (("function", "export function $NAME($$$): $RET { $$$ }"),
-         ("function", "export function $NAME($$$) { $$$ }"),
+        (("function", "function $NAME($$$): $RET { $$$ }"),
          ("function", "function $NAME($$$) { $$$ }"),
-         ("function", "export const $NAME = ($$$) => { $$$ }"),
-         ("class", "export class $NAME { $$$ }")),
-        _JS_IMPORTS,
+         ("function", "const $NAME = ($$$) => $E"),
+         ("function", "const $NAME = ($$$): $RET => $E"),
+         ("function", "const $NAME: $T = ($$$) => $E"),
+         ("function", _TSX_ENVUELTOS),
+         ("class", "class $NAME $$$ { $$$ }"))
+        + _JS_PROPIEDADES + _metodos_js(("", ": $RET")),
+        _JS_IMPORTS, llamada=LLAMADA + (_TSX_JSX,),
         globales=_JS_GLOBALES, resolucion="ruta",
         sufijos_test=(".test", ".spec"), dirs_test=("test", "tests", "__tests__"),
     ),
@@ -1108,7 +1144,11 @@ def module_name(ruta, raiz):
     if not partes:
         return ""
     partes[-1] = os.path.splitext(partes[-1])[0]
-    if partes[-1] in ("index", "mod", "__init__"):
+    if partes[-1] in ("index", "mod", "__init__") and len(partes) > 1:
+        # `src/index.tsx` se queda como `index`: quitarle el nombre lo dejaba en
+        # "" y el fichero ENTERO desaparecia del grafo — en vaul, el Drawer
+        # (1148 lineas, todo el componente); en react-hot-toast, el barril al
+        # que apuntan los tests con `from '../src'` (medido el 24-sep-2026).
         partes = partes[:-1]
     return ".".join(partes)
 
