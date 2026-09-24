@@ -290,6 +290,34 @@ _MODIFICADORES_SWIFT = ("", "private ", "public ", "fileprivate ", "internal ", 
                         "@discardableResult public ", "public static override ",
                         "nonisolated ", "package ")
 
+#: Elixir define con MACROS, asi que en el arbol todo es un `call` cuyo destino
+#: es la palabra (`def`, `defmodule`, `alias`...). Las alternativas son un
+#: `any` de patrones y no una regex a proposito: la regla viaja como argumento
+#: y el shim .cmd de npm en Windows se come `^` y `|` — la regex daba 0 matches
+#: en silencio.
+def _llamada_a(*palabras):
+    return {"has": {"field": "target", "any": [{"pattern": p} for p in palabras]}}
+
+
+_CABEZA_EX = {"kind": "call", "has": {"field": "target", "kind": "identifier",
+                                      "pattern": "$NAME"}}
+#: La cabeza de `def`: `f(x)`, `f` (aridad cero sin parentesis) o cualquiera de
+#: las dos con guarda (`f(x) when is_list(x)`, que es un `binary_operator`).
+_DEF_EX = _Regla({"all": [
+    {"kind": "call"},
+    _llamada_a("def", "defp", "defmacro", "defmacrop", "defguard", "defguardp"),
+    {"has": {"kind": "arguments", "has": {"any": [
+        {"kind": "identifier", "pattern": "$NAME"},
+        _CABEZA_EX,
+        {"kind": "binary_operator", "has": {"field": "left", "any": [
+            {"kind": "identifier", "pattern": "$NAME"}, _CABEZA_EX]}}]}}}]})
+_MODULO_EX = _Regla({"all": [
+    {"kind": "call"}, _llamada_a("defmodule", "defprotocol"),
+    {"has": {"kind": "arguments", "has": {"kind": "alias", "pattern": "$NAME"}}}]})
+_USO_EX = _Regla({"all": [
+    {"kind": "call"}, _llamada_a("alias", "import", "require", "use"),
+    {"has": {"kind": "arguments", "has": {"nthChild": 1, "pattern": "$SRC"}}}]})
+
 # Una llamada SUELTA (`f()`) solo puede resolver contra una definicion de su
 # propia familia: js/ts/tsx se importan entre si y java/kotlin/scala comparten
 # la JVM; nadie mas llama a otro lenguaje por nombre pelado. Sin este filtro
@@ -586,12 +614,18 @@ LENGUAJES = {
                    "llamada: es idioma corriente en Scala y no deja arista"),
     ),
     "elixir": _lang(
+        # Por REGLA y no por patron (banco de repos reales, jason, 24-sep-2026):
+        # `def $NAME($$$)` no casaba la definicion con guarda (`def f(x) when
+        # ...`), la de aridad cero sin parentesis (`def project do`), ni
+        # `defmacro`; y `defmodule Jason.Decoder` salia con un $NAME con punto
+        # que se descartaba. Se veian 224 de 328 funciones y 9 de 30 modulos
+        # (solo los de un segmento: `Jason` si, `Jason.Decoder` no).
         "elixir", (".ex", ".exs"),
-        (("function", "def $NAME($$$), do: $$$"),
-         ("function", "def $NAME($$$)"),
-         ("function", "defp $NAME($$$)"),
-         ("class", "defmodule $NAME do $$$ end")),
-        ("alias $SRC", "import $SRC"),
+        (("function", _DEF_EX), ("class", _MODULO_EX)),
+        # `alias`/`import`/`require`/`use`, con opciones o sin ellas, y la forma
+        # multiple `alias A.{B, C}`: el primer argumento, que `_usos_elixir`
+        # resuelve contra los modulos que el arbol DECLARA.
+        (_USO_EX,),
         resolucion="paquete",
         sufijos_test=("_test",), dirs_test=("test", "tests"),
     ),
@@ -1606,6 +1640,124 @@ def _scala_interno(nombre, fichero, modulos):
     return _java_interno(partes, modulos)
 
 
+def _declarados_elixir(defs):
+    """Lo que un arbol Elixir DECLARA, a partir de sus `defmodule`/`defprotocol`.
+
+    `defs` es [(fichero, ini, fin, nombre_escrito, modulo)]. Devuelve el
+    contexto que usan imports y llamadas: `declarados` {Nombre.Completo:
+    {modulo}}, `ambitos` {fichero: [(ini, fin, Nombre.Completo)]} y `alias`
+    {fichero: {Corto: Completo}} sembrado con los anidados — `defmodule
+    Unescape` dentro de `Jason.Decoder` es `Jason.Decoder.Unescape` y dentro de
+    su padre se le llama `Unescape`.
+
+    En Elixir el nombre de un modulo lo pone `defmodule`, no el fichero: casar
+    `Jason.Codegen` contra `codegen.ex` por sufijo sin mayusculas era adivinar,
+    y la adivinanza fallaba justo en lo que importa — `alias Jason.DecodeError`
+    (declarado en `decoder.ex`) no casaba con ningun fichero y caia, quitando
+    el ultimo segmento, en `jason.ex`: una arista inventada por cada test.
+    """
+    ctx = {"declarados": {}, "ambitos": {}, "alias": {}, "importa": {}}
+    for fichero, ini, fin, nombre, modulo in sorted(defs, key=lambda d: (d[0], d[1], -d[2])):
+        padres = [a for a in ctx["ambitos"].get(fichero, ()) if a[0] <= ini and fin <= a[1]]
+        completo = nombre
+        if padres:
+            padre = max(padres, key=lambda a: a[0])[2]
+            completo = "%s.%s" % (padre, nombre)
+            ctx["alias"].setdefault(fichero, {})[nombre.split(".")[0]] = \
+                "%s.%s" % (padre, nombre.split(".")[0])
+        ctx["ambitos"].setdefault(fichero, []).append((ini, fin, completo))
+        ctx["declarados"].setdefault(completo, set()).add(modulo)
+    return ctx
+
+
+def _nombre_elixir(nombre, fichero, linea, ctx):
+    """El modulo DECLARADO en el arbol al que `nombre` se refiere desde esa
+    linea, o None si no es de este proyecto (`Enum`, `Logger`, `Ecto.Repo`).
+
+    Primero el alias del fichero (`alias Jason.{Codegen}` hace de `Codegen`
+    `Jason.Codegen`), luego el nombre tal cual. Nunca por sufijo ni sin
+    mayusculas: `Logger` solo es propio si alguien declara `defmodule Logger`.
+    """
+    if nombre.startswith("__MODULE__"):
+        dentro = [a for a in ctx["ambitos"].get(fichero, ()) if a[0] <= linea <= a[1]]
+        if not dentro:
+            return None
+        nombre = max(dentro, key=lambda a: a[0])[2] + nombre[len("__MODULE__"):]
+    primero, punto, resto = nombre.partition(".")
+    candidatos = [nombre]
+    alias = ctx["alias"].get(fichero, {}).get(primero)
+    if alias:
+        candidatos.insert(0, alias + punto + resto)
+    return next((c for c in candidatos if c in ctx["declarados"]), None)
+
+
+def _usos_elixir(usos, ctx):
+    """[(origen, destino)] de los `alias`/`import`/`require`/`use` de Elixir.
+
+    `usos` es [(fichero, linea, verbo, especificador, texto, modulo)]. Dos
+    pasadas: los `alias` de cada fichero, en orden, llenan su tabla de nombres
+    cortos; despues se resuelve cada uso contra lo DECLARADO. De paso, los
+    `import` quedan en `ctx["importa"]`: son lo unico, ademas del propio
+    modulo, contra lo que una llamada suelta puede resolver.
+    """
+    def _objetivos(esp):
+        base, llave, dentro = esp.partition(".{")
+        if not llave:
+            return [esp]
+        return ["%s.%s" % (base, x.strip()) for x in dentro.rstrip("}").split(",") if x.strip()]
+
+    for fichero, _linea, verbo, esp, texto, _mod in sorted(usos):
+        if verbo != "alias":
+            continue
+        tabla = ctx["alias"].setdefault(fichero, {})
+        objetivos = _objetivos(esp)
+        como = re.search(r"\bas:\s*([A-Z]\w*)", texto)
+        for obj in objetivos:
+            primero, punto, resto = obj.partition(".")
+            completo = tabla[primero] + punto + resto if primero in tabla else obj
+            corto = como.group(1) if como and len(objetivos) == 1 else completo.rsplit(".", 1)[-1]
+            tabla[corto] = completo
+    aristas = set()
+    for fichero, linea, verbo, esp, _texto, modulo in usos:
+        for obj in _objetivos(esp):
+            completo = _nombre_elixir(obj, fichero, linea, ctx)
+            destinos = ctx["declarados"].get(completo) or ()
+            if len(destinos) != 1:
+                continue
+            destino = next(iter(destinos))
+            if verbo == "import":
+                ctx["importa"].setdefault(fichero, set()).add(destino)
+            if destino != modulo:
+                aristas.add((modulo, destino))
+    return aristas
+
+
+def _llamada_elixir(llamado, fichero, linea, propio, ctx, definidos, por_modulo):
+    """(candidatos, motivo) de una llamada de Elixir.
+
+    `Mod.f()` resuelve contra el modulo que `Mod` NOMBRA (alias, anidado o
+    nombre completo), y si ese modulo no es de este arbol es una llamada a
+    una libreria: `Enum.map` no puede caer en un `map` propio porque algun
+    fichero se llame `enum.ex`. `f()` suelta, contra el propio fichero y los
+    modulos que este `import`a — en Elixir no hay funciones globales, y
+    casarla por nombre en todo el arbol colgaba el `atom()` de StreamData en
+    `property_test.exs` del `Jason.Encode.atom` (banco de repos reales).
+    """
+    prefijo, _, fun = llamado.rpartition(".")
+    if not fun:
+        return [], "atributo-de-variable"          # `f.(x)`: una variable
+    if not prefijo:
+        visibles = {propio} | ctx["importa"].get(fichero, set())
+        return [q for q in definidos.get(fun, ()) if por_modulo.get(q) in visibles], \
+            "nombre-desconocido"
+    if not (prefijo[:1].isupper() or prefijo.startswith("__MODULE__")):
+        return [], "atributo-de-variable"          # `mod.f()`, `:erlang.f()`
+    completo = _nombre_elixir(prefijo, fichero, linea, ctx)
+    destinos = ctx["declarados"].get(completo) or ()
+    return [q for q in definidos.get(fun, ()) if por_modulo.get(q) in destinos], \
+        "nombre-desconocido"
+
+
 def _resuelve(especificador, fichero, raiz, modulos, modo):
     """El módulo interno al que apunta un import, o None si es externo.
 
@@ -1833,6 +1985,7 @@ def analyze(root):
     por_modulo = {}         # qual -> modulo que lo define (para llamadas cualificadas)
     lengua_de = {}          # qual -> lenguaje del fichero que lo define
     dueno_de = {}           # qual -> objeto al que se asigno (`app` en `app.use = ...`)
+    defs_ex = []            # los `defmodule` de Elixir, para `_declarados_elixir`
     vistos = set()
     for lang in presentes:
         cfg = LENGUAJES[lang]
@@ -1847,6 +2000,11 @@ def analyze(root):
                 entrada = por_fichero.get(fichero)
                 if not nombre or entrada is None or entrada[1] != lang:
                     continue
+                if lang == "elixir" and kind == "class":
+                    # `defmodule Jason.Decoder`: el nombre escrito va al
+                    # contexto de resolucion y el simbolo es su ultimo segmento
+                    defs_ex.append((fichero, _linea(m), _fin(m), nombre, entrada[0]))
+                    nombre = nombre.rsplit(".", 1)[-1]
                 if "." in nombre or ":" in nombre:
                     # `$NAME` no es un identificador: en Lua `function $NAME()`
                     # casa tambien `function M.x()` y `function M:x()`, que ya
@@ -1890,6 +2048,8 @@ def analyze(root):
     # {fichero: {nombre}} que el fichero trae de FUERA del arbol por import
     # explicito (Scala): ahi `f()` es ese `f`, no un homonimo del proyecto.
     importados_de_fuera = {}
+    ctx_ex = _declarados_elixir(defs_ex)
+    usos_ex = []
     for lang in presentes:
         cfg = LENGUAJES[lang]
         for entrada_imp in cfg["imports"]:
@@ -1910,6 +2070,12 @@ def analyze(root):
                 entrada = por_fichero.get(fichero)
                 if not especificador or entrada is None or entrada[1] != lang:
                     continue
+                if lang == "elixir":
+                    # necesita los `alias` del fichero antes de resolver nada
+                    texto = m.get("text", "")
+                    usos_ex.append((fichero, _linea(m), texto.split(None, 1)[0],
+                                    especificador, texto, entrada[0]))
+                    continue
                 # Un `import` de Scala nombra VARIOS (`a.{B, C}`, `a.B, c.D`):
                 # llega entero y se despliega aqui, uno por nombre.
                 for nombre, local in (_scala_nombres(especificador) if lang == "scala"
@@ -1920,6 +2086,7 @@ def analyze(root):
                         aristas.add((entrada[0], destino))
                     if local and not destino and _scala_de_fuera(nombre, modulos):
                         importados_de_fuera.setdefault(fichero, set()).add(local)
+    aristas |= _usos_elixir(usos_ex, ctx_ex)
     for origen, destino in sorted(aristas):
         informe["edges"].append([origen, destino, "IMPORTS"])
 
@@ -2047,6 +2214,20 @@ def analyze(root):
                     continue
                 informe["calls_resolved"] += 1
                 origen = _envuelve(rel, _linea(m), entrada[0])
+                informe["edges"].append([origen, candidatos[0], "CALLS"])
+                continue
+            if lang == "elixir":
+                candidatos, motivo = _llamada_elixir(llamado, fichero, _linea(m), entrada[0],
+                                                     ctx_ex, definidos, por_modulo)
+                if len(candidatos) > 1:
+                    propios = [q for q in candidatos if por_modulo.get(q) == entrada[0]]
+                    candidatos = propios if len(propios) == 1 else candidatos
+                if len(candidatos) != 1:
+                    motivo = motivo if not candidatos else "nombre-ambiguo"
+                    sin_resolver[motivo] = sin_resolver.get(motivo, 0) + 1
+                    continue
+                informe["calls_resolved"] += 1
+                origen = _envuelve(os.path.relpath(fichero, root), _linea(m), entrada[0])
                 informe["edges"].append([origen, candidatos[0], "CALLS"])
                 continue
             if not llamado.isidentifier():
