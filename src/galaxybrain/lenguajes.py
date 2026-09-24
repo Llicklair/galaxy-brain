@@ -408,7 +408,14 @@ LENGUAJES = {
         (("function", "function $NAME($$$) $$$ end"),
          ("function", "local function $NAME($$$) $$$ end"),
          ("method", "function $T.$NAME($$$) $$$ end"),
-         ("method", "function $T:$NAME($$$) $$$ end")),
+         ("method", "function $T:$NAME($$$) $$$ end"),
+         # Las mismas funciones escritas como valor: `M.x = function`, `local x =
+         # function` y el campo de la tabla que el modulo devuelve (`return { x =
+         # function ... }`). En busted eran la mitad del codigo: `busted.utils`
+         # y los output handlers salian con cero simbolos (24-sep-2026).
+         ("method", "$OBJ.$NAME = function($$$) $$$ end"),
+         ("function", "local $NAME = function($$$) $$$ end"),
+         ("method", "x = { $NAME = function($$$) $$$ end }", "field")),
         # En Lua las tres formas son la misma llamada. Aquí la metavariable NO
         # va suelta a propósito: `require $SRC` casa también las versiones con
         # paréntesis y captura `("a")` con ellos dentro, que luego no resuelve
@@ -1019,6 +1026,65 @@ def _go_modulo(fichero, raiz):
         carpeta = padre
 
 
+_LUA_ROCAS = {}
+_LUA_NOMBRE = re.compile(r"[\w\-]+(?:\.[\w\-]+)*$")
+_LUA_ENTRADA = re.compile(r"""\[\s*["']([\w.\-]+)["']\s*\]\s*=\s*["']([^"']+\.lua)["']""")
+
+
+def _lua_rocas(raiz):
+    """{nombre de require -> modulo} que declaran los `.rockspec` del arbol
+    (`build.modules`). Es la regla exacta de Lua, como go.mod en Go: luarocks
+    instala `src/util.lua` como `luassert.util`, y ningun sufijo lo adivina.
+    Cacheado por la firma (nombre, mtime) de los rockspecs: el watch re-lee solo."""
+    base = os.path.abspath(raiz)
+    rocas = []
+    for carpeta in (base, os.path.join(base, "rockspecs")):
+        try:
+            rocas += sorted(os.path.join(carpeta, n) for n in os.listdir(carpeta)
+                            if n.endswith(".rockspec"))
+        except OSError:
+            continue
+    firma = (base, tuple((r, os.path.getmtime(r)) for r in rocas))
+    if firma not in _LUA_ROCAS:
+        mapa = {}
+        for r in rocas:
+            try:
+                with open(r, encoding="utf-8", errors="replace") as fh:
+                    texto = fh.read()
+            except OSError:
+                continue
+            for req, rel in _LUA_ENTRADA.findall(texto):
+                mapa[req] = module_name(os.path.join(base, rel), base)
+        _LUA_ROCAS.clear()
+        _LUA_ROCAS[firma] = mapa
+    return _LUA_ROCAS[firma]
+
+
+def _lua_modulo(especificador, raiz, modulos):
+    """El modulo interno de un `require` de Lua, o None si es externo.
+
+    En Lua el nombre ENTERO es la ruta desde una raiz de `package.path`
+    (`?.lua`, `?/init.lua`): `require 'pl.utils'` es Penlight, no
+    `busted/utils.lua`. Casar por un trozo del nombre, como el sufijo generico,
+    inventaba aristas: en busted `pl.utils` caia en `busted.utils` y
+    `cliargs.core` en `busted.core` (banco de repos reales, 24-sep-2026). Y un
+    `require('busted.languages.' .. x)` no nombra ningun modulo: caia en `busted`.
+    """
+    if not _LUA_NOMBRE.match(especificador):
+        return None          # concatenacion o variable: no hay nombre escrito
+    declarado = _lua_rocas(raiz).get(especificador)
+    if declarado in modulos:
+        return declarado
+    for exacto in (especificador, especificador + ".init"):
+        if exacto in modulos:
+            return exacto
+    # Una raiz de package.path puede ser un subdirectorio (`lua/`, `lib/`): vale
+    # el nombre entero como sufijo por segmentos, y solo si hay UN candidato.
+    cola = ("." + especificador, "." + especificador + ".init")
+    candidatos = [m for m in modulos if m.endswith(cola)]
+    return candidatos[0] if len(candidatos) == 1 else None
+
+
 def _rust_interno(primero, modulos):
     """¿El primer segmento de un `use` de Rust nombra algo de ESTE crate?
 
@@ -1060,6 +1126,8 @@ def _resuelve(especificador, fichero, raiz, modulos, modo):
             if nombre in modulos:
                 return nombre
         return None
+    if modo == "paquete" and fichero.endswith(".lua"):
+        return _lua_modulo(especificador, raiz, modulos)
     if modo == "paquete":
         # `app/util`, `app.util`, `crate::app::util` -> se casa por SUFIJO contra
         # los modulos reales. Sin coincidencia, no hay arista.
@@ -1242,6 +1310,13 @@ def analyze(root):
                 fichero = os.path.abspath(os.path.join(root, m.get("file", "")))
                 entrada = por_fichero.get(fichero)
                 if not nombre or entrada is None or entrada[1] != lang:
+                    continue
+                if "." in nombre or ":" in nombre:
+                    # `$NAME` no es un identificador: en Lua `function $NAME()`
+                    # casa tambien `function M.x()` y `function M:x()`, que ya
+                    # recogen los patrones de metodo. Aceptarlo duplicaba cada
+                    # metodo con un qual inventado (`busted.core.busted.getTrace`)
+                    # que ademas se quedaba las llamadas de dentro (mismo tramo).
                     continue
                 modulo = entrada[0]
                 linea = _linea(m)
