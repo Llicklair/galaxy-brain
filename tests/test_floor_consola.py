@@ -37,6 +37,25 @@ def test_el_aviso_no_es_un_nivel(tmp_path, monkeypatch):
     assert all(nivel["key"] != "consola" for nivel in report["levels"])
 
 
+def test_proyecto_vacio_trae_la_cobertura_de_las_tablas(tmp_path):
+    """Sin codigo, floor da lo que gb ve en cada lenguaje para quien tenga que
+    elegir — derivado de las tablas, asi que una licencia nueva sube sola."""
+    from galaxybrain import lenguajes
+
+    report = floor.analyze(str(tmp_path))
+    filas = {f["lenguaje"]: f for f in report["cobertura"]}
+    assert set(filas) == set(lenguajes.LENGUAJES) | {"python"}
+    for lang, cfg in lenguajes.LENGUAJES.items():
+        assert filas[lang]["tests"] is bool(cfg.get("tia")), lang
+    texto = render.render_floor(report, lambda s, *_: s)
+    assert "Proyecto sin codigo" in texto and "decision tuya" in texto
+
+
+def test_con_codigo_no_hay_tabla_de_cobertura(tmp_path):
+    report = floor.analyze(_proyecto_js(tmp_path))
+    assert "cobertura" not in report
+
+
 def test_go_dice_como_se_arma_al_invocar(tmp_path):
     (tmp_path / "main.go").write_text("package main\n\nfunc main() {}\n", encoding="utf-8")
     report = floor.analyze(str(tmp_path))

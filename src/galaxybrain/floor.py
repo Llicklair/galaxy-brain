@@ -400,6 +400,9 @@ Lo de esta seccion se EJECUTA, asi que no puede pudrirse en silencio: si miente,
   grafo y quien le llama.
 - Para saber quien llama a un simbolo o que rompes al tocarlo: `gb calls <simbolo> [--depth 2]`
   antes de grepear o abrir ficheros a mano.
+- Si el proyecto aun no tiene codigo y hay que elegir lenguaje: proponlo tu segun lo que se va
+  a construir, y mete como un dato mas lo que gb ve en cada uno (`gb floor --json`, clave
+  `cobertura`: grafo, tests estrechados, consola). gb no elige; da el hecho.
 - De vez en cuando, `gb list`: el embudo capturada→leida→intervenida→en-silencio es el
   termometro del proyecto. No usar gb tambien es dato: se investiga, no se esconde.
 
@@ -891,6 +894,35 @@ def pending_sections(root):
     return pendientes
 
 
+#: Orden de la consola en la tabla de cobertura: lo que observa desde dentro,
+#: lo que lee stderr desde fuera, y lo que no tiene via medida.
+_RANGO_CONSOLA = {"hook-nativo": 0, "fallback-stderr": 1, "desactivado": 2}
+
+
+def cobertura_por_lenguaje():
+    """Lo que gb ve en cada lenguaje, derivado de sus tablas — nunca escrito a mano.
+
+    Para un proyecto SIN codigo, donde hay que elegir lenguaje (24-sep-2026).
+    gb no elige: depende de que se construye, y eso lo sabe quien lo pide y su
+    agente, no un analisis sin modelo (reglas 1 y 8). Lo que si es un hecho es
+    donde gb cubre mas, y eso entra en la decision como un dato entre otros.
+
+    Sale de `lenguajes.LENGUAJES` (licencia `tia`) y `consola.MECANISMOS` (via),
+    asi que no se desfasa: un lenguaje que gana licencia sube solo de fila.
+    """
+    from . import consola, lenguajes
+
+    filas = [{"lenguaje": "python", "grafo": True, "tests": True,
+              "consola": consola.mecanismo("python")["via"]}]
+    for lang in sorted(lenguajes.LENGUAJES):
+        ficha = consola.mecanismo(lang) or {}
+        filas.append({"lenguaje": lang, "grafo": True,
+                      "tests": bool(lenguajes.LENGUAJES[lang].get("tia")),
+                      "consola": ficha.get("via") or "desactivado"})
+    filas.sort(key=lambda f: (not f["tests"], _RANGO_CONSOLA.get(f["consola"], 3)))
+    return filas
+
+
 def analyze(root, run_tests=False, constructor=None):
     """El informe del suelo. Siete niveles de §10 mas el contexto para agentes.
 
@@ -1166,6 +1198,10 @@ def analyze(root, run_tests=False, constructor=None):
             _level("agentes", "Contexto ejecutable para agentes", "falta",
                    "sin AGENTS.md: cada agente que entre empieza a ciegas")
         )
+
+    # + proyecto sin codigo: la cobertura de gb por lenguaje, para quien elija.
+    if not graph.lenguajes_presentes(root, con_python=True):
+        report["cobertura"] = cobertura_por_lenguaje()
 
     # + la consola de errores: no es un nivel de §10 (no mueve fases ni el
     # siguiente paso), es un aviso. Los lenguajes del proyecto cuyas muertes no

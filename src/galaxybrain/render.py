@@ -300,6 +300,25 @@ def render_floor(report, style):
         lines.append("      %s" % style(level["detail"], DIM))
     lines.append("")
 
+    # Proyecto vacio: la cobertura de gb por lenguaje, agrupada. Es un dato
+    # para elegir, no la eleccion.
+    if report.get("cobertura"):
+        lines.append(style("Proyecto sin codigo todavia. Lo que gb ve en cada lenguaje:", BOLD))
+        grupos = {}
+        for f in report["cobertura"]:
+            grupos.setdefault((f["tests"], f["consola"]), []).append(f["lenguaje"])
+        consola_txt = {"hook-nativo": "consola", "fallback-stderr": "consola por envolvente",
+                       "desactivado": "sin consola"}
+        for (tests, via), langs in grupos.items():
+            que = "grafo · %s · %s" % (
+                "tests estrechados" if tests else "tests: suite entera",
+                consola_txt.get(via, via))
+            lines.append("  %-54s %s" % (que, ", ".join(langs)))
+        lines.append(style(
+            "      Elegir lenguaje es decision tuya (o de tu agente) segun lo que se "
+            "construye; esto solo dice donde gb ve mas. En --json: `cobertura`.", DIM))
+        lines.append("")
+
     # La consola, aparte de los niveles: avisa, no puntua.
     if report.get("consola"):
         lines.append(style("Consola de errores (si esto muere, no queda captura):", BOLD))
