@@ -204,6 +204,14 @@ def _regla_con_cuerpo(kind):
                            {"has": {"field": "body", "pattern": "$CUERPO"}}]})
 
 
+def _regla_con_nombre(kind):
+    """Un simbolo por KIND sin exigir cuerpo: para las definiciones que lo son
+    sin llaves (`case class C(x: Int)`, `trait Marca` en Scala), donde el
+    abstracto es otro kind y no hay nada que filtrar."""
+    return _Regla({"all": [{"kind": kind},
+                           {"has": {"field": "name", "pattern": "$NAME"}}]})
+
+
 def _lang(ag, extensiones, simbolos, imports=(), llamada=LLAMADA, globales=_COMUNES,
           resolucion=None, sufijos_test=(), dirs_test=("test", "tests"), carencias=(),
           tia=False):
@@ -545,15 +553,37 @@ LENGUAJES = {
         sufijos_test=("_test", "_spec"), dirs_test=("test", "tests", "spec"),
     ),
     "scala": _lang(
+        # Por KIND y no por patron, como Java y C#: en scala-xml (banco de repos
+        # reales, 24-sep-2026) los tres patrones veian 311 de 1020 `def` y 74 de
+        # 242 tipos. Se escapaban `def f = x` (sin tipo de retorno), `def f(): T
+        # = { ... }`, los `override`/`private[x]`/`final`, TODOS los `trait`,
+        # las `case class` sin cuerpo y las clases con `extends`. Un `def` sin
+        # cuerpo es otro kind (`function_declaration`), asi que el abstracto no
+        # entra; una clase o un trait sin cuerpo SI es una definicion (`case
+        # class C(x: Int)` construye), por eso a los tipos no se les exige.
         "scala", (".scala",),
-        (("function", "def $NAME($$$): $RET = $$$"),
-         ("class", "class $NAME { $$$ }"),
-         ("class", "object $NAME { $$$ }")),
-        ("import $SRC",),
+        (("class", _regla_con_nombre("class_definition")),
+         ("class", _regla_con_nombre("object_definition")),
+         ("class", _regla_con_nombre("trait_definition")),
+         ("class", _regla_con_nombre("enum_definition")),
+         ("function", _regla_con_cuerpo("function_definition"))),
+        # `import $SRC` capturaba SOLO el primer identificador: la gramatica
+        # pone cada segmento de `a.b.C` como hijo suelto del import, asi que
+        # `import scala.xml.parsing.ConstructingParser` llegaba como `scala` y
+        # no resolvia nunca — solo casaban por casualidad los relativos de un
+        # segmento (`import Utility.x`). Se toma el import ENTERO y se despliega
+        # en nombres cualificados (`a.{B, C => D}`, `a._`, `a.*`, `a.B as C`).
+        (_Regla({"all": [{"kind": "import_declaration"}, {"pattern": "$SRC"}]}),),
         llamada=("$FN($$$)", "$A.$FN($$$)"),
         resolucion="paquete",
         sufijos_test=("Test", "Spec"), dirs_test=("test", "tests"),
-        carencias=(MISMO_PAQUETE % "Scala",),
+        carencias=(MISMO_PAQUETE % "Scala",
+                   "un import solo deja arista si el fichero vive en la ruta de su "
+                   "paquete (`a/b/C.scala` para `a.b.C`): Scala no lo exige, y un "
+                   "`object` o tipo declarado en un fichero con otro nombre no se "
+                   "encuentra (no se adivina)",
+                   "una llamada SIN parentesis (`x.size`, `h`) no es un nodo de "
+                   "llamada: es idioma corriente en Scala y no deja arista"),
     ),
     "elixir": _lang(
         "elixir", (".ex", ".exs"),
@@ -1395,7 +1425,7 @@ def _resuelve_cs(especificador, modulos):
     return candidatos[0] if len(candidatos) == 1 else None
 
 
-def _java_interno(partes, modulos):
+def _java_interno(partes, modulos, minimo=2):
     """El modulo al que apunta un import de Java, o None si es externo.
 
     Un import de Java es un nombre CUALIFICADO ENTERO (`org.jsoup.nodes.Element`),
@@ -1411,8 +1441,10 @@ def _java_interno(partes, modulos):
     es lo que pide `import static a.b.C.metodo` o una clase anidada
     `a.b.C.Interna` -> `a.b.C`; nunca por debajo de dos segmentos (un tipo en
     un paquete). `import a.b.*` nombra el paquete: vale si tiene un solo modulo.
+    `minimo` sube ese suelo cuando `partes` trae delante un paquete que no es
+    del import (el relativo de Scala): quitar segmentos no puede comerselo.
     """
-    for fin in range(len(partes), 1, -1):
+    for fin in range(len(partes), max(minimo, 2) - 1, -1):
         nombre = ".".join(partes[:fin])
         hits = [m for m in modulos if m == nombre or m.endswith("." + nombre)]
         if hits:
@@ -1477,6 +1509,101 @@ def _kotlin_interno(partes, raiz, modulos):
         if declaran:
             return declaran[0] if len(declaran) == 1 else None
     return None
+
+
+_COMODIN_SCALA = ("_", "*", "given")
+
+
+def _scala_nombres(texto):
+    """Los nombres cualificados de UN `import` de Scala, entero como lo da el AST.
+
+    `import a.b.C, x.Y`       -> a.b.C, x.Y
+    `import a.b.{C, D => E}`  -> a.b.C, a.b.D   (el renombre no cambia el origen)
+    `import a.b._` / `a.b.*`  -> a.b            (el paquete: `_java_interno` lo trata)
+    `import a.b.C as D`       -> a.b.C          (Scala 3)
+
+    Cada nombre va con el nombre LOCAL que deja en el fichero (`D` en los dos
+    renombres, None en el comodin): lo usa la resolucion de llamadas.
+    """
+    cuerpo = re.sub(r"\s+", " ", texto.strip())
+    if cuerpo.startswith("import "):
+        cuerpo = cuerpo[len("import "):]
+    clausulas, nivel, actual = [], 0, ""
+    for c in cuerpo:
+        nivel += (c == "{") - (c == "}")
+        if c == "," and nivel == 0:
+            clausulas.append(actual)
+            actual = ""
+        else:
+            actual += c
+    clausulas.append(actual)
+    nombres = []
+    for clausula in (c.strip() for c in clausulas):
+        if "{" in clausula:
+            base = clausula.split("{", 1)[0].strip().rstrip(".").strip()
+            selectores = clausula.split("{", 1)[1].rsplit("}", 1)[0].split(",")
+        else:
+            base, _, ultimo = clausula.rpartition(".")
+            selectores = [ultimo]
+        for sel in selectores:
+            trozos = re.split(r"=>| as ", sel)
+            origen, local = trozos[0].strip(), trozos[-1].strip()
+            if not origen or not base:
+                continue
+            if origen in _COMODIN_SCALA or origen.startswith("given "):
+                nombres.append((base.replace(" ", ""), None))
+            else:
+                nombres.append(((base + "." + origen).replace(" ", ""),
+                                None if local in _COMODIN_SCALA else local))
+    return nombres
+
+
+def _scala_de_fuera(nombre, modulos):
+    """¿Un import de Scala nombra algo que NO puede estar en este arbol? Solo si
+    su primer segmento no es ningun directorio del proyecto: `org.junit...` en
+    un repo sin `org/`. Si lo es (`scala.xml.dtd.PublicID`, declarado en un
+    fichero con otro nombre) no se sabe, y no se afirma."""
+    raiz = "." + nombre.split(".", 1)[0] + "."
+    return not any(raiz in "." + m for m in modulos)
+
+
+_RE_PAQUETE_SCALA = re.compile(r"^\s*package\s+(?!object\b)([A-Za-z_][\w.]*)", re.M)
+_PAQUETES_SCALA = {"modulos": None, "mapa": {}}
+
+
+def _scala_interno(nombre, fichero, modulos):
+    """El modulo al que apunta un nombre importado en Scala, o None si es externo.
+
+    Un import de Scala es RELATIVO al paquete en el que esta el fichero (`import
+    Utility.sbToString` dentro de `package scala.xml`, o `import parsing._`), y
+    si no, absoluto. Las dos vias exigen el nombre cualificado ENTERO, como en
+    Java: `import scala.collection.Seq` no puede caer en un `Seq.scala` propio
+    por sufijo — la misma arista inventada que dieron Go, Rust y Java.
+    Los paquetes visibles son los de las clausulas `package` apiladas del
+    fichero (`package a` + `package b` ve `a.b` y `a`), del mas interno afuera.
+    """
+    partes = [p for p in nombre.split(".") if p]
+    if not partes:
+        return None
+    if _PAQUETES_SCALA["modulos"] is not modulos:     # una plaza por analyze
+        _PAQUETES_SCALA["modulos"], _PAQUETES_SCALA["mapa"] = modulos, {}
+    clausulas = _PAQUETES_SCALA["mapa"].get(fichero)
+    if clausulas is None:
+        try:
+            with open(fichero, encoding="utf-8", errors="replace") as fh:
+                clausulas = _RE_PAQUETE_SCALA.findall(fh.read())
+        except OSError:
+            clausulas = []
+        _PAQUETES_SCALA["mapa"][fichero] = clausulas
+    contextos, acumulado = [], []
+    for clausula in clausulas:
+        acumulado = acumulado + clausula.split(".")
+        contextos.insert(0, list(acumulado))
+    for ctx in contextos:
+        destino = _java_interno(ctx + partes, modulos, minimo=len(ctx) + 1)
+        if destino:
+            return destino
+    return _java_interno(partes, modulos)
 
 
 def _resuelve(especificador, fichero, raiz, modulos, modo):
@@ -1563,6 +1690,8 @@ def _resuelve(especificador, fichero, raiz, modulos, modo):
             return _java_interno(partes, modulos)
         if fichero.endswith((".kt", ".kts")):
             return _kotlin_interno([p.strip("`") for p in partes], raiz, modulos)
+        if fichero.endswith(".scala"):
+            return _scala_interno(".".join(partes), fichero, modulos)
         for i in range(len(partes)):
             cand = ".".join(partes[i:])
             if cand in modulos:
@@ -1758,6 +1887,9 @@ def analyze(root):
 
     # --- imports ---
     aristas = set()
+    # {fichero: {nombre}} que el fichero trae de FUERA del arbol por import
+    # explicito (Scala): ahi `f()` es ese `f`, no un homonimo del proyecto.
+    importados_de_fuera = {}
     for lang in presentes:
         cfg = LENGUAJES[lang]
         for entrada_imp in cfg["imports"]:
@@ -1778,10 +1910,16 @@ def analyze(root):
                 entrada = por_fichero.get(fichero)
                 if not especificador or entrada is None or entrada[1] != lang:
                     continue
-                destino = _resuelve(especificador, fichero, root, modulos,
-                                    modo or cfg["resolucion"])
-                if destino and destino != entrada[0]:
-                    aristas.add((entrada[0], destino))
+                # Un `import` de Scala nombra VARIOS (`a.{B, C}`, `a.B, c.D`):
+                # llega entero y se despliega aqui, uno por nombre.
+                for nombre, local in (_scala_nombres(especificador) if lang == "scala"
+                                      else ((especificador, None),)):
+                    destino = _resuelve(nombre, fichero, root, modulos,
+                                        modo or cfg["resolucion"])
+                    if destino and destino != entrada[0]:
+                        aristas.add((entrada[0], destino))
+                    if local and not destino and _scala_de_fuera(nombre, modulos):
+                        importados_de_fuera.setdefault(fichero, set()).add(local)
     for origen, destino in sorted(aristas):
         informe["edges"].append([origen, destino, "IMPORTS"])
 
@@ -1937,6 +2075,13 @@ def analyze(root):
                 informe["calls_resolved"] += 1
                 origen = _envuelve(os.path.relpath(fichero, root), _linea(m), entrada[0])
                 informe["edges"].append([origen, candidatos[0], "CALLS"])
+                continue
+            if llamado in importados_de_fuera.get(fichero, ()):
+                # `import org.junit.Assert.assertEquals` y luego `assertEquals(...)`:
+                # la llamada es la de JUnit, y por nombre caia en el
+                # `assertEquals` de un helper de test propio — 250 aristas
+                # inventadas en scala-xml (banco de repos reales, 24-sep-2026).
+                sin_resolver["importado-de-fuera"] = sin_resolver.get("importado-de-fuera", 0) + 1
                 continue
             candidatos = _misma_familia(definidos.get(llamado) or [], lang, lengua_de)
             if not candidatos:
