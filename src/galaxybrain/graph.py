@@ -420,6 +420,121 @@ def _nested_prefixes_in_listing(paths, root_rel):
     return prefixes
 
 
+def _arbol_de_ref(root, ref):
+    """El arbol de `root` tal como estaba en `ref`, extraido a un temporal con
+    `git archive` (sin tocar el working tree). Devuelve (tmp, raiz_equivalente)
+    o None. Quien llama borra `tmp`."""
+    import io
+    import shutil
+    import subprocess
+    import tarfile
+    import tempfile
+
+    repo = _git(root, "rev-parse", "--show-toplevel")
+    if repo is None:
+        return None
+    repo = repo.strip()
+    try:
+        rel = os.path.relpath(root, repo).replace("\\", "/")
+    except ValueError:
+        return None
+    args = ["git", "archive", "--format=tar", ref]
+    if rel not in (".", ""):
+        args += ["--", rel]
+    try:
+        p = subprocess.run(args, cwd=repo, capture_output=True, timeout=120)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if p.returncode != 0:
+        return None
+    tmp = tempfile.mkdtemp(prefix="gb-base-")
+    try:
+        with tarfile.open(fileobj=io.BytesIO(p.stdout)) as tar:
+            try:
+                tar.extractall(tmp, filter="data")
+            except TypeError:
+                # Python sin el filtro (<3.11.4): el tar lo genera git desde
+                # el propio repo, no viene de fuera.
+                tar.extractall(tmp)
+    except (tarfile.TarError, OSError):
+        shutil.rmtree(tmp, ignore_errors=True)
+        return None
+    raiz = os.path.join(tmp, *[x for x in rel.split("/") if x not in (".", "")])
+    os.makedirs(raiz, exist_ok=True)
+    return tmp, raiz
+
+
+def _base_si_solo_cambio_python(root, ref, skip, include_nested, actual):
+    """La base barata, valida solo si desde `ref` no cambio NINGUN fichero que
+    no sea Python: entonces esa parte del grafo es la de hoy, y analizar el
+    arbol viejo con ast-grep (el grueso del coste: el gate de gb pasaba de 12 a
+    21 s) no compra nada. Python sale de los blobs de git como siempre; lo no
+    Python, de las aristas de hoy. Los lanzamientos de ficheros CAMBIADOS no
+    entran en la base: uno recien escrito tiene que poder cerrar un ciclo nuevo
+    (si no, seria un verde falso del gate). None = no aplica."""
+    if actual is None:
+        return None
+    from . import lenguajes
+
+    repo = _git(root, "rev-parse", "--show-toplevel")
+    if repo is None:
+        return None
+    cambiados = _git(repo.strip(), "diff", "--name-only", ref)
+    sueltos = _git(repo.strip(), "ls-files", "--others", "--exclude-standard")
+    if cambiados is None or sueltos is None:
+        return None
+    rutas = [r.strip() for r in (cambiados + "\n" + sueltos).splitlines() if r.strip()]
+    if any(os.path.splitext(r)[1] in lenguajes.POR_EXTENSION for r in rutas):
+        return None
+    base = build_graph_from_git(root, ref, skip, include_nested)
+    if base is None:
+        return None
+    nodes, edges, errors = base
+    nodes_hoy, edges_hoy, lanzados_hoy = actual
+    no_python = {lenguajes.module_name(ruta, root) for ruta, _l in lenguajes._ficheros(root)}
+    for src, dsts in edges_hoy.items():
+        if src in no_python:
+            edges.setdefault(src, set()).update(dsts)
+            nodes.add(src)
+            nodes.update(dsts)
+    tocados = {module_name(os.path.join(repo.strip(), *r.split("/")), root) for r in rutas}
+    lanzados = [a for a in lanzados_hoy if a["de"] not in tocados]
+    return nodes, edges, errors, lanzados
+
+
+def _base_de_ref(root, ref, skip, include_nested, constructor, actual=None):
+    """El grafo de la baseline con el MISMO motor que el de hoy.
+
+    Sin constructor (solo Python) se leen los blobs .py de git, como siempre.
+    Con otro motor, `build_graph_from_git` solo veia los .py: en un repo TS con
+    un ciclo ya commiteado la base salia vacia, el ciclo "nuevo" y el gate del
+    pre-commit bloqueaba TODO commit (auditoria del 24-sep-2026). Ahora el arbol
+    de la ref se extrae y pasa por el mismo constructor: se compara lo mismo.
+    """
+    if constructor is None:
+        return build_graph_from_git(root, ref, skip, include_nested)
+    import shutil
+
+    rapida = _base_si_solo_cambio_python(root, ref, skip, include_nested, actual)
+    if rapida is not None:
+        return rapida
+    arbol = _arbol_de_ref(root, ref)
+    if arbol is None:
+        return None
+    from . import cruzadas
+
+    tmp, raiz = arbol
+    try:
+        nodes, edges, errors = constructor(raiz, skip, include_nested, set())
+        # Los lanzamientos de la ref sobre la MISMA extraccion (una sola: el
+        # `git archive` y el analisis son lo que cuesta).
+        lanzados = (cruzadas.aristas_de_nodos(raiz, set(nodes))
+                    if cruzadas.hay_mezcla(raiz) else [])
+        return nodes, edges, errors, lanzados
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def build_graph_from_git(root, ref, skip=DEFAULT_SKIP, include_nested=False):
     """Grafo de la baseline: los .py bajo `root` tal como estaban en `ref`.
 
@@ -1292,11 +1407,18 @@ def analyze(root, skip=DEFAULT_SKIP, since=None, boundaries=None, smells=False,
         "new_edges_sin_regla": [],
     }
     if since is not None:
-        base = build_graph_from_git(root, since, skip, include_nested)
+        base = _base_de_ref(root, since, skip, include_nested, constructor,
+                            actual=(nodes, edges, lanzamientos))
         if base is None:
             report["baseline_ok"] = False
         else:
-            _bn, base_edges, _be = base
+            _bn, base_edges, _be = base[:3]
+            # Lo declarado y lo lanzado, igual que en el arbol de hoy: sin esto
+            # un `=>` o una arista de lanzamiento preexistente salia "nueva".
+            for src, dst in boundaries_info.get("declared_edges") or []:
+                base_edges.setdefault(src, set()).add(dst)
+            for arista in (base[3] if len(base) > 3 else ()):
+                base_edges.setdefault(arista["de"], set()).add(arista["a"])
             base_pairs = cyclic_pairs(find_cycles(base_edges))
             new_pairs = cyclic_pairs(cycles) - base_pairs
             report["baseline_ok"] = True

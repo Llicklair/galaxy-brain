@@ -178,3 +178,49 @@ def test_una_llamada_suelta_no_cruza_de_lenguaje(tmp_path):
         ("hooks_lang.swift.gb_hook.armar", "hooks_lang.swift.gb_hook.detectProjectRoot"),
     ]
     assert "nombre-ambiguo" not in informe["unresolved"]
+
+
+def _repo_git(root):
+    import subprocess
+
+    def git(*args):
+        subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t", *args],
+                       cwd=root, check=True, capture_output=True)
+    git("init", "-q")
+    return git
+
+
+@necesita_astgrep
+def test_un_ciclo_ts_que_ya_estaba_no_bloquea_el_commit(tmp_path):
+    """Auditoria del 24-sep-2026: la base de `--since` solo leia blobs .py, asi
+    que en un repo TS con un ciclo YA commiteado cualquier commit salia con
+    "NUEVO acoplamiento ciclico" y el pre-commit bloqueaba siempre. Los dos
+    caminos: cambia un .ts (se re-analiza la ref con el mismo motor) y cambia
+    solo un .py (base barata: lo no Python es el de hoy)."""
+    root = _mixto(tmp_path)
+    _escribe(root, "web/cliente.ts", "import { render } from './app';\n\n"
+                                     "export function fetchUsers() {\n  return render();\n}\n")
+    git = _repo_git(root)
+    git("add", "-A")
+    git("commit", "-qm", "base con ciclo ts")
+
+    _escribe(root, "web/otro.ts", "export const x = 1;\n")
+    git("add", "-A")
+    git("commit", "-qm", "toca un ts")
+    assert cli.main(["graph", root, "--gate", "--since", "HEAD~1"]) == 0
+
+    _escribe(root, "api/db.py", "def consulta(sql):\n    return [sql]\n")
+    git("commit", "-qam", "toca solo python")
+    assert cli.main(["graph", root, "--gate", "--since", "HEAD~1"]) == 0
+
+
+@necesita_astgrep
+def test_un_ciclo_ts_nuevo_sigue_bloqueando(tmp_path):
+    root = _mixto(tmp_path)
+    git = _repo_git(root)
+    git("add", "-A")
+    git("commit", "-qm", "base sin ciclo")
+    _escribe(root, "web/cliente.ts", "import { render } from './app';\n\n"
+                                     "export function fetchUsers() {\n  return render();\n}\n")
+    git("commit", "-qam", "cierra el ciclo")
+    assert cli.main(["graph", root, "--gate", "--since", "HEAD~1"]) == 1
