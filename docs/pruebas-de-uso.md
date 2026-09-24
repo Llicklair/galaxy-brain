@@ -1931,3 +1931,52 @@ ella. El cruce no era del gate: era del motor, y de dos sitios a la vez.
 Sobre `hooks_lang/` real: llamadas resueltas 52 → 70, ambiguas 32 → 23, aristas entre lenguajes
 1 → 0. Las reglas por capa del 6-sep siguen (sobran, pero no estorban). Lo que queda abierto de
 aquel dia: ruby en consola sigue "escrito, pendiente de medir" por falta de ruby en esta maquina.
+
+## 24-sep-2026 — Codigo ajeno: los 17 lenguajes tenian fallos, y la suite no los veia
+
+**Como salio.** No buscando fallos: generando videos didacticos (repo-tour) sobre repos ajenos y
+comparando el suelo de gb con el de proyectos parecidos (import-linter, pytest-testmon, tach). En
+una tarde, con la suite en verde desde hacia meses: `floor` diciendo "sin .gb-boundaries" en el
+propio gb, `use globset::Glob` fabricando un CICLO en tach, las 6 aristas de google/uuid
+inventadas (`import "time"` → `time.go`), y express sin un solo metodo como simbolo. La sonda por
+ejemplar (18-sep) ya habia dado el aviso; esto lo confirmo a escala.
+
+**El banco de repos reales** (`bancos/repos_reales.py`). Un repo real por lenguaje, clavado a un
+sha, con comprobaciones LEIDAS de su codigo (simbolos, aristas que deben existir y que NO deben,
+llamadas, ciclos) y metricas contra linea base. Dos tandas de agentes, uno por lenguaje, cada uno
+con su repo, su diagnostico y su arreglo con test que falla antes. Resultado: **18 repos, 17
+lenguajes, 0 comprobaciones rotas**; sobre el codigo de la manana, 10 rotas solo con los 5
+primeros.
+
+**La familia de fallos, en casi todos.** El casado por sufijo sin mayusculas de `_resuelve`
+resolvia imports EXTERNOS contra modulos propios homonimos. Se cerro con la regla exacta de cada
+ecosistema, nunca con otro heuristico: go.mod (Go), primer segmento del `use` (Rust), nombre
+cualificado entero (Java, Kotlin, Scala), namespace declarado (C#), PSR-4 de composer.json (PHP),
+$LOAD_PATH bajo `lib/` (Ruby), nombre entero y rockspec (Lua), target de Package.swift (Swift),
+pubspec `name:` (Dart), `defmodule` y alias (Elixir). La otra mitad: formas de definicion
+invisibles (modificadores, genericos, cuerpos de expresion, `throws`, `static int`): reglas por
+KIND (`_Regla`, un solo mecanismo). Cifras por repo en los commits `2b862f0`..`7693bef`.
+
+**Tres falsos verdes de `gb tests`, reproducidos y cerrados** (auditoria de centrismo-Python):
+1. `--run` en repo mixto elegia UN runner (npm antes que pytest): `.py` roto, exit 0 (`17a02c4`).
+2. Opacos y ficheros globales solo de Python: un test JS con `spawnSync` no era opaco y tocar
+   `jest.config`/`go.mod` estrechaba (`2b89b8b`).
+3. Las aristas de lanzamiento y `=>` no llegaban a la seleccion: tocar el `worker.js` que lanza
+   `app.py` dejaba fuera los tests de `app` (`696e287`).
+Y uno de bloqueo espurio: la base de `--since` solo leia blobs `.py`, asi que en un repo TS con un
+ciclo viejo el pre-commit bloqueaba TODO commit (`1a10759`).
+
+**Errores propios, cazados por la medida.** La guarda "metodo tocado fuera de Python → todo"
+(`b6816b7`) le quito el 52% entero a C#, Java, Ruby y Lua sin comprar ningun verde: lo dijo
+`bench_csharp` (7/7 a todo, 0%) y se estrecho a JS/TS y PHP (`6c37626`). Y un test mio pasaba la
+ruta donde gb espera un rango y lanzaba la suite de gb desde dentro de un test.
+
+**Lo que queda sin medir.** Rojos reales solo en Python, JS y C# (aqui no hay go, cargo, javac,
+php, ruby ni lua): en esos la cascada es exacta, pero no es licencia completa. `obj.x()` sin
+resolver en JS/TS/PHP (por eso tocar un metodo ahi corre todo). Pendiente de la auditoria:
+`check`/`sync`/`show`/`dead`/`who` aun pasan por el motor de Python.
+
+**Consecuencia de metodo.** La conformidad se mide contra codigo que no escribimos: un fixture
+certifica la forma que su autor imagino, y la suite verde durante meses era eso. Añadir un
+lenguaje exige ahora su entrada en el banco de repos reales, no solo su sonda. Suite completa al
+cierre de la tanda: 1099 passed.
