@@ -144,7 +144,7 @@ def _mapa_de_tests(nodes):
 
     mapa = {}
     for qual, nodo in nodes.items():
-        if not impacted._es_test(qual, nodo):
+        if not impacted._es_test(qual, nodo, nodes):
             continue
         partes = qual.split(".")
         if len(partes) >= 2:

@@ -205,6 +205,45 @@ def test_los_helpers_de_los_tests_no_entran_en_la_seleccion(repo):
     assert impacted._es_test("lib.nucleo.test_algo", {"kind": "function"}) is False
 
 
+def test_los_tests_de_clase_se_seleccionan(repo):
+    """Falso verde real (24-sep-2026): si lo unico que prueba `resta` es un
+    metodo de clase, `gb tests` decia "nada que correr" y salia 0. pytest
+    colecciona `test*` en `class Test*` y en subclases de unittest.TestCase."""
+    (repo / "tests" / "test_resta.py").write_text(
+        "import unittest\n"
+        "from lib.nucleo import resta\n"
+        "\n"
+        "\n"
+        "class TestResta:\n"
+        "    def test_va(self):\n"
+        "        assert resta(3, 1) == 2\n"
+        "\n"
+        "\n"
+        "class RestaCasos(unittest.TestCase):\n"
+        "    def test_cero(self):\n"
+        "        self.assertEqual(resta(1, 1), 0)\n"
+        "\n"
+        "    def _ayuda(self):\n"
+        "        return resta(0, 0)\n",
+        encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "tests de clase")
+    _tocar(repo, "lib/nucleo.py", "return a - b", "return a + b")
+
+    report = impacted.analyze(str(repo), worktree=True)
+    assert report["tests"] == ["tests/test_resta.py"]
+    assert report["todo"] is False
+    assert report["total_tests"] == 3  # test_suma_va + test_va + test_cero
+
+
+def test_un_metodo_fuera_de_clase_de_test_no_es_test():
+    nodes = {"tests.test_x.Ayuda": {"kind": "class", "sig": ""}}
+    metodo = {"kind": "method", "owner": "tests.test_x.Ayuda"}
+    assert impacted._es_test("tests.test_x.Ayuda.test_no", metodo, nodes) is False
+    nodes["tests.test_x.Ayuda"]["sig"] = "(unittest.TestCase)"
+    assert impacted._es_test("tests.test_x.Ayuda.test_no", metodo, nodes) is True
+
+
 def test_un_test_tocado_directamente_se_corre_el(repo):
     _tocar(repo, "tests/test_suma.py", "== 3", "== 3  # tocado")
     _git(repo, "add", "-A")

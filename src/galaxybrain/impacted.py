@@ -74,7 +74,7 @@ def _sin_licencia_para_estrechar(grafo):
     return ", ".join(sorted(faltan))
 
 
-def _es_test(qual, nodo):
+def _es_test(qual, nodo, nodes=None):
     """Un test que pytest COLECCIONA de verdad.
 
     El filtro tiene que ser el nombre, no "vive en tests/": un helper como
@@ -92,9 +92,27 @@ def _es_test(qual, nodo):
         return True
     if not qual.startswith("tests."):
         return False
+    if nodo.get("kind") == "method":
+        # pytest colecciona `test*` dentro de `class Test*` y de cualquier
+        # subclase de unittest.TestCase. Sin esto, un cambio que solo prueba un
+        # test de clase daba "nada que correr" y exit 0 — falso verde medido el
+        # 24-sep-2026 (y la "suite entera" de import-linter perdia 10 de 23
+        # ficheros).
+        return (qual.rsplit(".", 1)[-1].startswith("test")
+                and _es_clase_de_test(nodo.get("owner") or "", nodes))
     if nodo.get("kind") != "function":
         return False
     return qual.rsplit(".", 1)[-1].startswith("test_")
+
+
+def _es_clase_de_test(owner, nodes):
+    """`class Test*` o una base que acaba en `TestCase`, leida de la firma del
+    nodo de clase (`sig` = `(unittest.TestCase)`): el grafo no emite EXTENDS
+    hacia lo que no es del repo. Sin el nodo de clase, solo cuenta el nombre."""
+    if owner.rsplit(".", 1)[-1].startswith("Test"):
+        return True
+    firma = ((nodes or {}).get(owner) or {}).get("sig") or ""
+    return bool(re.search(r"TestCase\b", firma))
 
 
 def _llamantes(edges):
@@ -235,7 +253,7 @@ def tests_que_alcanzan(nodes, llamantes, semillas, max_depth=8):
                 if origen in vistos:
                     continue
                 vistos.add(origen)
-                if _es_test(origen, nodes.get(origen, {})):
+                if _es_test(origen, nodes.get(origen, {}), nodes):
                     tests.add(origen)
                 else:
                     siguiente.add(origen)
@@ -263,7 +281,7 @@ def _ficheros_de(nodes, quals):
 
 
 def _todos_los_ficheros_de_test(nodes):
-    return _ficheros_de(nodes, [q for q, n in nodes.items() if _es_test(q, n)])
+    return _ficheros_de(nodes, [q for q, n in nodes.items() if _es_test(q, n, nodes)])
 
 
 def _ficheros_opacos(root, ficheros):
@@ -429,7 +447,7 @@ def analyze(root, rev_range=None, staged=False, worktree=False, skip=None,
     nodes = {n["qual"]: n for n in grafo["nodes"]}
     todos = _todos_los_ficheros_de_test(nodes)
     report["total_files"] = len(todos)
-    report["total_tests"] = len([q for q, n in nodes.items() if _es_test(q, n)])
+    report["total_tests"] = len([q for q, n in nodes.items() if _es_test(q, n, nodes)])
 
     def correr_todo(motivo):
         report["tests"] = todos
@@ -553,7 +571,7 @@ def analyze(root, rev_range=None, staged=False, worktree=False, skip=None,
 
     # Un símbolo de test tocado directamente entra él mismo en la selección.
     for qual in semillas:
-        if _es_test(qual, nodes.get(qual, {})):
+        if _es_test(qual, nodes.get(qual, {}), nodes):
             tests.add(qual)
 
     if not tests:
