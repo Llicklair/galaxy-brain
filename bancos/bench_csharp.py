@@ -49,6 +49,17 @@ MODULOS = {
                "        var v = Factura.Emitir(xs); return $\"TOTAL {v}\";\n    }\n}\n",
     "Texto": "namespace Bench;\n\npublic static class Texto\n{\n"
              "    public static string Mayus(string s) { return s.ToUpper(); }\n}\n",
+    # HERENCIA (24-sep-2026): el test solo usa la subclase (`new Cuadrado(2)
+    # .Doble()`), y `Doble` vive en la base. Sin EXTENDS/owner/`new` en el
+    # grafo, nadie llamaba a `Figura.Doble` y la seleccion caia a todo; con
+    # ellos tiene que estrechar Y contener el rojo de CuadradoTests.
+    "Figura": "namespace Bench;\n\npublic class Figura\n{\n"
+              "    public virtual double Area() { return 1; }\n\n"
+              "    public double Doble()\n    {\n        return Area() * 2;\n    }\n}\n",
+    "Cuadrado": "namespace Bench;\n\npublic class Cuadrado : Figura\n{\n"
+                "    private double lado;\n"
+                "    public Cuadrado(double l) { lado = l; }\n"
+                "    public override double Area() { return lado * lado; }\n}\n",
 }
 
 #: fichero de test -> (clase de test, expresion que ejercita la cadena)
@@ -59,6 +70,7 @@ TESTS = {
     "FacturaTests": "var v = Factura.Emitir(new double[]{10}); Assert.True(v > 0);",
     "InformeTests": "var v = Informe.Linea(new double[]{10}); Assert.NotEmpty(v);",
     "TextoTests": "var v = Texto.Mayus(\"a\"); Assert.Equal(\"A\", v);",
+    "CuadradoTests": "var v = new Cuadrado(2).Doble(); Assert.True(v > 0);",
 }
 
 CSPROJ_SRC = ("<Project Sdk=\"Microsoft.NET.Sdk\">\n  <PropertyGroup>\n"
@@ -152,7 +164,7 @@ print("-" * 82)
 
 OBJETIVOS = [("Iva", "Get"), ("Carrito", "Subtotal"), ("Carrito", "Total"),
              ("Descuento", "Aplicar"), ("Factura", "Emitir"),
-             ("Informe", "Linea"), ("Texto", "Mayus")]
+             ("Informe", "Linea"), ("Texto", "Mayus"), ("Figura", "Doble")]
 
 falsos = ahorro = con_fuga = medidas = 0
 for modulo, metodo in OBJETIVOS:
