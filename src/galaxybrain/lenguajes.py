@@ -1412,6 +1412,64 @@ def _enlaces_tauri(root, ficheros, informe, envuelve, por_fichero, sin_resolver)
                 informe["edges"].append([entrada[0], mod_destino, "IMPORTS"])
 
 
+_IPC_RECIBE = re.compile(r"""\bipcMain\.(?:handle|handleOnce|on|once)\(\s*(["'`])([^"'`$]+)\1""")
+_IPC_ENVIA = re.compile(r"""\bipcRenderer\.(?:invoke|send|sendSync)\(\s*(["'`])([^"'`$]+)\1""")
+_ES_TEST = re.compile(r"(^|[\\/])(tests?|__tests__|spec)([\\/])|\.(test|spec)\.[jt]sx?$")
+
+
+def _enlaces_electron(root, ficheros, informe, envuelve, por_fichero, sin_resolver):
+    """`ipcRenderer.invoke('canal')` -> quien registra `ipcMain.handle('canal')`.
+
+    El salto renderer -> main de una app Electron: medido el 24-sep-2026 en
+    marktext, 76 de 81 envios con canal literal y un solo receptor; gb no veia
+    ninguno. Pero en Motrix menos del 1% (canales en constantes enumeradas): por
+    eso SOLO canal escrito y receptor unico fuera de tests. El destino es el
+    simbolo que contiene el registro del manejador (su cuerpo va ahi dentro).
+    """
+    frontal = [f for f, lang in ficheros if lang in ("js", "ts", "tsx")]
+    if not frontal:
+        return
+    textos, receptores = {}, {}
+    for f in frontal:
+        try:
+            with open(f, encoding="utf-8", errors="replace") as fh:
+                textos[f] = fh.read()
+        except OSError:
+            continue
+        if "ipcMain" not in textos[f] or _ES_TEST.search(os.path.relpath(f, root)):
+            continue
+        entrada = por_fichero.get(os.path.abspath(f))
+        if not entrada:
+            continue
+        for m in _IPC_RECIBE.finditer(textos[f]):
+            linea = textos[f].count("\n", 0, m.start()) + 1
+            receptores.setdefault(m.group(2), []).append(
+                (envuelve(os.path.relpath(f, root), linea, entrada[0]), entrada[0]))
+    if not receptores:
+        return
+    vistas = set()
+    for f, texto in textos.items():
+        if "ipcRenderer" not in texto:
+            continue
+        entrada = por_fichero.get(os.path.abspath(f))
+        if not entrada:
+            continue
+        for m in _IPC_ENVIA.finditer(texto):
+            destinos = receptores.get(m.group(2), [])
+            if len(destinos) != 1:
+                sin_resolver["ipc-sin-receptor-unico"] = sin_resolver.get("ipc-sin-receptor-unico", 0) + 1
+                continue
+            destino, mod_destino = destinos[0]
+            linea = texto.count("\n", 0, m.start()) + 1
+            origen = envuelve(os.path.relpath(f, root), linea, entrada[0])
+            if origen == destino or (origen, destino) in vistas:
+                continue
+            vistas.add((origen, destino))
+            informe["edges"].append([origen, destino, "CALLS"])
+            if mod_destino != entrada[0] and [entrada[0], mod_destino, "IMPORTS"] not in informe["edges"]:
+                informe["edges"].append([entrada[0], mod_destino, "IMPORTS"])
+
+
 def _firma_de(texto, nombre):
     """Los parametros tal como se escriben: el primer parentesis equilibrado que
     sigue al nombre, con el espacio normalizado. "" si no hay (Ruby sin
@@ -2678,6 +2736,7 @@ def analyze(root):
             informe["edges"].append([origen, candidatos[0], "CALLS"])
 
     _enlaces_tauri(root, ficheros, informe, _envuelve, por_fichero, sin_resolver)
+    _enlaces_electron(root, ficheros, informe, _envuelve, por_fichero, sin_resolver)
     informe["unresolved"] = {**(informe.get("unresolved") or {}), **sin_resolver}
     informe["not_covered"] = [
         "llamadas sobre variables (`obj.metodo()`): exigen inferencia de tipos. Se cuentan, "
