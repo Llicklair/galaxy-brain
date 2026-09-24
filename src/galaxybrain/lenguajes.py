@@ -107,6 +107,42 @@ def _metodos_js(retornos):
                  for m in modificadores for r in retornos)
 
 
+def _clases_php():
+    """Clases, interfaces, traits y enums. `$$$` tras el nombre cubre
+    `extends`/`implements`; los modificadores y los atributos no admiten
+    metavariable, asi que cada combinacion es un patron. Medido sobre
+    league/container el 24-sep-2026: con `class $NAME { $$$ }` salia 1 clase
+    de src/ de 57 — `final`, `readonly`, `implements` y `interface` la tapaban."""
+    formas = tuple("%sclass $NAME $$$ { $$$ }" % m
+                   for m in ("", "final ", "abstract ", "readonly ", "final readonly ",
+                             "readonly final ", "abstract readonly "))
+    formas += ("interface $NAME $$$ { $$$ }", "trait $NAME { $$$ }", "enum $NAME $$$ { $$$ }")
+    return tuple(("class", a + f) for a in ("", "#[$$$] ") for f in formas)
+
+
+def _metodos_php():
+    """Los metodos, un patron por modificador x tipo de retorno x atributo: ni el
+    modificador, ni el `: Tipo`, ni el `#[...]` admiten metavariable, y el patron
+    plano no casa ninguno (medido: `public function x(): int` no salia, y en PHP
+    moderno es casi todo). Los de cuerpo `;` son los abstractos y los de interfaz."""
+    con_cuerpo = ("", "public ", "protected ", "private ", "static ", "public static ",
+                  "protected static ", "private static ", "final public ",
+                  "final protected ", "final public static ")
+    sin_cuerpo = ("", "public ", "abstract public ", "abstract protected ", "public static ")
+    formas = ["%sfunction $NAME($$$)%s { $$$ }" % (m, r)
+              for m in con_cuerpo for r in ("", ": $R")]
+    formas += ["%sfunction $NAME($$$)%s;" % (m, r) for m in sin_cuerpo for r in ("", ": $R")]
+    return tuple(("method", "class A { %s%s }" % (a, f), "method_declaration")
+                 for a in ("", "#[$$$] ") for f in formas)
+
+
+#: Las llamadas de PHP son tres nodos distintos y `$FN($$$)` solo ve la primera.
+#: La de metodo (`$this->x()`) no parsea suelta: necesita el `<?php` delante y
+#: selector. `$A` es el receptor (`$this`, `self`, `Clase`), que el extractor
+#: compone como en Java y resuelve por ambito o por nombre de clase.
+_LLAMADA_PHP = ("$FN($$$)", "$A::$FN($$$)",
+                ("<?php $A->$FN($$$);", "member_call_expression"))
+
 _JS_CARENCIAS = (
     "los generadores de clase (`*gen() {}`) y los metodos con nombre calculado "
     "(`[clave]() {}`) no son simbolos; tampoco las asignaciones dinamicas "
@@ -413,19 +449,31 @@ LENGUAJES = {
         # contexto, como en C#. Sin esto solo salian las funciones globales.
         "php", (".php",),
         (("function", "function $NAME($$$) { $$$ }"),
-         ("class", "class $NAME { $$$ }"),
-         ("method", "class A { public function $NAME($$$) { $$$ } }", "method_declaration"),
-         ("method", "class A { private function $NAME($$$) { $$$ } }", "method_declaration"),
-         ("method", "class A { protected function $NAME($$$) { $$$ } }", "method_declaration")),
+         ("function", "function $NAME($$$): $R { $$$ }"))
+        + _clases_php() + _metodos_php(),
         # Las cuatro palabras que incluyen fichero en PHP, cada una con y sin
         # paréntesis (`require 'a.php'` y `require('a.php')` son la misma
         # sentencia). La metavariable va suelta y cubre ambas comillas: aquí
         # solo estaban las simples, el espejo exacto del bug de la familia JS
         # — un repo PHP con comillas dobles no dejaba ni una arista.
         ("require_once $SRC", "require $SRC", "include $SRC", "include_once $SRC",
-         "require_once($SRC)", "require($SRC)", "include($SRC)", "include_once($SRC)"),
+         "require_once($SRC)", "require($SRC)", "include($SRC)", "include_once($SRC)",
+         # `use Vendor\Pkg\Clase;`: la dependencia NORMAL del PHP con composer,
+         # y no se leia — league/container (PSR-4, 296 `use` internos) salia
+         # con 0 aristas y el gate no podia ver ni un cruce (banco de repos
+         # reales, 24-sep-2026). Con selector sale cada clausula, tambien las
+         # de `use A, B;`. Se resuelve por el PSR-4 de composer.json.
+         ("use $SRC;", "namespace_use_clause")),
+        llamada=_LLAMADA_PHP,
         tia=True, resolucion="ruta-local",
         sufijos_test=("Test",), dirs_test=("test", "tests"),
+        carencias=(MISMO_PAQUETE % "PHP",
+                   "un `use` solo deja arista si el `autoload.psr-4` de composer.json lo "
+                   "lleva a un fichero que existe: sin composer.json, con PSR-0/classmap, "
+                   "o en `use A\\{B, C}` agrupado, no hay arista (no se adivina)",
+                   "de las llamadas a metodo se resuelven `$this->x()`, `self::x()` y "
+                   "`static::x()` por ambito (la clase que las contiene) y `Clase::x()` "
+                   "por nombre; `$obj->x()`, `parent::x()` y los metodos de trait no"),
     ),
     "lua": _lang(
         # `function M.suma(...)` es LA forma de exportar en Lua (tabla-modulo) y
@@ -709,7 +757,9 @@ def _lote_estructural(ruta, presentes, root):
         # patron de llamada — carencia declarada) y el bucle consumidor ya lo
         # guarda; el lote tiene que guardarlo igual.
         entradas = [(e[1], e[2] if len(e) > 2 else None) for e in (cfg["simbolos"] or ())]
-        entradas += [(p, None) for p in (cfg["llamada"] or ())]
+        # una llamada es `patron` o `(patron, selector)`: la de metodo de PHP
+        # solo parsea con contexto, como los metodos de C#
+        entradas += [p if isinstance(p, tuple) else (p, None) for p in (cfg["llamada"] or ())]
         for patron, selector in entradas:
             if patron in _SOLO_RUN:
                 continue
@@ -1048,6 +1098,58 @@ def _misma_familia(candidatos, lang, lengua_de):
 
 _GO_MOD = {}
 
+#: Un `use` de PHP: `[function|const ]Nombre\De\Clase[ as Alias]`. Sin `/` ni
+#: `.`, que es lo que distingue un nombre de clase de la ruta de un `require`.
+_PHP_NOMBRE = re.compile(r"^(?:(?:function|const)\s+)?\\?[A-Za-z_]\w*(?:\\\w+)*(?:\s+as\s+\w+)?$")
+_COMPOSER = {}
+
+
+def _php_autoload(fichero, raiz):
+    """[(prefijo, carpeta_abs)] del `autoload(-dev).psr-4` del composer.json que
+    gobierna `fichero` (subiendo hasta `raiz`), del prefijo mas largo al mas
+    corto; [] si no hay."""
+    carpeta = os.path.dirname(os.path.abspath(fichero))
+    tope = os.path.abspath(raiz)
+    while True:
+        if carpeta in _COMPOSER:
+            return _COMPOSER[carpeta]
+        ruta = os.path.join(carpeta, "composer.json")
+        if os.path.isfile(ruta):
+            mapa = []
+            try:
+                with open(ruta, encoding="utf-8", errors="replace") as fh:
+                    datos = json.load(fh)
+            except (OSError, ValueError):
+                datos = {}
+            for seccion in ("autoload", "autoload-dev"):
+                psr4 = (datos.get(seccion) or {}).get("psr-4") or {}
+                for prefijo, dirs in psr4.items():
+                    for d in ([dirs] if isinstance(dirs, str) else dirs or []):
+                        mapa.append((prefijo, os.path.normpath(os.path.join(carpeta, d))))
+            _COMPOSER[carpeta] = sorted(mapa, key=lambda x: -len(x[0]))
+            return _COMPOSER[carpeta]
+        padre = os.path.dirname(carpeta)
+        if carpeta == tope or padre == carpeta:
+            return []
+        carpeta = padre
+
+
+def _php_psr4(especificador, fichero, raiz, modulos):
+    """El modulo de la clase que nombra un `use`, por PSR-4, o None (externa,
+    funcion/constante, o sin composer.json: no se adivina)."""
+    nombre = re.sub(r"\s+as\s+\w+$", "", especificador.strip())
+    if nombre.startswith(("function ", "const ")):
+        return None                # viven en ficheros `files`, no en PSR-4
+    nombre = nombre.lstrip("\\")
+    for prefijo, carpeta in _php_autoload(fichero, raiz):
+        if not nombre.startswith(prefijo):
+            continue
+        cand = os.path.join(carpeta, *nombre[len(prefijo):].split("\\")) + ".php"
+        modulo = module_name(cand, raiz)
+        if os.path.isfile(cand) and modulo in modulos:
+            return modulo
+    return None
+
 
 def _go_modulo(fichero, raiz):
     """El `module` del go.mod que gobierna `fichero` (subiendo hasta `raiz`), o
@@ -1216,6 +1318,12 @@ def _resuelve(especificador, fichero, raiz, modulos, modo):
             iguales = [m for m in iguales
                        if propio.startswith(m[:len(m) - len(cola)] + "lib.")]
         return iguales[0] if len(iguales) == 1 else None
+    if fichero.endswith(".php") and _PHP_NOMBRE.match(especificador):
+        # `use Vendor\Pkg\Clase` es un NOMBRE de clase, no una ruta: solo el
+        # PSR-4 de composer.json dice donde vive. Nunca se cae a la ruta ni al
+        # sufijo: `use Psr\Container\ContainerInterface` casaba asi con el
+        # `Container.php` propio — el bug de Rust y Go, en PHP.
+        return _php_psr4(especificador, fichero, raiz, modulos)
     if modo in ("ruta", "ruta-local"):
         # "ruta" exige el punto inicial porque en JS/TS un especificador pelado
         # es un PAQUETE (`react`), no un fichero. "ruta-local" no lo exige porque
@@ -1539,8 +1647,10 @@ def analyze(root):
         # inflaria el denominador de resolucion.
         vistas = set()
         candidatas = []
-        for patron in cfg["llamada"]:
-            for m in _corre(ruta_ag, patron, cfg["ag"], root, lote=lote):
+        for entrada_ll in cfg["llamada"]:
+            patron, selector = (entrada_ll if isinstance(entrada_ll, tuple)
+                                else (entrada_ll, None))
+            for m in _corre(ruta_ag, patron, cfg["ag"], root, selector, lote=lote):
                 clave = (m.get("file"), _linea(m), _meta(m, "A"), _meta(m, "FN"))
                 if clave in vistas:
                     continue
@@ -1584,10 +1694,22 @@ def analyze(root):
                 informe["calls_builtin"] += 1
                 continue
             informe["calls_candidates"] += 1
+            if lang == "php" and receptor == "parent":
+                # `parent::x()` es el metodo del PADRE: por ambito saldria el
+                # override de esta misma clase, una auto-arista inventada.
+                sin_resolver["parent"] = sin_resolver.get("parent", 0) + 1
+                continue
+            propio = None
             if (lang in ("js", "ts", "tsx") and llamado.startswith("this.")
                     and llamado.count(".") == 1):
+                propio = llamado[5:]
+            elif lang == "php" and receptor in ("$this", "self", "static"):
+                # el mismo hecho lexico que `this.x()` en JS: la clase que
+                # contiene la llamada
+                propio = (_meta(m, "FN") or "").strip()
+            if propio:
                 rel = os.path.relpath(fichero, root)
-                candidatos = sorted(set(_this_metodo(rel, _linea(m), llamado[5:])))
+                candidatos = sorted(set(_this_metodo(rel, _linea(m), propio)))
                 if len(candidatos) != 1:
                     sin_resolver["this-sin-dueno"] = sin_resolver.get("this-sin-dueno", 0) + 1
                     continue
