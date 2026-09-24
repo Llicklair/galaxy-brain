@@ -2241,6 +2241,10 @@ def cmd_memory(args):
         if not args.name or not args.description:
             sys.stderr.write("[gb memory] add necesita --name y --description\n")
             return 2
+        motivo = memory.nombre_invalido(args.name)
+        if motivo:
+            sys.stderr.write("[gb memory] --name %r no vale: %s\n" % (args.name, motivo))
+            return 2
         body = args.body
         if not body and not sys.stdin.isatty():
             try:

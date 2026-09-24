@@ -84,6 +84,19 @@ def test_nombres_de_nota_con_caracteres_raros(vault):
     assert [n.name for n in memory.all_notes()] == ["UPPER", "acentué-ñ", "con espacios", "v1.2.3"]
 
 
+def test_add_no_escribe_fuera_del_vault(vault):
+    """Auditoria del 24-sep-2026: `--name ../escape` escribia en el padre del
+    vault. El nombre es un fichero DENTRO del vault, o no es."""
+    import pytest
+
+    for malo in ["../escape", "sub/nota", "a\\b", "C:x", "..", "linea\nrota", "MEMORY", " "]:
+        with pytest.raises(ValueError):
+            memory.add(malo, "d")
+    assert not (vault.parent / "escape.md").exists()
+    for bueno in ["con espacios", "v1.2.3", "acentué-ñ", "..raro"]:
+        assert memory.add(bueno, "d").parent == vault
+
+
 def test_index_md_is_skipped(vault):
     write_note(vault, "real", description="x")
     (vault / "MEMORY.md").write_text("# index\n", encoding="utf-8")

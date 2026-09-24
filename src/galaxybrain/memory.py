@@ -124,7 +124,30 @@ def _score(note: Note, terms: list[str]) -> int:
     return sum(2 if t in meta else 1 if t in body else 0 for t in terms)
 
 
+def nombre_invalido(name: str) -> str | None:
+    """Por que `name` no puede ser una nota, o None si vale.
+
+    El nombre es el nombre del FICHERO: con `../escape` la nota se escribia
+    fuera del vault y no salia en el indice (auditoria del 24-sep-2026). Un
+    salto de linea rompe el frontmatter, y `MEMORY` pisaria el indice.
+    Espacios, acentos y puntos siguen valiendo, como al leer.
+    """
+    if not name or not name.strip():
+        return "vacio"
+    # `:` tambien es ruta en Windows: `vault / "C:x.md"` salta a la unidad C.
+    if any(sep in name for sep in ("/", "\\", ":")) or name in (".", ".."):
+        return "lleva ruta (/, \\, : o ..): el nombre es un fichero dentro del vault"
+    if any(ord(c) < 32 for c in name):
+        return "lleva caracteres de control (rompen el frontmatter)"
+    if name.upper() == "MEMORY":
+        return "MEMORY es el indice"
+    return None
+
+
 def add(name, description, type="reference", scope="general", tags="", body="") -> Path:
+    motivo = nombre_invalido(name)
+    if motivo:
+        raise ValueError("nombre de nota invalido %r: %s" % (name, motivo))
     d = vault_dir()
     d.mkdir(parents=True, exist_ok=True)
     fm = "\n".join(
