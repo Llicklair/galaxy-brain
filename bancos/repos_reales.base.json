@@ -1,4 +1,32 @@
 {
+ "MediatR": {
+  "aristas": 10,
+  "ciclos": 0,
+  "llamadas": 285,
+  "modulos": 154,
+  "simbolos": 952
+ },
+ "addressable": {
+  "aristas": 15,
+  "ciclos": 0,
+  "llamadas": 92,
+  "modulos": 21,
+  "simbolos": 183
+ },
+ "busted": {
+  "aristas": 64,
+  "ciclos": 0,
+  "llamadas": 532,
+  "modulos": 96,
+  "simbolos": 259
+ },
+ "container": {
+  "aristas": 293,
+  "ciclos": 1,
+  "llamadas": 358,
+  "modulos": 126,
+  "simbolos": 593
+ },
  "express": {
   "aristas": 56,
   "ciclos": 0,
@@ -13,17 +41,31 @@
   "modulos": 114,
   "simbolos": 713
  },
+ "javapoet": {
+  "aristas": 18,
+  "ciclos": 0,
+  "llamadas": 1960,
+  "modulos": 39,
+  "simbolos": 897
+ },
+ "jsoup": {
+  "aristas": 806,
+  "ciclos": 3,
+  "llamadas": 6972,
+  "modulos": 204,
+  "simbolos": 4619
+ },
  "ky": {
   "aristas": 152,
   "ciclos": 1,
-  "llamadas": 787,
+  "llamadas": 806,
   "modulos": 87,
   "simbolos": 428
  },
  "tach": {
   "aristas": 210,
   "ciclos": 0,
-  "llamadas": 482,
+  "llamadas": 528,
   "modulos": 209,
   "simbolos": 927
  },
