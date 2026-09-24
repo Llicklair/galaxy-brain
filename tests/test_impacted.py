@@ -728,3 +728,30 @@ def test_la_config_de_otro_ecosistema_corre_todo(repo, fichero):
     _tocar(repo, "lib/nucleo.py", "return a + b", "return b + a")
     report = impacted.analyze(str(repo), worktree=True)
     assert report["todo"] is True and fichero in report["motivo"], report["motivo"]
+
+
+def test_un_lanzamiento_entre_lenguajes_entra_en_la_seleccion(repo):
+    """Auditoria del 24-sep-2026: las aristas de lanzamiento vivian en el grafo
+    de imports pero no en la seleccion. `app.arranca` lanza `node worker.js`;
+    tocar `worker.js` junto con `suma` estrechaba a test_suma y dejaba fuera
+    test_app, que ejercita worker por el subproceso: falso verde."""
+    from galaxybrain import cli, lenguajes
+
+    if not lenguajes.binario():
+        pytest.skip("ast-grep no instalado; la capa multilenguaje es opcional")
+    (repo / "lib" / "app.py").write_text(
+        "import subprocess\n\n\ndef arranca():\n"
+        "    return subprocess.run(['node', 'lib/worker.js']).returncode\n", encoding="utf-8")
+    (repo / "lib" / "worker.js").write_text(
+        "function trabaja() {\n  return 1;\n}\ntrabaja();\n", encoding="utf-8")
+    (repo / "tests" / "test_app.py").write_text(
+        "from lib.app import arranca\n\n\ndef test_arranca():\n    assert arranca() == 0\n",
+        encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "lanza node")
+    _tocar(repo, "lib/worker.js", "return 1;", "return 2;")
+    _tocar(repo, "lib/nucleo.py", "return a + b", "return b + a")
+
+    report = impacted.analyze(str(repo), worktree=True, grafo=cli._analiza_simbolos(str(repo)))
+    assert "tests/test_app.py" in report["tests"], report
+    assert report["todo"] is False, report["motivo"]

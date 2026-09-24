@@ -134,6 +134,47 @@ def _es_clase_de_test(owner, nodes):
     return bool(re.search(r"TestCase\b", firma))
 
 
+def _enlaza_cruces(root, nodes, llamantes):
+    """Las aristas ENTRE lenguajes y las declaradas, dentro de la cadena.
+
+    Vivian en el grafo de imports (ciclos, fronteras, mapa) pero no aqui, y la
+    documentacion decia que si: `app.arranca` lanza `node worker.js`, tocar
+    worker y otra funcion a la vez estrechaba a los tests de la otra y dejaba
+    fuera a los de `arranca` — falso verde (auditoria del 24-sep-2026).
+
+    Un lanzamiento dentro de un simbolo hace a ESE simbolo llamante de todo el
+    modulo lanzado (la linea del sitio es un hecho). Si cae a nivel de modulo,
+    o es un `A => B` declarado (modulo a modulo), todos los simbolos de A se
+    ponen de llamantes: se sobre-aproxima, que es el lado seguro.
+    """
+    from . import cruzadas, graph
+
+    por_modulo = {}
+    for qual, nodo in nodes.items():
+        if nodo.get("kind") != "module" and nodo.get("module"):
+            por_modulo.setdefault(nodo["module"], []).append(qual)
+    modulos = set(por_modulo) | {q for q, n in nodes.items() if n.get("kind") == "module"}
+    cruces = []
+    try:
+        if cruzadas.hay_mezcla(root):
+            cruces += [(a["de"], a["a"], a.get("linea")) for a in cruzadas.aristas_de_nodos(root, modulos)]
+        info = graph.load_boundaries(root, graph.find_boundaries(root))
+        cruces += [(s, d, None) for s, d in info.get("declared_edges") or []]
+    except Exception:   # noqa: BLE001 - sin cruces no se estrecha peor que antes
+        return
+    for origen_mod, destino_mod, linea in cruces:
+        destinos = por_modulo.get(destino_mod) or []
+        propios = por_modulo.get(origen_mod) or []
+        envolventes = [q for q in propios if linea and nodes[q].get("line") and nodes[q].get("end")
+                       and nodes[q]["line"] <= linea <= nodes[q]["end"]]
+        if envolventes:
+            origenes = {min(envolventes, key=lambda q: nodes[q]["end"] - nodes[q]["line"])}
+        else:
+            origenes = set(propios) | {origen_mod}
+        for destino in destinos:
+            llamantes.setdefault(destino, set()).update(origenes)
+
+
 def _llamantes(edges):
     """destino -> {origenes} sobre CALLS y EXTENDS (las DEFINES no propagan).
 
@@ -609,6 +650,7 @@ def analyze(root, rev_range=None, staged=False, worktree=False, skip=None,
     _enlaza_dunders(nodes, llamantes)
     _enlaza_herencia(nodes, llamantes, grafo["edges"])
     _enlaza_pasados_como_valor(nodes, llamantes, grafo.get("nombrado_como_valor_en"))
+    _enlaza_cruces(root, nodes, llamantes)
     tests, truncado = tests_que_alcanzan(nodes, llamantes, semillas)
     if truncado:
         return correr_todo(t("el cierre de llamantes no termino (¿ciclo de llamadas?): todo"))
