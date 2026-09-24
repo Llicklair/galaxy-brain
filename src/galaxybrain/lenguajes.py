@@ -440,11 +440,15 @@ LENGUAJES = {
     ),
     "rust": _lang(
         "rust", (".rs",),
-        (("function", "pub fn $NAME($$$) -> $RET { $$$ }"),
-         ("function", "pub fn $NAME($$$) { $$$ }"),
-         ("function", "fn $NAME($$$) -> $RET { $$$ }"),
-         ("function", "fn $NAME($$$) { $$$ }"),
-         ("class", "pub struct $NAME { $$$ }")),
+        # Por KIND: los patrones literales perdian `async fn`, genericos y
+        # `where` — gb veia 495 de 544 funciones en tach y 1058 de 1755 en
+        # clash-verge-rev, y por eso 72 `invoke` de Tauri no encontraban su
+        # comando (24-sep-2026). Cuerpo obligatorio: un `fn` de trait sin
+        # cuerpo no es una definicion que llamar.
+        (("function", _regla_con_cuerpo("function_item")),
+         ("class", _regla_con_nombre("struct_item")),
+         ("class", _regla_con_nombre("enum_item")),
+         ("class", _regla_con_nombre("trait_item"))),
         ("use $SRC;",),
         llamada=LLAMADA_RUST, resolucion="paquete", tia=True,
         dirs_test=("tests",),
@@ -1332,6 +1336,80 @@ def _por_cualificado(llamado, definidos, por_modulo):
     bajo = prefijo.lower()
     return [q for q in posibles
             if bajo in [p.lower() for p in por_modulo.get(q, "").split(".")]]
+
+
+_TAURI_COMANDO = re.compile(r"#\[(?:tauri::)?command\b")
+_TAURI_FN = re.compile(r"\bfn\s+(\w+)")
+_TAURI_INVOKE = re.compile(r"""\binvoke\s*(?:<[^>]*>)?\(\s*(["'`])([^"'`$]+)\1""")
+
+
+def _enlaces_tauri(root, ficheros, informe, envuelve, por_fichero, sin_resolver):
+    """`invoke('x')` en el frontend -> la `fn x` marcada `#[tauri::command]`.
+
+    El enlace JS/TS -> Rust mas comun de una app Tauri, y los dos lados son
+    literales: medido el 24-sep-2026 sobre pot-desktop y clash-verge-rev, 116 de
+    116 sitios con destino unico, y gb no veia ninguno. Se emite la llamada
+    (CALLS, desde el simbolo que contiene el `invoke`) y la dependencia de
+    modulo. Solo con nombre ESCRITO y un unico comando con ese nombre; un
+    `plugin:...` o un nombre en variable no dejan arista (se cuentan).
+    """
+    rust = [f for f, lang in ficheros if lang == "rust"]
+    frontal = [f for f, lang in ficheros if lang in ("js", "ts", "tsx")]
+    if not rust or not frontal:
+        return
+    comandos = {}
+    for f in rust:
+        try:
+            with open(f, encoding="utf-8", errors="replace") as fh:
+                lineas = fh.read().split("\n")
+        except OSError:
+            continue
+        for i, linea in enumerate(lineas):
+            if not _TAURI_COMANDO.search(linea):
+                continue
+            for j in range(i + 1, min(len(lineas), i + 6)):
+                m = _TAURI_FN.search(lineas[j])
+                if m:
+                    comandos.setdefault(m.group(1), set()).add(os.path.abspath(f))
+                    break
+    if not comandos:
+        return
+    qual_de = {}
+    for n in informe["nodes"]:
+        if n["kind"] in ("function", "method"):
+            ruta = os.path.abspath(os.path.join(root, n["file"]))
+            qual_de[(ruta, n["qual"].rsplit(".", 1)[-1])] = n["qual"]
+    modulo_de = {q: n["module"] for n in informe["nodes"] for q in (n["qual"],)}
+    vistas = set()
+    for f in frontal:
+        try:
+            with open(f, encoding="utf-8", errors="replace") as fh:
+                texto = fh.read()
+        except OSError:
+            continue
+        entrada = por_fichero.get(os.path.abspath(f))
+        if not entrada:
+            continue
+        rel = os.path.relpath(f, root)
+        for m in _TAURI_INVOKE.finditer(texto):
+            nombre = m.group(2)
+            if nombre.startswith("plugin:"):
+                continue
+            destinos = {qual_de.get((ruta, nombre)) for ruta in comandos.get(nombre, ())} - {None}
+            if len(destinos) != 1:
+                sin_resolver["invoke-sin-comando"] = sin_resolver.get("invoke-sin-comando", 0) + 1
+                continue
+            destino = destinos.pop()
+            linea = texto.count("\n", 0, m.start()) + 1
+            origen = envuelve(rel, linea, entrada[0])
+            if (origen, destino) in vistas:
+                continue
+            vistas.add((origen, destino))
+            informe["calls_resolved"] = informe.get("calls_resolved", 0) + 1
+            informe["edges"].append([origen, destino, "CALLS"])
+            mod_destino = modulo_de.get(destino)
+            if mod_destino and [entrada[0], mod_destino, "IMPORTS"] not in informe["edges"]:
+                informe["edges"].append([entrada[0], mod_destino, "IMPORTS"])
 
 
 def _firma_de(texto, nombre):
@@ -2599,6 +2677,7 @@ def analyze(root):
             origen = _envuelve(os.path.relpath(fichero, root), _linea(m), entrada[0])
             informe["edges"].append([origen, candidatos[0], "CALLS"])
 
+    _enlaces_tauri(root, ficheros, informe, _envuelve, por_fichero, sin_resolver)
     informe["unresolved"] = {**(informe.get("unresolved") or {}), **sin_resolver}
     informe["not_covered"] = [
         "llamadas sobre variables (`obj.metodo()`): exigen inferencia de tipos. Se cuentan, "

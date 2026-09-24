@@ -114,9 +114,9 @@
  "tach": {
   "aristas": 210,
   "ciclos": 0,
-  "llamadas": 530,
+  "llamadas": 588,
   "modulos": 209,
-  "simbolos": 927
+  "simbolos": 1063
  },
  "uuid": {
   "aristas": 0,
