@@ -387,10 +387,21 @@ LENGUAJES = {
         "ruby", (".rb",),
         (("function", "def $NAME($$$)"),
          ("function", "def $NAME"),
-         ("method", "def self.$NAME($$$)"),
+         # sin parentesis a proposito: `def self.port_mapping` (sin argumentos)
+         # no casaba `def self.$NAME($$$)` y el metodo no existia; y `def $NAME`
+         # lo capturaba con NAME=`self` (addressable, 24-sep-2026).
+         ("method", "def self.$NAME"),
          ("class", "class $NAME"),
          ("class", "module $NAME")),
-        ("require_relative '$SRC'", 'require_relative "$SRC"'),
+        ("require_relative '$SRC'", 'require_relative "$SRC"', "require_relative($SRC)",
+         # `require "gema/x"` NO es relativo al fichero: busca en $LOAD_PATH, que
+         # en una gema es `lib/`. Es la forma normal de una gema (addressable no
+         # usa ni un require_relative) y sin ella el grafo salia a 0 aristas.
+         # Va con su propia resolucion ("carga"): por sufijo, `require "set"` o
+         # `require "json"` caerian en un `lib/gema/set.rb` propio — la misma
+         # arista inventada que Go y Rust dieron con la stdlib.
+         ("require '$SRC'", None, "carga"), ('require "$SRC"', None, "carga"),
+         ("require($SRC)", None, "carga")),
         resolucion="ruta-local", tia=True,
         carencias=("una llamada SIN parentesis (`total x` o `iva`) no es un nodo de "
                    "llamada en el AST: es indistinguible de una variable, asi que no "
@@ -654,7 +665,7 @@ def disponible():
 #: el 8-sep-2026, 3 rechazos de 47. Van por `run` como siempre; UNO de estos
 #: colandose en el lote lo envenenaria ENTERO (el scan no dice que regla fallo
 #: y todo caeria al fallback lento). La sonda del lote vigila esa regresion.
-_SOLO_RUN = frozenset(("def $NAME", "class $NAME", "module $NAME"))
+_SOLO_RUN = frozenset(("def $NAME", "def self.$NAME", "class $NAME", "module $NAME"))
 
 
 def _regla_yaml(rid, lenguaje, patron, selector):
@@ -1189,6 +1200,22 @@ def _resuelve(especificador, fichero, raiz, modulos, modo):
     es código de este proyecto y su arista no dice nada del acoplamiento propio;
     y un destino inventado sería una arista falsa, que es peor que ninguna.
     """
+    if modo == "carga":
+        # Ruby `require "gema/x"`: se busca en $LOAD_PATH, que en una gema es su
+        # `lib/`. Se casa la ruta ENTERA bajo un directorio `lib`, nunca por
+        # sufijo: `require "set"` solo es propio si existe `lib/set.rb`. Con
+        # varias `lib/` que casen, gana la de la gema del fichero; si no hay una
+        # sola, no se adivina.
+        if especificador.startswith((".", "/")):
+            return None
+        ruta_imp = especificador[:-3] if especificador.endswith(".rb") else especificador
+        cola = "lib." + ".".join(p for p in ruta_imp.split("/") if p)
+        iguales = [m for m in modulos if m == cola or m.endswith("." + cola)]
+        if len(iguales) > 1:
+            propio = module_name(fichero, raiz)
+            iguales = [m for m in iguales
+                       if propio.startswith(m[:len(m) - len(cola)] + "lib.")]
+        return iguales[0] if len(iguales) == 1 else None
     if modo in ("ruta", "ruta-local"):
         # "ruta" exige el punto inicial porque en JS/TS un especificador pelado
         # es un PAQUETE (`react`), no un fichero. "ruta-local" no lo exige porque
@@ -1400,6 +1427,11 @@ def analyze(root):
                     # metodo con un qual inventado (`busted.core.busted.getTrace`)
                     # que ademas se quedaba las llamadas de dentro (mismo tramo).
                     continue
+                if re.match(r"def\s+%s\s*\." % re.escape(nombre), m.get("text", "")):
+                    # `def self.x` / `def Obj.x` casando `def $NAME`: NAME es el
+                    # RECEPTOR, no el metodo. Salian decenas de simbolos `self` y
+                    # las llamadas de dentro se colgaban de ellos.
+                    continue
                 modulo = entrada[0]
                 linea = _linea(m)
                 clave = (fichero, linea, nombre)
@@ -1433,15 +1465,19 @@ def analyze(root):
             # dentro. Sin esto, el gate decia "sin cruces" mientras un modulo
             # importaba al que tiene prohibido (medido en una tirada real, 9-ago:
             # un FALSO VERDE, que es el peor fallo que puede dar una gate).
-            patron, selector = (entrada_imp if isinstance(entrada_imp, tuple)
-                                else (entrada_imp, None))
+            # Un tercero, si esta, es la resolucion de ESE patron cuando no es la
+            # del lenguaje (Ruby: `require` va por $LOAD_PATH, no por ruta).
+            patron, selector, modo = ((tuple(entrada_imp) + (None,))[:3]
+                                      if isinstance(entrada_imp, tuple)
+                                      else (entrada_imp, None, None))
             for m in _corre(ruta_ag, patron, cfg["ag"], root, selector):
                 especificador = _sin_comillas(_meta(m, "SRC"))
                 fichero = os.path.abspath(os.path.join(root, m.get("file", "")))
                 entrada = por_fichero.get(fichero)
                 if not especificador or entrada is None or entrada[1] != lang:
                     continue
-                destino = _resuelve(especificador, fichero, root, modulos, cfg["resolucion"])
+                destino = _resuelve(especificador, fichero, root, modulos,
+                                    modo or cfg["resolucion"])
                 if destino and destino != entrada[0]:
                     aristas.add((entrada[0], destino))
     for origen, destino in sorted(aristas):
