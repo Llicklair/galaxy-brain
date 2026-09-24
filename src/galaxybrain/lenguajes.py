@@ -270,12 +270,17 @@ MISMO_PAQUETE = ("dos ficheros del mismo paquete se usan SIN import en %s, asi q
                  "arista de modulo: 0 aristas aqui NO significa 0 acoplamiento. Las llamadas "
                  "entre ellos si se ven — `gb symbols` las cuenta, y el gate las comprueba")
 
-# Las formas de `func` que swift extrae, en el orden en que se miden en codigo
-# real: sin modificador, visibilidad sola, `static`/`override`, y los dos
-# pares con visibilidad. Va fuera de la tabla para que la sonda de conformidad
-# recorra la MISMA lista que el motor.
+# La MATRIZ de modificadores de `func` que la sonda de conformidad recorre. Fue
+# la lista literal de patrones del motor; desde el 24-sep-2026 swift va por
+# regla de kind (ver su entrada) y casa cualquier modificador, asi que la lista
+# ya no limita nada: queda como matriz de la sonda, con las formas que la lista
+# vieja NO cazaba y el codigo real usa (`mutating` en 41 funciones de
+# swift-argument-parser, `class func`, atributos, tres modificadores).
 _MODIFICADORES_SWIFT = ("", "private ", "public ", "fileprivate ", "internal ", "open ",
-                        "static ", "override ", "private static ", "public static ")
+                        "static ", "override ", "private static ", "public static ",
+                        "mutating ", "public mutating ", "class ", "@objc ",
+                        "@discardableResult public ", "public static override ",
+                        "nonisolated ", "package ")
 
 # Una llamada SUELTA (`f()`) solo puede resolver contra una definicion de su
 # propia familia: js/ts/tsx se importan entre si y java/kotlin/scala comparten
@@ -416,29 +421,34 @@ LENGUAJES = {
     ),
     "swift": _lang(
         "swift", (".swift",),
-        # Los modificadores van LITERALES porque la gramatica de swift en
-        # ast-grep 0.45 rechaza `$MOD func` como patron (medido el 18-sep-2026:
-        # "Cannot parse query"; tampoco `$$$ func`, ni el contextual dentro de
-        # un struct). Sin ellos `private func` era invisible y la unica
-        # `detectProjectRoot` del arbol era la de java, asi que la llamada
-        # suelta de swift cruzaba a JVM (libreta del 6-sep). Un proceso de
-        # scan corre todos los patrones a la vez, asi que la lista no cuesta
-        # tiempo; lo que no esta en ella se declara en `carencias`.
-        tuple(("function", "%sfunc $NAME($$$)%s { $$$ }" % (mod, ret))
-              for mod in _MODIFICADORES_SWIFT for ret in (" -> $RET", ""))
-        + (("class", "class $NAME { $$$ }"),
-           ("class", "struct $NAME { $$$ }")),
-        # Sin patron de metodo a proposito: en Swift `func` suelto ya caza los de
-        # dentro de un struct o una clase, y anadir el contextual solo metia un
-        # patron que la deduplicacion descartaba siempre — lo caza su sonda.
-        ("import $SRC",),
+        # Por REGLA de kind, como C#. La gramatica rechaza `$MOD func` como
+        # patron (18-sep-2026), y la lista literal de modificadores que lo
+        # suplia no llegaba al codigo real: en swift-argument-parser (banco de
+        # repos reales, 24-sep-2026) no se veia ni una de las 41 `mutating
+        # func`, ni las `func` genericas (`container<K>`), ni 62 de 77 `struct`
+        # (bastaba `: Protocolo` o `<T>`), ni un `enum` ni un `protocol`. `class_declaration` cubre
+        # class/struct/enum/actor; un `extension` NO es una definicion (su
+        # nombre es el del tipo ajeno que extiende), pero sus `func` si salen.
+        # Con cuerpo obligatorio: un requisito de protocolo no es codigo.
+        (("function", _regla_con_cuerpo("function_declaration")),
+         ("class", _Regla({"all": [
+             {"any": [{"kind": "class_declaration"}, {"kind": "protocol_declaration"}]},
+             {"not": {"has": {"field": "declaration_kind", "regex": "^extension$"}}},
+             {"has": {"field": "name", "pattern": "$NAME"}},
+             {"has": {"field": "body", "pattern": "$CUERPO"}}]}))),
+        # Por kind tambien: `import $SRC` no casaba `@testable import X`,
+        # `internal import X`, `@preconcurrency import X` ni `import func X.f`
+        # — 54 de los 271 imports de swift-argument-parser.
+        (_Regla({"all": [{"kind": "import_declaration"},
+                         {"has": {"kind": "identifier", "pattern": "$SRC"}}]}),),
         resolucion="paquete",
         sufijos_test=("Test", "Tests"), dirs_test=("test", "tests"),
-        carencias=("`import` en Swift nombra un MODULO del sistema o del paquete, no un "
-                   "fichero: solo deja arista si coincide con un modulo del propio arbol",
-                   "un `func` con un modificador fuera de la lista (`mutating`, `class func`, "
-                   "`@objc`, tres modificadores seguidos) no se extrae: la gramatica no "
-                   "admite un comodin de modificador y la lista es la medida",),
+        carencias=("`import X` nombra un TARGET de SwiftPM (o un modulo del sistema), nunca "
+                   "un fichero: solo deja arista si X es un target del Package.swift y ese "
+                   "target tiene UN solo fichero; con varios no hay destino unico",
+                   MISMO_PAQUETE % "Swift",
+                   "`init`, `subscript` y las propiedades calculadas no son simbolos: sus "
+                   "llamadas se cuelgan del tipo que las contiene",),
     ),
     "ruby": _lang(
         # `class $NAME\n $$$\nend` daba ERROR de patron, asi que las clases de
@@ -1274,6 +1284,60 @@ def _rust_interno(primero, modulos):
                for raiz in raices)
 
 
+_SWIFT_PKG = {}
+_RE_TARGET_SWIFT = re.compile(r"\.(target|executableTarget|testTarget|macro)\s*\(\s*name:\s*"
+                              r"\"([^\"]+)\"")
+_RE_PATH_SWIFT = re.compile(r"\bpath:\s*\"([^\"]+)\"")
+
+
+def _swift_targets(fichero, raiz):
+    """{target: carpeta} del Package.swift que gobierna `fichero` (subiendo
+    hasta `raiz`), o {} si no hay: sin manifiesto, ningun import es propio.
+
+    SwiftPM pone cada target en `Sources/<nombre>` (`Tests/<nombre>` los de
+    test) salvo que declare `path:`; eso es todo lo que se lee."""
+    carpeta = os.path.dirname(os.path.abspath(fichero))
+    tope = os.path.abspath(raiz)
+    while True:
+        if carpeta in _SWIFT_PKG:
+            return _SWIFT_PKG[carpeta]
+        manifiesto = os.path.join(carpeta, "Package.swift")
+        if os.path.isfile(manifiesto):
+            try:
+                with open(manifiesto, encoding="utf-8", errors="replace") as fh:
+                    texto = fh.read()
+            except OSError:
+                texto = ""
+            targets = {}
+            decl = list(_RE_TARGET_SWIFT.finditer(texto))
+            for i, m in enumerate(decl):
+                tramo = texto[m.end():decl[i + 1].start() if i + 1 < len(decl) else len(texto)]
+                ruta = _RE_PATH_SWIFT.search(tramo)
+                rel = (ruta.group(1) if ruta else
+                       os.path.join("Tests" if m.group(1) == "testTarget" else "Sources", m.group(2)))
+                targets[m.group(2)] = os.path.normpath(os.path.join(carpeta, rel))
+            _SWIFT_PKG[carpeta] = targets
+            return targets
+        padre = os.path.dirname(carpeta)
+        if carpeta == tope or padre == carpeta:
+            return {}
+        carpeta = padre
+
+
+def _resuelve_swift(especificador, fichero, raiz, modulos):
+    """`import X` (o `import func X.f`, `import X.Sub`) nombra el MODULO X: es
+    interno solo si X es un target del Package.swift, y apunta a su fichero si
+    el target tiene uno solo. Nunca por nombre de fichero: `import Foundation`
+    casaba por sufijo con `Utilities/Foundation.swift` de swift-argument-parser
+    y las 22 aristas del grafo eran esa (banco de repos reales, 24-sep-2026)."""
+    carpeta = _swift_targets(fichero, raiz).get(especificador.split(".")[0])
+    if not carpeta:
+        return None
+    dentro = [m for m, ruta in modulos.items() if ruta.endswith(".swift")
+              and os.path.abspath(ruta).startswith(carpeta + os.sep)]
+    return dentro[0] if len(dentro) == 1 else None
+
+
 _NS_CS = {"modulos": None, "mapa": {}}
 _RE_NAMESPACE = re.compile(r"^\s*namespace\s+([A-Za-z_][\w.]*)", re.M)
 
@@ -1400,6 +1464,8 @@ def _resuelve(especificador, fichero, raiz, modulos, modo):
         # los modulos reales. Sin coincidencia, no hay arista.
         if fichero.endswith(".cs"):
             return _resuelve_cs(especificador.strip(), modulos)
+        if fichero.endswith(".swift"):
+            return _resuelve_swift(especificador.strip(), fichero, raiz, modulos)
         limpio = especificador.strip('"\'').replace("::", ".").replace("/", ".")
         partes = [p for p in limpio.split(".") if p]
         if fichero.endswith(".go"):
