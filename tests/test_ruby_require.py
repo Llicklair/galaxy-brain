@@ -8,7 +8,6 @@ decenas de simbolos llamados `self`. La matriz cubre las tres comillas del
 `lib/gema/set.rb` propio), que es la arista inventada de Go y Rust.
 """
 
-import os
 
 import pytest
 
