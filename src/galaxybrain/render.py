@@ -300,6 +300,21 @@ def render_floor(report, style):
         lines.append("      %s" % style(level["detail"], DIM))
     lines.append("")
 
+    # La consola, aparte de los niveles: avisa, no puntua.
+    if report.get("consola"):
+        lines.append(style("Consola de errores (si esto muere, no queda captura):", BOLD))
+        for f in report["consola"]:
+            if f["lenguaje"] == "python":
+                como = "sin armar -> gb on"
+            elif f["via"] == "desactivado":
+                como = "sin via medida en esta plataforma (gb status)"
+            elif f["armado"] is False:
+                como = "sin armar -> gb on --lenguajes (te da la linea a exportar)"
+            else:
+                como = "se arma al invocar: %s" % f["arranque"].replace("envolvente: ", "")
+            lines.append("  %s %-7s %s" % (style("o", YELLOW), f["lenguaje"], style(como, DIM)))
+        lines.append("")
+
     if report.get("pending"):
         lines.append(style("Documentos puestos pero SIN RELLENAR:", BOLD))
         for path in report["pending"]:

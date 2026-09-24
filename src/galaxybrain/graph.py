@@ -112,13 +112,15 @@ def lenguajes_no_leidos(root, tope=2000):
     return cuenta
 
 
-def lenguajes_presentes(root, tope=2000):
+def lenguajes_presentes(root, tope=2000, con_python=False):
     """Los lenguajes de la tabla que tienen ficheros de verdad bajo `root`.
 
     Se extrajo de `carencias_presentes` para que la consola de errores pueda
     hacer la misma pregunta (`consola.estado`) sin repetir el recorrido ni el
     criterio de poda: un solo sitio decide que cuenta como «este lenguaje esta
-    en este proyecto».
+    en este proyecto». Python no esta en la tabla (tiene su motor); con
+    `con_python` tambien cuenta, para quien pregunta por el proyecto y no por
+    el motor de ast-grep.
     """
     from . import lenguajes
 
@@ -126,7 +128,8 @@ def lenguajes_presentes(root, tope=2000):
     for _dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = [d for d in dirnames if d not in DEFAULT_SKIP and not d.startswith(".")]
         for name in filenames:
-            lang = lenguajes.POR_EXTENSION.get(os.path.splitext(name)[1].lower())
+            ext = os.path.splitext(name)[1].lower()
+            lang = "python" if con_python and ext == ".py" else lenguajes.POR_EXTENSION.get(ext)
             if lang:
                 presentes.add(lang)
             vistos += 1

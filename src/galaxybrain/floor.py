@@ -1167,6 +1167,17 @@ def analyze(root, run_tests=False, constructor=None):
                    "sin AGENTS.md: cada agente que entre empieza a ciegas")
         )
 
+    # + la consola de errores: no es un nivel de §10 (no mueve fases ni el
+    # siguiente paso), es un aviso. Los lenguajes del proyecto cuyas muertes no
+    # dejarian captura en la shell desde la que se corre floor.
+    from . import consola
+
+    report["consola"] = [
+        {"lenguaje": f["lenguaje"], "via": f["via"], "armado": f["armado"],
+         "arranque": f["arranque"]}
+        for f in consola.pendientes(root)
+    ]
+
     # Lo que NO mira esto, dicho de frente (invariante 4).
     report["delegated"].append(
         "higiene de proceso (branch protection, deps pinneadas, revision, releases firmadas): "

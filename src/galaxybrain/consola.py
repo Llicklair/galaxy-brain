@@ -531,6 +531,35 @@ def estado(root, entorno=None, plataforma=None):
     return fichas
 
 
+def pendientes(root, entorno=None, plataforma=None):
+    """Lo que `gb floor` avisa: lenguajes del PROYECTO cuya consola no esta puesta.
+
+    `gb status` ya lo dice, pero solo lo ve quien pregunta por el; floor es lo
+    que se corre al llegar a un proyecto, y un repo JS sin NODE_OPTIONS se queda
+    sin capturas sin que nadie se entere (24-sep-2026). Dos diferencias con
+    `estado`, las dos para que el aviso no sea ruido:
+
+    - python solo si hay .py: en un repo JS, «python sin armar» no le importa a
+      nadie (en `status` si, porque ahi se pregunta por gb).
+    - fuera los armados: lo que funciona no necesita una linea.
+
+    Los no comprobables (envolvente, bandera al invocar) SI salen, con como se
+    arman: su silencio es exactamente el que este aviso quiere romper.
+    """
+    from . import graph
+
+    fichas = []
+    for lang in sorted(graph.lenguajes_presentes(root, con_python=True)):
+        ficha = mecanismo(lang, plataforma)
+        if not ficha:
+            continue
+        ficha["lenguaje"] = lang
+        ficha["armado"] = armado(lang, entorno, plataforma)
+        if ficha["armado"] is not True:
+            fichas.append(ficha)
+    return fichas
+
+
 def linea(ficha):
     """La ficha en una línea, para `gb status`. Sin colores: los pone quien pinta."""
     if ficha["armado"] is True:
