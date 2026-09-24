@@ -9,7 +9,17 @@ escrita, que es el caso corriente de un repo mixto.
 
 import os
 
-from galaxybrain import cruzadas
+import pytest
+
+from galaxybrain import cruzadas, lenguajes
+
+#: El extremo js solo es un modulo si el motor multilenguaje corre. Sin
+#: ast-grep no hay nodo al que llegar: el workflow `tests` (sin ast-grep) daba
+#: estos dos en rojo desde el 6-sep y nadie lo vio en local, donde si esta.
+necesita_astgrep = pytest.mark.skipif(
+    not lenguajes.binario(),
+    reason="ast-grep no instalado; la capa multilenguaje es opcional (ADR 0009)",
+)
 
 
 def _escribe(raiz, nombre, texto):
@@ -142,6 +152,7 @@ def test_el_comentario_no_tapa_el_codigo_de_la_linea_siguiente(tmp_path):
     assert [s["linea"] for s in sitios] == [3]
 
 
+@necesita_astgrep
 def test_la_arista_de_lanzamiento_entra_al_grafo(tmp_path):
     """Un spawn con el destino ESCRITO y unico en el arbol tiene el rango de un
     import: esta en el codigo y se lee sin ejecutar. Desde el 6-sep-2026 entra
@@ -159,6 +170,7 @@ def test_la_arista_de_lanzamiento_entra_al_grafo(tmp_path):
                for a in report["aristas_lanzamiento"])
 
 
+@necesita_astgrep
 def test_un_ciclo_entre_lenguajes_bloquea_el_gate(tmp_path):
     """py lanza js y js lanza py: un ciclo real que ningun import confiesa.
     Antes el gate pasaba en verde con el acoplamiento delante."""

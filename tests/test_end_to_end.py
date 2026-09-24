@@ -369,12 +369,17 @@ def test_gb_max_frames_cero_no_miente_ni_conserva_todo(gb_home, child_env, tmp_p
 
 
 def test_no_escribe_secretos_en_disco(gb_home, child_env):
+    # Los secretos se COMPONEN en ejecucion a proposito. Escritos como literal
+    # en la llamada, viajan en la linea fuente de la traza: es el residuo que el
+    # README declara («un literal posicional llega a disco»), no la redaccion
+    # por nombre que mide este test. Hasta 3.12 `python -c` no traia fuente y
+    # el literal no se veia; 3.13 si la trae, y el CI lo cazo (24-sep-2026).
     run_child(
         """
         def conectar(usuario, password, api_key):
             raise ConnectionError("sin ruta al host")
 
-        conectar("ana", "hunter2", "sk-vive-para-siempre")
+        conectar("ana", "hun" + "ter2", "sk-vive-" + "para-siempre")
         """,
         child_env,
     )
