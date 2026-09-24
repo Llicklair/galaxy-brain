@@ -281,12 +281,21 @@ Python process in that environment is covered, without touching any project's co
 Bringing it to another project is one command, with that project's venv active:
 
 ```bash
-# bash / WSL
-pip install -e <path-to-this-repo> && gb on && gb status
+# macOS / Linux — instala.sh (locates itself; python3 by default, PYTHON=... to pick another)
+sh <path-to-this-repo>/instala.sh
 
-# Windows — instala.ps1 does exactly that, no paths to type (it locates itself)
+# Windows — instala.ps1, the same thing
 powershell -ExecutionPolicy Bypass -File <path-to-this-repo>\instala.ps1
 ```
+
+With a venv active they install **locally**, into that venv; without one, **globally**, into the
+Python on your PATH. Two things the scripts handle so you don't have to: Homebrew's `python3` and
+Ubuntu 23.04+ refuse a global `pip install` (PEP 668, "externally-managed-environment"), so there it
+goes to your user site — which that same interpreter loads at startup; and a user-site install can
+leave `gb` off your PATH, so the scripts drive everything through `python -m galaxybrain.cli` and
+tell you where `gb` landed. Every combination (macOS, Windows, Linux × venv, system Python) is
+installed for real in CI, a real exception is raised, and its capture on disk is required
+([instalacion.yml](.github/workflows/instalacion.yml)).
 
 Coverage is **per Python environment, not per repo**. Being editable (`-e`), a `git pull` here
 updates every environment with no reinstall. To remove it: `gb off` — one line, no residue. Cheap
