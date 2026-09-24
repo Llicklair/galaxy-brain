@@ -651,15 +651,32 @@ def _sugerencia_primer_dia(root):
 
 
 def _capturas_sin_leer(root):
-    """Cuantas capturas no-efimeras de ESTE proyecto siguen sin leer. Un hecho
-    del historico, para que quien arranca la sesion decida si tirar del hilo."""
+    """Cuantas capturas de CODIGO de este proyecto siguen sin leer. Un hecho
+    del historico, para que quien arranca la sesion decida si tirar del hilo.
+
+    Un script de fuera lanzado con el cwd en el repo se archiva bajo el
+    proyecto, pero no es su codigo: cuenta solo si su fichero cuelga de la raiz.
+    Medido el 24-sep-2026: las 3 "sin leer" del aviso eran sondas de agentes en
+    Temp; un aviso que siempre avisa de ruido se aprende a ignorar. La vara es
+    la raiz y no el temporal (`es_exploracion`): un repo que vive en Temp —un
+    worktree, un tmp_path— sigue siendo codigo. Sin sitio (`?`) cuenta, como
+    en `is_ephemeral`: tambien le pasa a un fichero real."""
     from .capture import _project_root
 
     proyecto = _project_root(root) or os.path.abspath(root)
     leidas = store.read_ids()
+
+    def de_aqui(entrada):
+        fichero = store.fichero_de(entrada)
+        return (
+            not fichero
+            or not os.path.isabs(fichero)
+            or store._dentro_de(fichero, proyecto)
+        )
+
     return sum(
         1 for e in store.read_index(project=proyecto)
-        if not store.is_ephemeral(e) and e.get("id") not in leidas
+        if not store.is_ephemeral(e) and de_aqui(e) and e.get("id") not in leidas
     )
 
 

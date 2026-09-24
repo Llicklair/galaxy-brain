@@ -115,6 +115,21 @@ def test_el_contexto_cuenta_las_capturas_sin_leer(tmp_path):
     assert cli._capturas_sin_leer(root) == 0
 
 
+def test_el_aviso_no_cuenta_scripts_de_fuera_del_repo(tmp_path):
+    """Un script de fuera lanzado con el cwd en el repo cae bajo el proyecto,
+    pero no es su codigo: las 3 'sin leer' del 24-sep-2026 eran sondas en Temp."""
+    root = _repo(tmp_path)
+    sonda = str(tmp_path / "scratchpad" / "comparar.py")
+    registro = {
+        "ts": datetime.datetime.now().astimezone().isoformat(timespec="seconds"),
+        "exception": {"type": "FileNotFoundError", "message": "x"},
+        "process": {"project": root, "cwd": root, "pid": 1},
+        "frames": [{"file": sonda, "line": 11, "is_library": False}],
+    }
+    assert store.write(registro) is not None
+    assert cli._capturas_sin_leer(root) == 0
+
+
 def test_init_engancha_el_precommit_solo(tmp_path):
     """La conexion no se sugiere: se hace. 'Acuerdate del git config' fallo en
     uso real el mismo dia que se estreno el arnes (7-ago: hook creado, inactivo,
