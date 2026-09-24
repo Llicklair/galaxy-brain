@@ -508,3 +508,29 @@ def test_el_commit_reciente_va_SEPARADO_del_arbol_sucio(proyecto):
     ficha = foto["por_nodo"]["lib.nucleo"]
     assert ficha.get("commitaron") == [agente["nombre"]]
     assert ficha["agentes"] == []         # y NO cuenta como agente encima
+
+
+def test_un_fichero_tocado_de_otro_lenguaje_casa_con_su_nodo(tmp_path):
+    """Auditoria del 24-sep-2026: `graph.module_name` quitaba 3 caracteres
+    (`.py`) a todo, asi que `Foo.java` salia `Foo.j` y `who` no veia lo que
+    tocaba un agente en java, php, lua, tsx, swift, scala, dart ni c."""
+    import subprocess
+
+    from galaxybrain import cli, lenguajes
+
+    if not lenguajes.binario():
+        pytest.skip("ast-grep no instalado; la capa multilenguaje es opcional")
+    raiz = tmp_path / "repo"
+    (raiz / "lib").mkdir(parents=True)
+    (raiz / "lib" / "Foo.java").write_text(
+        "public class Foo {\n  int suma(int a) { return a; }\n}\n", encoding="utf-8")
+    (raiz / "lib" / "util.php").write_text("<?php\nfunction ayuda() { return 1; }\n", encoding="utf-8")
+    for args in (["init", "-q"], ["-c", "user.email=t@t", "-c", "user.name=t", "add", "-A"],
+                 ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "base"]):
+        subprocess.run(["git", *args], cwd=raiz, check=True, capture_output=True)
+    (raiz / "lib" / "Foo.java").write_text(
+        "public class Foo {\n  int suma(int a) { return a + 1; }\n}\n", encoding="utf-8")
+    (raiz / "lib" / "util.php").write_text("<?php\nfunction ayuda() { return 2; }\n", encoding="utf-8")
+
+    tocados = actividad.nodos_tocados(str(raiz), cli._analiza_simbolos(str(raiz)))
+    assert tocados == {"lib.Foo", "lib.util"}, tocados

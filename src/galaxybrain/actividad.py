@@ -182,6 +182,21 @@ def _tiene_diff(rangos, fichero):
     return any(os.path.normcase(r.replace("/", os.sep)) == objetivo for r in rangos)
 
 
+def _modulo_de(fichero, root):
+    """El nombre de modulo de un fichero con el criterio de SU motor.
+
+    `graph.module_name` le quita tres caracteres al final (`.py`): `Foo.java`
+    salia `Foo.j`, `x.php` `x.p`, y el fichero tocado nunca casaba con su nodo —
+    `who` perdia lo que tocaban los agentes en ocho lenguajes (auditoria del
+    24-sep-2026). Los de 3 caracteres (.js, .go, .rs) se salvaban por azar.
+    """
+    if fichero.endswith(".py"):
+        return graph_mod.module_name(fichero, root)
+    from . import lenguajes
+
+    return lenguajes.module_name(fichero, root)
+
+
 def nodos_tocados(root, informe_simbolos):
     """Los nodos módulo cuyo fichero está tocado sin commitear.
 
@@ -196,7 +211,7 @@ def nodos_tocados(root, informe_simbolos):
     tocados = set()
     for fichero in ficheros_tocados(root):
         try:
-            mod = graph_mod.module_name(fichero, root)
+            mod = _modulo_de(fichero, root)
         except ValueError:  # otra unidad de disco en Windows
             continue
         qual = modulos.get(os.path.normcase(mod))
@@ -707,7 +722,7 @@ def cronologia(raiz, informe_simbolos, ahora=None, ventana=VENTANA_CRONOLOGIA, t
             if ahora - ts > ventana:
                 continue
             try:
-                mod = graph_mod.module_name(fichero, analisis)
+                mod = _modulo_de(fichero, analisis)
             except ValueError:  # otra unidad de disco en Windows
                 continue
             qual = modulos.get(os.path.normcase(mod))

@@ -487,8 +487,15 @@ def _suelo_para_mapa(root):
     return "%d/%d capas" % (ok, len(niveles))
 
 
+def _es_fuente(ruta):
+    from . import lenguajes
+
+    ext = os.path.splitext(ruta)[1]
+    return ext == ".py" or ext in lenguajes.POR_EXTENSION
+
+
 def _ficheros_tocados(root):
-    """Los .py tocados respecto a HEAD: modificados, anadidos, renombrados o
+    """Los ficheros de codigo tocados respecto a HEAD: modificados, anadidos, renombrados o
     untracked, esten o no en el indice. Rutas absolutas.
 
     UNA fuente: `git status --porcelain` trae staged, unstaged y untracked en
@@ -515,7 +522,9 @@ def _ficheros_tocados(root):
             # Rename/copia: "R  viejo.py -> nuevo.py". El fichero que EXISTE en
             # el arbol —y que el mapa dibuja— es el destino.
             ruta = ruta.split(" -> ")[-1]
-        if not ruta.endswith(".py"):
+        # Codigo de cualquiera de los 17 lenguajes, no solo `.py`: el mapa no
+        # marcaba lo que un agente tocaba en otro lenguaje (24-sep-2026).
+        if not _es_fuente(ruta):
             continue
         ficheros.append(os.path.join(base, *ruta.split("/")))
     return ficheros
@@ -549,17 +558,18 @@ def _tocados_para_mapa(root, informe_simbolos):
     puede venir escrito de cualquier manera, asi que los dos lados se comparan
     por normcase, nunca por igualdad literal.
     """
-    from . import graph as graph_mod
 
     modulos = {
         os.path.normcase(n.get("qual") or ""): n.get("qual")
         for n in informe_simbolos.get("nodes", [])
         if n.get("kind") == "module"
     }
+    from . import actividad
+
     tocados = set()
     for fichero in _ficheros_tocados(root):
         try:
-            mod = graph_mod.module_name(fichero, root)
+            mod = actividad._modulo_de(fichero, root)
         except ValueError:  # otra unidad de disco en Windows
             continue
         qual = modulos.get(os.path.normcase(mod))
