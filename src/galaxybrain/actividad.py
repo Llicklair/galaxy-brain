@@ -432,14 +432,19 @@ def _vecinos(informe_simbolos, nodos, de_modulo=None):
     de_modulo = _mapa_de_modulos(informe_simbolos) if de_modulo is None else de_modulo
     dentro = set(nodos)
     fuera = set()
-    for arista in informe_simbolos.get("edges") or ():
-        if len(arista) < 2:
-            continue
-        clase = arista[2] if len(arista) > 2 else ""
-        if clase in ESTRUCTURA:
-            continue
-        mo = de_modulo.get(arista[0], arista[0])
-        md = de_modulo.get(arista[1], arista[1])
+    # Usar sin llamar tambien es depender: la clase en una anotacion (aunque el
+    # import viva bajo `if TYPE_CHECKING:`), la funcion pasada como valor. Sin
+    # esto, en invest-ll `gb sync` no avisaba a quien anota con PriceSeries de
+    # que otro la habia roto (25-sep-2026).
+    pares = [(a[0], a[1]) for a in (informe_simbolos.get("edges") or ())
+             if len(a) >= 2 and (a[2] if len(a) > 2 else "") not in ESTRUCTURA]
+    for clave in ("referenciado_en", "nombrado_como_valor_en"):
+        for destino, origenes in (informe_simbolos.get(clave) or {}).items():
+            pares.extend((o, destino) for o in origenes)
+    for origen, destino in pares:
+        mo = (origen[: -len(".<modulo>")] if origen.endswith(".<modulo>")
+              else de_modulo.get(origen, origen))
+        md = de_modulo.get(destino, destino)
         if mo == md:
             continue  # llamada dentro del mismo modulo: no es comunicacion
         if mo in dentro and md not in dentro:

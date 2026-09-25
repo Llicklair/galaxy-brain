@@ -534,3 +534,20 @@ def test_un_fichero_tocado_de_otro_lenguaje_casa_con_su_nodo(tmp_path):
 
     tocados = actividad.nodos_tocados(str(raiz), cli._analiza_simbolos(str(raiz)))
     assert tocados == {"lib.Foo", "lib.util"}, tocados
+
+
+def test_quien_solo_ANOTA_con_tu_clase_es_vecino(tmp_path):
+    """invest-ll (25-sep-2026): `engine/*` usa `PriceSeries` solo en
+    anotaciones, importada bajo `if TYPE_CHECKING:`. Sin llamada no habia
+    arista, y `gb sync` no avisaba a B de que A habia roto PriceSeries."""
+    (tmp_path / "series.py").write_text(
+        "class PriceSeries:\n    pass\n", encoding="utf-8")
+    (tmp_path / "motor.py").write_text(
+        "from __future__ import annotations\nfrom typing import TYPE_CHECKING\n"
+        "if TYPE_CHECKING:\n    from series import PriceSeries\n\n\n"
+        "def corre(s: PriceSeries):\n    return s\n", encoding="utf-8")
+    (tmp_path / "config.py").write_text(
+        "from series import PriceSeries\n\nPOR_DEFECTO = PriceSeries\n", encoding="utf-8")
+
+    informe = symbols.analyze(str(tmp_path))
+    assert actividad._vecinos(informe, ["series"]) == ["config", "motor"]
