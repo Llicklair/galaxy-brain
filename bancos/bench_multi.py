@@ -374,5 +374,12 @@ def banco(lang):
                                       100.0 * ahorro / (len(ORDEN[lang]) * n), medidas) + "\n")
 
 
+_ajenos = [lang for lang in sys.argv[1:] if lang not in FUENTES]
+if _ajenos:
+    # `bench_multi.py ts` acababa en KeyError (captura del 24-sep-2026): js/ts,
+    # go, rust y csharp tienen su propio banco.
+    print("este banco mide %s; %s tiene(n) el suyo (bench_js.py, bench_go.py, "
+          "bench_rust.py, bench_csharp.py)" % (", ".join(sorted(FUENTES)), ", ".join(_ajenos)))
+    raise SystemExit(2)
 for lang in (sys.argv[1:] or sorted(FUENTES)):
     banco(lang)

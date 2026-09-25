@@ -22,7 +22,9 @@ import estricto  # noqa: E402  (el banco es un script, no un paquete)
 
 RAIZ = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bench-go")
 GB = [sys.executable, "-m", "galaxybrain.cli"]
-GO = shutil.which("go") or r"C:\Program Files\Go\bin\go.exe"
+# Sin ruta cableada de respaldo (regla 6): sin go en el PATH, el `go version`
+# de abajo reventaba con FileNotFoundError en vez de decir que no hay go.
+GO = shutil.which("go")
 
 #: paquete -> (fuente, import extra). La cadena: iva <- carrito <- descuento <-
 #: factura <- informe; texto queda aislado como control.
@@ -114,6 +116,9 @@ def seleccion():
     return list(d.get("tests") or []), bool(d.get("todo")), None
 
 
+if not GO:
+    print("sin go en el PATH: este banco necesita rojos reales de `go test`")
+    raise SystemExit(2)
 genera()
 rc, _ = corre([GO, "version"])
 if rc != 0:
