@@ -846,9 +846,14 @@ def proponer_fronteras(report, declaradas=()):
     fan_in = report.get("fan_in") or {}
     fan_out = report.get("fan_out") or {}
     modulos = set(fan_in) | set(fan_out)
+    # Lo que el aviso "sin ninguna regla" nombra y la forma no puede colocar.
+    # Sin esto, seguir la pista del aviso no lo cerraba (guardia-mvp,
+    # 25-sep-2026): un modulo sin aristas no es base ni borde de nada.
+    sin_regla = report.get("modulos_sin_regla") or []
+    fuera = sin_aristas(report, sin_regla)
     if len(modulos) < 4:
-        return {"nucleo": [], "entrada": [], "pares": [], "motivo":
-                "hacen falta al menos 4 modulos para que la forma signifique algo"}
+        return {"nucleo": [], "entrada": [], "pares": [], "fuera": fuera, "a_mano": [],
+                "motivo": "hacen falta al menos 4 modulos para que la forma signifique algo"}
 
     # Inestabilidad = cuanto depende de fuera sobre el total de su acoplamiento.
     # Cerca de 0 lo importa todo el mundo y el no importa a nadie (una base);
@@ -863,8 +868,8 @@ def proponer_fronteras(report, declaradas=()):
     nucleo = sorted(m for m, i in inest.items() if i is not None and i <= 0.25)
     entradas = sorted(m for m, i in inest.items() if i is not None and i >= 0.75)
     if not nucleo or not entradas:
-        return {"nucleo": [], "entrada": [], "pares": [], "motivo":
-                "no hay forma de base/borde en este grafo: nada que proponer"}
+        return {"nucleo": [], "entrada": [], "pares": [], "fuera": fuera, "a_mano": [],
+                "motivo": "no hay forma de base/borde en este grafo: nada que proponer"}
 
     existentes = {(a, b) for a, b in (report.get("edge_list") or [])}
     ya = {(a, b) for a, b in declaradas}
@@ -874,7 +879,29 @@ def proponer_fronteras(report, declaradas=()):
             if src == dst or (src, dst) in existentes:
                 continue          # ya se cruza: eso es deuda, no una frontera
             pares.append({"src": src, "dst": dst, "ya_declarada": (src, dst) in ya})
-    return {"nucleo": nucleo, "entrada": entradas, "pares": pares, "motivo": ""}
+    colocados = set(nucleo) | set(entradas) | set(fuera)
+    a_mano = [m for m in sin_regla if m not in colocados]
+    return {"nucleo": nucleo, "entrada": entradas, "pares": pares, "fuera": fuera,
+            "a_mano": a_mano, "motivo": ""}
+
+
+def sin_aristas(report, modulos):
+    """Los de `modulos` sin un import ni un importador: nada que gobernar hoy.
+
+    Una regla sobre ellos no comprueba nada, y una arista que les nazca manana
+    ya la caza `new_edges_sin_regla`. Lo honesto es la exclusion declarada
+    (FUERA), no mandar a buscarles grupo."""
+    fan_in = report.get("fan_in") or {}
+    fan_out = report.get("fan_out") or {}
+    return [m for m in modulos if not fan_in.get(m) and not fan_out.get(m)]
+
+
+def linea_fuera(report, nuevos):
+    """La linea FUERA a pegar, con los que ya estaban: una segunda linea FUERA
+    PISA a la primera (un grupo se redefine), asi que sugerir solo los nuevos
+    devolveria al aviso a los que ya estaban fuera."""
+    previos = list(report.get("fuera_de_examen") or [])
+    return "FUERA = " + ", ".join(previos + [m for m in nuevos if m not in previos])
 
 
 def find_boundaries(root, max_depth=2):

@@ -1118,8 +1118,22 @@ def _proponer_fronteras(report, fronteras, args):
         emit(json.dumps(p, ensure_ascii=False, indent=2))
         return 0
     st = _style(args)
+
+    def _sin_colocar():
+        # Lo que el aviso "sin ninguna regla" nombra y la forma no coloca: sin
+        # esto, seguir la pista del aviso no lo cerraba (guardia-mvp, 25-sep-2026).
+        if p.get("fuera"):
+            emit("")
+            emit(st("  sin imports ni importadores, nada que gobernar hoy:", "dim"))
+            emit(graph.linea_fuera(report, p["fuera"]))
+        if p.get("a_mano"):
+            emit("")
+            emit(st("  sin regla y ni BASE ni BORDE (escribe su regla a mano): %s"
+                    % ", ".join(p["a_mano"]), "dim"))
+
     if p["motivo"]:
         emit(st("sin candidatas: %s" % p["motivo"], "dim"))
+        _sin_colocar()
         return 0
     ya = sum(1 for x in p["pares"] if x["ya_declarada"])
     emit(st("FRONTERAS CANDIDATAS", "bold")
@@ -1144,6 +1158,7 @@ def _proponer_fronteras(report, fronteras, args):
     emit(st("  Esto es la FORMA del grafo, no el significado: si un modulo de",
             "dim"))
     emit(st("  presentacion resulta ser estable, sale en BASE. Muevelo tu.", "dim"))
+    _sin_colocar()
     return 0
 
 

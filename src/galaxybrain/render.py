@@ -531,16 +531,34 @@ def render_sin_regla(report, style):
     ] if fuera else []
     if not sin_regla:
         return linea_fuera
-    return linea_fuera + [
+    from . import graph
+
+    fichero = os.path.basename(report.get("boundaries_path") or "?")
+    # Sin aristas no hay nada que gobernar, y `--proponer-fronteras` (que
+    # razona sobre aristas) no los coloca nunca: mandar ahi dejaba el aviso
+    # vivo para siempre (guardia-mvp, 25-sep-2026).
+    vacios = graph.sin_aristas(report, sin_regla)
+    con_aristas = [m for m in sin_regla if m not in vacios]
+    lineas = linea_fuera + [
         style(
             "Sin ninguna regla que los mencione: %d de %d modulo(s) — %s"
             % (len(sin_regla), report["modules"],
                ", ".join(sin_regla[:5]) + (" ..." if len(sin_regla) > 5 else "")), DIM),
-        style("  para que el gate los examine, añadelos a un grupo de %s, p.ej.:"
-              % os.path.basename(report.get("boundaries_path") or "?"), DIM),
-        style("    GRUPO = ..., %s" % ", ".join(sin_regla[:5]), DIM),
-        style("  (`gb graph --proponer-fronteras` sugiere grupos a partir del grafo)", DIM),
     ]
+    if con_aristas:
+        lineas += [
+            style("  para que el gate los examine, añadelos a un grupo de %s, p.ej.:"
+                  % fichero, DIM),
+            style("    GRUPO = ..., %s" % ", ".join(con_aristas[:5]), DIM),
+            style("  (`gb graph --proponer-fronteras` sugiere grupos a partir del grafo)", DIM),
+        ]
+    if vacios:
+        lineas += [
+            style("  sin imports ni importadores (%s): nada que gobernar hoy; si es a "
+                  "proposito, en %s:" % (", ".join(vacios[:5]), fichero), DIM),
+            style("    " + graph.linea_fuera(report, vacios), DIM),
+        ]
+    return lineas
 
 
 def render_graph(report, style, brief=False):

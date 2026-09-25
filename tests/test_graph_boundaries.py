@@ -487,7 +487,8 @@ def test_los_modulos_sin_regla_traen_la_linea_a_pegar(tmp_path):
     _write(root, "pkg/__init__.py", "")
     _write(root, "pkg/a.py", "")
     _write(root, "pkg/b.py", "")
-    _write(root, "pkg/suelto.py", "")
+    # Con una arista: sin ella la salida honesta es FUERA (test de abajo).
+    _write(root, "pkg/suelto.py", "from pkg import a\n")
 
     salida = _plain(graph.analyze(root))
     assert "Sin ninguna regla que los mencione" in salida
@@ -510,9 +511,10 @@ def test_brief_es_una_linea_cuando_el_gate_esta_limpio(tmp_path):
     lineas = salida.splitlines()
     assert lineas[0].startswith("gate ok: ")
     assert "fan-in" not in salida and "Sin ciclos de imports" not in salida
-    # `pkg` (el __init__) no lo menciona ninguna regla: sale el bloque
-    # accionable, y NADA mas.
-    assert lineas[1].startswith("Sin ninguna regla que los mencione") and len(lineas) == 5, lineas
+    # `pkg` (el __init__, sin aristas) no lo menciona ninguna regla: sale el
+    # bloque accionable —su linea FUERA—, y NADA mas.
+    assert lineas[1].startswith("Sin ninguna regla que los mencione") and len(lineas) == 4, lineas
+    assert lineas[3].strip() == "FUERA = pkg", lineas
 
 
 def test_brief_no_resume_un_fallo(tmp_path):
@@ -574,3 +576,44 @@ def test_fuera_con_nombre_fantasma_avisa(tmp_path):
 
     report = graph.analyze(root)
     assert any(u["rule"] == "FUERA = pkg.fantasma" for u in report["unmatched_rules"])
+
+
+def test_un_modulo_sin_aristas_sin_regla_propone_FUERA_no_grupos(tmp_path):
+    """El `__init__` que solo tiene `__version__` no tiene imports ni
+    importadores: `--proponer-fronteras`, que razona sobre aristas, no puede
+    colocarlo nunca, y el aviso mandaba ahi (guardia-mvp, 25-sep-2026). Nada
+    que gobernar hoy: la salida honesta es la exclusion declarada — y con los
+    FUERA que ya habia, porque una segunda linea FUERA pisa a la primera."""
+    root = str(tmp_path)
+    _write(root, ".gb-boundaries", "pkg.a -/-> pkg.b\nFUERA = pkg.viejo\n")
+    _write(root, "pkg/__init__.py", "")
+    _write(root, "pkg/a.py", "")
+    _write(root, "pkg/b.py", "")
+    _write(root, "pkg/viejo.py", "")
+
+    salida = _plain(graph.analyze(root))
+    assert "FUERA = pkg.viejo, pkg" in salida, salida
+    assert "--proponer-fronteras" not in salida, salida
+    assert "GRUPO = " not in salida, salida
+
+
+def test_proponer_fronteras_resuelve_el_aviso_de_los_sin_aristas(tmp_path, capsys):
+    """Seguir la pista del aviso tiene que cerrarlo: la propuesta trae la
+    linea FUERA para lo que no tiene aristas, y nombra lo que tiene aristas
+    pero no cae ni en BASE ni en BORDE (su regla se escribe a mano)."""
+    from galaxybrain import cli
+
+    root = str(tmp_path)
+    _write(root, ".gb-boundaries", "pkg.nucleo -/-> pkg.cli\n")
+    _write(root, "pkg/__init__.py", "")
+    _write(root, "pkg/nucleo.py", "")
+    _write(root, "pkg/util.py", "")
+    _write(root, "pkg/medio.py", "from pkg import nucleo\n")
+    _write(root, "pkg/usa_medio.py", "from pkg import medio\n")
+    _write(root, "pkg/cli.py", "from pkg import nucleo, util, usa_medio\n")
+    _write(root, "pkg/main.py", "from pkg import nucleo, util\n")
+
+    assert cli.main(["graph", root, "--proponer-fronteras"]) == 0
+    salida = capsys.readouterr().out
+    assert "FUERA = pkg" in salida, salida
+    assert "a mano" in salida and "pkg.medio" in salida, salida
