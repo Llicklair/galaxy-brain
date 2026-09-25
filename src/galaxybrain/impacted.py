@@ -17,6 +17,7 @@ resuelve) devuelve TODO con su motivo escrito, en vez de una lista optimista.
 
 import os
 import re
+import sys
 
 from . import changes, symbols
 from .idioma import t
@@ -631,6 +632,21 @@ def analyze(root, rev_range=None, staged=False, worktree=False, skip=None,
             t("import interno roto: `%s` (%s:%s) apunta a algo que ya no existe%s — "
               "una referencia colgante no deja arista por la que subir, se corre todo")
             % (primero["import"], primero["file"], primero["line"], mas))
+
+    # Un fichero que el `ast` de gb no parsea sale del grafo con todas sus
+    # llamadas: si llama a lo tocado, sus tests no tienen por donde llegar.
+    # Lo destapo invest-ll (25-sep-2026): sintaxis PEP 695 de 3.12+ leida por
+    # un gb en 3.11, y la seleccion estrechaba sin mirar el hueco. Solo el
+    # dict de Python: los fallos del otro motor ya viajan en `not_covered`.
+    errores = grafo.get("errors")
+    if isinstance(errores, dict) and errores:
+        ruta, error = sorted(errores.items())[0]
+        mas = "" if len(errores) == 1 else " (y %d mas)" % (len(errores) - 1)
+        return correr_todo(
+            t("`%s` no parsea con el Python de gb (Python %d.%d: %s)%s — fuera del "
+              "grafo no hay llamantes que seguir, se corre todo")
+            % (os.path.relpath(ruta, root).replace(os.sep, "/"),
+               sys.version_info[0], sys.version_info[1], error, mas))
 
     # Los símbolos que el diff toca: la misma intersección que hace la onda del
     # cambio, pero sobre el grafo YA calculado. Llamar a `_onda_del_diff` aquí

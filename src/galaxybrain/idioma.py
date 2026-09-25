@@ -108,6 +108,10 @@ _TABLA = {
         "broken internal import: `%s` (%s:%s) points at something that no "
         "longer exists%s — a dangling reference leaves no edge to climb, so "
         "everything runs",
+    "`%s` no parsea con el Python de gb (Python %d.%d: %s)%s — fuera del "
+    "grafo no hay llamantes que seguir, se corre todo":
+        "`%s` does not parse with gb's Python (Python %d.%d: %s)%s — outside "
+        "the graph there are no callers to follow, so everything runs",
     "el diff toca .py pero no cae dentro de ningun simbolo del grafo "
     "(codigo a nivel de modulo, imports, constantes): todo":
         "the diff touches .py but lands inside no graph symbol (module-level "

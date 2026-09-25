@@ -596,6 +596,38 @@ def test_el_import_interno_roto_devuelve_todo_con_su_motivo(repo):
     assert r.returncode != 0, r.stdout
 
 
+def test_un_modulo_interno_ausente_devuelve_todo(repo):
+    """El paquete ausente entero (invest-ll, 25-sep-2026): el consumidor viejo
+    importa un modulo del proyecto que no esta en disco. Sin arista y sin
+    hecho, la seleccion estrechaba y dejaba fuera su ImportError."""
+    (repo / "tests" / "test_cartera.py").write_text(
+        "from lib.cartera.store import guardar\n\n\ndef test_guardar():\n    guardar()\n",
+        encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "cartera")
+    _tocar(repo, "lib/nucleo.py", "return a - b", "return -(b - a)")
+
+    report = impacted.analyze(str(repo), worktree=True)
+    assert report["todo"] is True
+    assert "lib.cartera" in report["motivo"], report["motivo"]
+
+
+def test_un_fichero_que_no_parsea_devuelve_todo_y_dice_con_que_python(repo):
+    """Un fichero que el `ast` de gb no entiende sale del grafo con sus
+    llamadas: sus tests no tienen por donde llegar a lo tocado. Lo destapo
+    invest-ll (25-sep-2026): sintaxis PEP 695 de 3.12+ leida por un gb en
+    3.11. El motivo nombra el fichero y el Python, que es la causa tipica."""
+    (repo / "lib" / "nuevo.py").write_text("def (((\n", encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "nuevo")
+    _tocar(repo, "lib/nucleo.py", "return a - b", "return -(b - a)")
+
+    report = impacted.analyze(str(repo), worktree=True)
+    assert report["todo"] is True
+    assert "nuevo.py" in report["motivo"], report["motivo"]
+    assert "Python %d.%d" % sys.version_info[:2] in report["motivo"], report["motivo"]
+
+
 def test_un_metodo_js_sin_llamantes_visibles_no_estrecha(tmp_path):
     """Falso verde abierto al hacer simbolos los metodos de JS (24-sep-2026) y
     cerrado en el mismo cambio: `configurar` (metodo) llega a su test por
