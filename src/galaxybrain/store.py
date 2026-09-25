@@ -353,6 +353,19 @@ def is_ephemeral(entry):
     return (entry.get("where") or "").strip().startswith("<")
 
 
+def es_tuberia_cerrada(entry):
+    """¿La captura es el vaciado final de stdout contra un lector que ya se
+    fue? `OSError` EPIPE/EINVAL SIN ningun frame: un fallo del codigo deja al
+    menos uno, el flush del interprete al salir no deja ninguno.
+
+    La consola ya no las guarda (hooks._es_lector_que_se_fue); esto aparta las
+    que quedaron en el historico — 27 en infinite-desk, todas de `gb who --json`
+    leido por un proceso que cortaba (25-sep-2026)."""
+    return (entry.get("type") in ("OSError", "BrokenPipeError")
+            and not entry.get("where")
+            and (entry.get("message") or "").startswith(("[Errno 22]", "[Errno 32]")))
+
+
 def es_exploracion(entry):
     """¿La captura apunta a algo que NO es código de un proyecto?
 

@@ -201,6 +201,40 @@ def test_captura_lo_que_python_no_pudo_propagar(gb_home, child_env):
     assert frame["function"] == "__del__"
 
 
+def test_la_tuberia_cerrada_por_el_lector_no_es_un_fallo(gb_home, child_env):
+    """`gb who --json` leido por un proceso que cierra antes de que Python
+    vacie stdout al salir: `OSError [Errno 22]` sin traza por la puerta
+    unraisable. 31 capturas asi en un dia (infinite-desk, 25-sep-2026), todas
+    del LECTOR, ninguna del programa — que ya habia hecho su trabajo."""
+    script = PRELUDIO + "import sys, time\nsys.stdout.write('x' * 3000)\ntime.sleep(1.5)\n"
+    hijo = subprocess.Popen([sys.executable, "-c", script], env=child_env,
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    hijo.stdout.close()              # el lector se va antes del flush final
+    hijo.wait(timeout=60)
+    hijo.stderr.close()
+
+    assert store.load() is None, store.load()
+
+
+def test_un_oserror_22_en_un_finalizador_si_se_captura(gb_home, child_env):
+    """El control: el mismo errno fuera del vaciado de un stream estandar es
+    un fallo del programa y se sigue guardando."""
+    run_child(
+        """
+        class Recurso:
+            def __del__(self):
+                raise OSError(22, "Invalid argument")
+
+        r = Recurso()
+        del r
+        """,
+        child_env,
+    )
+
+    record = store.load()
+    assert record is not None and record["exception"]["type"] == "OSError"
+
+
 def test_un_finalizador_en_bucle_no_inunda_el_historico(gb_home, child_env):
     """(5) del criterio. Un `__del__` roto suele estarlo para TODAS las instancias
     de su clase, asi que sin tope un bucle de mil objetos escribiria mil registros:

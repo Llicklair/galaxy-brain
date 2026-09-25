@@ -342,3 +342,19 @@ def test_la_cola_tampoco_lleva_exploracion(tmp_path, capsys, monkeypatch):
     # y la libreta completa las sigue enseñando: apartar no es borrar
     assert cli.main(["list", "--color", "never"]) == 0
     assert "probe.py" in capsys.readouterr().out
+
+
+def test_la_cabecera_de_sesion_no_cuenta_lo_ya_en_silencio(tmp_path):
+    """El aviso de SessionStart decia "13 sin leer" y las 13 estaban en
+    silencio: arregladas y sin volver (galaxy-brain, 25-sep-2026), mientras
+    `gb list --pendientes` las apartaba. Un aviso que insiste en lo ya
+    controlado se aprende a ignorar: cuenta lo mismo que la cola."""
+    root = _repo(tmp_path)
+    arreglado = _write(root, "arreglado.py")
+    _captura(root, arreglado, _ahora() - datetime.timedelta(days=1))
+    _commit(root, "arregla el fallo")
+    # Sin commit posterior a su fallo: sigue pendiente.
+    vivo = _write(root, "vivo.py")
+    _captura(root, vivo, _ahora() - datetime.timedelta(days=1), tipo="KeyError")
+
+    assert cli._capturas_sin_leer(root) == 1

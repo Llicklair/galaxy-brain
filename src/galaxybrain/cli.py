@@ -684,10 +684,21 @@ def _capturas_sin_leer(root):
             or store._dentro_de(fichero, proyecto)
         )
 
-    return sum(
-        1 for e in store.read_index(project=proyecto)
-        if not store.is_ephemeral(e) and de_aqui(e) and e.get("id") not in leidas
-    )
+    entradas = [e for e in store.read_index(project=proyecto)
+                if not store.is_ephemeral(e) and not store.es_tuberia_cerrada(e)
+                and de_aqui(e)]
+    pendientes = [e for e in entradas if e.get("id") not in leidas]
+    if not pendientes:
+        return 0
+    # Lo ya en silencio (arreglado y sin volver) fuera, como en
+    # `gb list --pendientes`: el aviso decia "13 sin leer" con las 13
+    # controladas (25-sep-2026). Solo se paga git si hay algo que contar.
+    from . import changes
+
+    ciclo = changes.ciclo_errores(proyecto, entradas, leidas)
+    silencio = {(f["type"], f["where"]) for f in (ciclo["firmas"] if ciclo else [])
+                if f["estado"] == "en-silencio"}
+    return sum(1 for e in pendientes if (e.get("type"), e.get("where")) not in silencio)
 
 
 def _emit_mapa_sesion(payload, root):

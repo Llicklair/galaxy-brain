@@ -139,6 +139,29 @@ def _threadhook(args):
     )
 
 
+def _es_lector_que_se_fue(args):
+    """¿Es el vaciado final de stdout/stderr contra una tuberia que el LECTOR
+    ya cerro? Entonces no es un fallo del programa: su trabajo estaba hecho.
+
+    El interprete, al salir, vacia el stream; si quien leia (`| head`, un
+    proceso que consume `--json` y corta) ya se fue, llega aqui un
+    `OSError [Errno 22]` sin traza (EPIPE en Windows se ve como EINVAL). gb ya
+    lo trata asi en su propio `emit()`; aqui faltaba para cualquier programa.
+    31 capturas de `gb who --json` en un dia (infinite-desk, 25-sep-2026),
+    todas de esta clase, enterraban lo demas. Solo streams estandar y solo
+    esos dos errno: un `OSError(22)` en un `__del__` sigue siendo un fallo.
+    """
+    import errno
+
+    exc = getattr(args, "exc_value", None)
+    if not isinstance(exc, OSError) or getattr(exc, "errno", None) not in (
+            errno.EPIPE, errno.EINVAL):
+        return False
+    objeto = getattr(args, "object", None)
+    return objeto is not None and any(
+        objeto is s for s in (sys.stdout, sys.stderr, sys.__stdout__, sys.__stderr__))
+
+
 def _unraisablehook(args):
     """Una excepcion que Python NO pudo propagar: `__del__`, un callback de
     weakref, el recolector de basura.
@@ -160,6 +183,8 @@ def _unraisablehook(args):
 
     exc_type = getattr(args, "exc_type", None)
     if exc_type is None or (isinstance(exc_type, type) and issubclass(exc_type, _IGNORED)):
+        return
+    if _es_lector_que_se_fue(args):
         return
 
     _unraisable_vistas += 1

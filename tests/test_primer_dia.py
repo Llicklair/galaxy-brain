@@ -171,3 +171,18 @@ def test_init_respeta_un_hookspath_ajeno(tmp_path):
     assert salida.stdout.strip() == "mis-hooks"
 
 
+
+
+def test_el_aviso_no_cuenta_la_tuberia_que_cerro_el_lector(tmp_path):
+    """27 "sin leer" en infinite-desk eran `OSError [Errno 22]` sin un solo
+    frame: el flush de stdout al salir contra un lector que ya se habia ido
+    (25-sep-2026). Un fallo del codigo deja frames; esto no."""
+    root = _repo(tmp_path)
+    ahora = datetime.datetime.now().astimezone().isoformat(timespec="seconds")
+    tuberia = {
+        "ts": ahora, "source": "unraisable",
+        "exception": {"type": "OSError", "message": "[Errno 22] Invalid argument"},
+        "process": {"project": root, "cwd": root, "pid": 1}, "frames": [],
+    }
+    assert store.write(tuberia) is not None
+    assert cli._capturas_sin_leer(root) == 0
