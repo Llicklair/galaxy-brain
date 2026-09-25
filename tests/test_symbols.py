@@ -285,6 +285,42 @@ def test_importar_un_submodulo_no_es_un_roto(tmp_path):
     assert symbols.analyze(root)["imports_rotos"] == []
 
 
+def test_un_modulo_del_proyecto_que_no_existe_es_un_roto(tmp_path):
+    """El paquete entero ausente, no solo el nombre: invest-ll importaba
+    `invest_ll.portfolio.*` desde 10 ficheros sin que el paquete existiera
+    (un `.gitignore` sin anclar se lo trago) y el grafo daba 0 rotos — el
+    import desaparecia sin dejar ni arista ni hecho (25-sep-2026)."""
+    root = str(tmp_path)
+    _write(root, "app/__init__.py", "")
+    _write(root, "app/core.py",
+           "from app.cartera.store import guardar\nfrom app.cartera import modelos\n"
+           "from .cartera import precios\n")
+
+    rotos = symbols.analyze(root)["imports_rotos"]
+    assert [r["line"] for r in rotos] == [1, 2, 3], rotos
+    assert rotos[0]["import"] == "from app.cartera.store import guardar"
+    assert all(r["falta"] == "app.cartera" for r in rotos), rotos
+
+
+def test_un_submodulo_que_esta_en_disco_no_es_un_roto(tmp_path):
+    """El barrido no lo vio (no parsea, o cae en un skip), pero existe: el
+    filesystem arbitra, igual que para `from paquete import sub`."""
+    root = str(tmp_path)
+    _write(root, "app/__init__.py", "")
+    _write(root, "app/roto.py", "def (((\n")
+    _write(root, "app/core.py", "from app.roto import algo\n")
+
+    assert symbols.analyze(root)["imports_rotos"] == []
+
+
+def test_un_paquete_externo_con_submodulo_no_se_acusa(tmp_path):
+    root = str(tmp_path)
+    _write(root, "app/__init__.py", "")
+    _write(root, "app/core.py", "from requests.adapters import HTTPAdapter\n")
+
+    assert symbols.analyze(root)["imports_rotos"] == []
+
+
 def test_el_import_con_fallback_no_se_acusa(tmp_path):
     """`try: from m import x / except ImportError:` es el patron de
     compatibilidad: el codigo YA maneja la ausencia. Solo se censan los

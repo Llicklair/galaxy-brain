@@ -107,6 +107,36 @@ def _sin_censo_posible(tree):
                for n in ast.walk(tree))
 
 
+def _modulo_ausente(root, base, modulos):
+    """El primer tramo de `base` que falta, si `base` cuelga de un paquete del
+    proyecto y ese tramo no esta ni en el barrido ni en disco; si no, None.
+
+    El caso del paquete entero ausente: invest-ll importaba
+    `invest_ll.portfolio.*` desde 10 ficheros sin que existiera y el grafo daba
+    0 rotos (25-sep-2026). Conservador como el resto: solo bajo un paquete con
+    `__init__.py` que el barrido vio, con el filesystem como arbitro (lo que no
+    parsea o cae en un skip existe igual) y callando si el paquete toca
+    `__path__`, que puede servir submodulos desde otra carpeta.
+    """
+    partes = base.split(".")
+    for i in range(len(partes) - 1, 0, -1):
+        padre = ".".join(partes[:i])
+        if padre not in modulos:
+            continue
+        info = modulos[padre]
+        if os.path.basename(info.get("path") or "") != "__init__.py":
+            return None
+        if "__path__" in _nombres_atados(info["tree"]):
+            return None
+        carpeta = os.path.dirname(os.path.join(root, info["path"]))
+        tramo = partes[i]
+        if (os.path.exists(os.path.join(carpeta, tramo)) or
+                os.path.exists(os.path.join(carpeta, tramo + ".py"))):
+            return None
+        return padre + "." + tramo
+    return None
+
+
 def _imports_rotos(root, modulos):
     """`from M import y` donde M es un modulo DEL PROYECTO e `y` no existe en el.
 
@@ -132,7 +162,18 @@ def _imports_rotos(root, modulos):
             if not isinstance(node, ast.ImportFrom):
                 continue
             base = _resolve_base(node, mod, es_pkg)
-            if not base or base not in modulos:
+            if not base:
+                continue
+            if base not in modulos:
+                falta = _modulo_ausente(root, base, modulos)
+                if falta:
+                    rotos.append({
+                        "file": (info.get("path") or "").replace(os.sep, "/"),
+                        "line": node.lineno,
+                        "import": "from %s import %s" % (
+                            base, ", ".join(a.name for a in node.names)),
+                        "falta": falta,
+                    })
                 continue
             destino = modulos[base]
             if base not in censo:
