@@ -112,9 +112,13 @@ _TABLA = {
     "grafo no hay llamantes que seguir, se corre todo":
         "`%s` does not parse with gb's Python (Python %d.%d: %s)%s — outside "
         "the graph there are no callers to follow, so everything runs",
-    "el diff toca .py pero no cae dentro de ningun simbolo del grafo "
+    "el diff solo toca documentacion (.md) que ningun test lee: "
+    "nada que correr":
+        "the diff only touches documentation (.md) that no test reads: "
+        "nothing to run",
+    "el diff toca codigo fuente pero no cae dentro de ningun simbolo del grafo "
     "(codigo a nivel de modulo, imports, constantes): todo":
-        "the diff touches .py but lands inside no graph symbol (module-level "
+        "the diff touches source code but lands inside no graph symbol (module-level "
         "code, imports, constants): everything runs",
     "el cierre de llamantes no termino (¿ciclo de llamadas?): todo":
         "the caller closure did not finish (call cycle?): everything runs",

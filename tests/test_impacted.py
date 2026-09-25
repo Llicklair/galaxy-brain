@@ -813,3 +813,56 @@ def test_un_lanzamiento_entre_lenguajes_entra_en_la_seleccion(repo):
     report = impacted.analyze(str(repo), worktree=True, grafo=cli._analiza_simbolos(str(repo)))
     assert "tests/test_app.py" in report["tests"], report
     assert report["todo"] is False, report["motivo"]
+
+
+def test_un_diff_solo_de_markdown_no_corre_nada(repo):
+    """La puerta que mas "todo" daba: 18 de 30 commits en guardia-mvp y 26 de
+    29 en experimento-ingresos eran solo documentacion, y corrian la suite
+    entera para comprobar lo que no podia cambiar (25-sep-2026)."""
+    (repo / "NOTAS.md").write_text("# notas\n", encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "notas")
+    _tocar(repo, "NOTAS.md", "# notas", "# notas\n\nmas")
+
+    report = impacted.analyze(str(repo), worktree=True)
+    assert report["todo"] is False and report["tests"] == [], report
+    assert "documentacion" in report["motivo"], report["motivo"]
+
+
+def test_un_markdown_que_un_test_nombra_si_corre_todo(repo):
+    """Un test que LEE ese .md puede romperse: ahi no hay "nada que correr"."""
+    (repo / "GUIA.md").write_text("# guia\n", encoding="utf-8")
+    (repo / "tests" / "test_guia.py").write_text(
+        "def test_guia():\n    assert open('GUIA.md').read().startswith('#')\n",
+        encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "guia")
+    _tocar(repo, "GUIA.md", "# guia", "guia")
+
+    assert impacted.analyze(str(repo), worktree=True)["todo"] is True
+
+
+def test_con_doctest_glob_el_markdown_es_un_test(repo):
+    (repo / "pyproject.toml").write_text(
+        "[tool.pytest.ini_options]\naddopts = '--doctest-glob=*.md'\n", encoding="utf-8")
+    (repo / "USO.md").write_text("# uso\n", encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "uso")
+    _tocar(repo, "USO.md", "# uso", "uso")
+
+    assert impacted.analyze(str(repo), worktree=True)["todo"] is True
+
+
+def test_citar_el_markdown_en_un_docstring_no_es_leerlo(repo):
+    """guardia-mvp citaba SCOPE.md en docstrings de sus tests y eso bloqueaba
+    el "nada que correr" de sus commits de documentacion."""
+    (repo / "SCOPE.md").write_text("# alcance\n", encoding="utf-8")
+    (repo / "tests" / "test_cita.py").write_text(
+        '"""Responde al punto 3 de SCOPE.md."""\n\n\ndef test_x():\n    assert 1\n',
+        encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "scope")
+    _tocar(repo, "SCOPE.md", "# alcance", "alcance")
+
+    report = impacted.analyze(str(repo), worktree=True)
+    assert report["todo"] is False and report["tests"] == [], report

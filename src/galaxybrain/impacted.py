@@ -497,6 +497,64 @@ def _simbolos_tocados(nodes, rangos):
     return sorted(q for q in tocados if q not in dueños)
 
 
+def _solo_documentacion(root, tocados, ficheros_de_test):
+    """¿El diff solo toca `.md` que ningun test puede leer ni ejecutar?
+
+    Era la puerta que mas "todo" daba: 18 de 30 commits en guardia-mvp y 26 de
+    29 en experimento-ingresos eran solo documentacion y corrian la suite
+    entera (25-sep-2026). Dos hechos cierran el caso en que un .md SI es un
+    test: un fichero de test que lo NOMBRA (lo lee) y `--doctest-glob` en la
+    configuracion de pytest (lo ejecuta). Con cualquiera de los dos, todo.
+    """
+    if not tocados or not all(r.lower().endswith(".md") for r in tocados):
+        return False
+    for conf in ("pyproject.toml", "pytest.ini", "setup.cfg", "tox.ini"):
+        try:
+            with open(os.path.join(root, conf), encoding="utf-8", errors="replace") as fh:
+                if "doctest-glob" in fh.read():
+                    return False
+        except OSError:
+            continue
+    nombres = {os.path.basename(r) for r in tocados}
+    for rel in ficheros_de_test:
+        try:
+            with open(os.path.join(root, rel), encoding="utf-8", errors="replace") as fh:
+                texto = fh.read()
+        except OSError:
+            return False                  # un test que no puedo leer: ante la duda
+        if rel.endswith(".py"):
+            texto = _literales_de_codigo(texto)
+        if any(n in texto for n in nombres):
+            return False
+    return True
+
+
+def _literales_de_codigo(texto):
+    """Los literales de cadena de un test Python que NO son docstrings.
+
+    Para LEER un fichero hay que escribir su nombre en una cadena; citarlo en
+    un docstring o un comentario no lo lee. En guardia-mvp los tests citaban
+    `SCOPE.md` y `docs/evidencia.md` en docstrings y eso bloqueaba el "nada que
+    correr" de los commits de documentacion. Si no parsea, el texto entero:
+    ante la duda, se cuenta."""
+    import ast
+
+    try:
+        arbol = ast.parse(texto)
+    except (SyntaxError, ValueError):
+        return texto
+    docstrings = set()
+    for nodo in ast.walk(arbol):
+        if isinstance(nodo, (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            cuerpo = nodo.body
+            if (cuerpo and isinstance(cuerpo[0], ast.Expr)
+                    and isinstance(cuerpo[0].value, ast.Constant)):
+                docstrings.add(id(cuerpo[0].value))
+    return "\n".join(n.value for n in ast.walk(arbol)
+                     if isinstance(n, ast.Constant) and isinstance(n.value, str)
+                     and id(n) not in docstrings)
+
+
 def analyze(root, rev_range=None, staged=False, worktree=False, skip=None,
             include_nested=False, grafo=None):
     """Qué tests correr por lo que cambió, y por qué esos.
@@ -613,6 +671,10 @@ def analyze(root, rev_range=None, staged=False, worktree=False, skip=None,
             return correr_todo(t("%s tocado: cambia la suite entera, se corre todo") % base)
 
     if not rangos:
+        if _solo_documentacion(root, tocados, todos):
+            report["motivo"] = t("el diff solo toca documentacion (.md) que ningun test lee: "
+                                 "nada que correr")
+            return report
         return correr_todo(t("el diff no toca ningun fichero fuente que el grafo vea: todo"))
 
     # Una referencia colgante interna (`from M import y` con `y` desaparecido)
@@ -657,7 +719,7 @@ def analyze(root, rev_range=None, staged=False, worktree=False, skip=None,
 
     if not semillas:
         return correr_todo(
-            t("el diff toca .py pero no cae dentro de ningun simbolo del grafo "
+            t("el diff toca codigo fuente pero no cae dentro de ningun simbolo del grafo "
               "(codigo a nivel de modulo, imports, constantes): todo"))
 
     # Un simbolo que alguien NOMBRA sin llamarlo se pasa como valor, y desde ahi
