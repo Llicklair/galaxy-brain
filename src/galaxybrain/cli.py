@@ -16,6 +16,7 @@ import datetime
 import errno
 import json
 import os
+import re
 import sys
 
 from . import __version__, bootstrap, buzon, config, idioma, render, store
@@ -709,6 +710,17 @@ def _emit_mapa_sesion(payload, root):
             "  %d captura(s) sin leer en este proyecto — gb list para el embudo, "
             "gb show <id> para el estado" % sin_leer
         )
+    # Aqui es donde se ve: `gb floor` no lo corre nadie a diario, y un hook
+    # roto falla en cada sesion sin decirlo (guardia-mvp, 25-sep-2026).
+    _emit_integracion_rota(integracion_rota(root))
+
+
+def _emit_integracion_rota(rotos):
+    if not rotos:
+        return
+    emit("  INTEGRACION ROTA con gb (%d):" % len(rotos))
+    for linea in rotos:
+        emit("    - " + linea)
 
 
 def _graph_context(report, root, solo_si_cambia):
@@ -2023,10 +2035,15 @@ def cmd_floor(args):
         emit("")
     report = floor.analyze(root, run_tests=args.time,
                            constructor=_constructor_de_grafo(root))
+    # Aqui y no en `floor`: el chequeo necesita el parser de la CLI, y que
+    # `floor` importara `cli` seria un ciclo.
+    if not report["root_error"]:
+        report["integracion_rota"] = integracion_rota(root)
     if args.json:
         emit(json.dumps(report, ensure_ascii=False, indent=2))
     else:
         emit(render.render_floor(report, _style(args)))
+        _emit_integracion_rota(report.get("integracion_rota"))
     # Un suelo incompleto NO es un fallo: es una lista de lo que falta. Solo la
     # raiz inexistente es error de uso. Gatear esto lo volveria ceremonia.
     return 1 if report["root_error"] else 0
@@ -2483,6 +2500,120 @@ def cmd_status(args):
     for ficha in consola.estado(os.getcwd()):
         emit("  consola %-10s : %s" % (ficha["lenguaje"], consola.linea(ficha)))
     return 0
+
+
+#: Separadores de shell entre comandos de una misma linea de hook.
+_SEPARADORES_SHELL = re.compile(r"\s*(?:\|\||&&|\||;)\s*")
+
+
+def _llamadas_a_gb(texto):
+    """Las invocaciones de gb escritas en `texto`: listas de argumentos tras
+    `gb` o `python -m galaxybrain.cli`. Solo sintaxis; lo que no se deja
+    trocear se omite (no se acusa lo que no se entiende)."""
+    import shlex
+
+    llamadas = []
+    for linea in texto.splitlines():
+        if linea.lstrip().startswith("#"):
+            continue
+        for trozo in _SEPARADORES_SHELL.split(linea):
+            try:
+                tokens = shlex.split(trozo)
+            except ValueError:
+                continue
+            for i, tok in enumerate(tokens):
+                base = os.path.basename(tok).lower()
+                if base in ("gb", "gb.exe"):
+                    resto = tokens[i + 1:]
+                elif tok == "-m" and tokens[i + 1:i + 2] == ["galaxybrain.cli"]:
+                    resto = tokens[i + 2:]
+                else:
+                    continue
+                llamadas.append([t for t in resto if not re.match(r"^\d?[<>]", t)])
+                break
+    return llamadas
+
+
+def _rechazo_del_parser(argumentos):
+    """El mensaje con que el gb ACTUAL rechaza esos argumentos, o None."""
+    import contextlib
+    import io
+
+    salida = io.StringIO()
+    try:
+        with contextlib.redirect_stderr(salida), contextlib.redirect_stdout(io.StringIO()):
+            build_parser().parse_args(argumentos)
+    except SystemExit as fin:
+        if fin.code:
+            lineas = [x for x in salida.getvalue().splitlines() if "error:" in x]
+            return lineas[-1].split("error:", 1)[1].strip() if lineas else "rechazado"
+    return None
+
+
+def integracion_rota(root):
+    """Lo que un proyecto tiene enganchado a gb y ya no funciona. Hechos, no
+    estilo: comandos de hook que el gb de HOY rechaza, y un pre-commit que
+    llama a gb pero no corre porque `core.hooksPath` no apunta a el.
+
+    La integracion se pudre en silencio: gb cambia y los hooks del proyecto
+    no. En guardia-mvp el SessionStart llamaba a `gb symbols --fondo`, bandera
+    retirada, y fallaba en cada sesion sin decirlo; y el pre-commit llevaba
+    desenganchado quien sabe cuanto (revision de 13 proyectos, 25-sep-2026).
+    """
+    import glob
+
+    rotos = []
+    fuentes = sorted(glob.glob(os.path.join(root, ".claude", "settings*.json")))
+    for ruta in fuentes:
+        try:
+            with open(ruta, encoding="utf-8-sig") as fh:
+                datos = json.load(fh)
+        except (OSError, ValueError):
+            continue
+        comandos = []
+        for grupos in ((datos.get("hooks") or {}).values() if isinstance(datos, dict) else []):
+            for grupo in grupos if isinstance(grupos, list) else []:
+                for hook in (grupo.get("hooks") or []) if isinstance(grupo, dict) else []:
+                    if isinstance(hook, dict) and hook.get("command"):
+                        comandos.append(hook["command"])
+        rel = os.path.relpath(ruta, root).replace(os.sep, "/")
+        for comando in comandos:
+            for args in _llamadas_a_gb(comando):
+                motivo = _rechazo_del_parser(args)
+                if motivo:
+                    rotos.append("%s: `%s` — el gb de hoy lo rechaza (%s)" % (rel, comando, motivo))
+
+    hooks_dir = os.path.join(root, ".githooks")
+    llaman = []
+    for ruta in sorted(glob.glob(os.path.join(hooks_dir, "*"))):
+        if not os.path.isfile(ruta):
+            continue
+        try:
+            with open(ruta, encoding="utf-8", errors="replace") as fh:
+                texto = fh.read()
+        except OSError:
+            continue
+        llamadas = _llamadas_a_gb(texto)
+        if llamadas:
+            llaman.append(os.path.basename(ruta))
+        rel = ".githooks/" + os.path.basename(ruta)
+        for args in llamadas:
+            motivo = _rechazo_del_parser(args)
+            if motivo:
+                rotos.append("%s: `gb %s` — el gb de hoy lo rechaza (%s)"
+                             % (rel, " ".join(args), motivo))
+    if llaman:
+        from .graph import _git
+
+        actual = (_git(root, "config", "core.hooksPath") or "").strip()
+        # Relativo o absoluto, lo que cuenta es a que carpeta apunta.
+        destino = os.path.normcase(os.path.abspath(os.path.join(root, actual))) if actual else None
+        if destino != os.path.normcase(os.path.abspath(hooks_dir)):
+            rotos.append(
+                ".githooks/%s llama a gb pero NO corre: core.hooksPath %s — "
+                "`git config core.hooksPath .githooks` lo engancha"
+                % (", ".join(llaman), "apunta a %s" % actual if actual else "no esta puesto"))
+    return rotos
 
 
 def build_parser():
