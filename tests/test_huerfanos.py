@@ -154,3 +154,45 @@ def test_el_modulo_importado_por_string_queda_marcado(tmp_path):
     por_mod = {m["module"]: m for m in report["modulos_huerfanos"]}
     assert por_mod["dinamico"]["menciones"] is True
     assert por_mod["suelto"]["menciones"] is False
+
+
+def _clases(tmp_path):
+    """Las formas de usar una clase SIN llamarla, sacadas de los 12 falsos
+    positivos de guardia-mvp (25-sep-2026): anotacion, `Enum.X`, pasada a un
+    framework y `pytest.raises`."""
+    raiz = tmp_path / "p"
+    raiz.mkdir()
+    (raiz / "modelos.py").write_text(
+        "import enum\n\n\n"
+        "class Motor(enum.Enum):\n    A = 1\n\n\n"
+        "class Accion(enum.Enum):\n    B = 1\n\n\n"
+        "class Handler:\n    pass\n\n\n"
+        "class Invalida(ValueError):\n    pass\n\n\n"
+        "class Ensimismada:\n    def copia(self):\n        return Ensimismada.X\n",
+        encoding="utf-8")
+    (raiz / "app.py").write_text(
+        "from modelos import Accion, Handler, Motor\n\n\n"
+        "def usa(m: Motor):\n    return Accion.B\n\n\n"
+        "SERVIDOR = (('', 0), Handler)\n", encoding="utf-8")
+    (raiz / "test_modelos.py").write_text(
+        "import pytest\nfrom modelos import Invalida\n\n\n"
+        "def test_invalida():\n    with pytest.raises(Invalida):\n        raise ValueError\n",
+        encoding="utf-8")
+    return str(raiz)
+
+
+def test_una_clase_nombrada_sin_llamarla_no_es_candidata(tmp_path):
+    report = _dead(_clases(tmp_path))
+    limpias = [s["qual"] for s in report["sin_llamantes"]]
+    for viva in ("modelos.Motor", "modelos.Accion", "modelos.Handler"):
+        assert viva not in limpias, (viva, limpias)
+
+
+def test_una_clase_nombrada_solo_por_tests_va_a_su_lista(tmp_path):
+    report = _dead(_clases(tmp_path))
+    assert "modelos.Invalida" in [s["qual"] for s in report["solo_tests"]]
+
+
+def test_una_clase_que_solo_se_nombra_a_si_misma_sigue_siendo_candidata(tmp_path):
+    report = _dead(_clases(tmp_path))
+    assert "modelos.Ensimismada" in [s["qual"] for s in report["sin_llamantes"]]

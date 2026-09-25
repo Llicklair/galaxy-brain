@@ -1450,12 +1450,53 @@ def cmd_calls(args):
             emit("parecidos: %s" % ", ".join(parecidos))
         return 1
     nombrado_en = report.get("nombrado_como_valor_en") or {}
+    referenciado_en = report.get("referenciado_en") or {}
     for m in resultado["matches"]:
         emit(_linea_simbolo(m["symbol"]))
         _emit_onda("le llaman", m["callers"])
         _emit_onda("llama a", m["callees"])
         _emit_como_valor(m["symbol"]["qual"], nombrado_en)
+        _emit_referencias(m["symbol"]["qual"], referenciado_en)
+    _emit_suelo(report)
     return 0
+
+
+def _emit_referencias(qual, referenciado_en):
+    """Donde se NOMBRA una clase sin llamarla: anotaciones, `Enum.X`,
+    `pytest.raises(C)`, `isinstance`. `gb calls PropuestaInvalida` daba "le
+    llaman (7)" y ni un test teniendo 9 `pytest.raises` (guardia-mvp,
+    25-sep-2026). Linea aparte, como la de VALOR: no hay llamada escrita."""
+    from . import symbols
+
+    sitios = sorted(referenciado_en.get(qual) or [])
+    if not sitios:
+        return
+    de_tests = sum(1 for s in sitios if symbols.es_de_test(s))
+    legibles = [s[: -len(".<modulo>")] + " (a nivel de modulo)"
+                if s.endswith(".<modulo>") else s
+                for s in sorted(sitios, key=lambda s: (symbols.es_de_test(s), s))]
+    vista = " · ".join(legibles[:6])
+    if len(legibles) > 6:
+        vista += " y %d mas" % (len(legibles) - 6)
+    emit("  se NOMBRA sin llamarla en (%d — %d de src, %d de tests): %s"
+         % (len(sitios), len(sitios) - de_tests, de_tests, vista))
+
+
+def _emit_suelo(report):
+    """Las cifras de arriba son un MINIMO, y se dice con el numero.
+
+    El grafo solo pone arista donde la llamada es demostrable; `obj.metodo()`
+    sobre una variable no la deja. En guardia-mvp ataba ~47% y "le llaman
+    (7)" se leia como el total (25-sep-2026). Callarlo es presentar un suelo
+    como si fuera la cuenta entera. Sin porcentaje "del proyecto": el resto
+    mezcla metodos propios con librerias externas (`os.path.join` cae en el
+    mismo cajon), y no hay forma de separarlos sin inferir tipos."""
+    candidatas = report.get("calls_candidates") or 0
+    resueltas = report.get("calls_resolved") or 0
+    if candidatas and resueltas < candidatas:
+        emit("(las cifras son un MINIMO: el grafo ata a un simbolo %d de %d llamadas; "
+             "el resto —metodos sobre variables, librerias externas— no deja arista "
+             "y puede incluir llamadas a este)" % (resueltas, candidatas))
 
 
 def _emit_como_valor(qual, nombrado_en):

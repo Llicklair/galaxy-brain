@@ -457,6 +457,35 @@ def _llamadas_en(cuerpo, origen, modulo, clase, tabla_global, modulos, aristas, 
                 nombrado_en.setdefault(destino, set()).add(origen)
 
 
+def _referencias_a_clases(cuerpo, origen, modulo, tabla_global, modulos, refs, vistos):
+    """Las clases del proyecto NOMBRADAS en `cuerpo` sin llamarlas: `x: Motor`,
+    `Accion.B`, `isinstance(v, T)`, `pytest.raises(Invalida)`, `Server(Handler)`.
+
+    Una clase se usa sin llamarla casi siempre: anotaciones, enums, excepciones
+    que se capturan, clases que se entregan a un framework. `gb dead` listaba 12
+    clases vivas como muertas en guardia-mvp y `gb calls` daba 0 tests a una
+    excepcion con 9 `pytest.raises` (25-sep-2026). El nombre esta escrito: es un
+    hecho, no una inferencia. `vistos` evita que la pasada de nivel de modulo
+    (que recorre el arbol entero) repita lo ya atribuido a su def.
+    """
+    # `Clase(...)` ya es arista CALLS: contarla aqui la diria dos veces.
+    llamados = {id(n.func) for n in ast.walk(cuerpo) if isinstance(n, ast.Call)}
+    for node in ast.walk(cuerpo):
+        if id(node) in vistos:
+            continue
+        vistos.add(id(node))
+        if id(node) in llamados or not isinstance(node, (ast.Name, ast.Attribute)):
+            continue
+        if not isinstance(getattr(node, "ctx", None), ast.Load):
+            continue
+        destino, _ = _resolver_llamada(_ComoFuncion(node), modulo, None, tabla_global, modulos)
+        if not destino or tabla_global.get(destino, {}).get("kind") != "class":
+            continue
+        if origen == destino or origen.startswith(destino + "."):
+            continue    # nombrarse a si misma (en sus metodos) no es uso
+        refs.setdefault(destino, set()).add(origen)
+
+
 class _ComoFuncion:
     """Envuelve un nodo para preguntarle a `_resolver_llamada` a quien nombraria
     si fuera el `func` de una llamada. Reutiliza la resolucion entera —imports,
@@ -478,6 +507,7 @@ def analyze(root, skip=DEFAULT_SKIP, include_nested=False, since=None):
         "unresolved": {},
         "errors": {},
         "imports_rotos": [],
+        "referenciado_en": {},
         "not_covered": [],
     }
     if not os.path.isdir(root):
@@ -542,6 +572,7 @@ def analyze(root, skip=DEFAULT_SKIP, include_nested=False, since=None):
     motivos = {}
     como_valor = set()
     nombrado_en = {}
+    referencias = {}
     for mod, info in modulos.items():
         for qual in info["functions"].values():
             aristas.add((mod, qual, "DEFINES"))
@@ -570,6 +601,21 @@ def analyze(root, skip=DEFAULT_SKIP, include_nested=False, since=None):
         _llamadas_en(info["tree"], "%s.<modulo>" % info["module"], info, None, tabla,
                      modulos, set(), {}, como_valor, nombrado_en)
 
+        # Las clases nombradas sin llamarlas: primero cada def con su nombre,
+        # luego el resto del modulo (anotaciones de campos, registros).
+        vistos = set()
+        for node in _def_nodes(info["tree"].body):
+            _referencias_a_clases(node, info["functions"][node.name], info, tabla,
+                                  modulos, referencias, vistos)
+        for nombre, origen_clase in info["classes"].items():
+            cuerpo = next(c for c in info["tree"].body
+                          if isinstance(c, ast.ClassDef) and c.name == nombre)
+            for m in _def_nodes(cuerpo.body):
+                _referencias_a_clases(m, origen_clase["methods"][m.name], info, tabla,
+                                      modulos, referencias, vistos)
+        _referencias_a_clases(info["tree"], "%s.<modulo>" % info["module"], info, tabla,
+                              modulos, referencias, vistos)
+
     resueltas = len([a for a in aristas if a[2] == "CALLS"])
     builtins_vistos = motivos.pop("builtin", 0)
     sin_resolver = sum(motivos.values())
@@ -584,6 +630,9 @@ def analyze(root, skip=DEFAULT_SKIP, include_nested=False, since=None):
     # ese cuerpo como posible invocador) es sobre-aproximar, y eso vive en la
     # selección, igual que `_enlaza_dunders`. El grafo dice hechos.
     report["nombrado_como_valor_en"] = {k: sorted(v) for k, v in sorted(nombrado_en.items())}
+    # Las clases nombradas sin llamarlas, y donde. Uso sin arista CALLS: lo
+    # leen `dead` (no es candidata) y `calls` (quien depende de ella).
+    report["referenciado_en"] = {k: sorted(v) for k, v in sorted(referencias.items())}
     report["calls_resolved"] = resueltas
     report["calls_builtin"] = builtins_vistos
     report["calls_total"] = resueltas + sin_resolver + builtins_vistos

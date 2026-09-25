@@ -125,6 +125,12 @@ def analyze(informe, aristas_imports=None):
         origen, destino, tipo = arista[0], arista[1], arista[2]
         if tipo in ("CALLS", "EXTENDS"):
             entrantes.setdefault(destino, set()).add(origen)
+    # Una clase NOMBRADA (anotacion, `Enum.X`, `pytest.raises(C)`, entregada a
+    # un framework) se usa sin llamarla: los 12 candidatos "limpios" de
+    # guardia-mvp eran todos asi (25-sep-2026). Con su origen, para que la
+    # nombrada solo por tests caiga en `solo_tests` y no desaparezca.
+    for clase, origenes in (informe.get("referenciado_en") or {}).items():
+        entrantes.setdefault(clase, set()).update(origenes)
 
     como_valor = set(informe.get("usados_como_valor") or [])
 

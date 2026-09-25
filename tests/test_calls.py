@@ -351,3 +351,35 @@ def test_el_nivel_se_DICE_en_vez_de_sangrarse(tmp_path, capsys):
     for linea in lineas:
         if "lib.medio" in linea or "lib.lejos" in linea:
             assert linea.startswith("    ") and not linea.startswith("        "), linea
+
+
+def test_calls_dice_donde_se_nombra_una_clase_y_cuantos_son_tests(tmp_path, capsys):
+    """`PropuestaInvalida` con 9 `pytest.raises` salia sin un solo test en
+    `gb calls` (guardia-mvp, 25-sep-2026): solo se contaban llamadas `X()`."""
+    (tmp_path / "lib").mkdir()
+    (tmp_path / "lib" / "__init__.py").write_text("", encoding="utf-8")
+    (tmp_path / "lib" / "errores.py").write_text(
+        "class Invalida(ValueError):\n    pass\n", encoding="utf-8")
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "test_e.py").write_text(
+        "import pytest\nfrom lib.errores import Invalida\n\n\n"
+        "def test_a():\n    with pytest.raises(Invalida):\n        pass\n\n\n"
+        "def test_b():\n    with pytest.raises(Invalida):\n        pass\n", encoding="utf-8")
+
+    assert cli.main(["calls", "Invalida", str(tmp_path)]) == 0
+    salida = capsys.readouterr().out
+    assert "se NOMBRA sin llamarla en (2 — 0 de src, 2 de tests)" in salida, salida
+    assert "tests.test_e.test_a" in salida
+
+
+def test_calls_avisa_de_que_las_cifras_son_un_minimo(tmp_path, capsys):
+    """El grafo resuelve una parte de las llamadas (`obj.metodo()` no deja
+    arista): "le llaman (7)" es un suelo, no el total (guardia-mvp, ~47%)."""
+    (tmp_path / "m.py").write_text(
+        "def f():\n    return 1\n\n\ndef g(o):\n    o.metodo()\n    return f()\n",
+        encoding="utf-8")
+
+    assert cli.main(["calls", "f", str(tmp_path)]) == 0
+    salida = capsys.readouterr().out
+    assert "son un MINIMO" in salida, salida
+    assert "1 de 2 llamadas" in salida, salida

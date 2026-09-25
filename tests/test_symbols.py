@@ -333,3 +333,32 @@ def test_el_import_con_fallback_no_se_acusa(tmp_path):
            "    antiguo = None\n")
 
     assert symbols.analyze(root)["imports_rotos"] == []
+
+
+# --- la clase nombrada sin llamarla ------------------------------------------
+
+
+def test_la_clase_nombrada_sin_llamarla_se_registra_con_su_sitio(tmp_path):
+    """`x: Motor`, `Accion.B`, `pytest.raises(Invalida)`: usos sin llamada.
+    `gb calls` decia 0 tests para una excepcion con 9 `pytest.raises` y
+    `gb dead` listaba enums vivos (guardia-mvp, 25-sep-2026)."""
+    root = str(tmp_path)
+    _write(root, "app/__init__.py", "")
+    _write(root, "app/modelos.py",
+           "class Motor:\n    pass\n\n\nclass Accion:\n    B = 1\n\n\n"
+           "class Invalida(Exception):\n    pass\n\n\n"
+           "class Sola:\n    def f(self):\n        return Sola.X\n")
+    _write(root, "app/core.py",
+           "from app.modelos import Accion, Motor\n\n\n"
+           "def usa(m: Motor):\n    return Accion.B\n\n\nPOR_DEFECTO = Motor\n\n\n"
+           "def crea():\n    return Accion()\n")
+    _write(root, "tests/test_m.py",
+           "import pytest\nfrom app.modelos import Invalida\n\n\n"
+           "def test_i():\n    with pytest.raises(Invalida):\n        pass\n")
+
+    refs = symbols.analyze(root)["referenciado_en"]
+    assert refs["app.modelos.Motor"] == ["app.core.<modulo>", "app.core.usa"]
+    # `Accion()` en `crea` es una llamada (arista CALLS), no una mencion.
+    assert refs["app.modelos.Accion"] == ["app.core.usa"]
+    assert refs["app.modelos.Invalida"] == ["tests.test_m.test_i"]
+    assert "app.modelos.Sola" not in refs, "nombrarse a si misma no es uso"
