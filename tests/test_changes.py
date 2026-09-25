@@ -802,3 +802,22 @@ def test_sin_precommit_activo_no_dice_que_la_suite_la_corre_el(tmp_path):
     _run(root, "git", "config", "core.hooksPath", ".githooks")
     texto = " ".join(changes.analyze(root, "HEAD~1..HEAD")["not_covered"])
     assert "la corre el pre-commit" in texto
+
+
+def test_un_rango_pasado_dice_que_onda_y_acoplamiento_son_del_arbol_de_hoy(tmp_path):
+    """`gb check A..B` con B en el pasado cruzaba las lineas del diff de B con
+    el arbol ACTUAL: "sin senales" en 6 de 6 rangos historicos y lineas
+    equivocadas (invest-ll, 25-sep-2026). Calcularlo sobre B costaria montar
+    un arbol por llamada; lo honesto y barato es decirlo."""
+    root = _repo(tmp_path)
+    _write(root, "a.py", "x = 1\n")
+    _commit(root, "uno")
+    _write(root, "a.py", "x = 2\n")
+    _commit(root, "dos")
+    _write(root, "a.py", "x = 3\n")
+    _commit(root, "tres")
+
+    pasado = " ".join(changes.analyze(root, "HEAD~2..HEAD~1")["not_covered"])
+    assert "arbol ACTUAL" in pasado, pasado
+    presente = " ".join(changes.analyze(root, "HEAD~1..HEAD")["not_covered"])
+    assert "arbol ACTUAL" not in presente

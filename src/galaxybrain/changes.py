@@ -728,6 +728,21 @@ def analyze(root, rev_range=None, skip=None, include_nested=False, staged=False,
     # acoplamiento.
     base = "HEAD" if staged else (rev_range.split("..")[0] or None)
 
+    # La onda y el acoplamiento leen el arbol de DISCO. Con un rango que acaba
+    # en el pasado, eso cruza las lineas de aquel diff con el codigo de hoy:
+    # "sin senales" en 6 de 6 rangos historicos de invest-ll (25-sep-2026).
+    # Montar el arbol de cada extremo por llamada no cabe en el presupuesto;
+    # decirlo, si.
+    if not staged and rev_range and ".." in rev_range:
+        fin = rev_range.split("..", 1)[1].lstrip(".") or "HEAD"
+        sha_fin = _git_output(root, "rev-parse", "--verify", "-q", fin)
+        sha_head = _git_output(root, "rev-parse", "--verify", "-q", "HEAD")
+        if sha_fin and sha_head and sha_fin.strip() != sha_head.strip():
+            report["not_covered"].append(
+                "la onda y el acoplamiento se calculan sobre el arbol ACTUAL, no sobre "
+                "'%s': en un rango pasado pueden no corresponder (las senales de los "
+                "tests si son de ese diff)" % fin)
+
     from . import symbols as _sym
     # El informe de la CLI (los dos motores): con el de Python solo, la onda
     # de un cambio en un .ts o un .go salia vacia (auditoria del 24-sep-2026).
