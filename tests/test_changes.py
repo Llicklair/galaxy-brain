@@ -767,3 +767,38 @@ def test_la_frontera_de_lo_que_rompe_una_llamada():
     assert not rompe("(a, b)", "(a, b, eco=False)")   # retrocompatible
     assert not rompe("(a, b)", "(a, b)")              # igual
     assert not rompe("(a, **kw)", "(a, b, **kw)")     # no se razona: no se acusa
+
+
+# --- el repo recien creado y el pre-commit que no hay ------------------------
+
+
+def test_check_sin_rango_en_un_repo_de_un_solo_commit_revisa_ese_commit(tmp_path):
+    """No hay `HEAD~1`, y `gb check` a secas moria con "no pude leer el diff"
+    justo en el repo recien creado, que es donde `floor` manda empezar
+    (experimento-ingresos, 13 y 14-sep-2026). El primer commit entero es el diff."""
+    root = _repo(tmp_path)
+    _write(root, "tests/test_a.py", SUITE)
+    _commit(root, "primero")
+
+    report = changes.analyze(root, "HEAD~1..HEAD")
+    assert report["range_error"] is None, report["range_error"]
+    assert report["test_files_changed"] == 1
+
+
+def test_sin_precommit_activo_no_dice_que_la_suite_la_corre_el(tmp_path):
+    """"la corre el pre-commit" en un repo sin pre-commit se leia como
+    "comprobado" (experimento-ingresos, sin core.hooksPath)."""
+    root = _repo(tmp_path)
+    _write(root, "a.py", "x = 1\n")
+    _commit(root, "uno")
+    _write(root, "a.py", "x = 2\n")
+    _commit(root, "dos")
+
+    texto = " ".join(changes.analyze(root, "HEAD~1..HEAD")["not_covered"])
+    assert "la corre el pre-commit" not in texto
+    assert "no hay pre-commit activo" in texto
+
+    _write(root, ".githooks/pre-commit", "#!/bin/sh\npytest -q\n")
+    _run(root, "git", "config", "core.hooksPath", ".githooks")
+    texto = " ".join(changes.analyze(root, "HEAD~1..HEAD")["not_covered"])
+    assert "la corre el pre-commit" in texto

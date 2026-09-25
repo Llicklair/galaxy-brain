@@ -195,6 +195,8 @@ def analyze(root, rev_range=None, staged=False, worktree=False):
     else:
         rev_range = rev_range or "HEAD~1..HEAD"
         report["range"] = rev_range
+        # Un repo de un solo commit no tiene HEAD~1: base = arbol vacio.
+        rev_range = changes.rango_del_primer_commit(root, rev_range)
         diff = changes._git_output(root, "diff", "--unified=0", rev_range)
         base = rev_range.split("..")[0] or "HEAD~1"
 

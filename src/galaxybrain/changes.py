@@ -640,6 +640,34 @@ def test_signals(files):
     return flags
 
 
+#: El arbol vacio de git: la base de un primer commit, que no tiene padre.
+ARBOL_VACIO = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+
+
+def rango_del_primer_commit(root, rev_range):
+    """`HEAD~1..HEAD` en un repo de UN commit no existe: el commit entero es el
+    cambio, asi que la base es el arbol vacio. `gb check` a secas moria justo
+    en el repo recien creado, que es donde `floor` manda empezar
+    (experimento-ingresos, 13 y 14-sep-2026). Cualquier otro rango, intacto."""
+    if rev_range != "HEAD~1..HEAD":
+        return rev_range
+    if _git_output(root, "rev-parse", "--verify", "-q", "HEAD~1") is not None:
+        return rev_range
+    if _git_output(root, "rev-parse", "--verify", "-q", "HEAD") is None:
+        return rev_range                  # sin commits: que falle y lo diga
+    return ARBOL_VACIO + "..HEAD"
+
+
+def precommit_activo(root):
+    """¿Hay un pre-commit que git vaya a ejecutar? `--git-path hooks` ya
+    resuelve `core.hooksPath`: se pregunta a git, no se adivina."""
+    ruta = (_git_output(root, "rev-parse", "--git-path", "hooks") or "").strip()
+    if not ruta:
+        return False
+    ruta = ruta if os.path.isabs(ruta) else os.path.join(root, ruta)
+    return os.path.isfile(os.path.join(ruta, "pre-commit"))
+
+
 def analyze(root, rev_range=None, skip=None, include_nested=False, staged=False,
             constructor=None, informe_simbolos=None):
     """El informe de un cambio: qué le hizo a los tests y al acoplamiento.
@@ -673,6 +701,7 @@ def analyze(root, rev_range=None, skip=None, include_nested=False, staged=False,
         report["range_error"] = "la raiz no existe o no es un directorio: %s" % root
         return report
 
+    rev_range = rango_del_primer_commit(root, rev_range)
     if staged:
         diff = _git_output(root, "diff", "--unified=0", "--cached")
     elif rev_range:
@@ -781,8 +810,13 @@ def analyze(root, rev_range=None, skip=None, include_nested=False, staged=False,
         )
 
     # Dicho de frente, no omitido: lo que esta revision NO mira.
+    # Solo se nombra el pre-commit si EXISTE: "la corre el pre-commit" en un
+    # repo sin el se leia como "comprobado" (experimento-ingresos, 13-sep-2026).
     report["not_covered"].append(
         "la suite no se ejecuta aqui (la corre el pre-commit); esto revisa el diff, no el resultado"
+        if precommit_activo(root) else
+        "la suite no se ejecuta aqui, y no hay pre-commit activo que la corra: "
+        "correla tu — esto revisa el diff, no el resultado"
     )
     report["not_covered"].append(
         "tests que ya eran debiles antes del cambio: esto compara, no audita lo preexistente"

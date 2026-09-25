@@ -183,3 +183,10 @@ def test_sin_cambios_no_dice_nada(repo):
 def test_una_raiz_que_no_existe_es_error_de_uso(tmp_path):
     report = delta.analyze(str(tmp_path / "no-existe"))
     assert report["range_error"]
+
+
+def test_sin_rango_en_un_repo_de_un_solo_commit_mira_ese_commit(repo):
+    """Sin HEAD~1 el rango por defecto moria ("no se pudo leer el diff"): el
+    primer commit entero es el cambio, y su deuda es nueva."""
+    report = delta.analyze(str(repo))
+    assert report.get("range_error") is None, report.get("range_error")
