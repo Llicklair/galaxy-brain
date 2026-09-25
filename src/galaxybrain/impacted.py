@@ -678,6 +678,11 @@ def analyze(root, rev_range=None, staged=False, worktree=False, skip=None,
     _enlaza_dunders(nodes, llamantes)
     _enlaza_herencia(nodes, llamantes, grafo["edges"])
     _enlaza_pasados_como_valor(nodes, llamantes, grafo.get("nombrado_como_valor_en"))
+    # Una clase NOMBRADA sin llamarla (`Nivel.ALTO`, `pytest.raises(C)`,
+    # `isinstance`) es la misma forma: quien la nombra depende de ella sin
+    # arista CALLS. Si otro camino llevaba a algun test, se estrechaba a ese y
+    # el rojo del test que solo la nombra quedaba fuera (25-sep-2026).
+    _enlaza_pasados_como_valor(nodes, llamantes, grafo.get("referenciado_en"))
     _enlaza_cruces(root, nodes, llamantes)
     callejones = []
     tests, truncado = tests_que_alcanzan(nodes, llamantes, semillas, callejones=callejones)

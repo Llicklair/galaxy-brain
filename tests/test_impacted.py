@@ -628,6 +628,32 @@ def test_un_fichero_que_no_parsea_devuelve_todo_y_dice_con_que_python(repo):
     assert "Python %d.%d" % sys.version_info[:2] in report["motivo"], report["motivo"]
 
 
+def test_el_test_que_solo_NOMBRA_la_clase_tocada_entra(repo):
+    """`Nivel.ALTO.value`, `pytest.raises(C)`, `isinstance(x, C)`: el test usa
+    la clase sin llamarla. Si otro camino (aqui `crea`, que SI la llama) lleva
+    a algun test, la seleccion estrechaba a ese y dejaba fuera el rojo del que
+    solo la nombra. Cerrado con `referenciado_en` (25-sep-2026)."""
+    (repo / "lib" / "nivel.py").write_text(
+        "import enum\n\n\nclass Nivel(enum.Enum):\n    ALTO = 'alto'\n\n\n"
+        "def crea(v):\n    return Nivel(v) if v else None\n", encoding="utf-8")
+    (repo / "tests" / "test_crea.py").write_text(
+        "from lib.nivel import crea\n\n\ndef test_crea_vacio():\n    assert crea('') is None\n",
+        encoding="utf-8")
+    (repo / "tests" / "test_valores.py").write_text(
+        "from lib.nivel import Nivel\n\n\ndef test_alto():\n    assert Nivel.ALTO.value == 'alto'\n",
+        encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "nivel")
+    _tocar(repo, "lib/nivel.py", "ALTO = 'alto'", "ALTO = 'ALTO'")
+
+    report = impacted.analyze(str(repo), worktree=True)
+    assert "tests/test_valores.py" in report["tests"], report
+    r = subprocess.run([sys.executable, "-m", "pytest", "-q", "--tb=no",
+                        "-p", "no:cacheprovider", *report["tests"]],
+                       cwd=str(repo), capture_output=True, text=True)
+    assert r.returncode != 0, r.stdout
+
+
 def test_un_metodo_js_sin_llamantes_visibles_no_estrecha(tmp_path):
     """Falso verde abierto al hacer simbolos los metodos de JS (24-sep-2026) y
     cerrado en el mismo cambio: `configurar` (metodo) llega a su test por
