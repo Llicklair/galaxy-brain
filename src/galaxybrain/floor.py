@@ -822,6 +822,25 @@ def _level(key, title, status, detail, evidence=None, source=None):
     }
 
 
+_ATRIBUTOS_HOOK = ".githooks/** text eol=lf"
+
+
+def _asegura_gitattributes(root):
+    ruta = os.path.join(root, ".gitattributes")
+    if not os.path.exists(ruta):
+        try:
+            with open(ruta, "w", encoding="utf-8", newline="\n") as fh:
+                fh.write("# Los hooks de git se ejecutan con /bin/sh: con CRLF no corren.\n"
+                         "%s\n*.sh text eol=lf\n" % _ATRIBUTOS_HOOK)
+            return {"path": ".gitattributes", "action": "creado"}
+        except OSError as error:
+            return {"path": ".gitattributes", "action": "error: %s" % error}
+    if ".githooks" in _read(root, ".gitattributes"):
+        return {"path": ".gitattributes", "action": "ya-existia"}
+    return {"path": ".gitattributes",
+            "action": "ya-existia, sin regla para los hooks: añade `%s`" % _ATRIBUTOS_HOOK}
+
+
 def scaffold(root):
     """Deja los imprescindibles, pre-rellenados con lo detectado.
 
@@ -869,6 +888,12 @@ def scaffold(root):
             hechos.append({"path": rel, "action": "creado"})
         except OSError as error:
             hechos.append({"path": rel, "action": "error: %s" % error})
+
+    # El hook, en LF siempre. Con core.autocrlf=true —el defecto de Git para
+    # Windows— se restauraba con CRLF en un clon y `#!/bin/sh\r` no corre: un
+    # hook muerto que no deja rastro (Mario Figueras, 27-sep-2026). Un
+    # .gitattributes ajeno no se pisa: se dice que linea falta.
+    hechos.append(_asegura_gitattributes(root))
 
     # El enganche, AUTOMATICO: un pre-commit sin core.hooksPath es decoracion, y
     # "acuerdate del git config" fallo en uso real el mismo dia que se estreno el

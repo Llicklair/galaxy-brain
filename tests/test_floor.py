@@ -394,9 +394,9 @@ def test_init_deja_los_imprescindibles(tmp_path):
 
     # los ficheros imprescindibles MAS el enganche del pre-commit (7-ago: la
     # conexion no se sugiere, se hace). El ignore del mapa se fue con el mapa
-    # (13-ago).
+    # (13-ago). Y el .gitattributes que protege el hook de CRLF (27-sep).
     extras = {"core.hooksPath"}
-    assert {h["path"] for h in hechos} == set(floor.SCAFFOLD_FILES) | extras
+    assert {h["path"] for h in hechos} == set(floor.SCAFFOLD_FILES) | extras | {".gitattributes"}
     assert all(h["action"] == "creado" for h in hechos if h["path"] not in extras)
     assert [h["action"] for h in hechos if h["path"] == "core.hooksPath"] == ["sin-git"]
     for rel in floor.SCAFFOLD_FILES:
@@ -607,3 +607,24 @@ def test_el_precommit_de_init_lleva_una_marca_de_shell_y_floor_la_ve(tmp_path):
     assert "<!--" not in hook
     assert "# gb:pendiente" in hook
     assert ".githooks/pre-commit" in floor.pending_marks(root)
+
+
+def test_init_deja_un_gitattributes_que_protege_el_hook_de_crlf(tmp_path):
+    """Con core.autocrlf=true (el defecto de Git para Windows) el hook se
+    restaura con CRLF en un clon y `#!/bin/sh\r` no corre: un hook muerto que
+    no deja rastro (Mario Figueras, 27-sep-2026). El repo de gb ya lo traia."""
+    root = str(tmp_path)
+    subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+    floor.scaffold(root)
+    texto = open(os.path.join(root, ".gitattributes"), encoding="utf-8").read()
+    assert ".githooks/** text eol=lf" in texto
+
+
+def test_init_no_pisa_un_gitattributes_ajeno_y_lo_dice(tmp_path):
+    root = str(tmp_path)
+    subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+    with open(os.path.join(root, ".gitattributes"), "w", encoding="utf-8") as fh:
+        fh.write("*.png binary\n")
+    hechos = floor.scaffold(root)
+    assert open(os.path.join(root, ".gitattributes"), encoding="utf-8").read() == "*.png binary\n"
+    assert any(h["path"] == ".gitattributes" and "eol=lf" in h["action"] for h in hechos), hechos
