@@ -213,14 +213,18 @@ in the poster is shipped and measured.</sub>
 
 The facts are useless if someone has to remember to ask for them. **The norm goes in the default,
 not in the prompt:** a rule that requires typing a flag depends on someone remembering, and sooner
-or later it fails. So three hooks make the harness ambient — the agent gets the facts without asking,
+or later it fails. So one hook makes the harness ambient — the agent gets the facts without asking,
 and without knowing gb exists.
 
 | Hook | What it injects | Measured |
 |---|---|---|
-| `SessionStart` | The compressed map of the repo, plus a count of unread captures when there are any | ~110 tokens, 162 ms |
-| After each edit | Only what **changed** in the shape — or silence | under the 1 s edit budget |
-| On every `Grep`/`Glob` | The matching symbol cards ride along (`gb calls --hook`) | 430 ms here, 330 ms on a 600-module synthetic repo |
+| `SessionStart` | The compressed map of the repo, a count of unread captures when there are any, and any **broken wiring** (a hook calling a gb flag that no longer exists, a pre-commit that is not engaged, `gb` off the PATH) | ~110 tokens, 162 ms |
+
+There used to be three. A hook after each edit (only what changed in the shape) and one on every
+`Grep`/`Glob` (`gb calls --hook`, the matching symbol cards) were **retired on 2026-08-13** with the
+measurement in front: informing per action changed nothing (0/6), and a default that changes no
+outcome is paid noise. `gb calls --hook` still exists for anyone who wires it by hand; `floor --init`
+no longer does.
 
 A symbol card is what lets an agent **call code it has not read** — signature straight from the AST
 (args, defaults, `*`, `async`, the decorators that change the call), location, first docstring line,
