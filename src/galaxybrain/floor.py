@@ -566,7 +566,9 @@ def _plantilla_precommit(comando, gb="gb"):
     tests = (
         "%s || exit 1" % comando
         if comando
-        else "# %s declara aqui tu comando de tests (y quita esta linea)" % PENDING_MARK
+        # En shell, `# gb:pendiente` a secas: un comentario HTML dentro de un
+        # script era un hibrido que el grep de `*.md` no veia (27-sep-2026).
+        else "# gb:pendiente: declara aqui tu comando de tests (y quita esta linea)"
     )
     return """#!/bin/sh
 # Enganchado UNA vez con: git config core.hooksPath .githooks
@@ -921,11 +923,35 @@ def pending_sections(root):
     que existe y no dice nada pasa cualquier lista de comprobacion sin aportar nada —
     exactamente el suelo de mentira que este modulo existe para no fabricar.
     """
-    pendientes = []
+    marcas = pending_marks(root)
+    return [rel for rel in SCAFFOLD_FILES if rel in marcas]
+
+
+#: Una marca REAL abre su linea (tras un guion de lista, `1.` o el `#` de un
+#: comentario de shell); una cita en prosa o entre comillas invertidas no.
+#: `--init` las escribe asi, incluida la que va dentro del bloque de codigo del
+#: comando de tests — por eso no vale "ignorar los bloques de codigo".
+_MARCA_RE = re.compile(
+    r"^\s*(?:(?:[-*]\s+|\d+\.\s+)?" + re.escape(PENDING_MARK)
+    + r"|#\s*(?:" + re.escape(PENDING_MARK) + r"|gb:pendiente\b))")
+
+
+def pending_marks(root):
+    """{fichero: [lineas]} de las marcas sin rellenar del esqueleto.
+
+    Con su linea, porque "SIN RELLENAR: AGENTS.md" obligaba a buscarla, y el
+    grep obvio (`--include=*.md`) no veia la del pre-commit (nihonworld,
+    Mario Figueras, 27-sep-2026). Y solo las que abren linea: la libreta que
+    CITABA la marca para documentar un fallo salia como vacia."""
+    marcas = {}
     for rel in SCAFFOLD_FILES:
-        if _exists(root, *rel.split("/")) and PENDING_MARK in _read(root, *rel.split("/")):
-            pendientes.append(rel)
-    return pendientes
+        if not _exists(root, *rel.split("/")):
+            continue
+        lineas = [i for i, linea in enumerate(_read(root, *rel.split("/")).splitlines(), 1)
+                  if _MARCA_RE.match(linea)]
+        if lineas:
+            marcas[rel] = lineas
+    return marcas
 
 
 #: Orden de la consola en la tabla de cobertura: lo que observa desde dentro,
@@ -1184,6 +1210,7 @@ def analyze(root, run_tests=False, constructor=None):
     single = _first_existing(root, AGENT_FILES_SINGLE_TOOL)
     pendientes = pending_sections(root)
     report["pending"] = pendientes
+    report["pending_lineas"] = pending_marks(root)
     ratio, herramientas = companions.tool_generated_ratio(_read(root, "AGENTS.md")) if agents else (0.0, [])
     if agents and ratio > 0.7:
         # Existe, pero lo escribio una herramienta para si misma. Darlo por bueno

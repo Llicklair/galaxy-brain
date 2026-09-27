@@ -336,8 +336,12 @@ def render_floor(report, style):
 
     if report.get("pending"):
         lines.append(style("Documentos puestos pero SIN RELLENAR:", BOLD))
+        lineas = report.get("pending_lineas") or {}
         for path in report["pending"]:
-            lines.append("  %s %s" % (style("o", YELLOW), path))
+            donde = lineas.get(path) or []
+            sitio = (" (linea%s %s)" % ("s" if len(donde) > 1 else "",
+                                         ", ".join(str(n) for n in donde))) if donde else ""
+            lines.append("  %s %s%s" % (style("o", YELLOW), path, sitio))
         lines.append(
             style(
                 "      Un documento que existe y no dice nada pasa la lista sin aportar nada. "

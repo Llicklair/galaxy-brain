@@ -572,3 +572,38 @@ def test_init_usa_la_invocacion_en_los_dos_hooks(tmp_path, monkeypatch):
     assert "python -m galaxybrain.cli graph . --gate" in hook
     assert "\ngb " not in hook
     assert '"python -m galaxybrain.cli graph --context"' in ajustes
+
+
+# --- la marca de pendiente: donde esta, y solo donde esta --------------------
+
+
+def test_citar_la_marca_no_deja_el_documento_sin_rellenar(tmp_path):
+    """nihonworld (27-sep-2026): la libreta de evidencia CITABA la marca para
+    documentar un fallo de la herramienta, y floor la daba por vacia. Una
+    marca real abre su linea; una cita no."""
+    root = str(tmp_path)
+    os.makedirs(os.path.join(root, "docs"))
+    with open(os.path.join(root, "docs", "evidencia.md"), "w", encoding="utf-8") as fh:
+        fh.write("# Libreta\n\nEl hook traia `%s` dentro, en vez de... \n" % floor.PENDING_MARK)
+    assert floor.pending_sections(root) == []
+
+
+def test_la_marca_real_se_ve_con_su_linea_incluso_en_un_bloque_de_codigo(tmp_path):
+    root = str(tmp_path)
+    with open(os.path.join(root, "AGENTS.md"), "w", encoding="utf-8") as fh:
+        fh.write("# a\n\n```bash\n%s Sin comando.\n```\n\n1. %s Primera regla.\n"
+                 % (floor.PENDING_MARK, floor.PENDING_MARK))
+    assert floor.pending_sections(root) == ["AGENTS.md"]
+    assert floor.pending_marks(root) == {"AGENTS.md": [4, 7]}
+
+
+def test_el_precommit_de_init_lleva_una_marca_de_shell_y_floor_la_ve(tmp_path):
+    """En un script de shell, un comentario HTML era un hibrido que el grep
+    obvio (`--include=*.md`) no veia (Mario Figueras, 27-sep-2026)."""
+    root = str(tmp_path)
+    subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+    floor.scaffold(root)
+    hook = open(os.path.join(root, ".githooks", "pre-commit"), encoding="utf-8").read()
+    assert "<!--" not in hook
+    assert "# gb:pendiente" in hook
+    assert ".githooks/pre-commit" in floor.pending_marks(root)
