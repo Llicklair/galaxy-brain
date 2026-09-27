@@ -2502,6 +2502,9 @@ def cmd_status(args):
     return 0
 
 
+#: `gb` como comando, no como parte de una ruta (`.venv/Scripts/gb.exe`).
+_GB_A_SECAS = re.compile(r"(?:^|[\s;&|(])gb(?=\s|$)")
+
 #: Separadores de shell entre comandos de una misma linea de hook.
 _SEPARADORES_SHELL = re.compile(r"\s*(?:\|\||&&|\||;)\s*")
 
@@ -2561,8 +2564,10 @@ def integracion_rota(root):
     desenganchado quien sabe cuanto (revision de 13 proyectos, 25-sep-2026).
     """
     import glob
+    import shutil
 
     rotos = []
+    a_secas = []
     fuentes = sorted(glob.glob(os.path.join(root, ".claude", "settings*.json")))
     for ruta in fuentes:
         try:
@@ -2577,6 +2582,8 @@ def integracion_rota(root):
                     if isinstance(hook, dict) and hook.get("command"):
                         comandos.append(hook["command"])
         rel = os.path.relpath(ruta, root).replace(os.sep, "/")
+        if any(_GB_A_SECAS.search(c) for c in comandos):
+            a_secas.append(rel)
         for comando in comandos:
             for args in _llamadas_a_gb(comando):
                 motivo = _rechazo_del_parser(args)
@@ -2597,6 +2604,9 @@ def integracion_rota(root):
         if llamadas:
             llaman.append(os.path.basename(ruta))
         rel = ".githooks/" + os.path.basename(ruta)
+        if any(_GB_A_SECAS.search(linea) for linea in texto.splitlines()
+               if not linea.lstrip().startswith("#")):
+            a_secas.append(rel)
         for args in llamadas:
             motivo = _rechazo_del_parser(args)
             if motivo:
@@ -2613,6 +2623,14 @@ def integracion_rota(root):
                 ".githooks/%s llama a gb pero NO corre: core.hooksPath %s — "
                 "`git config core.hooksPath .githooks` lo engancha"
                 % (", ".join(llaman), "apunta a %s" % actual if actual else "no esta puesto"))
+    # `gb` a secas con gb fuera del PATH: instalado en el venv del proyecto, el
+    # hook falla en cada uso (nihonworld, 27-sep-2026). Un hecho de ESTA
+    # maquina, y asi se dice.
+    if a_secas and not shutil.which("gb"):
+        rotos.append(
+            "%s llama(n) a `gb` a secas y `gb` no esta en el PATH de esta maquina: "
+            "fallan en cada uso. Usa la ruta del venv (.venv/Scripts/gb.exe o "
+            ".venv/bin/gb) o `python -m galaxybrain.cli`" % ", ".join(a_secas))
     return rotos
 
 

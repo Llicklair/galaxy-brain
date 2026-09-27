@@ -7,6 +7,7 @@ que si esta, y que declare lo que no puede saber.
 """
 
 import os
+import subprocess
 
 import pytest
 
@@ -526,3 +527,48 @@ def test_un_lenguaje_tipado_tiene_tipos_por_su_compilador(tmp_path):
     solo_py = str(tmp_path / "py")
     _write(solo_py, "a.py", "x = 1\n")
     assert "tipos" not in floor.detect_gates(solo_py)
+
+
+# --- la invocacion de gb que escribe --init ----------------------------------
+
+
+def test_init_escribe_gb_a_secas_si_esta_en_el_path(tmp_path):
+    assert floor.invocacion_gb(str(tmp_path), which=lambda n: "/usr/bin/gb",
+                               prefix="/p", base="/p") == "gb"
+
+
+def test_init_escribe_la_ruta_del_venv_del_repo_si_gb_no_esta_en_el_path(tmp_path):
+    """nihonworld (Mario Figueras, 27-sep-2026): gb instalado en el venv del
+    proyecto, como recomienda el README, y los hooks con `gb` a secas: el de
+    sesion fallaba en cada apertura y el pre-commit bloqueaba todo con un
+    `command not found`. Una gate que no corre da la misma senal que una que
+    aprueba."""
+    venv = tmp_path / ".venv"
+    carpeta = venv / ("Scripts" if os.name == "nt" else "bin")
+    carpeta.mkdir(parents=True)
+    exe = carpeta / ("gb.exe" if os.name == "nt" else "gb")
+    exe.write_text("", encoding="utf-8")
+
+    forma = floor.invocacion_gb(str(tmp_path), which=lambda n: None,
+                                prefix=str(venv), base="/sistema")
+    assert forma == ".venv/%s/%s" % (carpeta.name, exe.name), forma
+
+
+def test_init_cae_a_python_m_si_no_hay_ni_path_ni_venv_del_repo(tmp_path):
+    """Nunca una ruta absoluta: el hook viaja con el repo (regla 6)."""
+    forma = floor.invocacion_gb(str(tmp_path), which=lambda n: None,
+                                prefix="/fuera/venv", base="/sistema")
+    assert forma == "python -m galaxybrain.cli"
+
+
+def test_init_usa_la_invocacion_en_los_dos_hooks(tmp_path, monkeypatch):
+    root = str(tmp_path)
+    subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+    monkeypatch.setattr(floor, "invocacion_gb", lambda r: "python -m galaxybrain.cli")
+    floor.scaffold(root)
+
+    hook = open(os.path.join(root, ".githooks", "pre-commit"), encoding="utf-8").read()
+    ajustes = open(os.path.join(root, ".claude", "settings.json"), encoding="utf-8").read()
+    assert "python -m galaxybrain.cli graph . --gate" in hook
+    assert "\ngb " not in hook
+    assert '"python -m galaxybrain.cli graph --context"' in ajustes

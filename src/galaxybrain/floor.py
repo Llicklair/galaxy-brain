@@ -521,7 +521,40 @@ libreta: es si estas midiendo algo.
 """ % PENDING_MARK
 
 
-def _plantilla_precommit(comando):
+def invocacion_gb(root, which=None, prefix=None, base=None):
+    """Como se llama a gb DESDE los hooks de este repo, en esta maquina.
+
+    `gb` a secas solo si esta en el PATH. Instalado en el venv del proyecto
+    —lo que recomienda el README— no lo esta, y los hooks con `gb` a secas
+    fallaban: el de sesion en cada apertura, el pre-commit bloqueando todo
+    con un `command not found` sin causa a la vista (nihonworld, informe de
+    Mario Figueras, 27-sep-2026). Una gate que no corre da la misma senal que
+    una que aprueba. Orden: PATH, venv DENTRO del repo (ruta relativa),
+    `python -m galaxybrain.cli`. Nunca absoluta: el hook viaja con el repo.
+    """
+    import shutil
+    import sys
+
+    which = which or shutil.which
+    prefix = sys.prefix if prefix is None else prefix
+    base = sys.base_prefix if base is None else base
+    if which("gb"):
+        return "gb"
+    if os.path.normcase(os.path.abspath(prefix)) != os.path.normcase(os.path.abspath(base)):
+        for carpeta, nombre in (("Scripts", "gb.exe"), ("bin", "gb")):
+            exe = os.path.join(prefix, carpeta, nombre)
+            if not os.path.isfile(exe):
+                continue
+            try:
+                rel = os.path.relpath(exe, root)
+            except ValueError:          # otra unidad en Windows
+                break
+            if not rel.startswith(".."):
+                return rel.replace(os.sep, "/")
+    return "python -m galaxybrain.cli"
+
+
+def _plantilla_precommit(comando, gb="gb"):
     """El gate enganchable del día uno — antes había que cablearlo a mano, que es
     exactamente lo contrario de "la norma va en el defecto" (prueba de uso, 4-ago).
 
@@ -541,12 +574,12 @@ def _plantilla_precommit(comando):
 # los guiones y tildes del gate salen como basura en el log del commit.
 export PYTHONUTF8=1
 %s
-gb graph . --gate --since HEAD --brief || exit 1
-gb check --staged --brief
-""" % tests
+%s graph . --gate --since HEAD --brief || exit 1
+%s check --staged --brief
+""" % (tests, gb, gb)
 
 
-def _plantilla_claude_settings():
+def _plantilla_claude_settings(gb="gb"):
     """El arnés del agente, a nivel de PROYECTO: viaja con el repo, mergea con
     lo global de cada máquina y no toca la configuración personal de nadie.
 
@@ -563,13 +596,13 @@ def _plantilla_claude_settings():
       {
         "matcher": "",
         "hooks": [
-          { "type": "command", "command": "gb graph --context", "timeout": 15 }
+          { "type": "command", "command": "%s graph --context", "timeout": 15 }
         ]
       }
     ]
   }
 }
-"""
+""" % gb
 
 
 #: Encabezados que declaran un criterio de terminado. Se busca el ENCABEZADO y no
@@ -804,6 +837,7 @@ def scaffold(root):
     comando, _fuente = detect_test_command(root)
     gates = detect_gates(root)
     modulos = graph.analyze(root)["modules"]
+    gb = invocacion_gb(root)
 
     contenidos = {
         "AGENTS.md": _plantilla_agents(nombre, comando, gates, modulos),
@@ -811,8 +845,8 @@ def scaffold(root):
         "ARCHITECTURE.md": _plantilla_architecture(nombre),
         "docs/adr/README.md": _plantilla_adr(),
         "docs/evidencia.md": _plantilla_evidencia(),
-        ".githooks/pre-commit": _plantilla_precommit(comando),
-        ".claude/settings.json": _plantilla_claude_settings(),
+        ".githooks/pre-commit": _plantilla_precommit(comando, gb),
+        ".claude/settings.json": _plantilla_claude_settings(gb),
     }
 
     hechos = []

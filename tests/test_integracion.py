@@ -84,3 +84,16 @@ def test_floor_lo_ensena(tmp_path, capsys):
     assert cli.main(["floor", root]) == 0
     salida = capsys.readouterr().out
     assert "INTEGRACION ROTA con gb (1)" in salida, salida
+
+
+def test_un_hook_que_llama_a_gb_sin_que_gb_este_en_el_path_se_dice(tmp_path, monkeypatch):
+    """El caso de nihonworld en un proyecto ya montado: gb en el venv, hooks
+    con `gb` a secas. El hook fallara en cada uso y nadie lo vera."""
+    import shutil
+
+    root = _repo(tmp_path)
+    _settings(root, "gb graph --context")
+    monkeypatch.setattr(shutil, "which", lambda n, *a, **k: None)
+
+    rotos = cli.integracion_rota(root)
+    assert any("no esta en el PATH" in r for r in rotos), rotos
