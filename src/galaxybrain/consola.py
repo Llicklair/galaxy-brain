@@ -488,12 +488,16 @@ def mecanismo(lang, plataforma=None):
     return dict(ficha) if ficha else None
 
 
-def armado(lang, entorno=None, plataforma=None):
+def armado(lang, entorno=None, plataforma=None, root=None):
     """¿Está la vía puesta AHORA MISMO? True, False, o None si no es comprobable.
 
     None no es un fallo: php se arma con una bandera en la invocación y go con
     un envolvente, y no hay nada en el entorno que delate ninguno de los dos.
     Decir «no armado» de algo que no se puede comprobar seria inventar.
+
+    Con `root`, para js/ts cuenta tambien el `.npmrc` del proyecto: npm aplica
+    su `node-options` a todo `npm run`, y `status` decia "NO armado" con la
+    captura funcionando (nihonworld, Mario Figueras, 27-sep-2026).
     """
     entorno = os.environ if entorno is None else entorno
     ficha = mecanismo(lang, plataforma)
@@ -506,7 +510,29 @@ def armado(lang, entorno=None, plataforma=None):
         return False
     if not ficha["env"]:
         return None
-    return ficha["marca"].lower() in (entorno.get(ficha["env"]) or "").lower()
+    if ficha["marca"].lower() in (entorno.get(ficha["env"]) or "").lower():
+        return True
+    return bool(root) and ficha["env"] == "NODE_OPTIONS" and armado_por_npmrc(root, ficha["marca"])
+
+
+def armado_por_npmrc(root, marca=_MARCA):
+    """¿El .npmrc del proyecto mete el hook en `node-options`?"""
+    try:
+        with open(os.path.join(root, ".npmrc"), encoding="utf-8", errors="replace") as fh:
+            texto = fh.read()
+    except OSError:
+        return False
+    return any(linea.strip().lower().startswith("node-options") and marca.lower() in linea.lower()
+               for linea in texto.splitlines())
+
+
+def sugerencia_npmrc(root, ruta_hook):
+    """La linea de .npmrc que arma la consola js/ts para todo `npm run` del
+    proyecto, o None si no hay package.json. Barras `/`: Node no entiende la
+    `/c/Users` de Git Bash, y en Windows `C:/...` si vale."""
+    if not os.path.isfile(os.path.join(root, "package.json")):
+        return None
+    return "node-options=--require %s" % ruta_hook.replace("\\", "/")
 
 
 def estado(root, entorno=None, plataforma=None):
@@ -526,7 +552,10 @@ def estado(root, entorno=None, plataforma=None):
         if not ficha:
             continue
         ficha["lenguaje"] = lang
-        ficha["armado"] = armado(lang, entorno, plataforma)
+        ficha["armado"] = armado(lang, entorno, plataforma, root=root)
+        ficha["por_npmrc"] = bool(
+            ficha["armado"] and ficha.get("env") == "NODE_OPTIONS"
+            and not armado(lang, entorno, plataforma))
         fichas.append(ficha)
     return fichas
 
@@ -554,7 +583,7 @@ def pendientes(root, entorno=None, plataforma=None):
         if not ficha:
             continue
         ficha["lenguaje"] = lang
-        ficha["armado"] = armado(lang, entorno, plataforma)
+        ficha["armado"] = armado(lang, entorno, plataforma, root=root)
         if ficha["armado"] is not True:
             fichas.append(ficha)
     return fichas
@@ -562,7 +591,9 @@ def pendientes(root, entorno=None, plataforma=None):
 
 def linea(ficha):
     """La ficha en una línea, para `gb status`. Sin colores: los pone quien pinta."""
-    if ficha["armado"] is True:
+    if ficha["armado"] is True and ficha.get("por_npmrc"):
+        marca = "armado por .npmrc (solo lo que se lanza con `npm run`)"
+    elif ficha["armado"] is True:
         marca = "armado"
     elif ficha["armado"] is False:
         marca = "NO armado"

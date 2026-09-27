@@ -591,3 +591,33 @@ def test_sonda_la_redaccion_de_los_hooks_no_deriva_de_python():
         for patron in config.REDACT_PATTERNS:
             assert re.search(r"\b%s\b" % re.escape(patron), fuente), (
                 "%s no redacta %r — un secreto con ese nombre viaja en claro" % (rel, patron))
+
+
+def test_la_consola_js_armada_por_npmrc_cuenta_como_armada(tmp_path):
+    """`node-options=--require .../gb-hook.js` en el .npmrc del proyecto arma
+    todo `npm run`, y `status` decia "NO armado" porque solo miraba el shell
+    (nihonworld, Mario Figueras, 27-sep-2026): una captura funcionando
+    reportada como apagada."""
+    from galaxybrain import consola
+
+    (tmp_path / "package.json").write_text("{}", encoding="utf-8")
+    (tmp_path / "app.js").write_text("module.exports = 1;\n", encoding="utf-8")
+    assert consola.armado("js", entorno={}, root=str(tmp_path)) is False
+    (tmp_path / ".npmrc").write_text(
+        "node-options=--require C:/Users/x/.galaxy-brain/hooks/gb-hook.js\n", encoding="utf-8")
+    assert consola.armado("js", entorno={}, root=str(tmp_path)) is True
+    ficha = [f for f in consola.estado(str(tmp_path), entorno={}) if f["lenguaje"] == "js"][0]
+    assert "npm run" in consola.linea(ficha)
+
+
+def test_on_lenguajes_ofrece_la_linea_de_npmrc_si_hay_package_json(tmp_path):
+    """El canal que persiste por proyecto: npm aplica `node-options` del
+    .npmrc a todo `npm run`. Ruta con barras `/` (Node no entiende la
+    `/c/Users` de Git Bash)."""
+    from galaxybrain import consola
+
+    ruta = r"C:\Users\x\.galaxy-brain\hooks\gb-hook.js"
+    assert consola.sugerencia_npmrc(str(tmp_path), ruta) is None
+    (tmp_path / "package.json").write_text("{}", encoding="utf-8")
+    assert consola.sugerencia_npmrc(str(tmp_path), ruta) == (
+        "node-options=--require C:/Users/x/.galaxy-brain/hooks/gb-hook.js")

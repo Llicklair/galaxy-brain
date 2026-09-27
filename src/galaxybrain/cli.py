@@ -1109,6 +1109,15 @@ def cmd_on(args):
         emit("gb no puede exportarlas por ti: un proceso no cambia el entorno de")
         emit("quien lo llamo. Pegalas en el shell que lance tus procesos y")
         emit("`gb status` pasara a decir 'armado' en esos lenguajes.")
+        # En un proyecto npm hay un canal que SI persiste: `node-options` del
+        # .npmrc se aplica a todo `npm run` (Mario Figueras, 27-sep-2026).
+        hook_js = next((f["ruta"] for f in fichas if f["lenguaje"] == "js"), None)
+        linea_npmrc = hook_js and consola.sugerencia_npmrc(os.getcwd(), hook_js)
+        if linea_npmrc:
+            emit("")
+            emit("Este proyecto es npm: para js/ts hay un canal que persiste. En su .npmrc")
+            emit("(fuera de git: la ruta es de esta maquina):")
+            emit("  " + linea_npmrc)
         return 0
 
     ok, message = bootstrap.enable()
