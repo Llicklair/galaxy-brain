@@ -1656,6 +1656,71 @@ def _dueno_y_herencia(root, informe, cabeceras, definidos, por_modulo, lengua_de
         informe.setdefault("unresolved", {})["base-sin-resolver"] = sin
 
 
+_FAMILIA_JS = ("js", "ts", "tsx")
+
+#: Lo que un fichero JS/TS liga en su propio ambito: declaraciones con nombre
+#: (`const/let/var x =`, `function x`, `class x`). Sintaxis, no inferencia.
+_LIGADO_JS = re.compile(
+    r"(?:\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*[=:]"
+    r"|\bfunction\s*\*?\s*([A-Za-z_$][\w$]*)"
+    r"|\bclass\s+([A-Za-z_$][\w$]*))")
+
+_LIGADOS_CACHE = {}
+
+
+def _ligados_js(fichero):
+    """Nombres ligados en el propio fichero, para que una llamada local no se
+    resuelva contra un homonimo de otro modulo. Ilegible: vacio (no tapa nada,
+    se resuelve como siempre).
+
+    Una declaracion cuyo valor sale de `require(`/`import(` NO cuenta: `const
+    cerrar = require('../control').cerrar` liga local un simbolo de fuera, y
+    taparlo perderia una arista real — un verde falso en la seleccion."""
+    try:
+        clave = (fichero, os.path.getmtime(fichero))
+    except OSError:
+        return set()
+    if clave not in _LIGADOS_CACHE:
+        try:
+            with open(fichero, encoding="utf-8", errors="replace") as fh:
+                texto = fh.read()
+        except OSError:
+            texto = ""
+        ligados = set()
+        for m in _LIGADO_JS.finditer(texto):
+            fin = texto.find("\n", m.end())
+            resto = texto[m.end():fin if fin != -1 else len(texto)]
+            if "require(" in resto or "import(" in resto:
+                continue
+            ligados.add(m.group(1) or m.group(2) or m.group(3))
+        # Lo que el fichero IMPORTA nunca cuenta como local: la regla mira el
+        # fichero entero, no el ambito, y un `const piel` en otra funcion
+        # tapaba el `piel` importado de malla-sdf (infinite-desk, medido al
+        # introducir esto: una arista real perdida).
+        _LIGADOS_CACHE[clave] = ligados - _importados_js(texto)
+    return _LIGADOS_CACHE[clave]
+
+
+_IMPORT_JS = re.compile(r"\bimport\s+(?:type\s+)?([^;'\"]*?)\s+from\s", re.S)
+
+
+def _importados_js(texto):
+    """Nombres que traen los `import ... from` del fichero (por defecto y con
+    llaves, con su alias `as`)."""
+    nombres = set()
+    for clausula in _IMPORT_JS.findall(texto):
+        defecto, _, llaves = clausula.partition("{")
+        defecto = defecto.strip().rstrip(",").strip()
+        if defecto and not defecto.startswith("*") and defecto.isidentifier():
+            nombres.add(defecto)
+        for trozo in llaves.split("}")[0].split(","):
+            partes = trozo.replace("type ", "").split(" as ")
+            nombre = partes[-1].strip()
+            if nombre.isidentifier():
+                nombres.add(nombre)
+    return nombres
+
+
 def _misma_familia(candidatos, lang, lengua_de):
     """Deja solo los candidatos que un fichero de `lang` puede llamar por nombre."""
     mia = _familia(lang)
@@ -2798,6 +2863,16 @@ def analyze(root):
             candidatos = _misma_familia(definidos.get(llamado) or [], lang, lengua_de)
             if not candidatos:
                 sin_resolver["nombre-desconocido"] = sin_resolver.get("nombre-desconocido", 0) + 1
+                continue
+            if (lang in _FAMILIA_JS
+                    and not any(por_modulo.get(q) == entrada[0] for q in candidatos)
+                    and llamado in _ligados_js(fichero)):
+                # `const cerrar = async () => {...}` y luego `cerrar()`: la
+                # funcion local no es un simbolo extraido, y el nombre caia en
+                # el `cerrar` de OTRO modulo — un cruce por llamada inventado
+                # que bloqueo el gate de nihonworld (27-sep-2026). Lo ligado en
+                # el propio fichero tapa lo de fuera: ambito lexico, un hecho.
+                sin_resolver["ligado-local"] = sin_resolver.get("ligado-local", 0) + 1
                 continue
             if len(candidatos) > 1:
                 # Homonimos en modulos distintos, y uno de ellos es el PROPIO

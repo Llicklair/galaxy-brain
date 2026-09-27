@@ -506,3 +506,59 @@ def test_swift_extrae_cada_forma_de_func_de_su_lista(tmp_path):
     informe = lenguajes.analyze(str(tmp_path))
     vistos = {n["qual"] for n in informe["nodes"] if n["kind"] == "function"}
     assert esperados <= vistos, "swift no ve: %s" % sorted(esperados - vistos)
+
+
+@necesita_astgrep
+def test_un_nombre_ligado_en_el_propio_fichero_js_no_se_resuelve_fuera(tmp_path):
+    """`const cerrar = async () => {...}` y luego `cerrar()`: la llamada es la
+    local, y se resolvia contra un `cerrar` de OTRO modulo, bloqueando el gate
+    con un cruce por llamada inventado (nihonworld, informe de Mario Figueras,
+    27-sep-2026). Lo local tapa lo de fuera: es ambito lexico, un hecho."""
+    root = str(tmp_path / "web")
+    os.makedirs(os.path.join(root, "control"))
+    os.makedirs(os.path.join(root, "e2e"))
+    with open(os.path.join(root, "control", "index.ts"), "w", encoding="utf-8") as fh:
+        fh.write("export function cerrar() { return 1; }\nexport function abrir() { return 2; }\n")
+    with open(os.path.join(root, "e2e", "humo.mjs"), "w", encoding="utf-8") as fh:
+        fh.write("const cerrar = async () => { return 0; };\nawait cerrar();\n")
+    with open(os.path.join(root, "e2e", "otro.ts"), "w", encoding="utf-8") as fh:
+        fh.write("import { abrir } from '../control/index';\n"
+                 "export function usa() { return abrir(); }\n")
+
+    llamadas = {(e[0], e[1]) for e in lenguajes.analyze(root)["edges"] if e[2] == "CALLS"}
+    assert not any(d.endswith("cerrar") for _o, d in llamadas), llamadas
+    assert any(d.endswith("abrir") for _o, d in llamadas), llamadas   # el control
+
+
+@necesita_astgrep
+def test_un_const_que_viene_de_require_si_se_resuelve_fuera(tmp_path):
+    """El reverso: `const cerrar = require(...).cerrar` liga local algo de
+    FUERA. Taparlo perderia una arista real, un verde falso en la seleccion."""
+    root = str(tmp_path / "web")
+    os.makedirs(os.path.join(root, "control"))
+    os.makedirs(os.path.join(root, "app"))
+    with open(os.path.join(root, "control", "index.js"), "w", encoding="utf-8") as fh:
+        fh.write("function cerrar() { return 1; }\nmodule.exports = { cerrar };\n")
+    with open(os.path.join(root, "app", "main.js"), "w", encoding="utf-8") as fh:
+        fh.write("const cerrar = require('../control/index').cerrar;\n"
+                 "function corre() { return cerrar(); }\nmodule.exports = { corre };\n")
+
+    llamadas = {(e[0], e[1]) for e in lenguajes.analyze(root)["edges"] if e[2] == "CALLS"}
+    assert any(d.endswith("cerrar") for _o, d in llamadas), llamadas
+
+
+@necesita_astgrep
+def test_lo_importado_no_lo_tapa_un_homonimo_local_en_otra_funcion(tmp_path):
+    """La regla mira el fichero entero, no el ambito: un `const piel` dentro
+    de otra funcion tapaba el `piel` IMPORTADO (infinite-desk, 27-sep-2026)."""
+    root = str(tmp_path / "web")
+    os.makedirs(root)
+    with open(os.path.join(root, "malla.js"), "w", encoding="utf-8") as fh:
+        fh.write("export function piel(x) { return x; }\n")
+    with open(os.path.join(root, "zorro.js"), "w", encoding="utf-8") as fh:
+        fh.write("import { piel } from './malla.js';\n"
+                 "export function forma() { return piel(1); }\n"
+                 "export function otra() { const piel = 2; return piel; }\n")
+
+    llamadas = {(e[0], e[1]) for e in lenguajes.analyze(root)["edges"] if e[2] == "CALLS"}
+    assert any(d.endswith("piel") for _o, d in llamadas), llamadas
