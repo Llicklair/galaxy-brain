@@ -617,3 +617,67 @@ def test_proponer_fronteras_resuelve_el_aviso_de_los_sin_aristas(tmp_path, capsy
     salida = capsys.readouterr().out
     assert "FUERA = pkg" in salida, salida
     assert "a mano" in salida and "pkg.medio" in salida, salida
+
+
+def test_reglas_escritas_antes_que_el_codigo_avisan_sin_bloquear(tmp_path):
+    """`floor` pide declarar las fronteras ANTES del codigo, y el gate las
+    rechazaba: con 0 modulos ninguna regla puede casar, y el aviso no
+    distingue "typo" de "todavia no existe" (nihonworld, Mario Figueras,
+    27-sep-2026). Con el arbol vacio no hay cruce posible: bloquear no
+    protege nada. Con arbol, una regla huerfana sigue bloqueando."""
+    import subprocess
+
+    from galaxybrain import cli
+
+    root = str(tmp_path)
+    subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+    _write(root, ".gb-boundaries",
+           "A = api.uno, api.dos\nB = api.tres\nA -/-> B\n")
+
+    vacio = graph.analyze(root)
+    assert vacio["modules"] == 0
+    assert cli._graph_gate(vacio) == 0
+    salida = _plain(vacio)
+    assert "todavia" in salida and salida.count("AVISO: la regla") == 0, salida
+
+    _write(root, "api/__init__.py", "")
+    _write(root, "api/uno.py", "")
+    assert cli._graph_gate(graph.analyze(root)) == 1   # con arbol, typo o no, bloquea
+
+
+def test_cero_modulos_en_la_raiz_de_un_repo_sin_codigo_no_bloquea(tmp_path):
+    """El repo recien creado: `floor --init` deja el pre-commit y el primer
+    commit (documentos, sin codigo) moria en "0 modulos: esta gate no
+    comprueba nada" (nihonworld, 27-sep-2026). Es un hecho distinto de una
+    ruta mal escrita: la raiz del repo, sin nada anidado sin mirar."""
+    import subprocess
+
+    root = str(tmp_path)
+    subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+    _write(root, "README.md", "# nada\n")
+    assert cli._graph_gate(graph.analyze(root)) == 0
+
+
+def test_cero_modulos_en_una_subcarpeta_sigue_bloqueando(tmp_path):
+    """El caso para el que existe la puerta: un typo en la ruta del hook y el
+    gate no vuelve a mirar jamas."""
+    import subprocess
+
+    root = str(tmp_path)
+    subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+    _write(root, "app/core.py", "x = 1\n")
+    os.makedirs(os.path.join(root, "vacio"))
+    assert cli._graph_gate(graph.analyze(os.path.join(root, "vacio"))) == 1
+
+
+def test_cero_modulos_con_codigo_que_el_motor_no_leyo_sigue_bloqueando(tmp_path):
+    """Un repo solo TS sin ast-grep tambien da 0 modulos en la raiz: eso es
+    "motor sin correr", no "aun no hay codigo", y no puede pasar en verde."""
+    import subprocess
+
+    root = str(tmp_path)
+    subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+    _write(root, "src/app.ts", "export const x = 1;\n")
+    report = graph.analyze(root)
+    report["modules"] = 0          # lo que veria un gb sin ast-grep
+    assert cli._graph_gate(report) == 1

@@ -2344,6 +2344,27 @@ def cmd_memory(args):
     return 0
 
 
+def _repo_sin_codigo(report):
+    """¿El informe es de la RAIZ de un repo git y no quedo nada anidado sin
+    analizar? Entonces 0 modulos es "aun no hay codigo", no "ruta equivocada"."""
+    from .graph import _git
+
+    raiz = report.get("root") or ""
+    if not raiz or report.get("skipped_nested"):
+        return False
+    toplevel = (_git(raiz, "rev-parse", "--show-toplevel") or "").strip()
+    if not toplevel or (os.path.normcase(os.path.abspath(toplevel))
+                        != os.path.normcase(os.path.abspath(raiz))):
+        return False
+    # Y de verdad sin codigo: un repo solo TS sin ast-grep tambien da 0
+    # modulos, y eso es "motor sin correr", no "aun no hay codigo".
+    from . import lenguajes
+
+    ficheros = (_git(raiz, "ls-files", "--cached", "--others", "--exclude-standard") or "")
+    return not any(f.endswith(".py") or lenguajes.lenguaje_de(f)
+                   for f in ficheros.splitlines())
+
+
 def _graph_gate(report):
     """Código de salida del --gate. Con --since, falla solo con ciclos NUEVOS;
     sin --since, estricto (cualquier ciclo). Si no se puede comparar la baseline,
@@ -2352,10 +2373,14 @@ def _graph_gate(report):
     # fichero ilegible, línea mal escrita, o una regla que no casa con ningún
     # módulo. Pasar en verde con eso sería la falsa cobertura que la gate existe
     # para evitar (el peor fallo de una gate).
+    # Excepcion: con 0 modulos ninguna regla PUEDE casar — son las fronteras
+    # escritas antes que el codigo, que es justo lo que `floor` pide — y sin
+    # modulos no hay cruce posible que proteger. Bloquear ahi era el huevo y
+    # la gallina de nihonworld (Mario Figueras, 27-sep-2026). Se avisa.
     if (
         report.get("boundaries_error")
         or report.get("malformed_boundaries")
-        or report.get("unmatched_rules")
+        or (report.get("unmatched_rules") and report.get("modules"))
     ):
         return 1
     # Una superficie publica rota es un HECHO declarado, igual que un cruce de
@@ -2399,6 +2424,15 @@ def _graph_gate(report):
     if report.get("root_error"):
         sys.stderr.write("[gb graph] %s\n" % report["root_error"])
         return 1
+    if not report["modules"] and _repo_sin_codigo(report):
+        # El OTRO 0 modulos: la raiz del repo, sin nada anidado sin mirar, y sin
+        # un solo fichero de codigo. No es una ruta mal escrita: es un repo que
+        # aun no tiene codigo — el de `floor --init`, cuyo primer commit moria
+        # aqui (nihonworld, 27-sep-2026). Se dice, y no se bloquea.
+        sys.stderr.write(
+            "[gb graph] 0 modulos: este repo todavia no tiene codigo, asi que la gate "
+            "no comprueba nada. No bloquea; mirara en cuanto exista el primer modulo.\n")
+        return 0
     if not report["modules"]:
         sys.stderr.write(
             "[gb graph] 0 modulos bajo %s: esta gate no comprueba nada, asi que no "

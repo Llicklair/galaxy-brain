@@ -745,7 +745,16 @@ def render_graph(report, style, brief=False):
                 "%d arista(s) de lanzamiento (un proceso lanza a otro, leido del codigo): %s"
                 % (len(lanzamientos), muestra), DIM))
         lines.extend(render_sin_regla(report, style))
-        for u in report.get("unmatched_rules", []):
+        huerfanas = report.get("unmatched_rules", [])
+        if huerfanas and not report.get("modules"):
+            # Arbol vacio: ninguna regla puede casar todavia, y N avisos iguales
+            # no distinguen typo de "aun no existe". Una linea, sin bloquear.
+            lines.append(style(
+                "  %d regla(s) sin modulos todavia: el arbol esta vacio, asi que no "
+                "pueden casar. Avisan sin bloquear hasta que exista el codigo; entonces "
+                "una que no case sera un typo y bloqueara." % len(huerfanas), YELLOW))
+            huerfanas = []
+        for u in huerfanas:
             lines.append(
                 style("  AVISO: la regla `%s` no casa con ningun modulo (typo o raiz equivocada)." % u["rule"], YELLOW)
             )
