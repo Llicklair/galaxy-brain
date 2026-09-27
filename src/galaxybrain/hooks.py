@@ -158,8 +158,18 @@ def _es_lector_que_se_fue(args):
             errno.EPIPE, errno.EINVAL):
         return False
     objeto = getattr(args, "object", None)
-    return objeto is not None and any(
-        objeto is s for s in (sys.stdout, sys.stderr, sys.__stdout__, sys.__stderr__))
+    if objeto is None:
+        return False
+    # Segun la plataforma avisa una capa u otra del mismo stream: en Windows el
+    # TextIOWrapper, en Linux su BufferedWriter (`.buffer`) — la CI de Linux lo
+    # destapo el 27-sep-2026. Se aceptan las capas y el nombre, que es el hecho.
+    objeto = getattr(objeto, "__self__", objeto)       # un metodo ligado: su dueno
+    capas = []
+    for s in (sys.stdout, sys.stderr, sys.__stdout__, sys.__stderr__):
+        buffer = getattr(s, "buffer", None)
+        capas += [s, buffer, getattr(buffer, "raw", None)]
+    return (any(objeto is c for c in capas if c is not None)
+            or getattr(objeto, "name", None) in ("<stdout>", "<stderr>", 1, 2))
 
 
 def _unraisablehook(args):

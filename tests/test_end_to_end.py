@@ -211,9 +211,13 @@ def test_la_tuberia_cerrada_por_el_lector_no_es_un_fallo(gb_home, child_env):
                             stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     hijo.stdout.close()              # el lector se va antes del flush final
     hijo.wait(timeout=60)
+    avisos = hijo.stderr.read().decode("utf-8", "replace")
     hijo.stderr.close()
 
-    assert store.load() is None, store.load()
+    # Si falla, que diga que llego: la primera vez en la CI de Linux el
+    # mensaje solo traia el diccionario truncado (27-sep-2026).
+    record = store.load()
+    assert record is None, (record and record.get("exception"), avisos[-400:])
 
 
 def test_un_oserror_22_en_un_finalizador_si_se_captura(gb_home, child_env):
