@@ -1980,3 +1980,33 @@ resolver en JS/TS/PHP (por eso tocar un metodo ahi corre todo). Pendiente de la 
 certifica la forma que su autor imagino, y la suite verde durante meses era eso. Añadir un
 lenguaje exige ahora su entrada en el banco de repos reales, no solo su sonda. Suite completa al
 cierre de la tanda: 1099 passed.
+
+## 1-oct-2026 — El A/B que faltaba: el mismo trabajo, con gb y sin gb. Empate, tres veces
+
+La pregunta que el proyecto nunca habia medido: el efecto NETO de gb sobre lo que construye un
+agente. Tres disenos, cada uno mas cerca de donde gb dice aportar, con la suite oculta validada
+antes de gastar (referencia en verde y mutantes muertos) y las metricas escritas antes de correr.
+Mismo modelo en los dos brazos; cada construccion, un `claude -p` aparte con su entorno.
+
+| version | escenario | con gb | sin gb |
+|---|---|---|---|
+| v1 | `almacen` (FIFO), 2 fases, spec con la ley escrita | 35/35, 0 cruces, 1,55 $ | 35/35, 0 cruces, 1,73 $ |
+| v2 | lo mismo + rendimiento, almacenes, devoluciones (4 fases) | 62/62, 0 regresiones, 3,81 $ | 62/62, 0 regresiones, 3,76 $ |
+| v3 | tareas REALES de guardia-mvp (650 nodos), ley SOLO en `src/.gb-boundaries` | 21/21, 0 cruces, 2,29 $ | 21/21, 0 cruces, 1,91 $ |
+
+En la v3 se eligieron las dos tareas con tentacion de arquitectura (`cf01e4d`: el panel no puede
+importar `auditoria`; `1f3c86e`: el guardia de JSON tiene que ser una hoja). El brazo SIN gb no
+cruzo nada porque **leyo la ley**: su primer paso fue `cat src/.gb-boundaries`, y escribio
+`informe.py` con Protocols propios, como la solucion real. En el brazo CON gb el gate no bloqueo
+nunca: no hubo nada que bloquear.
+
+**Lo que dice.** Para un agente capaz con las reglas escritas y a su alcance, hacerlas cumplir no
+cambia el resultado: las cumple solo. El valor que se ve no esta en el gate sino en que la ley
+EXISTA por escrito — y eso es lo que provoca `floor --init`. Ese es el siguiente A/B (repo vacio y
+encargo vago, con `floor --init` y sin el), junto con el de agentes en paralelo, el unico sitio
+donde un agente no puede ver lo que hace otro por mucho que lea (`converge`: 10/10, 13-ago).
+
+**Lo que no dice.** n pequeño (1 par por version, 2 tareas en la v3): solo efectos grandes. Un
+modelo fuerte; con uno mas debil el resultado puede cambiar. Y la consola no se midio: en ninguna
+construccion hubo un crash que capturar. Bancos en `bancos/ab_dos_repos` y `bancos/ab_repo_grande`;
+las construcciones, fuera del repo, en `../ab-gb/`.

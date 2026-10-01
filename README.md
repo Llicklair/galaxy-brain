@@ -724,6 +724,14 @@ upload it nowhere.**
 - **Adoption is the one thing not measured.** Latency, overhead, recall and coverage all have
   numbers behind them. Whether people keep using it does not — and by rule 10, if you stop, that
   gets investigated, never blocked with a hook that forces you back.
+- **On a single capable agent, the net effect measured so far is zero.** Three A/B runs on
+  2026-10-01 (same model, same task, with gb and without): a FIFO inventory CLI in two and four
+  phases, and two real tasks replayed from a 650-module repo whose architecture lives only in
+  `.gb-boundaries`. Both arms passed every hidden test with zero boundary crossings — the agent
+  without gb simply *read* the boundaries file and obeyed it, and the gate never had anything to
+  block. What made the rules hold was that they were **written down**, not enforced. Small n,
+  one model; parallel agents and `floor --init` on an empty repo are the next measurements
+  (`docs/pruebas-de-uso.md`, 1-oct-2026).
 
 ---
 
