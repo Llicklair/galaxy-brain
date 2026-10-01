@@ -1151,6 +1151,19 @@ def _proponer_fronteras(report, fronteras, args):
         return 0
     st = _style(args)
 
+    def _hojas():
+        # La ley que el A/B v3 mostro que sostiene la arquitectura: la escrita
+        # CON su porque. El agente la lee y la cumple; aqui sale lista para
+        # pegar, con la razon encima de cada regla (1-oct-2026).
+        if not p.get("hojas"):
+            return
+        emit("")
+        emit(st("HOJAS", "bold") + " - no importan nada del proyecto, y otros dependen de ellas:")
+        for h in p["hojas"]:
+            emit("# %s: hoy no importa ningun modulo del proyecto; la importan %s"
+                 % (h["modulo"], ", ".join(h["importado_por"])))
+            emit("%s -/-> *" % h["modulo"])
+
     def _sin_colocar():
         # Lo que el aviso "sin ninguna regla" nombra y la forma no coloca: sin
         # esto, seguir la pista del aviso no lo cerraba (guardia-mvp, 25-sep-2026).
@@ -1165,6 +1178,7 @@ def _proponer_fronteras(report, fronteras, args):
 
     if p["motivo"]:
         emit(st("sin candidatas: %s" % p["motivo"], "dim"))
+        _hojas()
         _sin_colocar()
         return 0
     ya = sum(1 for x in p["pares"] if x["ya_declarada"])
@@ -1190,6 +1204,7 @@ def _proponer_fronteras(report, fronteras, args):
     emit(st("  Esto es la FORMA del grafo, no el significado: si un modulo de",
             "dim"))
     emit(st("  presentacion resulta ser estable, sale en BASE. Muevelo tu.", "dim"))
+    _hojas()
     _sin_colocar()
     return 0
 

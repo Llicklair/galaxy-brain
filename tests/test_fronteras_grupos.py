@@ -138,3 +138,45 @@ def test_un_repo_diminuto_no_da_candidatas():
     p = graph.proponer_fronteras(_informe({"a": 1}, {"b": 1}, [["b", "a"]]))
 
     assert p["pares"] == [] and p["motivo"]
+
+
+# --- hojas: lo que hoy no importa nada del proyecto -----------------------------
+
+
+def test_propone_como_hoja_lo_que_no_importa_nada_y_varios_importan():
+    """La ley que sostuvo la arquitectura en el A/B v3 era de hojas. Derivarla
+    del grafo es escribir la que nadie escribio (1-oct-2026)."""
+    p = graph.proponer_fronteras(_informe(
+        {"modelo": 3, "fifo": 1, "util": 1},
+        {"cli": 3, "fifo": 1, "lectura": 1},
+        [["cli", "fifo"], ["cli", "modelo"], ["fifo", "modelo"], ["lectura", "modelo"],
+         ["cli", "util"]]))
+    assert [h["modulo"] for h in p["hojas"]] == ["modelo"]       # util: solo 1 la importa
+    assert p["hojas"][0]["importado_por"] == ["cli", "fifo", "lectura"]
+
+
+def test_no_propone_la_hoja_ya_declarada_ni_un_paquete_con_submodulos():
+    p = graph.proponer_fronteras(_informe(
+        {"pkg.modelo": 2, "pkg": 2, "pkg.sub": 0},
+        {"pkg.cli": 1, "pkg.fifo": 1},
+        [["pkg.cli", "pkg.modelo"], ["pkg.fifo", "pkg.modelo"],
+         ["pkg.cli", "pkg"], ["pkg.fifo", "pkg"]]),
+        declaradas=[("pkg.modelo", "*")])
+    assert p["hojas"] == []
+
+
+def test_la_propuesta_de_hojas_sale_con_su_porque(tmp_path, capsys):
+    from galaxybrain import cli
+
+    root = str(tmp_path)
+    for rel, texto in {"pkg/__init__.py": "", "pkg/modelo.py": "",
+                       "pkg/fifo.py": "from pkg import modelo\n",
+                       "pkg/lectura.py": "from pkg import modelo\n",
+                       "pkg/cli.py": "from pkg import fifo, lectura, modelo\n"}.items():
+        ruta = os.path.join(root, *rel.split("/"))
+        os.makedirs(os.path.dirname(ruta), exist_ok=True)
+        open(ruta, "w", encoding="utf-8").write(texto)
+    assert cli.main(["graph", root, "--proponer-fronteras"]) == 0
+    salida = capsys.readouterr().out
+    assert "pkg.modelo -/-> *" in salida, salida
+    assert "# pkg.modelo:" in salida and "pkg.cli" in salida, salida

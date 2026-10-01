@@ -824,6 +824,36 @@ def load_boundaries(root, path=None):
             "error": None, "path": path}
 
 
+def proponer_hojas(report, declaradas=()):
+    """Las HOJAS de hoy: modulos que no importan nada del proyecto y de los que
+    dependen al menos dos. Para cada una, `X -/-> *` y su porque.
+
+    Es la ley que sostuvo la arquitectura en el A/B v3 (1-oct-2026): el agente
+    sin gb leyo `.gb-boundaries` y respeto las hojas (json_hostil, el informe
+    que no importa ningun modulo del dominio) porque estaban ESCRITAS con su
+    razon. En un repo real casi nunca lo estan; derivarlas es escribir la ley
+    que nadie escribio. Se proponen, no se escriben (regla 9). Fuera: los tests,
+    los paquetes con submodulos (`pkg -/-> *` se cubriria a si mismo y no diria
+    nada) y las hojas que ya estan declaradas.
+    """
+    aristas = [(a, b) for a, b in (report.get("edge_list") or []) if a != b]
+    modulos = ({a for a, _ in aristas} | {b for _, b in aristas}
+               | set(report.get("fan_in") or {}) | set(report.get("fan_out") or {}))
+    importan = {a for a, _ in aristas}
+    importadores = {}
+    for a, b in aristas:
+        importadores.setdefault(b, set()).add(a)
+    ya = {src for src, dst in declaradas if dst == TODOS}
+    hojas = []
+    for m in sorted(modulos):
+        quien = sorted(q for q in importadores.get(m, ()) if not es_modulo_de_test(q))
+        if (m in importan or len(quien) < 2 or m in ya or es_modulo_de_test(m)
+                or any(otro.startswith(m + ".") for otro in modulos)):
+            continue
+        hojas.append({"modulo": m, "importado_por": quien})
+    return hojas
+
+
 def proponer_fronteras(report, declaradas=()):
     """Fronteras CANDIDATAS derivadas del grafo, para pegar en `.gb-boundaries`.
 
@@ -851,8 +881,10 @@ def proponer_fronteras(report, declaradas=()):
     # 25-sep-2026): un modulo sin aristas no es base ni borde de nada.
     sin_regla = report.get("modulos_sin_regla") or []
     fuera = sin_aristas(report, sin_regla)
+    hojas = proponer_hojas(report, declaradas)
     if len(modulos) < 4:
         return {"nucleo": [], "entrada": [], "pares": [], "fuera": fuera, "a_mano": [],
+                "hojas": hojas,
                 "motivo": "hacen falta al menos 4 modulos para que la forma signifique algo"}
 
     # Inestabilidad = cuanto depende de fuera sobre el total de su acoplamiento.
@@ -869,6 +901,7 @@ def proponer_fronteras(report, declaradas=()):
     entradas = sorted(m for m, i in inest.items() if i is not None and i >= 0.75)
     if not nucleo or not entradas:
         return {"nucleo": [], "entrada": [], "pares": [], "fuera": fuera, "a_mano": [],
+                "hojas": hojas,
                 "motivo": "no hay forma de base/borde en este grafo: nada que proponer"}
 
     existentes = {(a, b) for a, b in (report.get("edge_list") or [])}
@@ -879,10 +912,10 @@ def proponer_fronteras(report, declaradas=()):
             if src == dst or (src, dst) in existentes:
                 continue          # ya se cruza: eso es deuda, no una frontera
             pares.append({"src": src, "dst": dst, "ya_declarada": (src, dst) in ya})
-    colocados = set(nucleo) | set(entradas) | set(fuera)
+    colocados = set(nucleo) | set(entradas) | set(fuera) | {h["modulo"] for h in hojas}
     a_mano = [m for m in sin_regla if m not in colocados]
     return {"nucleo": nucleo, "entrada": entradas, "pares": pares, "fuera": fuera,
-            "a_mano": a_mano, "motivo": ""}
+            "a_mano": a_mano, "hojas": hojas, "motivo": ""}
 
 
 def sin_aristas(report, modulos):
@@ -1041,6 +1074,21 @@ def _under(module, pattern):
     return module == pattern or module.startswith(pattern + ".")
 
 
+#: Destino comodin: `X -/-> *` = X no importa NINGUN modulo del proyecto (salvo
+#: los suyos propios). La hoja: el patron que sostuvo la arquitectura en el A/B
+#: v3 (json_hostil; el informe que no importa ningun modulo del dominio), que
+#: hasta hoy se escribia como una lista de reglas que se quedaba vieja en cuanto
+#: nacia un modulo. Con `*`, el modulo nuevo queda cubierto sin tocar la ley.
+TODOS = "*"
+
+
+def _casa_destino(module, src, dst):
+    """¿`module` cae bajo el DESTINO `dst` de una regla cuyo origen es `src`?"""
+    if dst == TODOS:
+        return not _under(module, src)
+    return _under(module, dst)
+
+
 def find_violations(edges, rules):
     """Aristas (importador -> importado) que cruzan una frontera prohibida.
 
@@ -1051,7 +1099,7 @@ def find_violations(edges, rules):
     for importer in sorted(edges):
         for imported in sorted(edges[importer]):
             for src, dst in rules:
-                if _under(importer, src) and _under(imported, dst):
+                if _under(importer, src) and _casa_destino(imported, src, dst):
                     violations.append(
                         {
                             "importer": importer,
@@ -1088,7 +1136,7 @@ def find_call_violations(llamadas, rules, de_modulo):
         if not mo or not md or mo == md:
             continue
         for src, dst in rules:
-            if _under(mo, src) and _under(md, dst):
+            if _under(mo, src) and _casa_destino(md, src, dst):
                 clave = (mo, md, origen, destino)
                 if clave in vistos:
                     continue
@@ -1216,7 +1264,7 @@ def unmatched_rules(nodes, rules, fuera=()):
     out = []
     for src, dst in rules:
         src_ok = any(_under(m, src) for m in nodes)
-        dst_ok = any(_under(m, dst) for m in nodes)
+        dst_ok = any(_casa_destino(m, src, dst) for m in nodes)
         if not (src_ok and dst_ok):
             out.append(
                 {"rule": "%s -/-> %s" % (src, dst), "src_matches": src_ok, "dst_matches": dst_ok}
@@ -1487,7 +1535,7 @@ def analyze(root, skip=DEFAULT_SKIP, since=None, boundaries=None, smells=False,
                 report["new_edges_sin_regla"] = sorted(
                     ({"src": s, "dst": d}
                      for s, d in nuevas
-                     if not any(_under(s, rs) and _under(d, rd) for rs, rd in rules)
+                     if not any(_under(s, rs) and _casa_destino(d, rs, rd) for rs, rd in rules)
                      and not es_modulo_de_test(s)),
                     key=lambda e: (e["src"], e["dst"]),
                 )

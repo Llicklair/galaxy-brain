@@ -681,3 +681,52 @@ def test_cero_modulos_con_codigo_que_el_motor_no_leyo_sigue_bloqueando(tmp_path)
     report = graph.analyze(root)
     report["modules"] = 0          # lo que veria un gb sin ast-grep
     assert cli._graph_gate(report) == 1
+
+
+# --- la hoja: `X -/-> *` ------------------------------------------------------
+
+
+def test_una_hoja_no_importa_nada_del_proyecto(tmp_path):
+    """`X -/-> *`: X no importa ningun modulo del proyecto. Es el patron que
+    sostuvo la arquitectura en el A/B v3 (json_hostil, el informe que "no
+    importa ningun modulo del dominio") y hasta hoy se escribia como una lista
+    de reglas que se quedaba vieja en cuanto nacia un modulo (1-oct-2026)."""
+    root = str(tmp_path)
+    _write(root, ".gb-boundaries", "pkg.modelo -/-> *\n")
+    _write(root, "pkg/__init__.py", "")
+    _write(root, "pkg/modelo.py", "")
+    _write(root, "pkg/fifo.py", "from pkg import modelo\n")
+    report = graph.analyze(root)
+    assert report["violations"] == [] and report["unmatched_rules"] == [], report
+    assert cli._graph_gate(report) == 0
+
+    _write(root, "pkg/modelo.py", "from pkg import fifo\n")
+    report = graph.analyze(root)
+    assert [(v["importer"], v["imported"]) for v in report["violations"]] == [
+        ("pkg.modelo", "pkg.fifo")]
+
+
+def test_la_hoja_puede_importar_sus_propios_submodulos(tmp_path):
+    root = str(tmp_path)
+    _write(root, ".gb-boundaries", "pkg.modelo -/-> *\n")
+    _write(root, "pkg/__init__.py", "")
+    _write(root, "pkg/modelo/__init__.py", "from pkg.modelo import tipos\n")
+    _write(root, "pkg/modelo/tipos.py", "")
+    assert graph.analyze(root)["violations"] == []
+
+
+def test_un_modulo_nuevo_queda_cubierto_por_la_hoja_sin_tocar_la_ley(tmp_path):
+    root = str(tmp_path)
+    _write(root, ".gb-boundaries", "pkg.modelo -/-> *\n")
+    _write(root, "pkg/__init__.py", "")
+    _write(root, "pkg/nuevo.py", "")
+    _write(root, "pkg/modelo.py", "from pkg import nuevo\n")
+    assert len(graph.analyze(root)["violations"]) == 1
+
+
+def test_una_hoja_cuyo_origen_no_existe_si_es_huerfana(tmp_path):
+    root = str(tmp_path)
+    _write(root, ".gb-boundaries", "pkg.fantasma -/-> *\n")
+    _write(root, "pkg/__init__.py", "")
+    _write(root, "pkg/a.py", "")
+    assert [u["rule"] for u in graph.analyze(root)["unmatched_rules"]] == ["pkg.fantasma -/-> *"]
