@@ -42,6 +42,11 @@ unidades vendidas; `margen` = ingresos - coste. Solo aparecen los sku con alguna
 JSON: `{"skus": {"SKU": {"ingresos": "0.00", "coste": "0.00", "margen": "0.00"}, ...},
 "total": {"ingresos": "0.00", "coste": "0.00", "margen": "0.00"}}`.
 
+## Rendimiento
+
+Un fichero de **100.000 movimientos** se procesa en **menos de 5 segundos** en un portatil
+normal, con cualquiera de los tres comandos. Un almacen real tiene historias largas.
+
 ## Errores (contrato)
 
 | situacion | salida | stderr |

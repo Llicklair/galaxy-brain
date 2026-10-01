@@ -17,12 +17,14 @@ AQUI = os.path.dirname(os.path.abspath(__file__))
 
 #: (nombre, fichero, texto original, texto mutado)
 MUTANTES = [
+    # --- fases 1 y 2 ---
     ("sin ordenar por fecha", "lectura.py",
-     "return sorted(movimientos, key=lambda m: m.fecha)", "return movimientos"),
+     "movimientos.sort(key=lambda m: m.fecha)", "pass"),
     ("orden no estable (entradas antes a igual fecha)", "lectura.py",
-     "key=lambda m: m.fecha)", "key=lambda m: (m.fecha, m.tipo != 'entrada'))"),
+     "movimientos.sort(key=lambda m: m.fecha)",
+     "movimientos.sort(key=lambda m: (m.fecha, m.tipo != 'entrada'))"),
     ("LIFO en vez de FIFO", "fifo.py",
-     "capa = cola[0]", "capa = cola[-1]"),
+     "capa = self.capas[0]", "capa = self.capas[-1]"),
     ("redondeo intermedio en el total", "informes.py",
      'total = importe(sum((v for _n, v in datos.values()), Decimal("0")))',
      'total = importe(sum((Decimal(importe(v)) for _n, v in datos.values()), Decimal("0")))'),
@@ -30,13 +32,41 @@ MUTANTES = [
      "    except EntradaInvalida as e:\n        print(str(e), file=sys.stderr)\n        return 2\n",
      ""),
     ("el periodo recorta la historia FIFO", "fifo.py",
-     "        hay = sum(c[0] for c in cola)",
-     "        if not ((desde is None or m.fecha >= desde) and (fin is None or m.fecha <= fin)):\n"
-     "            continue\n        hay = sum(c[0] for c in cola)"),
+     "        if m.cantidad > origen.total:",
+     "        if m.tipo != 'traspaso' and not ((desde is None or m.fecha >= desde)"
+     " and (fin is None or m.fecha <= fin)):\n            continue\n"
+     "        if m.cantidad > origen.total:"),
     ("la baja usa su precio", "fifo.py",
      'r["mermas"] += coste', 'r["mermas"] += m.cantidad * m.precio'),
     ("stock incluye los sku a cero", "fifo.py",
-     "for s, cola in capas.items()) if n}", "for s, cola in capas.items())}"),
+     "return {s: n for s, n in total.items() if n}", "return dict(total)"),
+    # --- rendimiento ---
+    ("stock recalculado sumando capas (cuadratico)", "fifo.py",
+     "        if m.cantidad > origen.total:",
+     "        origen.total = sum(c[0] for c in origen.capas)\n"
+     "        if m.cantidad > origen.total:"),
+    # --- fase 3 ---
+    ("el traspaso pierde el coste de cada capa", "fifo.py",
+     "                destino.mete(cantidad, unitario)",
+     "                destino.mete(cantidad, consumidas[0][1])"),
+    ("el traspaso entra delante", "fifo.py",
+     "                destino.mete(cantidad, unitario)",
+     "                destino.capas.appendleft([cantidad, unitario])\n"
+     "                destino.total += cantidad"),
+    ("--almacen ignorado", "fifo.py",
+     "        if almacen is None or alm == almacen:", "        if True:"),
+    ("destino admitido fuera de un traspaso", "lectura.py",
+     "    elif destino:", "    elif False:"),
+    # --- fase 4 ---
+    ("la devolucion vuelve en orden FIFO", "fifo.py",
+     "                cantidad, unitario = pendientes[-1]\n",
+     "                cantidad, unitario = pendientes[0]\n"
+     "                pendientes.append(pendientes.pop(0))\n"),
+    ("la devolucion no resta coste", "fifo.py",
+     '                r["coste"] -= coste', "                pass"),
+    ("lo devuelto no se suma entre devoluciones", "lectura.py",
+     "devuelto[m.ref] = devuelto.get(m.ref, 0) + m.cantidad",
+     "devuelto[m.ref] = m.cantidad"),
 ]
 
 

@@ -22,9 +22,11 @@ def _parser():
     s = sub.add_parser("stock")
     s.add_argument("csv")
     s.add_argument("--fecha", type=_fecha)
+    s.add_argument("--almacen")
     s.add_argument("--json", action="store_true")
     v = sub.add_parser("valoracion")
     v.add_argument("csv")
+    v.add_argument("--almacen")
     v.add_argument("--json", action="store_true")
     m = sub.add_parser("margen")
     m.add_argument("csv")
@@ -39,11 +41,11 @@ def main(argv=None):
     try:
         movimientos = lectura.leer(args.csv)
         if args.comando == "stock":
-            capas, _ = fifo.procesar(movimientos, hasta=args.fecha)
-            print(informes.stock(fifo.stock(capas), args.json))
+            colas, _ = fifo.procesar(movimientos, hasta=args.fecha)
+            print(informes.stock(fifo.stock(colas, args.almacen), args.json))
         elif args.comando == "valoracion":
-            capas, _ = fifo.procesar(movimientos)
-            print(informes.valoracion(fifo.valor(capas), args.json))
+            colas, _ = fifo.procesar(movimientos)
+            print(informes.valoracion(fifo.valor(colas, args.almacen), args.json))
         else:
             _, ventas = fifo.procesar(movimientos, periodo=(args.desde, args.hasta))
             print(informes.margen(ventas, args.json))

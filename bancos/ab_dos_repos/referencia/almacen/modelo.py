@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 from decimal import Decimal
 
-TIPOS = ("entrada", "salida", "baja")
+TIPOS = ("entrada", "salida", "baja", "traspaso", "devolucion")
 
 
 @dataclass(frozen=True)
@@ -14,6 +14,9 @@ class Movimiento:
     tipo: str
     cantidad: int
     precio: Decimal
+    almacen: str = "central"
+    destino: str = ""
+    ref: int = 0
 
 
 class EntradaInvalida(Exception):
@@ -21,4 +24,4 @@ class EntradaInvalida(Exception):
 
 
 class StockInsuficiente(Exception):
-    """Una salida o baja pide mas de lo que hay. Exit 3."""
+    """Una salida, baja o traspaso pide mas de lo que hay. Exit 3."""
