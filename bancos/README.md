@@ -103,6 +103,25 @@ quien escribió el banco. El oráculo no fabrica nada. Corre la suite real de es
 como verdad para todos los símbolos a la vez. Es la única medida de la selección que no sale del
 grafo que se está juzgando.
 
+### Los A/B "con gb y sin gb" con agentes (1–2 oct 2026)
+
+Mismo modelo en los dos brazos, suite oculta validada antes de gastar, métricas escritas antes de
+correr. Detalle en [docs/pruebas-de-uso.md](../docs/pruebas-de-uso.md) (1 y 2-oct). Los bancos
+cerrados se retiraron del árbol; su código sigue en git: `git show 2b27027:bancos/<banco>/...`.
+
+| A/B | pregunta | resultado | coste | código |
+|---|---|---|---|---|
+| v1, v2 | ¿construye mejor el agente con gb? (`almacen`, 2 y 4 fases) | empate: 35/35 y 62/62 en los dos brazos | ~11 $ | `2b27027:bancos/ab_dos_repos` |
+| v3 | ídem con tareas reales de un repo grande (650 nodos) | empate 21/21; el brazo SIN leyó la ley en `.gb-boundaries` y la cumplió | ~4 $ | `2b27027:bancos/ab_repo_grande` |
+| F | ¿`floor --init` provoca ley escrita? | empate; se rellena lo ejecutable, la prosa no; **+32 %** de coste | ~15 $ | `2b27027:bancos/ab_floor` |
+| L | ¿se enreda menos a la larga? (14 pasos) | misma corrección; la forma se separa en la fase 1, no por el camino; +8 % de coste | ~25 $ | `2b27027:bancos/ab_largo` |
+| B | gb para el ORQUESTADOR, tres agentes en paralelo | la CI por rama rompe main 3/3; el integrador empata con gb y sin gb; el valor es del proceso (verificar la unión antes del merge), no de gb. Igual con Haiku 4.5 | ~7 $ | [ab_paralelo/](ab_paralelo/) (vivo) |
+| SWE | gb donde Opus falla: SWE-bench Verified difícil, sin Docker | en curso | — | [swe_extremos/](swe_extremos/) |
+
+**Lo que dicen juntos.** Un verificador en un banco donde nada se rompe solo mide su coste, y la
+capa que INFORMA al agente no cambia el resultado (lo mismo que el 0/6 del 13-ago). Lo que queda
+por medir es la verificación entregada por el orquestador donde el modelo falla de verdad.
+
 ## Lo que han encontrado, que es el argumento para conservarlos
 
 - Las aristas `CALLS` salían del **módulo** y no de la función que llama, así que la cadena

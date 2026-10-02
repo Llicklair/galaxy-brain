@@ -26,7 +26,7 @@ import xml.etree.ElementTree as ET
 
 AQUI = os.path.dirname(os.path.abspath(__file__))
 RAIZ_GB = os.path.dirname(os.path.dirname(AQUI))
-V2_OCULTA = os.path.join(RAIZ_GB, "bancos", "ab_dos_repos", "oculta", "aceptacion_oculta.py")
+V2_OCULTA = os.path.join(RAIZ_GB, "bancos", "ab_paralelo", "oculta", "aceptacion_v2.py")
 P_OCULTA = os.path.join(AQUI, "oculta", "aceptacion_p.py")
 DESTINO = os.path.join(os.path.dirname(RAIZ_GB), "ab-gb", "p")
 SHIM = os.path.join(DESTINO, "_sin_gb")

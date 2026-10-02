@@ -2008,7 +2008,7 @@ donde un agente no puede ver lo que hace otro por mucho que lea (`converge`: 10/
 
 **Lo que no dice.** n pequeño (1 par por version, 2 tareas en la v3): solo efectos grandes. Un
 modelo fuerte; con uno mas debil el resultado puede cambiar. Y la consola no se midio: en ninguna
-construccion hubo un crash que capturar. Bancos en `bancos/ab_dos_repos` y `bancos/ab_repo_grande`;
+construccion hubo un crash que capturar. Bancos en `bancos/ab_dos_repos` y `bancos/ab_repo_grande` (retirados del arbol el 2-oct; `git show 2b27027:bancos/...`);
 las construcciones, fuera del repo, en `../ab-gb/`.
 
 ## 1-oct-2026 — A/B F: `floor --init` frente a nada. Empate en todo menos en el coste
@@ -2017,7 +2017,7 @@ El siguiente paso que pedia el empate de arriba: si lo que sostiene la ley es qu
 ¿la provoca `floor --init` cuando nadie la da hecha? Encargo con el contrato de `almacen` pero
 SIN arquitectura, sin "lo que no entra" y sin criterio de terminado; luego las fases 2-4 de la
 v2. CON = repo vacio + `floor --init`; SIN = repo vacio y un `gb` falso en el PATH. 2 pares
-(`bancos/ab_floor`).
+(`bancos/ab_floor`, retirado del arbol el 2-oct; `git show 2b27027:bancos/ab_floor/...`).
 
 | | con `floor --init` (2) | sin nada (2) |
 |---|---|---|
@@ -2051,7 +2051,7 @@ andamio podria pesar distinto — esa es la pregunta del L.
 
 ## 2-oct-2026 — A/B L (14 pasos): misma correccion, y la forma se separa en la fase 1, no por el camino
 
-Un par (`bancos/ab_largo`): `almacen` desde cero y 13 peticiones de cambio, cada paso un
+Un par (`bancos/ab_largo`, retirado del arbol el 2-oct; `git show 2b27027:...`): `almacen` desde cero y 13 peticiones de cambio, cada paso un
 `claude -p` nuevo. CON = gate + ley viva + `graph --context` al arrancar; SIN = sin gb.
 
 | | con gb | sin gb |
@@ -2103,5 +2103,12 @@ tocar main, igual que converge. **En este banco el valor es del PROCESO (verific
 del merge), no de gb.** Lo que converge tiene y el script no (atribucion por rama, rescates,
 seleccion de tests) no hizo falta: suite de 0,1 s y ningun rescate.
 
-**Lo que no dice.** Un modelo fuerte en tareas medias sigue en el techo. Siguiente: el mismo
-banco con Haiku 4.5, donde habra fallos que verificar.
+**Con Haiku 4.5** (3 repeticiones, ~1,7 $): igual. Ramas correctas solas, la union no compone
+por un conflicto de texto (A y B añaden tests al final del mismo fichero), ci rompe main 3/3 y los
+dos integradores lo arreglan a 72/72 por lo mismo (0,35 $ frente a 0,37 $). El techo es de la
+TAREA, no del modelo.
+
+**Lo que no dice.** Tareas medias siguen en el techo con cualquier modelo. Siguiente: donde Opus
+falla de verdad — los casos dificiles de SWE-bench Verified, en local y sin Docker
+(`bancos/swe_extremos`). Descuadre de cobertura al prepararlo: gb no sabe correr el runner de
+Django (`tests/runtests.py`), y Django es 22 de las 45 instancias dificiles.
