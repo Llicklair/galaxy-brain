@@ -2010,3 +2010,32 @@ donde un agente no puede ver lo que hace otro por mucho que lea (`converge`: 10/
 modelo fuerte; con uno mas debil el resultado puede cambiar. Y la consola no se midio: en ninguna
 construccion hubo un crash que capturar. Bancos en `bancos/ab_dos_repos` y `bancos/ab_repo_grande`;
 las construcciones, fuera del repo, en `../ab-gb/`.
+
+## 1-oct-2026 — A/B F: `floor --init` frente a nada. Empate en todo menos en el coste
+
+El siguiente paso que pedia el empate de arriba: si lo que sostiene la ley es que este escrita,
+¿la provoca `floor --init` cuando nadie la da hecha? Encargo con el contrato de `almacen` pero
+SIN arquitectura, sin "lo que no entra" y sin criterio de terminado; luego las fases 2-4 de la
+v2. CON = repo vacio + `floor --init`; SIN = repo vacio y un `gb` falso en el PATH. 2 pares
+(`bancos/ab_floor`).
+
+| | con `floor --init` (2) | sin nada (2) |
+|---|---|---|
+| suite oculta, fase 4 | 62/62 y 62/62, 0 regresiones | 62/62 y 62/62, 0 regresiones |
+| mutantes que SU suite mata | 29/30 y 29/30 | 30/30 y 30/30 |
+| forma (modulos · aristas · ciclos · fan-out) | 6 · 4 · 0 · 2, igual en cada fase | 6 · 4 · 0 · 2, igual en cada fase |
+| reglas en `.gb-boundaries` | 0 y 0 | 0 y 0 |
+| marcas `gb:pendiente` que quedan | 8 y 8 (todas) | — |
+| coste | 3,79 $ · 4,57 $ (media 4,18 $, 17 min) | 3,39 $ · 2,96 $ (media 3,18 $, 12 min) |
+
+**Lo que dice.** El andamio no se rellena: el agente construye lo pedido y deja las ocho marcas
+tal cual, sin una sola frontera escrita. No cambia ni la correccion, ni la forma, ni la fuerza de
+los tests; solo cuesta un **32 % mas** — es el contexto que lee y no usa. La hipotesis "`floor`
+provoca la ley escrita" queda refutada para este caso: un andamio vacio no es ley. Consecuencia
+inmediata: el A/B L no lleva el andamio; su brazo CON lleva el gate y la ley VIVA (gb deriva las
+hojas tras cada fase y las escribe con su porque, `X -/-> *`), que es ley que existe sin pedirle
+a nadie que la redacte.
+
+**Lo que no dice.** 2 pares; un modelo fuerte y un proyecto pequeño (6 modulos) donde la forma
+sale igual sin ayuda. Con un encargo que invite a enredarse, o a lo largo de muchos pasos, el
+andamio podria pesar distinto — esa es la pregunta del L.
