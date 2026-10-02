@@ -7,6 +7,7 @@ que si esta, y que declare lo que no puede saber.
 """
 
 import os
+import re
 import subprocess
 
 import pytest
@@ -595,6 +596,26 @@ def test_la_marca_real_se_ve_con_su_linea_incluso_en_un_bloque_de_codigo(tmp_pat
                  % (floor.PENDING_MARK, floor.PENDING_MARK))
     assert floor.pending_sections(root) == ["AGENTS.md"]
     assert floor.pending_marks(root) == {"AGENTS.md": [4, 7]}
+
+
+def test_la_valla_de_terminado_rellena_salda_la_marca_de_su_seccion(tmp_path):
+    """A/B F (1-oct-2026): los dos agentes rellenaron la valla gb:terminado del
+    SCOPE.md de `--init` y dejaron la marca encima. La marca pedia eso; las de
+    las otras secciones siguen contando, y la valla vacia no salda nada."""
+    root = str(tmp_path)
+    subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+    floor.scaffold(root)
+    ruta = os.path.join(root, "SCOPE.md")
+    antes = floor.pending_marks(root)["SCOPE.md"]
+    texto = open(ruta, encoding="utf-8").read()
+    vacia = re.search(r"```gb:terminado\n(.*?)```", texto, re.DOTALL)
+    assert vacia, "init ya no escribe la valla: este test describe otra cosa"
+    relleno = texto[:vacia.start(1)] + "python -m pytest -q\n" + texto[vacia.end(1):]
+    open(ruta, "w", encoding="utf-8").write(relleno)
+    despues = floor.pending_marks(root)["SCOPE.md"]
+    assert len(despues) == len(antes) - 1
+    linea_valla = texto.count("\n", 0, vacia.start()) + 1
+    assert all(i < linea_valla for i in despues)     # las de antes del criterio siguen
 
 
 def test_el_precommit_de_init_lleva_una_marca_de_shell_y_floor_la_ve(tmp_path):

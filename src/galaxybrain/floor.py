@@ -972,11 +972,41 @@ def pending_marks(root):
     for rel in SCAFFOLD_FILES:
         if not _exists(root, *rel.split("/")):
             continue
-        lineas = [i for i, linea in enumerate(_read(root, *rel.split("/")).splitlines(), 1)
-                  if _MARCA_RE.match(linea)]
+        texto = _read(root, *rel.split("/"))
+        cumplidas = _secciones_con_criterio(texto) if rel.endswith(".md") else set()
+        seccion = _secciones(texto)
+        lineas = [i for i, linea in enumerate(texto.splitlines(), 1)
+                  if _MARCA_RE.match(linea) and seccion[i] not in cumplidas]
         if lineas:
             marcas[rel] = lineas
     return marcas
+
+
+def _secciones(texto):
+    """Numero de seccion de cada linea (1-indexada): un encabezado markdown fuera
+    de un bloque de codigo abre seccion; un `# comentario` dentro de uno no."""
+    seccion, dentro, por_linea = 0, False, [0]
+    for linea in texto.splitlines():
+        if linea.startswith("```"):
+            dentro = not dentro
+        elif not dentro and re.match(r"#{1,6}\s", linea):
+            seccion += 1
+        por_linea.append(seccion)
+    return por_linea
+
+
+def _secciones_con_criterio(texto):
+    """Secciones cuya valla ```gb:terminado ya trae un comando. La marca de esa
+    seccion pedia justo eso: el A/B F (1-oct-2026) vio a los dos agentes rellenar
+    la valla y dejar la marca encima, y floor la seguia dando por pendiente."""
+    por_linea = _secciones(texto)
+    cumplidas = set()
+    for m in _CRITERIO_CMD_RE.finditer(texto):
+        comando = [ln for ln in m.group(1).splitlines()
+                   if ln.strip() and not ln.strip().startswith("#")]
+        if comando:
+            cumplidas.add(por_linea[texto.count("\n", 0, m.start()) + 1])
+    return cumplidas
 
 
 #: Orden de la consola en la tabla de cobertura: lo que observa desde dentro,
