@@ -3,6 +3,7 @@
     python bancos/ab_paralelo/correr.py validar          # sin agentes: referencias, gratis
     python bancos/ab_paralelo/correr.py lanzar [--n 3]   # gasta cuota
     python bancos/ab_paralelo/correr.py medir
+    ... --modelo claude-haiku-4-5-20251001   # agentes e integradores; destino ab-gb/p-<modelo>
 
 Una tanda de agentes por repeticion (no ven gb: `gb` falso en el PATH y
 GB_DISABLE), y sobre las MISMAS tres ramas, tres orquestadores (README.md):
@@ -29,6 +30,7 @@ V2_OCULTA = os.path.join(RAIZ_GB, "bancos", "ab_dos_repos", "oculta", "aceptacio
 P_OCULTA = os.path.join(AQUI, "oculta", "aceptacion_p.py")
 DESTINO = os.path.join(os.path.dirname(RAIZ_GB), "ab-gb", "p")
 SHIM = os.path.join(DESTINO, "_sin_gb")
+MODELO = None                    # None: el de la configuracion de claude
 TAREAS = ("a", "b", "c")
 RONDAS = 2                       # intentos del integrador
 #: El unico test de la v2 que cambia con C (0.005 -> "0.01" era HALF_UP); su
@@ -141,7 +143,8 @@ def _claude(cwd, prompt, salida):
     inicio = time.time()
     r = subprocess.run(
         [shutil.which("claude") or "claude", "-p", "--output-format", "json",
-         "--permission-mode", "bypassPermissions", "--max-turns", "80"],
+         "--permission-mode", "bypassPermissions", "--max-turns", "80"]
+        + (["--model", MODELO] if MODELO else []),
         input=prompt, cwd=cwd, env=_entorno_agente(), capture_output=True, text=True,
         encoding="utf-8", errors="replace", timeout=3600)
     try:
@@ -239,7 +242,10 @@ def orquestar(raiz, agentes=True):
     ci_rc, _ = _suite(ci_wt)
     filas = {
         "ramas": ramas,
-        "converge": {"rc": rc_gb, "choque_semantico": "CHOQUE SEMANTICO" in hecho},
+        "converge": {"rc": rc_gb, "choque_semantico": "CHOQUE SEMANTICO" in hecho,
+                     "rescate": "RESCATE ACCIDENTAL" in hecho,
+                     "no_compone": "no se pudo componer" in hecho,
+                     "ramas_rojas": [t for t in TAREAS if "ROJA   %s" % t in hecho]},
         "ci": {"todas_verdes_solas": all(r["visible_sola"] for r in ramas.values()),
                "main_roto": ci_rc != 0, "conflictos": ci_conf,
                "oculta_union": _verdes(oculta(ci_wt, "union"))},
@@ -322,8 +328,12 @@ def medir(_n=None):
         print("== %s  ramas: %s" % (rep, " ".join("%s=%s/%s" % (t, "ok" if r["visible_sola"] else "ROJA",
                                                                    r["oculta_sola"])
                                                    for t, r in f["ramas"].items())))
-        print("   converge rc=%s choque=%s" % (f["converge"]["rc"], f["converge"]["choque_semantico"]))
-        print("   ci : main_roto=%s oculta=%s" % (f["ci"]["main_roto"], f["ci"]["oculta_union"]))
+        c = f["converge"]
+        print("   converge rc=%s choque=%s rescate=%s no_compone=%s rojas=%s" % (
+            c["rc"], c["choque_semantico"], c.get("rescate"), c.get("no_compone"),
+            c.get("ramas_rojas")))
+        print("   ci : main_roto=%s oculta=%s conflictos=%s" % (
+            f["ci"]["main_roto"], f["ci"]["oculta_union"], f["ci"]["conflictos"]))
         for b in ("sin", "con"):
             x = f[b]
             print("   %s: roja_al_merge=%s rondas=%d usd=%.2f seg=%s verde=%s oculta=%s" % (
@@ -335,7 +345,13 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("accion", choices=("validar", "lanzar", "medir"))
     p.add_argument("--n", type=int, default=3)
+    p.add_argument("--modelo")
     a = p.parse_args()
+    if a.modelo:
+        global MODELO, DESTINO, SHIM
+        MODELO = a.modelo
+        DESTINO = DESTINO + "-" + a.modelo.split("-")[1]      # ab-gb/p-haiku
+        SHIM = os.path.join(DESTINO, "_sin_gb")
     {"validar": validar, "lanzar": lanzar, "medir": medir}[a.accion](a.n)
 
 
