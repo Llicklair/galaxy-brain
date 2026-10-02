@@ -2028,10 +2028,18 @@ v2. CON = repo vacio + `floor --init`; SIN = repo vacio y un `gb` falso en el PA
 | marcas `gb:pendiente` que quedan | 8 y 8 (todas) | — |
 | coste | 3,79 $ · 4,57 $ (media 4,18 $, 17 min) | 3,39 $ · 2,96 $ (media 3,18 $, 12 min) |
 
-**Lo que dice.** El andamio no se rellena: el agente construye lo pedido y deja las ocho marcas
-tal cual, sin una sola frontera escrita. No cambia ni la correccion, ni la forma, ni la fuerza de
-los tests; solo cuesta un **32 % mas** — es el contexto que lee y no usa. La hipotesis "`floor`
-provoca la ley escrita" queda refutada para este caso: un andamio vacio no es ley. Consecuencia
+**Lo que dice.** El andamio SE LEE, y se rellena exactamente lo que se ejecuta: en los dos pares
+el agente puso el comando de tests en `## Comandos` de AGENTS.md, en la valla `gb:terminado` de
+SCOPE.md y en el pre-commit. La prosa no: la frase del alcance, "lo que NO entra", la arquitectura,
+las reglas numeradas y las convenciones quedan con su `gb:pendiente`, y no se escribe ni una
+frontera. Para un agente, una peticion en prosa sin comprobacion no es tarea. No cambia ni la
+correccion, ni la forma, ni la fuerza de los tests; solo cuesta un **32 % mas**. La hipotesis
+"`floor` provoca la ley escrita" queda refutada para este caso: un andamio de prosa no es ley.
+
+**Descuadre de gb que deja a la vista.** En SCOPE.md la valla `gb:terminado` esta rellena y la
+marca `gb:pendiente` del criterio de terminado sigue encima: el agente rellena la valla y no
+borra la marca, y `floor` la cuenta como pendiente. La marca deberia caer sola cuando su valla
+tiene un comando. Consecuencia
 inmediata: el A/B L no lleva el andamio; su brazo CON lleva el gate y la ley VIVA (gb deriva las
 hojas tras cada fase y las escribe con su porque, `X -/-> *`), que es ley que existe sin pedirle
 a nadie que la redacte.
