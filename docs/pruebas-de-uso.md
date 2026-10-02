@@ -2039,11 +2039,69 @@ correccion, ni la forma, ni la fuerza de los tests; solo cuesta un **32 % mas**.
 **Descuadre de gb que deja a la vista.** En SCOPE.md la valla `gb:terminado` esta rellena y la
 marca `gb:pendiente` del criterio de terminado sigue encima: el agente rellena la valla y no
 borra la marca, y `floor` la cuenta como pendiente. La marca deberia caer sola cuando su valla
-tiene un comando. Consecuencia
-inmediata: el A/B L no lleva el andamio; su brazo CON lleva el gate y la ley VIVA (gb deriva las
+tiene un comando (arreglado el 2-oct, `790e37a`).
+
+Consecuencia inmediata: el A/B L no lleva el andamio; su brazo CON lleva el gate y la ley VIVA (gb deriva las
 hojas tras cada fase y las escribe con su porque, `X -/-> *`), que es ley que existe sin pedirle
 a nadie que la redacte.
 
 **Lo que no dice.** 2 pares; un modelo fuerte y un proyecto pequeño (6 modulos) donde la forma
 sale igual sin ayuda. Con un encargo que invite a enredarse, o a lo largo de muchos pasos, el
 andamio podria pesar distinto — esa es la pregunta del L.
+
+## 2-oct-2026 — A/B L (14 pasos): misma correccion, y la forma se separa en la fase 1, no por el camino
+
+Un par (`bancos/ab_largo`): `almacen` desde cero y 13 peticiones de cambio, cada paso un
+`claude -p` nuevo. CON = gate + ley viva + `graph --context` al arrancar; SIN = sin gb.
+
+| | con gb | sin gb |
+|---|---|---|
+| suites ocultas en la fase 14 | 62/62 v2 · 20/20 L, 0 regresiones | 62/62 v2 · 20/20 L, 0 regresiones |
+| modulos · aristas · ciclos | 5 · 4 · 0 en las 14 fases | 5 · 4 · 0 en las 14 fases |
+| funcion media (fase 1 -> 14) | 9,3 -> 12,3 (+3,0) | 15,1 -> 17,6 (+2,5) |
+| funcion mas larga (fase 1 -> 14) | 32 -> 56 | 41 -> 95 (`procesar`, nunca partida) |
+| coste total | 13,06 $ | 12,11 $ (+8 % con gb) |
+
+**Lo que dice.** La pendiente que la hipotesis pedia ("se enreda menos a la larga") es igual en
+la media; la de la funcion mas larga difiere por UN acto — `con-1` partio `procesar` en la fase 8
+para reutilizar el recorrido en `kardex`, por razones propias, no por nada que dijera gb. La
+diferencia grande es de PARTIDA (fase 1) y con n=1 no se distingue de un primer build afortunado.
+El grafo no tenia nada que ver: los dos brazos crecieron dentro de los mismos 3 modulos de
+produccion, asi que aristas y ley viva quedaron ciegas (una hoja derivada en 14 pasos). En los
+resumenes de las 14 fases no aparece ni un `gb calls`/`show`/`last`.
+
+**Descuadres del banco.** Dos `python -m almacen` huerfanos de los propios agentes cargaron la CPU
+en las fases 8-10 y los tests de rendimiento fallaron en los dos brazos; y los agentes heredan
+el `CLAUDE.md` global: leen y escriben `papercuts.md`, asi que lo que tropieza un brazo le llega
+al otro (22 lineas escritas). El par 2 no se lanzo: el diseño no separa gb de la varianza.
+
+## 2-oct-2026 — Diagnostico de cinco empates, y el A/B B: gb para el orquestador
+
+**Por que no sale.** (1) Techo: en el brazo SIN nunca se rompio nada — un verificador en un banco
+sin fallos solo mide su coste. (2) Lo que gb le daba al agente era la capa que INFORMA, la que la
+refocalizacion del 13-ago ya habia condenado; la columna (converge, rechazo, TIA) no entro en
+ningun A/B. (3) La pregunta "¿construye mejor el agente?" no es la promesa de gb, que es
+verificar. Pivote a probar: gb no le habla al agente, le habla al orquestador.
+
+**A/B B** (`bancos/ab_paralelo`, validado sin cuota con referencias): tres agentes a la vez sobre
+`almacen` (A: `procesar` devuelve un objeto; B: comando nuevo que desempaqueta la tupla; C:
+redondeo bancario). Los agentes no ven gb; sobre las MISMAS ramas, tres orquestadores. 3
+repeticiones, Opus, ~5,7 $.
+
+| | r1 | r2 | r3 |
+|---|---|---|---|
+| ramas solas | 3 verdes | 3 verdes | 3 verdes |
+| converge | choque semantico | choque semantico | no compone: conflicto de texto real A/B |
+| ci (merge si cada rama pasa sola) | main roto | main roto | main roto |
+| sin: merge + suite + integrador | 0,38 $ · 72/72 | 0,33 $ · 72/72 | 0,30 $ · 72/72 |
+| con: + la salida de gb al integrador | 0,35 $ · 72/72 | 0,36 $ · 72/72 | 0,31 $ · 72/72 |
+
+**Lo que dice.** La CI por rama rompe main 3/3: real. El integrador empata (1,01 $ frente a
+1,02 $): el traceback de pytest ya decia `cannot unpack non-iterable Resultado`. Y el brazo SIN
+— merge en una copia y suite, el "script de cinco lineas" — detecto la union rota 3/3 antes de
+tocar main, igual que converge. **En este banco el valor es del PROCESO (verificar la union antes
+del merge), no de gb.** Lo que converge tiene y el script no (atribucion por rama, rescates,
+seleccion de tests) no hizo falta: suite de 0,1 s y ningun rescate.
+
+**Lo que no dice.** Un modelo fuerte en tareas medias sigue en el techo. Siguiente: el mismo
+banco con Haiku 4.5, donde habra fallos que verificar.
